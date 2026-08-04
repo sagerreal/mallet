@@ -25,10 +25,12 @@
  *     room card (rename / confirm / override quantities / re-scan) — this
  *     panel is the office's door to ALL measurements now that the job modal's
  *     rows are gone (the tech field Quote tab keeps its scan row).
- *   - "+ Add a room" and "Scan room" live here too. "Scan room" renders on every
+ *   - "+ Add a room" and "Scan room" live here too, sharing ONE reason line that
+ *     both are wired to with aria-describedby. "Scan room" renders on every
  *     platform AND before a customer is picked: live when the native scanner is
- *     usable, disabled-with-its-reason otherwise (no LiDAR, a browser rather than
- *     the iPhone app, or no customer yet) — the office opens this page in a
+ *     usable, disabled-with-its-reason otherwise (no customer yet, a settings
+ *     read that never landed, no LiDAR, or a browser rather than
+ *     the iPhone app) — the office opens this page in a
  *     browser, where the old hidden-when-unavailable behaviour just looked like a
  *     missing feature, and a reviewer landing on /composer saw no native
  *     affordance at all until they had picked a customer several steps later.
@@ -42,15 +44,16 @@
  * empty seed (no priced service for the kinds) surfaces the reason inline.
  */
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useJobSites } from "@/features/measurements/use-job-sites";
 import { useRoomScanAvailability } from "@/lib/native/room-scan";
-import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unavailable";
+import { ScanReason, type ScanBlocker } from "@/components/shared/scan-unavailable";
 import { measurementSurfacesVisible } from "@/lib/measurement-gate";
+import { useMeasurementGate } from "@/features/settings/measurement-gate-provider";
 import { userMessage } from "@/lib/trpc/error-map";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { Card } from "@/components/ui/card";
@@ -139,7 +142,7 @@ export function MeasuredSurfacesPanel({
   onAddHeldTrace,
   onSeedLines,
 }: MeasuredSurfacesPanelProps) {
-  const measurementGate = useAppStore((s) => s.toggles.measurementEstimating);
+  const measurementGate = useMeasurementGate();
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const services = useAppStore((s) => s.services);
@@ -160,6 +163,8 @@ export function MeasuredSurfacesPanel({
   const [pickerKey, setPickerKey] = useState<string | null>(null);
   const [creatingRoomJob, setCreatingRoomJob] = useState(false);
   const [roomJobError, setRoomJobError] = useState<string | null>(null);
+  // ONE id: both room controls are described by the same reason line — see the row below.
+  const roomsReasonId = useId();
 
   const candidates = candidateJobsForLead(jobs, leadId);
   const countFor = (id: string) => jobCaptureCount(roomsByJob[id], sitesByJob[id]);
@@ -174,14 +179,36 @@ export function MeasuredSurfacesPanel({
 
   if (!visible) return null;
 
-  // What is in the way of a live scan, or null if nothing is. DEVICE first: in the office's own
-  // browser "open the iPhone app" is the true sentence whether or not a customer is picked.
-  const scanBlocker: ScanBlocker | null =
-    scan.status !== "ready"
-      ? { kind: "device", availability: scan }
-      : leadId === null
-        ? { kind: "no-customer" }
-        : null;
+  // What is in the way, for the room-controls row as a WHOLE — one blocker, one sentence, both
+  // buttons. The row has two controls with overlapping but different blockers, and the precedence
+  // is chosen so the sentence on screen is the one that unblocks real work:
+  //
+  // The blockers that stop BOTH buttons come first, so the one sentence on screen is true of
+  // whichever button the reader is looking at; the device — which stops only "Scan room" — comes
+  // last. Within that, the more actionable one leads.
+  //
+  //  1. NO CUSTOMER, even over the device. It is clearable on this screen (the customer picker is
+  //     directly above) and clearing it makes "+ Add a room" live — whereas "open the iPhone app",
+  //     the sentence that used to win here, unblocks nothing in the office's browser and left
+  //     "+ Add a room" with its reason in a `title` tooltip: invisible on touch, unannounced to a
+  //     screen reader.
+  //  2. Then the SETTINGS gate. `"unknown"` fails OPEN into a visible, DISABLED control rather
+  //     than a live one: both of these buttons create an estimate job server-side for a customer
+  //     with no job yet, and a settings read that 500'd is not permission to write rows into a
+  //     shop that may have switched measuring off. A reload is the next step.
+  //  3. Then the DEVICE, which by now blocks only "Scan room" — and is the sentence a reviewer on
+  //     a base iPhone needs, one step after the notes tell them to pick the customer.
+  const roomsBlocker: ScanBlocker | null =
+    leadId === null
+      ? { kind: "no-customer" }
+      : measurementGate === "unknown"
+        ? { kind: "settings-unknown" }
+        : scan.status !== "ready"
+          ? { kind: "device", availability: scan }
+          : null;
+  // "+ Add a room" is a browser-side control: the device never blocks it, only a missing customer
+  // and an unknown gate (both of which would have it writing a job it has no business writing).
+  const addRoomBlocked = leadId === null || measurementGate === "unknown";
 
   const rooms = jobId ? roomsByJob[jobId] : undefined;
   const sites = jobId ? sitesByJob[jobId] : undefined;
@@ -511,7 +538,16 @@ export function MeasuredSurfacesPanel({
           Now both controls are always on screen and the missing customer is a
           stated reason, like every other blocker. flexWrap + .scanwhy's
           flex-basis drop that reason onto its own full-width line under the two
-          buttons, so it reads as covering both. */}
+          buttons, so it reads as covering both.
+
+          ONE REASON LINE, TWO CONTROLS. Both buttons carry aria-describedby to
+          the SAME <ScanReason>, so whichever of them is dimmed, its explanation
+          is visible on screen and announced with it. "+ Add a room" used to
+          state its reason only in a `title`, which a touch user never sees and a
+          screen reader never reads — the very pattern the scan row exists to
+          kill. Two stacked sentences under two dimmed buttons was the other
+          option and reads as noise; roomsBlocker picks the single actionable
+          one instead (see its comment). */}
       <div
         className="msp-rooms"
         style={{
@@ -523,27 +559,22 @@ export function MeasuredSurfacesPanel({
       >
         <Button
           size="sm"
-          disabled={creatingRoomJob || leadId === null}
-          /* When the DEVICE is what is blocking, .scanwhy carries that sentence and this button
-             needs its own — the repo's standing disabled-reason pattern (cf. the tech job
-             modal's "No linked customer"). */
-          title={leadId === null ? "Pick a customer first — a room attaches to one of their jobs." : undefined}
+          disabled={creatingRoomJob || addRoomBlocked}
+          aria-describedby={addRoomBlocked && roomsBlocker ? roomsReasonId : undefined}
           onClick={() => void openRoomCard()}
         >
           + Add a room
         </Button>
-        {scanBlocker === null ? (
-          <Button
-            size="sm"
-            className="scanbtn"
-            disabled={creatingRoomJob}
-            onClick={() => void openRoomCard("scan")}
-          >
-            Scan room
-          </Button>
-        ) : (
-          <ScanUnavailable blocker={scanBlocker} label="Scan room" />
-        )}
+        <Button
+          size="sm"
+          className="scanbtn"
+          disabled={creatingRoomJob || roomsBlocker !== null}
+          aria-describedby={roomsBlocker ? roomsReasonId : undefined}
+          onClick={() => void openRoomCard("scan")}
+        >
+          Scan room
+        </Button>
+        {roomsBlocker && <ScanReason blocker={roomsBlocker} id={roomsReasonId} />}
       </div>
       {roomJobError && (
         <p

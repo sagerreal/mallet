@@ -51,10 +51,19 @@
  *                                         v1.settings.get removed the Measure CARD and every scan
  *                                         control in the app, unexplained. This happened for real.
  *
- * THE COLD-LOAD CASE IS THE ONE THAT REGRESSES. `store.toggles.measurementEstimating` is written
- * only by a settings hydrator, and the store has no persist middleware, so any route whose layout
- * does not mount one shows no scan row on a hard load — while still working if you soft-navigate
- * in from a route that does. Checks 4 and 6 load /my-day cold, in fresh contexts, for that.
+ * THE COLD-LOAD CASE IS THE ONE THAT REGRESSED. The gate used to be written only by a client
+ * settings hydrator, and the store has no persist middleware, so any route whose layout did not
+ * mount one showed no scan row on a hard load — while still working if you soft-navigated in from
+ * a route that did. It is now resolved SERVER-SIDE in the office and field layouts
+ * (lib/auth/server-measurement-gate.ts), so the first HTML already carries the answer. Checks 4
+ * and 6 still load /my-day cold, in fresh contexts, because that is the load that regresses.
+ *
+ * WHAT CHECK 7 CAN AND CANNOT PROVE, since that server read changed it. Breaking the settings HTTP
+ * reads (batch-safely — see settingsOutage) now proves the affordance is UNAFFECTED by a settings
+ * outage, which is stronger than "survives it". It cannot reach the gate's `"unknown"` state any
+ * more: that needs the SERVER read to fail too, which no client-side interception can cause. The
+ * unknown-state render is covered by unit tests, not here. Read check 7's own comment before
+ * adding anything to it.
  */
 
 import { chromium } from "@playwright/test";
@@ -82,18 +91,26 @@ const SCAN_REASON = {
   "no-lidar": "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro.",
   "no-native-app": "Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor.",
   "job-closed": "This job is closed — reopen it to scan a room.",
-  "no-customer": "Pick a customer first — a room scan attaches to one of their jobs.",
+  "no-customer": "Pick a customer first — a room attaches to one of their jobs.",
+  "settings-unknown": "Couldn't load this shop's settings — reload the page to scan a room.",
 };
 
 /**
  * What a surface should say, given this run's device state and the surface's OWN blocker.
  *
- * The device answer wins when there is one: on a base iPhone "reports no LiDAR" is true whether or
- * not a customer is picked, and it is the more fundamental fact — which is also the precedence the
+ * The device answer USUALLY wins: on a base iPhone "reports no LiDAR" is true whether or not the
+ * job happens to be closed, and it is the more fundamental fact — which is also the precedence the
  * app implements. `null` means "expect a LIVE control".
+ *
+ * `overridesDevice` is the composer's room row, and only that. Its two controls share ONE reason
+ * line, and "+ Add a room" needs no scanner at all — so a blocker that stops BOTH of them
+ * (no customer) governs the row even on a device that cannot scan, because the device sentence
+ * would be false of one of the two buttons it is describing. See measured-surfaces-panel.tsx.
  */
-const expected = (surfaceBlocker = null) =>
-  SCAN_STATE === "ready" ? (surfaceBlocker ? SCAN_REASON[surfaceBlocker] : null) : SCAN_REASON[SCAN_STATE];
+const expected = (surfaceBlocker = null, overridesDevice = false) => {
+  if (surfaceBlocker && (overridesDevice || SCAN_STATE === "ready")) return SCAN_REASON[surfaceBlocker];
+  return SCAN_STATE === "ready" ? null : SCAN_REASON[SCAN_STATE];
+};
 
 /** The reviewer's job — must match JOBS[0] in app-review/shop-data.mjs. */
 const REVIEW_JOB_TITLE = "Estimate — whole-house repipe";
@@ -177,12 +194,12 @@ async function contextFor(state) {
  * disabled and carrying its reason. "Absent" is never a pass — a scanner that vanishes is the
  * bug this checks for.
  */
-async function checkScanControl(page, id, name, locator, surfaceBlocker = null) {
+async function checkScanControl(page, id, name, locator, surfaceBlocker = null, overridesDevice = false) {
   const button = locator.first();
   if (!(await waitSeen(button))) return check(`${id}. '${name}' is on the page`, false, "NOT RENDERED AT ALL");
 
   const disabled = await button.isDisabled();
-  const reason = expected(surfaceBlocker);
+  const reason = expected(surfaceBlocker, overridesDevice);
   if (reason === null) {
     return check(`${id}. '${name}' is live (native bridge reports LiDAR)`, !disabled, disabled ? "disabled" : "");
   }
@@ -198,9 +215,9 @@ async function checkScanControl(page, id, name, locator, surfaceBlocker = null) 
     : null;
 
   // Name the blocker the run is ACTUALLY asserting, not the one the surface asked for: on a
-  // non-ready device the device answer wins, and a label saying "no-customer" beside the LiDAR
-  // sentence would misreport what was checked.
-  const effective = SCAN_STATE === "ready" ? surfaceBlocker : SCAN_STATE;
+  // non-ready device the device answer usually wins, and a label saying "no-customer" beside the
+  // LiDAR sentence would misreport what was checked.
+  const effective = surfaceBlocker && (overridesDevice || SCAN_STATE === "ready") ? surfaceBlocker : SCAN_STATE;
   return check(
     `${id}. '${name}' is present, disabled and says why (${effective})`,
     disabled && reasonShown && describedText?.trim() === reason,
@@ -208,6 +225,70 @@ async function checkScanControl(page, id, name, locator, surfaceBlocker = null) 
   );
 }
 
+
+/**
+ * Break the SETTINGS reads and nothing else — inside whatever batch they arrive in.
+ *
+ * `lib/trpc/provider.tsx` uses `httpBatchLink`, so the hydrators' queries share one request whose
+ * URL names every procedure in it: `/api/trpc/v1.settings.get,v1.jobs.list,v1.leads.list?batch=1`.
+ * The previous version of this outage matched that whole URL with a settings regex and 500'd the
+ * lot — jobs, leads, invoices and all — so "the app survives a settings outage" was actually being
+ * measured against an app with no data at all, and the checks that mattered were nested inside the
+ * ones that broke first, so they never ran.
+ *
+ * This rewrites the batched RESPONSE instead: each procedure gets its own entry in a JSON array,
+ * in the order the URL names them, so the settings entries are replaced with a tRPC error envelope
+ * (superjson-shaped, matching the transformer the client is configured with) and every other entry
+ * is passed through untouched. `collateral` counts the procedures that rode along and were
+ * preserved — the number that proves the interception is surgical rather than lucky.
+ */
+function settingsOutage() {
+  const stats = { batches: 0, failed: 0, collateral: 0 };
+  const isSettings = (proc) => /settings\.(get|fieldToggles)$/.test(proc);
+  const forcedError = (path) => ({
+    error: {
+      json: {
+        message: "forced by the verifier",
+        code: -32603,
+        data: { code: "INTERNAL_SERVER_ERROR", httpStatus: 500, stack: "", path },
+      },
+    },
+  });
+
+  const handler = async (route) => {
+    const { pathname } = new URL(route.request().url());
+    const procs = decodeURIComponent(pathname.replace(/^\/api\/trpc\/?/, "")).split(",").filter(Boolean);
+    if (!procs.some(isSettings)) return route.continue();
+
+    const response = await route.fetch();
+    const text = await response.text();
+    let payload;
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      // Not JSON we understand — pass it through rather than inventing a failure mode.
+      return route.fulfill({ status: response.status(), contentType: "application/json", body: text });
+    }
+
+    const batched = Array.isArray(payload);
+    const entries = batched ? [...payload] : [payload];
+    procs.forEach((proc, i) => {
+      if (!isSettings(proc) || i >= entries.length) return;
+      entries[i] = forcedError(proc);
+      stats.failed += 1;
+    });
+    stats.batches += 1;
+    stats.collateral += entries.length - procs.filter(isSettings).length;
+
+    await route.fulfill({
+      status: response.status(),
+      contentType: "application/json",
+      body: JSON.stringify(batched ? entries : entries[0]),
+    });
+  };
+
+  return { stats, handler };
+}
 
 /**
  * Sign in and settle on the landing route. Returns the page.
@@ -292,12 +373,28 @@ try {
   // reviewer landing here saw a Measure card with no native affordance in it at all — the app's
   // whole answer to 4.2 did not appear until step 4 of the notes.
   await shot(page, 3, "composer-no-customer");
+  // The composer's row states the MISSING CUSTOMER in every device mode: the two controls share
+  // one reason line and "+ Add a room" works fine in a browser, so a device sentence there would
+  // be false of the button beside it. The device sentence appears at 3c, one step later.
   await checkScanControl(
     page,
     "3a",
     "Scan room",
     page.getByRole("button", { name: /^Scan room$/i }),
     "no-customer",
+    true,
+  );
+  // The reason must reach "+ Add a room" too — it used to carry its own only in a `title`, which
+  // is invisible on a touch device and never announced.
+  const addRoom = page.getByRole("button", { name: /Add a room/i }).first();
+  const addDescribedBy = (await seen(addRoom)) ? await addRoom.getAttribute("aria-describedby") : null;
+  const addReason = addDescribedBy
+    ? await page.locator(`[id="${addDescribedBy}"]`).first().textContent().catch(() => null)
+    : null;
+  check(
+    "3a2. '+ Add a room' is disabled and announces the SAME visible reason (not a title tooltip)",
+    addReason?.trim() === SCAN_REASON["no-customer"] && (await addRoom.getAttribute("title")) === null,
+    `describedBy=${addDescribedBy ?? "none"} title=${await addRoom.getAttribute("title").catch(() => "?")}`,
   );
   const custInput = page.getByPlaceholder(/customer/i).first();
   if (await seen(custInput)) {
@@ -320,38 +417,44 @@ try {
   await cold.waitForTimeout(5000);
   await shot(cold, 5, "my-day-cold");
   const coldJob = cold.getByText(REVIEW_JOB_TITLE).first();
-  check("4. cold load of /my-day shows today's assigned job", await waitSeen(coldJob), REVIEW_JOB_TITLE);
-  if (await seen(coldJob)) {
+  // FLAT, not nested: a failure at any step must not skip the scan-row assertions below it, which
+  // are the point of the whole script. Each step guards its own click and every check still runs.
+  if (check("4. cold load of /my-day shows today's assigned job", await waitSeen(coldJob), REVIEW_JOB_TITLE)) {
     await coldJob.click();
     await cold.waitForTimeout(2500);
-    const quoteTab = cold.getByRole("tab", { name: "Quote" }).first();
-    if (check("4b. job sheet has a Quote tab", await waitSeen(quoteTab))) {
-      await quoteTab.click();
-      await cold.waitForTimeout(2500);
-      await shot(cold, 6, "quote-tab-cold");
-      check("4c. Quote tab shows the Scope section", await seen(cold.getByText("Scope", { exact: true })));
-      // The row must be here in EVERY mode — its presence on a cold load still proves the field
-      // layout hydrates settings, because measurementEstimating gates the row itself.
-      await checkScanControl(cold, "4d", "Scan a room", cold.getByRole("button", { name: /Scan a room/i }));
-      if (SCAN_STATE === "ready") {
-        await cold.getByRole("button", { name: /Scan a room/i }).first().click();
-        await cold.waitForTimeout(2000);
-        await shot(cold, 7, "scan-room-sheet");
-        check(
-          "4e. room sheet hands off to the native scanner ('Start scanning')",
-          await seen(cold.getByRole("button", { name: /Start scanning/i })),
-        );
-      } else {
-        // A disabled control must not open the sheet — that would be the dead button we avoided.
-        await cold.getByRole("button", { name: /Scan a room/i }).first().click({ force: true });
-        await cold.waitForTimeout(1500);
-        await shot(cold, 7, "scan-row-disabled");
-        check(
-          "4e. the disabled scan row does not open the scan sheet",
-          !(await seen(cold.getByRole("button", { name: /Start scanning/i }))),
-        );
-      }
+  }
+  const quoteTab = cold.getByRole("tab", { name: "Quote" }).first();
+  if (check("4b. job sheet has a Quote tab", await waitSeen(quoteTab))) {
+    await quoteTab.click();
+    await cold.waitForTimeout(2500);
+  }
+  await shot(cold, 6, "quote-tab-cold");
+  check("4c. Quote tab shows the Scope section", await seen(cold.getByText("Scope", { exact: true })));
+  // The row must be here in EVERY mode — its presence on a cold load still proves the field
+  // surface knows the org's measurement setting, which now comes from the layout's server read.
+  await checkScanControl(cold, "4d", "Scan a room", cold.getByRole("button", { name: /Scan a room/i }));
+  const coldScanBtn = cold.getByRole("button", { name: /Scan a room/i }).first();
+  if (await seen(coldScanBtn)) {
+    if (SCAN_STATE === "ready") {
+      await coldScanBtn.click();
+      await cold.waitForTimeout(2000);
+      await shot(cold, 7, "scan-room-sheet");
+      check(
+        "4e. room sheet hands off to the native scanner ('Start scanning')",
+        await seen(cold.getByRole("button", { name: /Start scanning/i })),
+      );
+    } else {
+      // A disabled control must not open the sheet — that would be the dead button we avoided.
+      await coldScanBtn.click({ force: true });
+      await cold.waitForTimeout(1500);
+      await shot(cold, 7, "scan-row-disabled");
+      check(
+        "4e. the disabled scan row does not open the scan sheet",
+        !(await seen(cold.getByRole("button", { name: /Start scanning/i }))),
+      );
     }
+  } else {
+    check("4e. the scan row was reachable at all", false, "row absent — see 4d");
   }
 
   // -- 5. A CLOSED JOB -----------------------------------------------------
@@ -395,20 +498,20 @@ try {
   if (check("5a. the closed job's sheet still opens", await waitSeen(closedJob), TECH_JOB_TITLE)) {
     await closedJob.click();
     await closed.waitForTimeout(2500);
-    const closedTab = closed.getByRole("tab", { name: "Quote" }).first();
-    if (check("5b. the closed job's sheet has a Quote tab", await waitSeen(closedTab))) {
-      await closedTab.click();
-      await closed.waitForTimeout(2500);
-      await shot(closed, 12, "quote-tab-closed-job");
-      await checkScanControl(
-        closed,
-        "5c",
-        "Scan a room",
-        closed.getByRole("button", { name: /Scan a room/i }),
-        "job-closed",
-      );
-    }
   }
+  const closedTab = closed.getByRole("tab", { name: "Quote" }).first();
+  if (check("5b. the closed job's sheet has a Quote tab", await waitSeen(closedTab))) {
+    await closedTab.click();
+    await closed.waitForTimeout(2500);
+  }
+  await shot(closed, 12, "quote-tab-closed-job");
+  await checkScanControl(
+    closed,
+    "5c",
+    "Scan a room",
+    closed.getByRole("button", { name: /Scan a room/i }),
+    "job-closed",
+  );
 
   // -- 6. THE TECHNICIAN'S OWN /my-day ------------------------------------
   // v1.settings.get is ownerOrOffice and the field layout gated its hydrator behind !isTech, and
@@ -424,30 +527,46 @@ try {
   if (check(`6. a TECH's cold /my-day shows their own job`, await waitSeen(techJob), TECH_JOB_TITLE)) {
     await techJob.click();
     await tech.waitForTimeout(2500);
-    const techQuoteTab = tech.getByRole("tab", { name: "Quote" }).first();
-    if (check("6b. the tech job sheet has a Quote tab", await waitSeen(techQuoteTab))) {
-      await techQuoteTab.click();
-      await tech.waitForTimeout(2500);
-      await shot(tech, 9, "quote-tab-tech");
-      await checkScanControl(tech, "6c", "Scan a room", tech.getByRole("button", { name: /Scan a room/i }));
-    }
   }
+  const techQuoteTab = tech.getByRole("tab", { name: "Quote" }).first();
+  if (check("6b. the tech job sheet has a Quote tab", await waitSeen(techQuoteTab))) {
+    await techQuoteTab.click();
+    await tech.waitForTimeout(2500);
+  }
+  await shot(tech, 9, "quote-tab-tech");
+  await checkScanControl(tech, "6c", "Scan a room", tech.getByRole("button", { name: /Scan a room/i }));
 
   // -- 7. SETTINGS UNAVAILABLE -------------------------------------------
   // The one that already happened, on a malformed settings blob. The gate was a boolean whose
   // pre-hydration placeholder was `false` and a settings hydrator its only writer, so a failed
   // read was indistinguishable from "this shop does not measure" — and took the Measure CARD with
-  // it, not just a button. Both settings reads are forced to 500 here; the affordance must survive.
+  // it, not just a button.
+  //
+  // WHAT THIS MODE PROVES NOW, AND WHAT IT NO LONGER CAN. The gate is resolved SERVER-SIDE in the
+  // office/field layouts (lib/auth/server-measurement-gate.ts) and read through the provider, so a
+  // logged-in page already knows the answer before any HTTP settings read happens. Breaking those
+  // reads therefore proves something stronger than it used to: the affordance is UNAFFECTED — same
+  // card, same control, same state as a healthy run — because it no longer depends on them.
+  //
+  // It does NOT exercise the gate's `"unknown"` state. A browser cannot reach that any more: it
+  // now requires the SERVER read to fail as well, which no client-side interception can cause, and
+  // the store handle that could force it is dev-only and absent from the deployed bundle. The
+  // unknown-state render (visible, disabled, "Couldn't load this shop's settings…") is covered by
+  // the unit suites for scan-unavailable, quote-tab and measured-surfaces-panel. Do not add a
+  // check here claiming otherwise — an assertion that cannot fail is worse than none.
+  //
+  // The checks below are DELIBERATELY FLAT. They used to nest, so 7c failing skipped 7d and 7e —
+  // and 7e is the most important assertion in this mode. Every one now runs and reports, and a
+  // control that is simply absent is recorded as a failure by checkScanControl rather than skipped.
+  const outage = settingsOutage();
   const brokenContext = await contextFor(ownerState);
-  await brokenContext.route(/\/api\/trpc\/.*settings\.(get|fieldToggles)/, (route) =>
-    route.fulfill({ status: 500, contentType: "application/json", body: '{"error":"forced by the verifier"}' }),
-  );
+  await brokenContext.route(/\/api\/trpc\//, outage.handler);
   const broken = watch(await brokenContext.newPage());
   await broken.goto(`${BASE}/composer`, { waitUntil: "domcontentloaded" });
   await broken.waitForTimeout(4000);
   await shot(broken, 10, "composer-settings-down");
   check(
-    "7. the Measure card SURVIVES a 500 from v1.settings.get",
+    "7. the Measure card SURVIVES the settings reads failing",
     await waitSeen(broken.getByRole("heading", { name: "Measure" })),
   );
   await checkScanControl(
@@ -456,33 +575,47 @@ try {
     "Scan room",
     broken.getByRole("button", { name: /^Scan room$/i }),
     "no-customer",
+    true,
   );
   await broken.goto(`${BASE}/my-day`, { waitUntil: "domcontentloaded" });
   await broken.waitForTimeout(5000);
   const brokenJob = broken.getByText(REVIEW_JOB_TITLE).first();
-  if (check("7c. /my-day still lists work with settings down", await waitSeen(brokenJob))) {
+  const brokenJobSeen = check("7c. /my-day still lists work with settings down", await waitSeen(brokenJob));
+  if (brokenJobSeen) {
     await brokenJob.click();
     await broken.waitForTimeout(2500);
-    const brokenTab = broken.getByRole("tab", { name: "Quote" }).first();
-    if (check("7d. that sheet still has a Quote tab", await waitSeen(brokenTab))) {
-      await brokenTab.click();
-      await broken.waitForTimeout(2500);
-      await shot(broken, 11, "quote-tab-settings-down");
-      await checkScanControl(
-        broken,
-        "7e",
-        "Scan a room",
-        broken.getByRole("button", { name: /Scan a room/i }),
-      );
-    }
   }
+  const brokenTab = broken.getByRole("tab", { name: "Quote" }).first();
+  const brokenTabSeen = check("7d. that sheet still has a Quote tab", await waitSeen(brokenTab));
+  if (brokenTabSeen) {
+    await brokenTab.click();
+    await broken.waitForTimeout(2500);
+  }
+  await shot(broken, 11, "quote-tab-settings-down");
+  await checkScanControl(
+    broken,
+    "7e",
+    "Scan a room",
+    broken.getByRole("button", { name: /Scan a room/i }),
+  );
+  // The interception itself is on trial too: it must have actually fired, and it must have left
+  // the procedures that shared a batch with settings ALONE. A run where `collateral` is 0 has not
+  // demonstrated batch-safety — it has demonstrated that settings happened to travel alone.
+  check(
+    "7f. the settings outage was surgical — only settings procedures failed",
+    outage.stats.failed > 0,
+    `${outage.stats.failed} settings entries failed across ${outage.stats.batches} batches, ` +
+      `${outage.stats.collateral} co-batched procedures preserved`,
+  );
 
-  // The broken context's 5xx are DELIBERATE — it is excluded from this check by construction.
+  // The broken context is INCLUDED now: the outage rewrites batched responses in place rather than
+  // 500-ing whole requests, so any 5xx seen there is a real server failure, not the harness.
   const serverErrors = [
     ...page.serverFailures,
     ...cold.serverFailures,
     ...closed.serverFailures,
     ...tech.serverFailures,
+    ...broken.serverFailures,
   ];
   check("8. no 5xx from any tRPC call on the reviewer's path", serverErrors.length === 0, serverErrors.join(", "));
 } catch (err) {

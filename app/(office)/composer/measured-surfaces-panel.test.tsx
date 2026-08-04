@@ -213,6 +213,44 @@ describe("MeasuredSurfacesPanel — visibility", () => {
     expect(screen.getByRole("button", { name: "Scan room" })).toBeTruthy();
   });
 
+  /**
+   * Visible, not live. Both room controls create an estimate job server-side for a customer with
+   * no job yet, so an unanswered settings read must not leave them tappable for a shop that may
+   * have switched measuring off on purpose — it disables them and says so.
+   */
+  it("disables BOTH room controls with an unknown gate, and both cite the same reason", () => {
+    storeState.toggles.measurementEstimating = "unknown";
+    scan = { status: "ready" };
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+
+    const add = screen.getByRole("button", { name: "+ Add a room" });
+    const scanBtn = screen.getByRole("button", { name: "Scan room" });
+    expect(add).toHaveProperty("disabled", true);
+    expect(scanBtn).toHaveProperty("disabled", true);
+
+    const reason = "Couldn't load this shop's settings — reload the page to scan a room.";
+    expect(screen.getByText(reason)).toBeTruthy();
+    const reasonId = scanBtn.getAttribute("aria-describedby");
+    expect(add.getAttribute("aria-describedby")).toBe(reasonId);
+    expect(document.getElementById(reasonId as string)?.textContent).toBe(reason);
+
+    fireEvent.click(scanBtn);
+    fireEvent.click(add);
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("an unknown gate outranks the device — the sentence must be true of BOTH buttons", () => {
+    storeState.toggles.measurementEstimating = "unknown";
+    scan = { status: "no-native-app" };
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    // "Open the Mallet iPhone app" is false of "+ Add a room", which needs no scanner — so with
+    // one shared reason line it cannot be the sentence while Add is also blocked.
+    expect(
+      screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/Open the Mallet iPhone app/)).toBeNull();
+  });
+
   it("renders the Measure entry with NO customer and NO job — zero prerequisites", () => {
     storeState.jobs = [];
     storeState.leads = [];
@@ -422,20 +460,44 @@ describe("MeasuredSurfacesPanel — add / scan a room", () => {
     expect(add).toHaveProperty("disabled", true);
     expect(scanBtn).toHaveProperty("disabled", true);
     expect(
-      screen.getByText("Pick a customer first — a room scan attaches to one of their jobs."),
+      screen.getByText("Pick a customer first — a room attaches to one of their jobs."),
     ).toBeTruthy();
 
     fireEvent.click(scanBtn);
     expect(openModal).not.toHaveBeenCalled();
   });
 
-  it("names the DEVICE, not the missing customer, when both are in the way", () => {
+  /**
+   * "+ Add a room" used to state its reason only in a `title` — invisible on touch, unannounced to
+   * a screen reader — because `.scanwhy` was carrying the DEVICE sentence for the scanner beside
+   * it. That is the exact pattern this branch exists to kill, so the missing customer now governs
+   * the whole row: it is the one blocker true of both controls, and the one the reader can clear
+   * here. The device sentence is not lost — it appears the moment a customer is picked.
+   */
+  it("names the missing CUSTOMER, not the device, when both are in the way", () => {
     render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
-    // scan defaults to no-native-app (the office's browser): "open the iPhone app" is true and
-    // useful whether or not a customer is picked, and is the more fundamental fact.
+    // scan defaults to no-native-app (the office's browser).
+    const add = screen.getByRole("button", { name: "+ Add a room" });
+    const reasonId = add.getAttribute("aria-describedby");
+
+    expect(reasonId).toBeTruthy();
+    expect(document.getElementById(reasonId as string)?.textContent).toBe(
+      "Pick a customer first — a room attaches to one of their jobs.",
+    );
+    // A `title` tooltip is not a reason a touch user or a screen reader ever receives.
+    expect(add.getAttribute("title")).toBeNull();
+    expect(screen.queryByText(/Open the Mallet iPhone app/)).toBeNull();
+  });
+
+  it("hands the device sentence back the moment a customer is picked", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} />);
     expect(
       screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
     ).toBeTruthy();
+    // …and "+ Add a room", which never needed the scanner, is live and undescribed.
+    const add = screen.getByRole("button", { name: "+ Add a room" });
+    expect(add).toHaveProperty("disabled", false);
+    expect(add.getAttribute("aria-describedby")).toBeNull();
   });
 
   it("a customer with no job gets an estimate job created silently, then the room card", async () => {

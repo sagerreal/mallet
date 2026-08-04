@@ -163,6 +163,35 @@ export function resetRoomScanAvailabilityCache(): void {
 }
 
 /**
+ * Book ONE probe's answer against the module cache and the retry budget.
+ *
+ * WHY THIS IS A FUNCTION AND NOT INLINE IN THE HOOK'S `.then`. The probe promise is SHARED —
+ * that is the whole point of caching it — so every mounted consumer runs its own `.then` on the
+ * same promise. The bookkeeping used to live in that callback, which meant the budget counted
+ * SUBSCRIBERS rather than probes: three surfaces mounted together (the composer's panel, a room
+ * card and the field Quote tab all do) turned one rejected probe into three attempts, exhausted
+ * ROOM_SCAN_PROBE_MAX_ATTEMPTS on the first try and cached `scanner-missing` for the session —
+ * the exact session-long latch the retry exists to prevent. Only tests, which mount one consumer
+ * at a time, never saw it.
+ *
+ * `roomScanAvailabilityProbe === probe` is the "I am the first callback for THIS probe" guard:
+ * the retry path clears the shared promise, so every later subscriber on the same probe fails the
+ * guard and books nothing. One probe now costs exactly one attempt, whatever is on screen.
+ */
+function settleProbe(probe: Promise<RoomScanAvailability>, result: RoomScanAvailability): void {
+  if (roomScanAvailabilityProbe !== probe) return;
+  // A transient `scanner-missing` gets a bounded retry rather than latching for the session —
+  // see ROOM_SCAN_PROBE_MAX_ATTEMPTS. Clearing the shared promise (not the answer) means the
+  // NEXT mount re-probes; the mounts already on screen still show the honest current answer.
+  if (result.status === "scanner-missing" && scannerMissingAttempts + 1 < ROOM_SCAN_PROBE_MAX_ATTEMPTS) {
+    scannerMissingAttempts += 1;
+    roomScanAvailabilityProbe = null;
+    return;
+  }
+  cachedRoomScanAvailability = result;
+}
+
+/**
  * React hook wrapping `roomScanAvailability()`. Starts at `checking` — NOT at a guess — so the
  * first render is identical on the server and the client (reading `window` in the initial state
  * would be a hydration mismatch) and so no user is ever told the wrong reason. Callers render
@@ -184,15 +213,7 @@ export function useRoomScanAvailability(): RoomScanAvailability {
     const probe = roomScanAvailabilityProbe;
     let cancelled = false;
     void probe.then((result) => {
-      // A transient `scanner-missing` gets a bounded retry rather than latching for the session —
-      // see ROOM_SCAN_PROBE_MAX_ATTEMPTS. Clearing the shared promise (not the answer) means the
-      // NEXT mount re-probes; this mount still shows the honest current answer meanwhile.
-      if (result.status === "scanner-missing" && scannerMissingAttempts + 1 < ROOM_SCAN_PROBE_MAX_ATTEMPTS) {
-        scannerMissingAttempts += 1;
-        if (roomScanAvailabilityProbe === probe) roomScanAvailabilityProbe = null;
-      } else {
-        cachedRoomScanAvailability = result;
-      }
+      settleProbe(probe, result);
       if (!cancelled) setAvailability(result);
     });
     return () => {

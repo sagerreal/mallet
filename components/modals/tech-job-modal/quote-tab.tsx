@@ -11,8 +11,9 @@
  *      and a "Scan a room" row unless the org's settings have arrived and said
  *      this shop does not measure. That row renders on EVERY device and on a
  *      CLOSED job: live when this one can scan, disabled-with-its-reason when it
- *      cannot (no LiDAR, a browser rather than the iPhone app, or a job that is
- *      done) — see components/shared/scan-unavailable.
+ *      cannot (no LiDAR, a browser rather than the iPhone app, a job that is
+ *      done, or a settings read that never landed) — see
+ *      components/shared/scan-unavailable.
  *   2. On an ESTIMATE visit: the dual exit — "Quote it now" (reveals the same
  *      builder + present flow the repair path uses) or "Send scope to the
  *      office" (the notes write IS the handoff; sent-ness is DERIVED from the
@@ -35,6 +36,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { useRoomScanAvailability } from "@/lib/native/room-scan";
 import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unavailable";
 import { measurementSurfacesVisible } from "@/lib/measurement-gate";
+import { useMeasurementGate } from "@/features/settings/measurement-gate-provider";
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
@@ -233,20 +235,30 @@ export interface QuoteTabProps {
 
 export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
   const setVisitNotes = useAppStore((s) => s.setVisitNotes);
-  const measurementGate = useAppStore((s) => s.toggles.measurementEstimating);
+  const measurementGate = useMeasurementGate();
   const pushModal = usePushModal();
   const close = useCloseModal();
   const scan = useRoomScanAvailability();
 
-  // What is in the way of a live scan, or null if nothing is. The DEVICE answer comes first: on a
-  // desktop browser "open the iPhone app" is the true and useful sentence whether or not the job
-  // happens to be closed, and it is the more fundamental fact of the two.
+  // What is in the way of a live scan, or null if nothing is.
+  //
+  // DEVICE first: on a desktop browser "open the iPhone app" is the true and useful sentence
+  // whatever else is going on, and it is the most fundamental fact of the three.
+  //
+  // Then the SETTINGS gate, ahead of the job's own state. `"unknown"` fails OPEN so the row is
+  // never silently deleted by a failed read (lib/measurement-gate.ts) — but open means visible,
+  // not live: this button opens the room card, which creates an estimate job server-side, and a
+  // shop that turned measuring off on purpose must not get rows written into it because a settings
+  // read 500'd. It sits ahead of `job-closed` because reopening the job would not make the scan
+  // work while the gate is unknown, and a next step that does not unblock anything is not one.
   const scanBlocker: ScanBlocker | null =
     scan.status !== "ready"
       ? { kind: "device", availability: scan }
-      : readOnly
-        ? { kind: "job-closed" }
-        : null;
+      : measurementGate === "unknown"
+        ? { kind: "settings-unknown" }
+        : readOnly
+          ? { kind: "job-closed" }
+          : null;
 
   const isEstimate = jobMode(job) === "estimate";
   const quoted = jobQuoted(job);
@@ -312,8 +324,10 @@ export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
                   seeds completed jobs, so an owner opening one got Scope, photos and a silently
                   missing scanner — the exact absence this whole component exists to kill;
                 · settings never loaded            → `"unknown"`, which fails OPEN
-                  (lib/measurement-gate.ts). One 500 from v1.settings.get used to remove the row
-                  from every surface in the app with no explanation anywhere. */}
+                  (lib/measurement-gate.ts) into a DISABLED row with the settings-unknown reason.
+                  One 500 from v1.settings.get used to remove the row from every surface in the app
+                  with no explanation anywhere; failing open the other way — leaving it live —
+                  would hand a non-measuring shop a button that writes an estimate job. */}
           {measurementSurfacesVisible(measurementGate) && (
             <div style={{ marginTop: "var(--space-3)" }}>
               {scanBlocker === null ? (

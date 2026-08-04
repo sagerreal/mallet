@@ -17,16 +17,30 @@
  *
  * THE BLOCKER IS A UNION, NOT A DEVICE STATUS. It started as one: `BlockedRoomScanAvailability`,
  * the ways the hardware/bridge can say no. But the surfaces had other reasons to refuse — a
- * CLOSED job, and the composer before a customer is picked — and both were handled by rendering
- * nothing at all, which is the same unexplained-absence bug in a different costume. They are now
- * blockers in the same union, so a surface's only options are "live control" or "control plus
- * reason": there is no shape of this component that renders silence.
+ * CLOSED job, the composer before a customer is picked, and a settings read that never landed —
+ * and all three were handled by rendering nothing (or, worse, a LIVE control), which is the same
+ * unexplained-absence bug in a different costume. They are now blockers in the same union, so a
+ * surface's only options are "live control" or "control plus reason": there is no shape of this
+ * component that renders silence.
+ *
+ * WHY `settings-unknown` IS A BLOCKER AND NOT A REASON TO GO LIVE. The measurement gate fails
+ * OPEN on `"unknown"` (lib/measurement-gate.ts) so the affordance is never silently deleted by a
+ * failed read. Failing open must mean "still VISIBLE", not "still TAPPABLE": tapping runs
+ * `openRoomCard()`, which creates an estimate job server-side, so a live control during a settings
+ * outage writes rows into a shop that may have turned measuring off deliberately. Visible +
+ * disabled + a stated reason keeps the guideline-4.2 answer on screen and costs a reload.
  *
  * COPY. One sentence per blocker, naming the actual thing in the way and the next step, per the
  * house copy rule. Deliberately NOT collapsed into one generic string: "needs an iPhone Pro" is
  * simply wrong on a desktop, and "open the iPhone app" is useless advice to someone already
  * holding the app. The native `available()` `reason` code is never shown — it is a diagnostic,
  * not copy.
+ *
+ * ONE CONTROL, ONE SENTENCE — AND ONE SENTENCE FOR TWO CONTROLS WHERE THEY SHARE A BLOCKER.
+ * `ScanUnavailable` pairs a single control with its own reason. The composer's room row has two
+ * (`+ Add a room` and `Scan room`), so it renders the buttons itself and points both at one
+ * `ScanReason`; stacking two sentences under two dimmed buttons reads as noise, and putting the
+ * second reason in a `title` was how "+ Add a room" ended up with an invisible one.
  *
  * A11Y. The reason is wired to the button with `aria-describedby`, so a screen reader announces
  * "Scan a room, dimmed — This device reports no LiDAR sensor…" rather than leaving the blocker as
@@ -44,13 +58,16 @@ import type { BlockedRoomScanAvailability } from "@/lib/native/room-scan";
 /**
  * Why this surface is not offering a live scan control.
  *
- *  - `device`      — the hardware/bridge/plugin says no. Carries the native status.
- *  - `job-closed`  — the job is done, so nothing new may be attached to it.
- *  - `no-customer` — the composer has no customer picked yet, and a room scan has to land on one
- *                    of their jobs.
+ *  - `device`           — the hardware/bridge/plugin says no. Carries the native status.
+ *  - `settings-unknown` — no settings snapshot has arrived, so whether this shop measures at all
+ *                         is unknown (lib/measurement-gate.ts's `"unknown"`).
+ *  - `job-closed`       — the job is done, so nothing new may be attached to it.
+ *  - `no-customer`      — the composer has no customer picked yet, and a room attaches to one of
+ *                         their jobs.
  */
 export type ScanBlocker =
   | { readonly kind: "device"; readonly availability: BlockedRoomScanAvailability }
+  | { readonly kind: "settings-unknown" }
   | { readonly kind: "job-closed" }
   | { readonly kind: "no-customer" };
 
@@ -80,8 +97,16 @@ const DEVICE_REASON: Record<BlockedRoomScanAvailability["status"], string> = {
 
 /** The reason for every blocker that is NOT about the device. */
 const BLOCKER_REASON: Record<Exclude<ScanBlocker["kind"], "device">, string> = {
+  // The gate is `"unknown"`: no settings snapshot arrived, so we do not know whether this shop
+  // measures. The affordance still RENDERS — an unexplained absence is the bug this branch exists
+  // to kill — but it must not be LIVE, because tapping it creates an estimate job server-side for
+  // a shop that may have switched measuring off on purpose. Disabled with a reload as the next
+  // step is the honest trade: a dead row during an outage costs a reload, a live one writes data.
+  "settings-unknown": "Couldn't load this shop's settings — reload the page to scan a room.",
   "job-closed": "This job is closed — reopen it to scan a room.",
-  "no-customer": "Pick a customer first — a room scan attaches to one of their jobs.",
+  // Covers BOTH composer room controls, not just the scanner — "+ Add a room" needs a customer
+  // for the same reason, and the two share one reason line (see measured-surfaces-panel).
+  "no-customer": "Pick a customer first — a room attaches to one of their jobs.",
 };
 
 /** The exact sentence a given blocker shows. The one place any caller or test reads this copy. */
@@ -108,6 +133,22 @@ export interface ScanUnavailableProps {
   variant?: "button" | "link";
 }
 
+/**
+ * The reason line on its own, so a surface with TWO blocked controls can point both at ONE
+ * sentence instead of printing it twice or leaving the second control's reason in a `title`
+ * tooltip (invisible on touch, unannounced to a screen reader — the exact defect this file
+ * exists to fix). The composer's room row is that surface; every other caller uses
+ * `ScanUnavailable`, which renders this itself. The copy and the `.scanwhy` class stay in one
+ * place either way.
+ */
+export function ScanReason({ blocker, id }: { blocker: ScanBlocker; id: string }) {
+  return (
+    <p className="scanwhy" id={id}>
+      {scanBlockerReason(blocker)}
+    </p>
+  );
+}
+
 export function ScanUnavailable({ blocker, label, variant = "button" }: ScanUnavailableProps) {
   const reasonId = useId();
   const className = variant === "link" ? "linklike scanbtn" : "btn sm scanbtn";
@@ -117,9 +158,7 @@ export function ScanUnavailable({ blocker, label, variant = "button" }: ScanUnav
       <button type="button" className={className} disabled aria-describedby={reasonId}>
         {label}
       </button>
-      <p className="scanwhy" id={reasonId}>
-        {scanBlockerReason(blocker)}
-      </p>
+      <ScanReason blocker={blocker} id={reasonId} />
     </>
   );
 }

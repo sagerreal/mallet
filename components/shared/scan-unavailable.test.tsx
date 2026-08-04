@@ -17,9 +17,10 @@ const STATUSES: readonly BlockedRoomScanAvailability["status"][] = [
   "scanner-missing",
 ];
 
-/** Every blocker the union can express — device statuses plus the two surface blockers. */
+/** Every blocker the union can express — device statuses plus the three non-device blockers. */
 const BLOCKERS: readonly ScanBlocker[] = [
   ...STATUSES.map((status) => ({ kind: "device", availability: { status } }) as ScanBlocker),
+  { kind: "settings-unknown" },
   { kind: "job-closed" },
   { kind: "no-customer" },
 ];
@@ -83,8 +84,27 @@ describe("ScanUnavailable", () => {
   it("asks for a customer rather than hiding the scanner on an empty composer", () => {
     render(<ScanUnavailable blocker={{ kind: "no-customer" }} label="Scan room" />);
     expect(
-      screen.getByText("Pick a customer first — a room scan attaches to one of their jobs."),
+      screen.getByText("Pick a customer first — a room attaches to one of their jobs."),
     ).toBeTruthy();
+    // The sentence covers BOTH composer room controls, so it must not name the scanner alone —
+    // "+ Add a room" is described by this same line and needs no scanner at all.
+    expect(scanBlockerReason({ kind: "no-customer" })).not.toMatch(/scan/i);
+  });
+
+  /**
+   * The gate's `"unknown"` state. Failing OPEN keeps the affordance on screen; it must NOT keep it
+   * live, because the control creates an estimate job server-side and a settings read that never
+   * answered is not permission to write into a shop that may have switched measuring off.
+   */
+  it("says the settings read failed, and offers a reload, when the gate is unknown", () => {
+    render(<ScanUnavailable blocker={{ kind: "settings-unknown" }} label="Scan a room" />);
+    const button = screen.getByRole("button", { name: "Scan a room" });
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
+    ).toBeTruthy();
+    // Names the real problem and a next step that actually unblocks it — not "try again later".
+    expect(scanBlockerReason({ kind: "settings-unknown" })).toMatch(/reload/i);
   });
 
   it.each(BLOCKERS.map((b) => [label(b), b] as const))(

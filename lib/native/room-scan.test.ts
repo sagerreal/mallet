@@ -290,6 +290,45 @@ describe("useRoomScanAvailability", () => {
     expect(available).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * THE BUDGET COUNTS PROBES, NOT SUBSCRIBERS.
+   *
+   * The probe promise is shared, so every mounted consumer runs its own `.then` on it. The
+   * bookkeeping used to live there, which meant three surfaces mounted TOGETHER — the composer's
+   * panel, a room card and the field Quote tab all mount at once — turned one rejected probe into
+   * three attempts, exhausted the bound on the first try and cached `scanner-missing` for the rest
+   * of the session. That is precisely the session-long latch the retry exists to prevent, and no
+   * test caught it because every other case here mounts consumers one at a time.
+   *
+   * Mounted concurrently, one probe must still cost one attempt — so the very next mount re-probes
+   * and finds the bridge up.
+   */
+  it("charges ONE attempt for one probe however many consumers share it", async () => {
+    const available = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("bridge not up yet"))
+      .mockResolvedValue({ available: true });
+    inShell({ available });
+
+    // Concurrent, not sequential: all three mount before any `.then` runs.
+    const consumers = [
+      renderHook(() => useRoomScanAvailability()),
+      renderHook(() => useRoomScanAvailability()),
+      renderHook(() => useRoomScanAvailability()),
+    ];
+    for (const c of consumers) {
+      await waitFor(() => expect(c.result.current).toEqual({ status: "scanner-missing" }));
+    }
+    // One native round trip was made, whatever was on screen.
+    expect(available).toHaveBeenCalledTimes(1);
+    for (const c of consumers) c.unmount();
+
+    // …and it cost one attempt, so the budget is not spent and the next mount recovers.
+    const next = renderHook(() => useRoomScanAvailability());
+    await waitFor(() => expect(next.result.current).toEqual({ status: "ready" }));
+    expect(available).toHaveBeenCalledTimes(2);
+  });
+
   it("stops re-probing after the bound — a shell with no plugin is not retried forever", async () => {
     const available = vi.fn().mockRejectedValue(new Error("no plugin in this build"));
     inShell({ available });

@@ -4,10 +4,10 @@
  *
  * The Quote tab (estimating part 3): scope save wiring, the estimate-visit dual
  * exit and its DERIVED sent state (visit.scopeNotes IS the handoff — no status),
- * the embedded builder's visibility, and the scan row's THREE states — it renders
- * on every device now (live / disabled-no-LiDAR / disabled-not-in-the-app / disabled-job-closed),
- * and the ONLY thing that hides it is a settings snapshot that arrived and said this shop does
- * not measure.
+ * the embedded builder's visibility, and the scan row's states — it renders on every device now
+ * (live / disabled-no-LiDAR / disabled-not-in-the-app / disabled-job-closed /
+ * disabled-settings-unknown), and the ONLY thing that hides it is a settings snapshot that
+ * arrived and said this shop does not measure.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -302,17 +302,63 @@ describe("QuoteTab — scan a room", () => {
   });
 
   /**
-   * A technician's settings read is a SEPARATE, narrower query (v1.settings.fieldToggles) and it
-   * can be in flight or fail like any other. The gate's third state exists so that does not
-   * silently delete the field scanner: unknown fails OPEN.
+   * A settings read can be in flight or fail like any other. The gate's third state exists so that
+   * does not silently delete the field scanner: unknown fails OPEN — into a VISIBLE row.
+   *
+   * Not into a LIVE one. Failing open the other way is the wrong trade: on a LiDAR iPhone, a shop
+   * that deliberately turned measuring off would get a tappable scanner during any settings
+   * outage, and the tap creates an estimate job server-side. Visible, disabled, and honest about
+   * why costs a reload; live costs rows in someone's database.
    */
-  it("renders when settings have NOT loaded — the field scanner is not hidden by a dead read", () => {
+  it("renders DISABLED with its reason when settings have NOT loaded — visible, never live", () => {
     const job = makeJob();
     mockJobs = [job];
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
-    expect(screen.getByRole("button", { name: "Scan a room" })).toHaveProperty("disabled", false);
+
+    const button = screen.getByRole("button", { name: "Scan a room" });
+    expect(button).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
+    ).toBeTruthy();
+    const reasonId = button.getAttribute("aria-describedby");
+    expect(document.getElementById(reasonId as string)?.textContent).toBe(
+      "Couldn't load this shop's settings — reload the page to scan a room.",
+    );
+  });
+
+  it("an unknown gate cannot open the room card — no estimate job is created", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    fireEvent.click(screen.getByRole("button", { name: "Scan a room" }));
+    expect(mockPushModal).not.toHaveBeenCalled();
+  });
+
+  it("the DEVICE still outranks an unknown gate — a browser is told to open the app", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "no-native-app" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    expect(
+      screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
+    ).toBeTruthy();
+  });
+
+  it("an unknown gate outranks a CLOSED job — reopening it would not make the scan work", () => {
+    const job = makeJob({ status: "done" });
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} />);
+    expect(
+      screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
+    ).toBeTruthy();
+    expect(screen.queryByText("This job is closed — reopen it to scan a room.")).toBeNull();
   });
 });
 
