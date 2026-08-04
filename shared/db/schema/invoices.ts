@@ -118,6 +118,12 @@ export const invoices = pgTable(
     // Sort indexes for invoice-sorts.ts. due/oldestUnpaid share the due-date index; the existing
     // org_status_due_idx already covers the filtered collection queue.
     index("invoices_org_due_idx").on(t.orgId, t.dueAt, t.id),
+    // The Paid view's order: most recently SETTLED first. There is no paid_at column — a payment
+    // write closes the balance and bumps updated_at in the same transaction, so this is the settle
+    // stamp. Needed because the ledger sort's rank is constant inside a filtered band and the
+    // fallback order was `id`, i.e. a random UUID: on 583 paid invoices the payment the owner had
+    // just taken sorted 290th. See ledgerWithinView in modules/invoicing/infra/invoice-sorts.ts.
+    index("invoices_org_updated_idx").on(t.orgId, t.updatedAt.desc(), t.id.desc()),
     index("invoices_org_total_idx").on(t.orgId, t.totalCents.desc(), t.id.desc()),
     index("invoices_org_lead_idx").on(t.orgId, t.leadId),
     uniqueIndex("invoices_org_num_uidx")

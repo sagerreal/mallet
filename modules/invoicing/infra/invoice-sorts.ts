@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import { invoices } from "@mallet/shared/db/schema";
-import { INVOICE_BANDS } from "./invoice-views";
+import { INVOICE_BANDS, type InvoiceView } from "./invoice-views";
 import type { SortSpec } from "@mallet/shared/db/sort-page";
 
 /**
@@ -46,11 +46,53 @@ export const LEDGER_RANK = sql<number>`case
   else 5
 end`;
 
-export const invoiceSortSpec = (sort: InvoiceSort, dir?: "asc" | "desc"): SortSpec => {
+/**
+ * The ledger's order INSIDE one status band, when the screen has already filtered to that band.
+ *
+ * LEDGER_RANK answers "what needs attention first", and it is the right question for the whole
+ * book. Applied to a filtered view it answers nothing: every row in the Paid view is rank 5, every
+ * row in Overdue is rank 2. The rank ties for all of them and the only remaining ORDER BY key is
+ * `id` — a random v4 UUID. So the Money screen's Status filter returned its rows in random order.
+ *
+ * Measured on the pilot org: the $185 cash payment the owner had just taken was rank 1 of 583 by
+ * when it settled, and rank 290 by UUID — page 6 of a 50-row list, under a filter he had applied
+ * precisely to find it. "I just took this payment, where is it?" had no answer.
+ *
+ * Each view therefore gets the order that view is FOR:
+ *   paid   → most recently settled first. `updated_at` is the settle stamp — there is no paid_at
+ *            column, and a payment write bumps it in the same transaction that closes the balance.
+ *   draft  → newest first: a draft is something you are still writing.
+ *   others → due date ascending, which is the collection order and the same order `oldestUnpaid`
+ *            means. Overdue, part-paid and sent are all money being chased.
+ *
+ * The UNFILTERED ledger is untouched and stays needs-attention-first — that ordering is deliberate
+ * and it is the one place the rank actually discriminates.
+ */
+const ledgerWithinView = (view: InvoiceView, dir?: "asc" | "desc"): SortSpec => {
+  switch (view) {
+    case "paid":
+      return { column: invoices.updatedAt, direction: dir ?? "desc", nulls: "last" };
+    case "draft":
+      return { column: invoices.createdAt, direction: dir ?? "desc", nulls: "last" };
+    case "over":
+    case "partial":
+    case "sent":
+    default:
+      return { column: invoices.dueAt, direction: dir ?? "asc", nulls: "last" };
+  }
+};
+
+export const invoiceSortSpec = (
+  sort: InvoiceSort,
+  dir?: "asc" | "desc",
+  view?: InvoiceView,
+): SortSpec => {
   switch (sort) {
     case "ledger":
-      // Ranked by the CASE above; the cursor carries the rank, so paging resumes inside the right
-      // band rather than restarting at draft.
+      // Inside a single status band the rank is constant, so it sorts nothing — see
+      // ledgerWithinView. Unfiltered, it is ranked by the CASE above and the cursor carries the
+      // rank, so paging resumes inside the right band rather than restarting at draft.
+      if (view) return ledgerWithinView(view, dir);
       return { column: LEDGER_RANK, direction: dir ?? "asc", nulls: "last" };
     case "amount":
       return { column: invoices.totalCents, direction: dir ?? "desc", nulls: "last" };

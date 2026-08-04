@@ -4,7 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { invoiceSortSpec, type InvoiceSort } from "./invoice-sorts";
-import { invoiceViewCondition } from "./invoice-views";
+import { invoiceViewCondition, type InvoiceView } from "./invoice-views";
 import {
   buildPage,
   decodeCursor,
@@ -299,7 +299,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     sort?: InvoiceSort,
     sortDir?: "asc" | "desc",
   ): Promise<Paginated<Invoice>> {
-    return this.loadHeaderPage(this.listConds(filter), page, sort, sortDir);
+    return this.loadHeaderPage(this.listConds(filter), page, sort, sortDir, filter?.view);
   }
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Invoice>> {
@@ -403,9 +403,13 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     page: CursorPage,
     sort?: InvoiceSort,
     sortDir?: "asc" | "desc",
+    // The status band the caller already filtered to, when there is one. The `ledger` sort needs
+    // it: inside one band its rank is constant and sorts nothing, so the view decides the order.
+    // See ledgerWithinView in invoice-sorts.ts.
+    view?: InvoiceView,
   ): Promise<Paginated<Invoice>> {
     const conds = [...baseConds];
-    const spec = sort ? invoiceSortSpec(sort, sortDir) : null;
+    const spec = sort ? invoiceSortSpec(sort, sortDir, view) : null;
     if (page.cursor) {
       if (spec) {
         const c = decodeSortCursor(page.cursor);

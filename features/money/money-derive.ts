@@ -164,12 +164,36 @@ function readyRow(j: Job, leads: Lead[]): MoneyRow {
   };
 }
 
-/** The active ledger: ready-to-bill jobs + live invoices, needs-you first. */
-export function deriveMoneyRows(invoices: Invoice[], jobs: Job[], leads: Lead[]): MoneyRow[] {
+/**
+ * The active ledger: ready-to-bill jobs + live invoices, needs-you first.
+ *
+ * `serverOrdered` — the screen has filtered to ONE status band, so the database already returned
+ * the rows in the order that band is read in (most recently settled first for Paid, oldest due
+ * first for the ones being chased: see ledgerWithinView in modules/invoicing/infra/invoice-sorts).
+ * The sort below must then stand aside. Two reasons, and the second is the one that bit:
+ *
+ *   • Inside one band every row shares a statusKey and, on Paid, a zero balance — so the rank and
+ *     the amount both tie and the whole order collapses to `ageDays` DESCENDING. That is
+ *     OLDEST-first, which is the exact opposite of what "where is the payment I just took" needs:
+ *     it sent a freshly settled invoice to the bottom of the page it had finally reached.
+ *   • It is a sort over ONE PAGE of a paginated list. Reordering fifty of 583 rows produces an
+ *     order that is not the order of the book, and the next page does not continue it.
+ *
+ * Unfiltered, the sort stays exactly as it was and is doing real work: it interleaves the
+ * ready-to-bill worklist (rank 0, fetched separately) with the invoices, and it breaks the SQL
+ * rank's within-band ties by amount. That ordering is deliberate; nothing here changes it.
+ */
+export function deriveMoneyRows(
+  invoices: Invoice[],
+  jobs: Job[],
+  leads: Lead[],
+  serverOrdered = false,
+): MoneyRow[] {
   const rows = [
     ...jobsReadyToInvoice(jobs, invoices).map((j) => readyRow(j, leads)),
     ...liveInvs(invoices).map((i) => invoiceRow(i, leads)),
   ];
+  if (serverOrdered) return rows;
   return rows.sort(
     (a, b) =>
       STATUS_RANK[a.statusKey] - STATUS_RANK[b.statusKey] || b.due - a.due || (b.ageDays ?? 0) - (a.ageDays ?? 0)

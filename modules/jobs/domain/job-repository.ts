@@ -165,7 +165,19 @@ export interface JobRepository {
   // Bulk-replace: soft-delete the job's current lines and insert the given set (both in the
   // tenant tx, so a failure rolls back the whole swap). Powers on-site pricing which builds a
   // complete line set in one shot rather than diffing add/update/remove.
-  replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date): Promise<void>;
+  //
+  // The job's stored `total_cents` moves WITH the lines — it is Σ round(quantity × rate_cents),
+  // the same arithmetic the signed snapshot and the estimate repository use. Before this it never
+  // moved at all, so a job priced through the price builder kept a $0 headline while carrying real
+  // lines, and Money's ready-to-bill rollup, the `noPrice` view and the Amount sort all reported
+  // zero on sold work.
+  //
+  // `totalCents` overrides that derivation, and exists for exactly one caller shape: the accepted
+  // ESTIMATE, whose total is tax-inclusive and may carry a discount. Neither is reconstructible
+  // from the job's lines, so the path that holds the agreed figure passes it and it wins. Omit it
+  // anywhere the lines ARE the price (the price builder and the field sign-off, where the tech's
+  // quoted tax is already inside the rates).
+  replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date, totalCents?: number): Promise<void>;
 
   /**
    * Record an on-glass signature against a job.

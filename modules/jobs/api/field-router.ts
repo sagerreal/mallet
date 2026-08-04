@@ -23,7 +23,7 @@ import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobL
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
-import { jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
+import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 
@@ -243,7 +243,7 @@ export const createFieldRouter = () =>
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
       const started = orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
-      const dto = toJobDTO(started);
+      const dto = await toJobDTOWithExecution(repo, started);
       // Starting the job = arriving on it: close the drive, open job time. Never fails the write.
       // Job-level, so job-level assignment is the right question — this button is not about one visit.
       const outcome = await runVisitClockTap(
@@ -263,7 +263,7 @@ export const createFieldRouter = () =>
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
       const completed = orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
-      const dto = toJobDTO(completed);
+      const dto = await toJobDTOWithExecution(repo, completed);
       // Completing the job = done on it: close job time and auto-resume shop, so whoever did the work
       // stays on the clock between calls. Never fails the write.
       const outcome = await runVisitClockTap(
@@ -312,7 +312,7 @@ export const createFieldRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId, status: input.status },
           "job_visit.status_set",
         );
-        const dto = toJobDTO(job);
+        const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
         return redactMoneyForTech(dto, seesPrice);
@@ -350,7 +350,7 @@ export const createFieldRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.enroute_set",
         );
-        const dto = toJobDTO(job);
+        const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
         return redactMoneyForTech(dto, seesPrice);
@@ -394,7 +394,7 @@ export const createFieldRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.scope_notes_set",
         );
-        const dto = toJobDTO(job);
+        const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
         return redactMoneyForTech(dto, seesPrice);

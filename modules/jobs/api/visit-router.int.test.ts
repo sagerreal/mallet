@@ -473,6 +473,35 @@ suite("visits tRPC router (full stack, live RLS)", () => {
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
+  // ── the response carries the job's EXECUTION, not just its header ───────────
+  //
+  // The store replaces the job it holds with whatever a mutation returns. toJobDTO defaults to an
+  // empty execution, so every visit tap used to answer "this job has no lines" — and the client
+  // believed it. On the technician's done card that read "No price set — the office invoices it"
+  // on an agreed $185; the next list refetch put the price back and the next tap took it away.
+  it("setVisitStatus returns the job's priced lines and its true total", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const jobId = await createJob(caller);
+    const created = await caller.v1.visits.createVisit({ jobId, durationHours: 2 });
+    const visitId = created.visits[0]!.id;
+
+    await caller.v1.jobs.setLines({
+      jobId,
+      lines: [
+        { description: "Annual plumbing inspection", quantity: 1, rateCents: 18500, costCents: 4000 },
+      ],
+    });
+
+    const moved = await caller.v1.visits.setVisitStatus({ jobId, visitId, status: "complete" });
+
+    expect(moved.lines).toHaveLength(1);
+    // rate/total are nullable on the wire only because a tech's device gets them redacted; this
+    // caller is an owner, so a null here would itself be the bug.
+    expect(moved.lines[0]!.rate!.cents).toBe(18500);
+    // And the header agrees with them — the stored total now moves with the lines.
+    expect(moved.total!.cents).toBe(18500);
+  });
+
   it("a tech is forbidden from all visit mutations", async () => {
     const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
 

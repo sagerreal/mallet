@@ -150,6 +150,22 @@ describe("deriveMoneyRows — one ledger, needs-you first", () => {
     expect(rows.find((r) => r.key === "inv-2")?.card?.last4).toBe("4242");
   });
 
+  // Under a status filter the database already answered in the order that band is read in, and
+  // one page of a 583-row book must not be reordered on arrival. Inside the Paid band every row
+  // ties on rank AND on balance, so the old sort fell through to ageDays DESCENDING — oldest
+  // first — and put the payment the owner had just taken at the bottom of the page he had
+  // filtered to go and find it on.
+  it("keeps the database's order when the screen has filtered to one band", () => {
+    const settledToday = inv({ id: "inv-new", leadId: "2", total: 185, age: 0, payments: [{ amt: 185, when: "", method: "cash" }] });
+    const settledLastYear = inv({ id: "inv-old", leadId: "2", total: 400, age: 340, payments: [{ amt: 400, when: "", method: "card" }] });
+    // The order the Paid view returns: most recently settled first.
+    const serverOrder = [settledToday, settledLastYear];
+
+    expect(deriveMoneyRows(serverOrder, [], leads, true).map((r) => r.key)).toEqual(["inv-new", "inv-old"]);
+    // Unfiltered, the client sort still runs and still ranks by age within the band.
+    expect(deriveMoneyRows(serverOrder, [], leads).map((r) => r.key)).toEqual(["inv-old", "inv-new"]);
+  });
+
   it("excludes archived invoices from active and includes them in archived", () => {
     const invoices = [inv({ id: "inv-1", leadId: "2", total: 100 }), inv({ id: "inv-2", leadId: "2", total: 200, archived: true })];
     expect(deriveMoneyRows(invoices, [], leads).map((r) => r.key)).toEqual(["inv-1"]);
