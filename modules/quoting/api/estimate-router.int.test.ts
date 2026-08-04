@@ -10,6 +10,10 @@ import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 import { acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 import { recordEstimateDeposit } from "@/modules/quoting/app/public-quote-deposit";
+import { withTenant } from "@mallet/shared/db/tx";
+import { sql as sqlRaw } from "drizzle-orm";
+import { asEstimateId } from "@mallet/shared/types";
+import { DrizzleEstimateDepositLedger } from "@/modules/quoting/infra/drizzle-estimate-deposit-ledger";
 import { GET as publicQuoteGET } from "@/app/api/public/quote/[token]/route";
 
 // Capstone: the whole quoting stack via createCaller — auth, RBAC, org-scoped tx, use-cases,
@@ -952,6 +956,81 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
 
     expect(await depPaidOf(id)).toBe(90_000);
     expect(await ledgerOf(id)).toHaveLength(2);
+  });
+
+  it("CONCURRENT payments: overlapping transactions cannot leave the cached total behind", async () => {
+    // The regression for the READ COMMITTED anomaly. Two recorders overlap: T1 appends A and holds
+    // its transaction open; T2 appends B while T1's estimate row lock is still held.
+    //
+    // Without `FOR UPDATE` on the estimate scan, T2 inserted its ledger row FIRST and only then
+    // blocked, inside its `UPDATE … SET dep_paid_cents = (SELECT sum(…))` — and that subquery had
+    // already been planned against T2's pre-block snapshot, which cannot see A. The ledger ended
+    // up holding both payments while dep_paid_cents held one, permanently: every consumer reads
+    // the cache and nothing re-derives, so the invoice credited less than the customer paid.
+    //
+    // With FOR UPDATE, T2 blocks BEFORE inserting, so its later statements take fresh snapshots.
+    // Sequential tests structurally cannot catch this — the transactions must genuinely overlap.
+    const { id } = await acceptedQuote("Deposit — concurrent", 3_000, 100_000);
+
+    const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+    const append = (tx: Parameters<Parameters<typeof withTenant>[1]>[0], ref: string, cents: number) =>
+      new DrizzleEstimateDepositLedger(tx, asOrgId(orgAId)).append({
+        estimateId: asEstimateId(id),
+        paymentRef: ref,
+        amountCents: cents,
+        receivedAt: new Date(),
+      });
+
+    // Warm TWO pool connections first. Opening a cold TLS connection to the DB costs several
+    // hundred ms, and if T2 spends the hold window connecting instead of blocking, the two
+    // transactions never overlap and the test proves nothing.
+    await Promise.all([
+      withTenant(asOrgId(orgAId), async (tx) => tx.execute(sqlRaw`select 1`)),
+      withTenant(asOrgId(orgAId), async (tx) => tx.execute(sqlRaw`select 1`)),
+    ]);
+
+    let releaseT1 = (): void => undefined;
+    const t1Held = new Promise<void>((resolve) => {
+      releaseT1 = resolve;
+    });
+
+    const t1 = withTenant(asOrgId(orgAId), async (tx) => {
+      const result = await append(tx, "pi_concurrent_A", 30_000);
+      await t1Held; // hold the estimate row lock open while T2 tries to record
+      return result;
+    });
+
+    await sleep(1_000); // T1 has taken its lock
+
+    const t2 = withTenant(asOrgId(orgAId), async (tx) => append(tx, "pi_concurrent_B", 60_000));
+
+    await sleep(3_000); // T2 is now blocked inside append, waiting on T1
+    releaseT1();
+
+    const [a, b] = await Promise.all([t1, t2]);
+    expect(a.kind).toBe("appended");
+    expect(b.kind).toBe("appended");
+
+    // Both payments are on the ledger AND the cached total is their sum — the two agree.
+    expect(await ledgerOf(id)).toHaveLength(2);
+    expect(await depPaidOf(id)).toBe(90_000);
+    // The winner's own return value reports the full total too, not just its own payment.
+    expect(b.kind === "appended" && b.depositPaidCents).toBe(90_000);
+  }, 30_000);
+
+  it("refuses a payment_ref already recorded against a DIFFERENT quote in the same org", async () => {
+    // The org-wide unique index means such a ref conflicts here too. Answering "duplicate" would
+    // report THIS quote's total (0) as though the payment had landed on it; the truth is that it
+    // cannot be recorded here at all.
+    const first = await acceptedQuote("Deposit — ref owner", 3_000, 100_000);
+    const second = await acceptedQuote("Deposit — ref thief", 3_000, 100_000);
+
+    expect(await recordEstimateDeposit(orgAId, first.id, 30_000, "pi_shared_ref")).toBe(true);
+    expect(await recordEstimateDeposit(orgAId, second.id, 30_000, "pi_shared_ref")).toBe(false);
+
+    expect(await depPaidOf(first.id)).toBe(30_000);
+    expect(await depPaidOf(second.id)).toBe(0);
+    expect(await ledgerOf(second.id)).toHaveLength(0);
   });
 
   it("refuses a deposit against a quote in another org, and against an unapproved quote", async () => {

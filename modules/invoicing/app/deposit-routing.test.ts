@@ -203,6 +203,23 @@ describe("reconcileCheckoutSession — deposit sessions", () => {
     expect(outcome.reason).not.toBe("unsupported"); // the Task-7 placeholder is gone
   });
 
+  it("refuses a paid deposit session with NO payment_intent — the webhook's twin", async () => {
+    // Symmetric to the webhook case above, and it has to be: both paths key the ledger on the
+    // payment_intent id, so a path that recorded a deposit without one would break the dedup for
+    // BOTH deliveries of that money, not just its own.
+    const noIdentity = {
+      ...session({ orgId: ORG, estimateId: EST, kind: "deposit" }),
+      payment_intent: null,
+    } as unknown as Stripe.Checkout.Session;
+    const { calls, deps } = depositDeps(noIdentity);
+
+    const outcome = await reconcileCheckoutSession("cs_test_dep", deps);
+
+    expect(outcome).toEqual({ recorded: false, reason: "missing_fields" });
+    expect(calls.deposits).toHaveLength(0);
+    expect(calls.payments).toHaveLength(0);
+  });
+
   it("no-ops an unpaid deposit session", async () => {
     const s = {
       ...session({ orgId: ORG, estimateId: EST, kind: "deposit" }),

@@ -22,14 +22,30 @@ export class DrizzleEstimateDepositLedger implements EstimateDepositLedger {
 
   async append(entry: DepositLedgerEntry): Promise<DepositLedgerResult> {
     /**
-     * INSERT … SELECT, so the estimate's state is a precondition of the WRITE rather than of an
-     * earlier read. The SELECT yields a row only while the quote is still an accepted, live
-     * estimate of this org — a quote archived or moved off `accepted` between the use-case's load
-     * and this statement produces zero source rows and therefore no deposit.
+     * INSERT … SELECT … FOR UPDATE. Three jobs in one statement:
      *
-     * ON CONFLICT (org_id, payment_ref) DO NOTHING is the idempotency: the second delivery of the
-     * SAME payment_intent inserts nothing. DO NOTHING (not DO UPDATE) because a settled payment is
-     * a fact — there is nothing about it to revise.
+     * 1. The estimate's state is a precondition of the WRITE rather than of an earlier read. The
+     *    SELECT yields a row only while the quote is still an accepted, live estimate of this org,
+     *    so a quote archived or moved off `accepted` between the use-case's load and this statement
+     *    produces zero source rows and therefore no deposit.
+     *
+     * 2. ON CONFLICT (org_id, payment_ref) DO NOTHING is the idempotency: the second delivery of
+     *    the SAME payment_intent inserts nothing. DO NOTHING (not DO UPDATE) because a settled
+     *    payment is a fact — there is nothing about it to revise.
+     *
+     * 3. FOR UPDATE takes the estimate's row lock HERE, before anything is written, which is what
+     *    makes the cache refresh below correct. Without it, two concurrent recorders both insert,
+     *    then the second blocks on the estimate row inside its UPDATE — and under READ COMMITTED
+     *    that UPDATE's SUM subquery was planned against the PRE-BLOCK snapshot, which cannot see
+     *    the other transaction's ledger row. The ledger held both payments while dep_paid_cents
+     *    held only one, permanently: every consumer reads the cache (the invoice credit via
+     *    DrizzleEstimateDepositReader, the DTO via estimate-mapper) and nothing re-derives, so the
+     *    customer is over-billed by the payment that vanished from the total. Serializing per
+     *    estimate up front means the loser blocks BEFORE inserting and every statement it runs
+     *    afterwards takes a fresh snapshot that includes the winner's row.
+     *
+     * The lock is per-estimate and held only to the end of the caller's transaction, so deposits
+     * on different quotes never contend.
      */
     // Every bound value carries an explicit cast: in an INSERT … SELECT the select-list params
     // have no target column to infer a type from, so an uncast Date or int is handed to the driver
@@ -46,6 +62,7 @@ export class DrizzleEstimateDepositLedger implements EstimateDepositLedger {
          and ${estimates.orgId} = ${this.orgId}::uuid
          and ${estimates.status} = 'accepted'
          and ${estimates.deletedAt} is null
+         for update
       on conflict (org_id, payment_ref) do nothing
       returning id
     `);
@@ -54,12 +71,19 @@ export class DrizzleEstimateDepositLedger implements EstimateDepositLedger {
       // Zero rows is ambiguous by itself — the conflict fired, OR the estimate could not take it.
       // Which one matters enormously (one is a harmless redelivery, the other is money with
       // nowhere to land), so ask the ledger which happened instead of guessing.
+      //
+      // Scoped to THIS estimate, not just (org, ref). The unique index is org-wide, so a ref
+      // already recorded against a DIFFERENT quote in the same org also conflicts — and answering
+      // "duplicate" there would report this quote's own total (usually 0) as if the payment had
+      // landed on it. Scoping the lookup makes that case `refused`, which is the truth: the
+      // payment cannot be recorded here.
       const existing = await this.tx
         .select({ id: estimateDeposits.id })
         .from(estimateDeposits)
         .where(
           and(
             eq(estimateDeposits.orgId, this.orgId),
+            eq(estimateDeposits.estimateId, entry.estimateId),
             eq(estimateDeposits.paymentRef, entry.paymentRef),
           ),
         )
