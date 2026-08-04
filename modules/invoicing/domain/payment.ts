@@ -1,4 +1,4 @@
-import type { Money, Result, ValidationError } from "@mallet/shared/types";
+import type { Money, Result, UserId, ValidationError } from "@mallet/shared/types";
 import { validation, ok, err } from "@mallet/shared/types";
 
 export type PaymentMethod = "card" | "ach" | "cash" | "check" | "card_terminal";
@@ -20,6 +20,13 @@ export interface PaymentProps {
   readonly method: PaymentMethod;
   readonly idempotencyKey: string; // client-supplied; dedupes retries at the ledger
   readonly externalId: string | null; // Stripe payment id later; null for manual
+  /**
+   * The authenticated user who took the money. Required at every construction site so attribution
+   * is a deliberate decision, never an omission — but nullable, because two cases genuinely have no
+   * in-app actor: a card payment the customer settled online (Stripe webhook), and rows written
+   * before the column existed. Never sourced from client input.
+   */
+  readonly recordedByUserId: UserId | null;
   readonly receivedAt: Date;
 }
 

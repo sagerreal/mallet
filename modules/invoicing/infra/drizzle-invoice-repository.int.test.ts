@@ -15,6 +15,7 @@ import {
   type LeadId,
   type JobId,
   type InvoiceId,
+  type UserId,
 } from "@mallet/shared/types";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
@@ -79,13 +80,14 @@ const buildInvoice = (orgId: OrgId, leadId: LeadId, o: InvOpts = {}): Invoice =>
   return r.value;
 };
 
-const buildPayment = (key: string): Payment => {
+const buildPayment = (key: string, recordedByUserId: UserId | null = null): Payment => {
   const r = Payment.create({
     id: randomUUID(),
     amount: money(10_000),
     method: "cash",
     idempotencyKey: key,
     externalId: null,
+    recordedByUserId,
     receivedAt: new Date("2026-06-05T00:00:00Z"),
   });
   if (!isOk(r)) throw new Error(r.error.message);

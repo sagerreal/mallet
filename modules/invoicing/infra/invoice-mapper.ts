@@ -1,4 +1,4 @@
-import { asInvoiceId, asOrgId, asLeadId, asJobId, money } from "@mallet/shared/types";
+import { asInvoiceId, asOrgId, asLeadId, asJobId, asUserId, money } from "@mallet/shared/types";
 import { invoices, invoiceLines, payments } from "@mallet/shared/db/schema";
 import { Invoice, isInvoiceStatus } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
@@ -32,6 +32,7 @@ const toPayment = (row: PaymentRow): Payment => {
     method: row.method,
     idempotencyKey: row.idempotencyKey,
     externalId: row.externalId,
+    recordedByUserId: row.recordedByUserId ? asUserId(row.recordedByUserId) : null,
     receivedAt: row.receivedAt,
   });
   if (!r.ok) throw new Error(`corrupt payment ${row.id}: ${r.error.message}`);

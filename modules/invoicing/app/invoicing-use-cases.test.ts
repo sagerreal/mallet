@@ -5,6 +5,7 @@ import {
   asJobId,
   asEstimateId,
   asInvoiceId,
+  asUserId,
   money,
   FixedClock,
   toPage,
@@ -18,6 +19,7 @@ import {
   type LeadId,
   type JobId,
   type InvoiceId,
+  type UserId,
   type CursorPage,
   type Paginated,
   type Result,
@@ -45,6 +47,8 @@ import { ListInvoicesUseCase } from "./list-invoices";
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 const LEAD: LeadId = asLeadId("33333333-3333-3333-3333-333333333333");
 const JOB: JobId = asJobId("44444444-4444-4444-4444-444444444444");
+// Stands in for ctx.principal.userId — the staffer who took the money.
+const USER: UserId = asUserId("55555555-5555-5555-5555-555555555555");
 
 const seqIds = (): IdGenerator => {
   let n = 0;
@@ -555,6 +559,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(100_000),
       method: "cash",
       idempotencyKey: "pay-key-0001",
+      recordedByUserId: USER,
     });
     expect(isOk(r) && r.value.props.status).toBe("paid");
     if (isOk(r)) expect(r.value.due()).toBe(0);
@@ -572,6 +577,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(40_000),
       method: "cash" as const,
       idempotencyKey: "pay-key-dup1",
+      recordedByUserId: USER,
     };
     const first = await uc.exec(cmd);
     const second = await uc.exec(cmd);
@@ -590,6 +596,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(10_000),
       method: "card",
       idempotencyKey: "pay-key-fail1",
+      recordedByUserId: USER,
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("external_service");
@@ -610,6 +617,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(10_000),
       method: "cash",
       idempotencyKey: "pay-key-draft1",
+      recordedByUserId: USER,
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("conflict");
@@ -624,6 +632,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(100_000),
       method: "cash",
       idempotencyKey: "pay-key-full1",
+      recordedByUserId: USER,
     });
     const voided = await new VoidInvoiceUseCase(repo, bus, clock).exec({ invoiceId: id });
     expect(voided.ok).toBe(false);
@@ -719,6 +728,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(10_000),
       method: "cash",
       idempotencyKey: "pay-key-race1",
+      recordedByUserId: USER,
     });
 
     // Must be a conflict error, not a success or any other kind.
@@ -756,6 +766,7 @@ describe("Send / RecordPayment / Void use-cases", () => {
       amount: money(5_000),
       method: "cash",
       idempotencyKey: "pay-key-gone1",
+      recordedByUserId: USER,
     });
 
     expect(r.ok).toBe(false);

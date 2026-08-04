@@ -1013,6 +1013,9 @@ export const invoiceRecordPaymentTool: AgentTool = {
       amount: asMoney(parsed.data.amountCents),
       method: parsed.data.method,
       idempotencyKey: parsed.data.idempotencyKey,
+      // The agent acts FOR a signed-in person, and this tool is approval-gated — the ledger records
+      // the human who approved it, from the principal, not from the model's arguments.
+      recordedByUserId: ctx.principal.userId,
     });
     if (!isOk(result)) return { ok: false, error: result.error.message };
     const p = result.value.props;

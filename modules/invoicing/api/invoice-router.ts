@@ -429,6 +429,9 @@ export const createInvoiceRouter = () =>
               amount: money(input.amountCents),
               method: input.method,
               idempotencyKey: input.idempotencyKey,
+              // From the principal, never from `input` — recordPaymentInput has no such field, and
+              // must not gain one, or a caller could sign the ledger with someone else's name.
+              recordedByUserId: ctx.principal.userId,
             }),
           ),
           ctx.tx,

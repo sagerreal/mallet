@@ -151,6 +151,15 @@ export const payments = pgTable(
     method: text("method").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     externalId: text("external_id"),
+    // WHO took the money — the authenticated user who recorded this payment. Stamped from the
+    // request principal, never from client input. Write-once like every other column here.
+    //
+    // Nullable and never backfilled, deliberately: rows written before this column existed have no
+    // recorded actor, and a card payment settled by the customer online (Stripe webhook) has no
+    // in-app actor at all. Null means "nobody in the app took this", not "unknown staffer".
+    // No FK to users — same as jobs.assignee_user_id / job_signatures.signed_by_user_id: the ledger
+    // must survive a staffer being removed, and it records who acted, not who currently exists.
+    recordedByUserId: uuid("recorded_by_user_id"),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

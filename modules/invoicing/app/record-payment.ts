@@ -1,4 +1,4 @@
-import type { OrgId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, InvoiceId, Money, Result, AppError, Clock, UserId } from "@mallet/shared/types";
 import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import type { Invoice } from "../domain/invoice";
@@ -12,6 +12,12 @@ export interface RecordPaymentCommand {
   readonly amount: Money;
   readonly method: PaymentMethod;
   readonly idempotencyKey: string; // dedupes retries
+  /**
+   * WHO took the money. Comes from the authenticated principal at the boundary, exactly like
+   * `orgId` — NEVER from client input, or the ledger would record whoever the caller claimed to be.
+   * Required (not optional) so a new call site cannot drop attribution by forgetting a field.
+   */
+  readonly recordedByUserId: UserId | null;
 }
 
 // Record a settled payment. Idempotency is enforced at the ledger: we claim the key with an
@@ -38,6 +44,7 @@ export class RecordPaymentUseCase {
       method: cmd.method,
       idempotencyKey: cmd.idempotencyKey,
       externalId: null,
+      recordedByUserId: cmd.recordedByUserId,
       receivedAt: this.clock.now(),
     });
     if (!isOk(payment)) return payment;

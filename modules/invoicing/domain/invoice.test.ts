@@ -49,6 +49,7 @@ const payment = (cents: number, key = "idem-key-123"): Payment => {
     method: "cash",
     idempotencyKey: key,
     externalId: null,
+    recordedByUserId: null,
     receivedAt: new Date("2026-06-05T00:00:00Z"),
   });
   if (!isOk(r)) throw new Error(r.error.message);
