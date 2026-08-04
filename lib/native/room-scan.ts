@@ -94,19 +94,41 @@ const NO_NATIVE_APP: RoomScanAvailability = Object.freeze({ status: "no-native-a
 const SCANNER_MISSING: RoomScanAvailability = Object.freeze({ status: "scanner-missing" as const });
 
 /**
+ * How long the native `available()` probe gets before we stop waiting on it.
+ *
+ * `RoomCaptureSession.isSupported` is a local capability check, so the real call answers in
+ * single-digit milliseconds; this bound exists for the case where it answers NEVER. A promise
+ * that stays unsettled left `useRoomScanAvailability` on `checking` for the rest of the session,
+ * which renders as a permanently disabled control reading "Checking whether this device can
+ * scan." — a dead affordance with a sentence that says to wait, forever. Two seconds is far
+ * beyond any honest answer and short enough that a reviewer never sees the interim state.
+ */
+export const ROOM_SCAN_PROBE_TIMEOUT_MS = 2000;
+
+/**
  * Ask, in order: is there a bridge, is the plugin on it, does the plugin say the device can
  * scan. Never throws and never returns `checking` — `checking` is a hook-only state describing
- * this promise being unsettled.
+ * this promise being unsettled. A probe that neither resolves nor rejects within
+ * `ROOM_SCAN_PROBE_TIMEOUT_MS` is treated exactly like one that rejected: a scanner that cannot
+ * answer for itself is not a yes, and it is a build/session fault rather than a device fact.
  */
 export async function roomScanAvailability(): Promise<RoomScanAvailability> {
   if (!isNativeShell()) return NO_NATIVE_APP;
   const plugin = roomScanPlugin();
   if (!plugin) return SCANNER_MISSING;
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const result = await plugin.available();
+    const result = await Promise.race([
+      plugin.available(),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error("MalletRoomScan available() timed out")), ROOM_SCAN_PROBE_TIMEOUT_MS);
+      }),
+    ]);
     return result.available ? READY : NO_LIDAR;
   } catch {
     return SCANNER_MISSING;
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
   }
 }
 
@@ -116,11 +138,28 @@ export async function roomScanAvailability(): Promise<RoomScanAvailability> {
 // instead of firing its own native round trip.
 let cachedRoomScanAvailability: RoomScanAvailability | null = null;
 let roomScanAvailabilityProbe: Promise<RoomScanAvailability> | null = null;
+let scannerMissingAttempts = 0;
+
+/**
+ * How many times a `scanner-missing` answer is allowed to be re-probed before it is taken as
+ * final.
+ *
+ * `scanner-missing` is the ONLY status that can be transient: it covers a probe that rejected or
+ * timed out, which a bridge still coming up can do once. Every other status is a settled fact
+ * (there is no bridge; the device has no LiDAR; it works). Caching the first answer unconditionally
+ * meant one unlucky rejection latched "the scanner is missing" for the entire session, with no way
+ * back short of a reload — a permanent wrong answer from a momentary one. So a `scanner-missing`
+ * result is not cached until it has happened this many times, and after that it is, because a
+ * shell built without the plugin will never answer differently and re-probing it on every mount
+ * is just noise.
+ */
+export const ROOM_SCAN_PROBE_MAX_ATTEMPTS = 3;
 
 /** Test-only: clears the module-level availability cache between test cases. */
 export function resetRoomScanAvailabilityCache(): void {
   cachedRoomScanAvailability = null;
   roomScanAvailabilityProbe = null;
+  scannerMissingAttempts = 0;
 }
 
 /**
@@ -142,9 +181,18 @@ export function useRoomScanAvailability(): RoomScanAvailability {
     if (!roomScanAvailabilityProbe) {
       roomScanAvailabilityProbe = roomScanAvailability();
     }
+    const probe = roomScanAvailabilityProbe;
     let cancelled = false;
-    void roomScanAvailabilityProbe.then((result) => {
-      cachedRoomScanAvailability = result;
+    void probe.then((result) => {
+      // A transient `scanner-missing` gets a bounded retry rather than latching for the session —
+      // see ROOM_SCAN_PROBE_MAX_ATTEMPTS. Clearing the shared promise (not the answer) means the
+      // NEXT mount re-probes; this mount still shows the honest current answer meanwhile.
+      if (result.status === "scanner-missing" && scannerMissingAttempts + 1 < ROOM_SCAN_PROBE_MAX_ATTEMPTS) {
+        scannerMissingAttempts += 1;
+        if (roomScanAvailabilityProbe === probe) roomScanAvailabilityProbe = null;
+      } else {
+        cachedRoomScanAvailability = result;
+      }
       if (!cancelled) setAvailability(result);
     });
     return () => {

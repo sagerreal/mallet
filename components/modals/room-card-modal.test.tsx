@@ -411,7 +411,9 @@ describe("RoomCardModalContent — view mode rescan row", () => {
 
     expect(button).toHaveProperty("disabled", true);
     expect(
-      screen.getByText("Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor."),
+      screen.getByText(
+        "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro.",
+      ),
     ).toBeTruthy();
   });
 

@@ -45,8 +45,8 @@ notes Apple already has stay valid.
 >
 > **Requires an iPhone Pro, iPhone Pro Max or iPad Pro** — RoomPlan needs the LiDAR scanner and
 > reports itself unavailable on models without it. On a model without LiDAR the **Scan room**
-> button is still shown, disabled, reading "Needs an iPhone Pro or iPad Pro — room scanning uses
-> the LiDAR sensor." The rest of the app works normally on any device.
+> button is still shown, disabled, reading "This device reports no LiDAR sensor — room scanning
+> needs an iPhone Pro or iPad Pro." The rest of the app works normally on any device.
 >
 > A second route to the same scanner: tap **⋯** (top right) → **My day** → the 8:30 job
 > **Estimate — whole-house repipe** → the **Quote** tab → **Scan a room**.
@@ -67,15 +67,14 @@ reviewer cannot receive mail sent to Owen's domain, so any of those would be an 
 group, whose layout mounts the settings hydrator, and the Measure card needs nothing but a
 selected customer — no job in a particular state, no assignment, no prior scan.
 
-The My-day path is listed second, and it carries **one deploy precondition**: it works on a cold
-load only once the field layout also mounts `SettingsHydrator`. Before that change, a hard load of
-`/my-day` left `measurementEstimating` at its `false` placeholder and the **Scan a room** row was
+The My-day path is listed second, and it used to carry a deploy precondition: on a cold load it
+worked only once the field layout mounted a settings hydrator, because a hard load of `/my-day`
+otherwise left `measurementEstimating` at a `false` placeholder and the **Scan a room** row was
 absent — while the same row appeared if you happened to soft-navigate in from an office route
-first. `scripts/verify-app-review-path.mjs` check **4d** is that regression: run it against the
-deployed app and confirm 4d passes before relying on the second route. It still catches the same
-thing now that the row renders on every device, because `measurementEstimating` gates the row
-itself — a cold load without the hydrator has no row in any state. The composer route in the
-numbered steps is unaffected either way.
+first. That class of failure is now closed at the root: the gate is a THREE-state value
+(`lib/measurement-gate.ts`) and "not loaded" is not "off", so an unhydrated or failed settings read
+leaves the affordance on screen. `scripts/verify-app-review-path.mjs` checks **4d**, **6c** and
+**7e** cover the cold load, the technician's own surface, and a settings read that 500s.
 
 **The LiDAR sentence is the 4.2 argument, placed where the reviewer reads it.** Minimum-
 functionality rejections for a web-backed app turn on whether the app does something the website
@@ -95,13 +94,35 @@ states the reason it cannot run, so the note above and the screen agree.
 `components/modals/tech-job-modal/quote-tab.tsx` renders the **Scan a room** row whenever:
 
 ```
-measurementEstimating && !readOnly
+measurementSurfacesVisible(measurementGate)      // i.e. gate !== "off"
 ```
+
+That is the ONLY thing that hides it. Everything else that can stand in the way renders the
+control DISABLED with the reason attached — a closed job, a device without LiDAR, a browser, a
+composer with no customer picked yet.
 
 | Condition | Source | True in the demo shop because |
 | --- | --- | --- |
-| `measurementEstimating` | `store.toggles`, written only by `SettingsHydrator` from `org_settings.measurement_estimating` | the seed sets that column to `true` |
-| `!readOnly` | the job is not closed | the demo job is `scheduled` |
+| gate is not `"off"` | `store.toggles.measurementEstimating`, a tri-state (`on`/`off`/`unknown`) written by `SettingsHydrator` (office) or `FieldTogglesHydrator` (tech) from `org_settings.measurement_estimating` | the seed sets that column to `true` — and a settings read that fails leaves `"unknown"`, which still shows the control |
+
+**The gate FAILS OPEN, and that is deliberate.** It used to be a boolean whose pre-hydration
+placeholder was `false`, with `SettingsHydrator` its only writer — so one 500 from
+`v1.settings.get` (which happened, on a malformed settings blob) removed the composer's entire
+Measure card and every scan control in the app, with no reason shown anywhere. A read that did not
+answer is not an answer. See `lib/measurement-gate.ts`.
+
+**A technician reads a different, narrower endpoint.** `v1.settings.get` is `ownerOrOffice` and
+returns the whole office configuration, so the field layout can only mount `SettingsHydrator` for
+owner/office. Techs get `v1.settings.fieldToggles` (`anyRole`, one boolean) instead — without it,
+`store.toggles` was never written for the role the field scanner exists for, so the row could not
+render there on any device.
+
+**The trade can no longer switch this off behind the user.** `setTrade` derives the flag from the
+trade's pricebook, and the Front Desk's always-visible "Starter playbook" button used to pass a
+display LABEL to it — which matched no pricebook, resolved to false, and wrote
+`measurement_estimating: false` to the database. A reviewer poking at Front Desk could destroy the
+scanner for the rest of the review. The trade may now GRANT measuring and never revokes it, and the
+router accepts only real trade keys.
 
 **Whether the device can scan decides LIVE vs DISABLED, never shown vs hidden.**
 `useRoomScanAvailability()` returns a status, not a boolean, and the row renders in all of them:
@@ -109,13 +130,22 @@ measurementEstimating && !readOnly
 | Status | Reached when | The row |
 | --- | --- | --- |
 | `ready` | in the shell, plugin registered, `available()` true | live |
-| `no-lidar` | in the shell, `available()` false — `RoomCaptureSession.isSupported` is false on a non-Pro model | disabled — "Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor." |
+| `no-lidar` | in the shell, `available()` false — `RoomCaptureSession.isSupported` is false on a non-Pro model, **and in the iOS Simulator** | disabled — "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro." |
 | `no-native-app` | no Capacitor bridge at all: any browser | disabled — "Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor." |
-| `scanner-missing` | bridge present but the plugin is not registered on it, or its probe rejected | disabled — "The scanner did not load. Close the Mallet app and open it again." |
-| `checking` | the one-time native probe is still in flight (shell only, one tick) | disabled — "Checking whether this device can scan." |
+| `scanner-missing` | bridge present but the plugin is not registered on it (a shell BUILD fault — registration is a static manifest in `capacitorDidLoad`), or its probe rejected or timed out | disabled — "This version of the Mallet app is missing the room scanner — update the app in the App Store." |
+| `checking` | the native probe is still in flight (shell only). It is bounded — `ROOM_SCAN_PROBE_TIMEOUT_MS` — so an unsettled promise can no longer strand a permanently disabled "Checking…" | disabled — "Checking whether this device can scan." |
+
+`no-lidar` leads with what the device REPORTED rather than what phone to buy, because the report is
+not always about the hardware: the iOS Simulator answers `isSupported: false` too, and the old
+wording made a build under test read as the tester's phone being the wrong phone. The native side
+is NOT asked to distinguish simulator from unsupported-device — App Review runs on physical
+hardware, so that case is a developer/TestFlight one, and plumbing it through would need a
+coordinated shell build in `mallet-ios` that the web side could not use until it shipped.
 
 The composer's **Scan room** button (`app/(office)/composer/measured-surfaces-panel.tsx`) and the
-room card's **Re-scan room** control behave identically. The copy for every status lives in one
+room card's **Re-scan room** control behave identically — and the composer's renders BEFORE a
+customer is picked (disabled, "Pick a customer first"), so the native affordance is on screen the
+moment `/composer` loads rather than appearing at step 4. The copy for every status lives in one
 place, `components/shared/scan-unavailable.tsx`.
 
 **Two different "no"s, two different sentences.** `roomScanPlugin()` reads

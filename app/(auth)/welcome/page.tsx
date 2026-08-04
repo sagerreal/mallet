@@ -7,7 +7,7 @@ import { userMessage } from "@/lib/trpc/error-map";
 import { zipToTimezone, TZ_LABEL } from "@/lib/geo/zip-timezone";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { createSupabaseBrowser } from "@/lib/supabase/browser";
-import { TRADE_PLAYBOOKS } from "@/app/(office)/settings/trade-playbooks";
+import { TRADE_PLAYBOOKS, isTradeKey, type TradeKey } from "@/app/(office)/settings/trade-playbooks";
 import { useHydrated } from "@/lib/use-hydrated";
 
 /**
@@ -41,7 +41,10 @@ export default function WelcomePage() {
   const hydrated = useHydrated();
 
   const [orgName, setOrgName] = useState("");
-  const [trade, setTrade] = useState("");
+  // `TradeKey | ""`, not `string`: the value is submitted to provisioning, where it selects the
+  // starter playbook and pricebook by KEY. Typing it as the closed set (empty = not picked yet)
+  // makes a value nothing can resolve unrepresentable rather than something the server rejects.
+  const [trade, setTrade] = useState<TradeKey | "">("");
   const [postalCode, setPostalCode] = useState("");
   const [mobile, setMobile] = useState("");
 
@@ -84,7 +87,9 @@ export default function WelcomePage() {
 
   function submit(e?: FormEvent<HTMLFormElement>) {
     e?.preventDefault();
-    if (!canSubmit) return;
+    // `trade === ""` is already covered by canSubmit; restated so the narrowing to TradeKey is
+    // the compiler's, not a comment's.
+    if (!canSubmit || trade === "") return;
     provision.mutate(
       {
         orgName: orgName.trim(),
@@ -139,7 +144,7 @@ export default function WelcomePage() {
           <select
             className="auth-input"
             value={trade}
-            onChange={(e) => setTrade(e.target.value)}
+            onChange={(e) => setTrade(isTradeKey(e.target.value) ? e.target.value : "")}
             required
           >
             <option value="" disabled>

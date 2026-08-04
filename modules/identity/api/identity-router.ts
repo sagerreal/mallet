@@ -235,12 +235,22 @@ export const createIdentityRouter = () =>
               const patched = settings.patch(
                 {
                   ...(input.timezone ? { timezone: input.timezone } : {}),
-                  // measurementEstimating is DERIVED from the trade, never asked. It gates the
-                  // job modal's Measurements section, and Owen's rule is that the industry
-                  // decides it — a plumbing shop must never see that section, and should not have
-                  // to know to switch it off. See tradeMeasures().
+                  // measurementEstimating is DEFAULTED from the trade at creation, never asked:
+                  // Owen's rule is that the industry decides it and the shop should not have to
+                  // know to switch it off. See tradeMeasures().
+                  //
+                  // Only ever set here when the trade GRANTS it. A brand-new org's column is
+                  // already `false` (schema default), so writing false would add nothing except a
+                  // second place that revokes measuring — and the store's setTrade deliberately
+                  // stopped doing that after one tap on "Starter playbook" destroyed a real
+                  // shop's measurement estimating. Grant-only in both writers, so nothing in the
+                  // app ever turns the scanner off behind the user.
                   ...(input.trade
-                    ? { trade: input.trade, booking, measurementEstimating: tradeMeasures(input.trade) }
+                    ? {
+                        trade: input.trade,
+                        booking,
+                        ...(tradeMeasures(input.trade) ? { measurementEstimating: true } : {}),
+                      }
                     : {}),
                 },
                 ctx.deps.clock.now(),

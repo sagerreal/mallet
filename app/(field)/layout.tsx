@@ -12,6 +12,7 @@ import { JobsHydrator } from "@/features/jobs/jobs-hydrator";
 import { LeadsHydrator } from "@/features/customers/leads-hydrator";
 import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
+import { FieldTogglesHydrator } from "@/features/settings/field-toggles-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 /**
@@ -41,14 +42,13 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           source), leads (customer name + Call), invoices (the done close-out branches).
           Role is known server-side; techs would only get FORBIDDEN from these queries.
 
-          SettingsHydrator is here for the same reason and one more: it is the ONLY writer of
-          store.toggles, and the tech job modal's Quote tab gates its "Scan a room" row on
-          toggles.measurementEstimating. Without it, a COLD load of /my-day left that toggle at
-          its `false` placeholder (the store has no persist middleware), so a measuring org's
-          scan entry point was invisible on the field surface until the user happened to visit
-          an office route first — a feature that appeared or vanished depending on the route
-          you arrived by. v1.settings.get is ownerOrOffice, hence the same !isTech gate; a
-          tech's own field surface still needs a tech-readable settings read. */}
+          SettingsHydrator is here for the same reason and one more: it writes store.toggles, and
+          the tech job modal's Quote tab gates its "Scan a room" row on
+          toggles.measurementEstimating. Without it, a COLD load of /my-day left that toggle
+          unhydrated (the store has no persist middleware), so a measuring org's scan entry point
+          was invisible on the field surface until the user happened to visit an office route
+          first — a feature that appeared or vanished depending on the route you arrived by.
+          v1.settings.get is ownerOrOffice, hence the !isTech gate. */}
       {!isTech && (
         <>
           <JobsHydrator />
@@ -57,6 +57,15 @@ export default async function FieldLayout({ children }: { children: ReactNode })
           <SettingsHydrator />
         </>
       )}
+      {/* …and a TECHNICIAN gets the same capability flag from a read they are allowed to make.
+          The office SettingsHydrator above can never run for them (v1.settings.get is
+          ownerOrOffice) and they cannot soft-navigate into an office route to get it either —
+          the office guard bounces them straight back here. So for a tech
+          toggles.measurementEstimating stayed unhydrated for the entire session, and the field
+          scan row never rendered on the one surface built for the field. v1.settings.fieldToggles
+          is anyRole and returns ONE boolean — no office configuration crosses over. Exactly one
+          of the two hydrators mounts, so they never race to write the same key. */}
+      {isTech && <FieldTogglesHydrator />}
       <div className="layout">
         <Sidebar initialMe={initialMe} />
         <div className="appmain">

@@ -5,8 +5,12 @@
  *
  * "Measure" — satellite measurement's point of entry, ON THE QUOTE PAGE
  * (founder's rule: this is an estimating feature; it needs no customer and no
- * job first). Sits above the quote card. When the org toggle
- * `measurementEstimating` is on the section ALWAYS renders:
+ * job first). Sits above the quote card. The section renders unless the org's
+ * settings have ARRIVED and said this shop does not measure — an unhydrated or
+ * failed settings read leaves the card in place (lib/measurement-gate.ts), because
+ * `if (!enabled) return null` on a boolean whose placeholder was `false` meant one
+ * 500 from v1.settings.get deleted the reviewer's documented primary path, card and
+ * all. When it renders:
  *
  *   - "Measure from satellite" opens the tracer in HELD mode — an address box
  *     in its header finds the property (prefilled from the picked customer's
@@ -21,11 +25,13 @@
  *     room card (rename / confirm / override quantities / re-scan) — this
  *     panel is the office's door to ALL measurements now that the job modal's
  *     rows are gone (the tech field Quote tab keeps its scan row).
- *   - "+ Add a room" and "Scan room" live here too, for the picked customer.
- *     "Scan room" renders on every platform: live when the native scanner is
- *     usable, disabled-with-its-reason otherwise (no LiDAR, or a browser rather
- *     than the iPhone app) — the office opens this page in a browser, where the
- *     old hidden-when-unavailable behaviour just looked like a missing feature.
+ *   - "+ Add a room" and "Scan room" live here too. "Scan room" renders on every
+ *     platform AND before a customer is picked: live when the native scanner is
+ *     usable, disabled-with-its-reason otherwise (no LiDAR, a browser rather than
+ *     the iPhone app, or no customer yet) — the office opens this page in a
+ *     browser, where the old hidden-when-unavailable behaviour just looked like a
+ *     missing feature, and a reviewer landing on /composer saw no native
+ *     affordance at all until they had picked a customer several steps later.
  *     Rooms anchor to jobs in the DB — room scans ingest server-first (unlike
  *     traces, which are pure client geometry and can be HELD on the quote), so a
  *     customer with no job yet gets an estimate job created silently on the
@@ -43,7 +49,8 @@ import { api } from "@/lib/trpc/client";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useJobSites } from "@/features/measurements/use-job-sites";
 import { useRoomScanAvailability } from "@/lib/native/room-scan";
-import { ScanUnavailable } from "@/components/shared/scan-unavailable";
+import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unavailable";
+import { measurementSurfacesVisible } from "@/lib/measurement-gate";
 import { userMessage } from "@/lib/trpc/error-map";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { Card } from "@/components/ui/card";
@@ -132,7 +139,7 @@ export function MeasuredSurfacesPanel({
   onAddHeldTrace,
   onSeedLines,
 }: MeasuredSurfacesPanelProps) {
-  const enabled = useAppStore((s) => s.toggles.measurementEstimating);
+  const measurementGate = useAppStore((s) => s.toggles.measurementEstimating);
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const services = useAppStore((s) => s.services);
@@ -160,10 +167,21 @@ export function MeasuredSurfacesPanel({
 
   // Hooks run unconditionally (null disables the queries) — the early return
   // below must come after them.
-  const roomsQuery = useJobRooms(enabled ? jobId : null);
-  const sitesQuery = useJobSites(enabled ? jobId : null);
+  // Only a settings snapshot that arrived and said "off" removes this card. See the header note.
+  const visible = measurementSurfacesVisible(measurementGate);
+  const roomsQuery = useJobRooms(visible ? jobId : null);
+  const sitesQuery = useJobSites(visible ? jobId : null);
 
-  if (!enabled) return null;
+  if (!visible) return null;
+
+  // What is in the way of a live scan, or null if nothing is. DEVICE first: in the office's own
+  // browser "open the iPhone app" is the true sentence whether or not a customer is picked.
+  const scanBlocker: ScanBlocker | null =
+    scan.status !== "ready"
+      ? { kind: "device", availability: scan }
+      : leadId === null
+        ? { kind: "no-customer" }
+        : null;
 
   const rooms = jobId ? roomsByJob[jobId] : undefined;
   const sites = jobId ? sitesByJob[jobId] : undefined;
@@ -483,37 +501,50 @@ export function MeasuredSurfacesPanel({
       )}
 
       {/* Rooms are created/scanned from here now (the job modal's Measurements
-          row is gone). Needs a picked customer — a room must anchor to one of
-          their jobs; with none yet, openRoomCard creates the estimate job.
-          "Scan room" is always offered — disabled with its reason on a device or
-          browser that cannot scan, never hidden. flexWrap + .scanwhy's flex-basis
-          drop that reason onto its own full-width line under the two buttons. */}
-      {leadId !== null && (
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "var(--space-2)",
-            marginTop: "var(--space-3)",
-          }}
+          row is gone). A room anchors to one of the customer's jobs; with none
+          yet, openRoomCard creates the estimate job.
+
+          THE ROW IS UNCONDITIONAL. It used to be `leadId !== null &&`, so on a
+          freshly-opened /composer the Measure card rendered with no scanner in
+          it at all and the app's one native capability did not appear until the
+          reviewer had found and picked a customer — step 4 of the review notes.
+          Now both controls are always on screen and the missing customer is a
+          stated reason, like every other blocker. flexWrap + .scanwhy's
+          flex-basis drop that reason onto its own full-width line under the two
+          buttons, so it reads as covering both. */}
+      <div
+        className="msp-rooms"
+        style={{
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "var(--space-2)",
+          marginTop: "var(--space-3)",
+        }}
+      >
+        <Button
+          size="sm"
+          disabled={creatingRoomJob || leadId === null}
+          /* When the DEVICE is what is blocking, .scanwhy carries that sentence and this button
+             needs its own — the repo's standing disabled-reason pattern (cf. the tech job
+             modal's "No linked customer"). */
+          title={leadId === null ? "Pick a customer first — a room attaches to one of their jobs." : undefined}
+          onClick={() => void openRoomCard()}
         >
-          <Button size="sm" disabled={creatingRoomJob} onClick={() => void openRoomCard()}>
-            + Add a room
+          + Add a room
+        </Button>
+        {scanBlocker === null ? (
+          <Button
+            size="sm"
+            className="scanbtn"
+            disabled={creatingRoomJob}
+            onClick={() => void openRoomCard("scan")}
+          >
+            Scan room
           </Button>
-          {scan.status === "ready" ? (
-            <Button
-              size="sm"
-              className="scanbtn"
-              disabled={creatingRoomJob}
-              onClick={() => void openRoomCard("scan")}
-            >
-              Scan room
-            </Button>
-          ) : (
-            <ScanUnavailable availability={scan} label="Scan room" />
-          )}
-        </div>
-      )}
+        ) : (
+          <ScanUnavailable blocker={scanBlocker} label="Scan room" />
+        )}
+      </div>
       {roomJobError && (
         <p
           role="alert"

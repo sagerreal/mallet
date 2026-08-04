@@ -19,6 +19,7 @@ import type { Job, Lead, RoomCard, Service, SiteCard } from "@/lib/store/types";
 import type { HeldTrace } from "@/lib/measure/held-trace";
 import type { AssemblyView } from "@/lib/store/assemblies-mapper";
 import type { RoomScanAvailability } from "@/lib/native/room-scan";
+import type { MeasurementGate } from "@/lib/measurement-gate";
 import { DEFAULT_ASSEMBLIES } from "@/modules/assemblies/domain/assembly-defaults";
 
 interface QueryStub {
@@ -29,7 +30,7 @@ interface QueryStub {
 const okQuery = (): QueryStub => ({ isError: false, isRefetching: false, refetch: vi.fn() });
 
 let storeState: {
-  toggles: { measurementEstimating: boolean };
+  toggles: { measurementEstimating: MeasurementGate };
   jobs: Job[];
   leads: Lead[];
   services: Service[];
@@ -169,7 +170,7 @@ const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
 
 beforeEach(() => {
   storeState = {
-    toggles: { measurementEstimating: true },
+    toggles: { measurementEstimating: "on" },
     jobs: [job({})],
     leads: [{ id: "lead-1", name: "Pat", address: "12 Elm St" } as Lead],
     services: [sqftService()],
@@ -193,10 +194,23 @@ beforeEach(() => {
 });
 
 describe("MeasuredSurfacesPanel — visibility", () => {
-  it("renders nothing when the org toggle is off", () => {
-    storeState.toggles.measurementEstimating = false;
+  it("renders nothing when the org's settings ARRIVED and said it does not measure", () => {
+    storeState.toggles.measurementEstimating = "off";
     const { container } = render(<MeasuredSurfacesPanel {...seededProps} />);
     expect(container.innerHTML).toBe("");
+  });
+
+  /**
+   * The card must survive a settings read that never answered. This is the guideline-4.2 hole:
+   * the gate was a boolean placeholdered `false`, so ONE 500 from v1.settings.get removed the
+   * reviewer's documented primary path — the whole Measure card, not just a button — with no
+   * reason shown anywhere. "Unknown" is not "off"; it fails OPEN.
+   */
+  it("still renders when settings have NOT loaded — a failed read is not an answer", () => {
+    storeState.toggles.measurementEstimating = "unknown";
+    render(<MeasuredSurfacesPanel {...seededProps} />);
+    expect(screen.getByText("Measure")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Scan room" })).toBeTruthy();
   });
 
   it("renders the Measure entry with NO customer and NO job — zero prerequisites", () => {
@@ -354,7 +368,9 @@ describe("MeasuredSurfacesPanel — add / scan a room", () => {
 
     expect(button).toHaveProperty("disabled", true);
     expect(
-      screen.getByText("Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor."),
+      screen.getByText(
+        "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro.",
+      ),
     ).toBeTruthy();
   });
 
@@ -385,15 +401,41 @@ describe("MeasuredSurfacesPanel — add / scan a room", () => {
     },
   );
 
-  it("keeps + Add a room live in every scan state — manual rooms need no LiDAR", () => {
+  it("keeps + Add a room live in every scan state (with a customer) — manual rooms need no LiDAR", () => {
     scan = { status: "no-native-app" };
     render(<MeasuredSurfacesPanel {...seededProps} />);
     expect(screen.getByRole("button", { name: "+ Add a room" })).toHaveProperty("disabled", false);
   });
 
-  it("renders no room entries without a picked customer — a room must anchor to a job", () => {
+  /**
+   * The row used to be `leadId !== null &&` — so a freshly-opened /composer showed the Measure
+   * card with NO scanner in it, and the app's one native capability did not appear until the
+   * reviewer had found and picked a customer. Present-and-disabled-with-a-reason, like every
+   * other blocker.
+   */
+  it("offers both room controls with NO customer picked — disabled, with the reason", () => {
+    scan = { status: "ready" };
     render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
-    expect(screen.queryByRole("button", { name: "+ Add a room" })).toBeNull();
+
+    const add = screen.getByRole("button", { name: "+ Add a room" });
+    const scanBtn = screen.getByRole("button", { name: "Scan room" });
+    expect(add).toHaveProperty("disabled", true);
+    expect(scanBtn).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText("Pick a customer first — a room scan attaches to one of their jobs."),
+    ).toBeTruthy();
+
+    fireEvent.click(scanBtn);
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("names the DEVICE, not the missing customer, when both are in the way", () => {
+    render(<MeasuredSurfacesPanel {...seededProps} paramJobId={null} leadId={null} />);
+    // scan defaults to no-native-app (the office's browser): "open the iPhone app" is true and
+    // useful whether or not a customer is picked, and is the more fundamental fact.
+    expect(
+      screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
+    ).toBeTruthy();
   });
 
   it("a customer with no job gets an estimate job created silently, then the room card", async () => {

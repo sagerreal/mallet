@@ -5,8 +5,9 @@
  * The Quote tab (estimating part 3): scope save wiring, the estimate-visit dual
  * exit and its DERIVED sent state (visit.scopeNotes IS the handoff — no status),
  * the embedded builder's visibility, and the scan row's THREE states — it renders
- * on every device now (live / disabled-no-LiDAR / disabled-not-in-the-app), gated
- * only on measurementEstimating and the job being open.
+ * on every device now (live / disabled-no-LiDAR / disabled-not-in-the-app / disabled-job-closed),
+ * and the ONLY thing that hides it is a settings snapshot that arrived and said this shop does
+ * not measure.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
@@ -14,13 +15,14 @@ import { QuoteTab } from "./quote-tab";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Visit } from "@/lib/store/types";
 import type { RoomScanAvailability } from "@/lib/native/room-scan";
+import type { MeasurementGate } from "@/lib/measurement-gate";
 
 // ---------------------------------------------------------------------------
 // Mocks
 // ---------------------------------------------------------------------------
 
 let mockJobs: Job[] = [];
-let mockMeasurementEstimating = false;
+let mockMeasurementEstimating: MeasurementGate = "unknown";
 let mockScan: RoomScanAvailability = { status: "no-native-app" };
 
 const noop = vi.fn();
@@ -85,7 +87,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 
 beforeEach(() => {
   mockJobs = [makeJob()];
-  mockMeasurementEstimating = false;
+  mockMeasurementEstimating = "off";
   mockScan = { status: "no-native-app" };
   mockPushModal.mockClear();
   mockClose.mockClear();
@@ -230,7 +232,7 @@ describe("QuoteTab — scan a room", () => {
   function renderScanRow(scan: RoomScanAvailability) {
     const job = makeJob();
     mockJobs = [job];
-    mockMeasurementEstimating = true;
+    mockMeasurementEstimating = "on";
     mockScan = scan;
     return render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
   }
@@ -250,7 +252,9 @@ describe("QuoteTab — scan a room", () => {
 
     expect(button).toHaveProperty("disabled", true);
     expect(
-      screen.getByText("Needs an iPhone Pro or iPad Pro — room scanning uses the LiDAR sensor."),
+      screen.getByText(
+        "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro.",
+      ),
     ).toBeTruthy();
   });
 
@@ -288,13 +292,27 @@ describe("QuoteTab — scan a room", () => {
     }
   });
 
-  it("hidden only when the org does not measure at all — not because the device cannot scan", () => {
+  it("hidden ONLY when settings arrived and said the org does not measure", () => {
     const job = makeJob();
     mockJobs = [job];
-    mockMeasurementEstimating = false;
+    mockMeasurementEstimating = "off";
     mockScan = { status: "ready" };
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
     expect(screen.queryByText("Scan a room")).toBeNull();
+  });
+
+  /**
+   * A technician's settings read is a SEPARATE, narrower query (v1.settings.fieldToggles) and it
+   * can be in flight or fail like any other. The gate's third state exists so that does not
+   * silently delete the field scanner: unknown fails OPEN.
+   */
+  it("renders when settings have NOT loaded — the field scanner is not hidden by a dead read", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    mockMeasurementEstimating = "unknown";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    expect(screen.getByRole("button", { name: "Scan a room" })).toHaveProperty("disabled", false);
   });
 });
 
@@ -306,16 +324,34 @@ describe("QuoteTab — closed job", () => {
   it("offers no write controls, only Done", () => {
     const job = makeJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
     mockJobs = [job];
-    mockMeasurementEstimating = true;
-    // Even READY scanning stays hidden on a closed job: a closed job is not a capability
-    // gap, so there is no reason to state — there is simply nothing to do here.
+    mockMeasurementEstimating = "on";
     mockScan = { status: "ready" };
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} />);
     expect(screen.getByText("as found")).toBeTruthy();
     expect(screen.queryByText("Edit →")).toBeNull();
-    expect(screen.queryByText("Scan a room")).toBeNull();
     expect(screen.queryByText(/Add photo/)).toBeNull();
     expect(screen.queryByText("Present to customer →")).toBeNull();
     expect(screen.getByText("Done")).toBeTruthy();
+  });
+
+  /**
+   * This is the office job sheet too, and the demo shop seeds three COMPLETE jobs — so an owner
+   * opening one used to get Scope, photos, and a silently missing scanner. `!readOnly` was hiding
+   * it, which is exactly the unexplained absence this component exists to prevent. State the
+   * reason instead.
+   */
+  it("shows the scanner DISABLED with the job-closed reason, never absent", () => {
+    const job = makeJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
+    mockJobs = [job];
+    mockMeasurementEstimating = "on";
+    mockScan = { status: "ready" };
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} />);
+
+    const button = screen.getByRole("button", { name: "Scan a room" });
+    expect(button).toHaveProperty("disabled", true);
+    expect(screen.getByText("This job is closed — reopen it to scan a room.")).toBeTruthy();
+
+    fireEvent.click(button);
+    expect(mockPushModal).not.toHaveBeenCalled();
   });
 });

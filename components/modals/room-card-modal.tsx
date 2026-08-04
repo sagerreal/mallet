@@ -388,9 +388,12 @@ function RescanRow({
 
   return (
     <div style={{ padding: "var(--space-3) 0" }}>
+      {/* `scanbtn` alongside `linklike` so the LIVE control and the disabled one
+          (ScanUnavailable's link variant) are the same control in two states — see
+          `button.linklike.scanbtn` in prototype.css for why the class is load-bearing. */}
       <button
         type="button"
-        className="linklike"
+        className="linklike scanbtn"
         disabled={scanning}
         onClick={() => (armed ? void fire() : setArmed(true))}
       >
@@ -474,7 +477,11 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
             <RescanRow jobId={jobId} captureId={room.id} roomName={room.roomName} />
           ) : (
             <div style={{ padding: "var(--space-3) 0" }}>
-              <ScanUnavailable availability={scan} label="Re-scan room" variant="link" />
+              <ScanUnavailable
+                blocker={{ kind: "device", availability: scan }}
+                label="Re-scan room"
+                variant="link"
+              />
             </div>
           ))}
       </div>
