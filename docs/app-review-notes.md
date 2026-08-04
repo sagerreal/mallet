@@ -16,36 +16,42 @@ notes Apple already has stay valid.
 
 ## Paste this into App Review Information → Notes
 
-> **Demo account (already verified — no email confirmation needed)**
+The canonical copy of this text — the one to paste — lives in
+[`docs/app-store/listing.md`](app-store/listing.md) alongside every other App Store Connect field.
+It is reproduced here because the reasoning below is about this wording specifically.
+
+> Demo account (verified — no email confirmation, no SMS code):
 > Email: `appreview@trymallet.com`
 > Password: `Ridgeline-Review-7Q4t!2846`
 >
-> Mallet is job management for plumbing and trade contractors. The account is a sample shop with
-> customers, scheduled work, quotes and invoices already in it.
+> Mallet is job management for plumbing and trade contractors. This sample shop already has
+> customers, scheduled work, quotes and invoices in it.
 >
 > **To reach the LiDAR room scanner:**
 >
-> 1. Sign in with the account above. You land on the office screen.
-> 2. Tap the **⊕** button in the centre of the bottom bar.
-> 3. Tap **New quote**.
-> 4. In the **Customer** field type `Alicia`, then tap **Alicia Brennan** in the list below it.
-> 5. In the **Measure** card at the top, tap **Scan room**.
-> 6. Type any room name, for example `Kitchen`, then tap **Start scanning**.
-> 7. Allow camera access. Walk the phone around the room; tap **Done** to finish.
+> 1. Sign in. You land on the office screen.
+> 2. Tap the circled **+** in the centre of the bottom bar, then tap **New quote**.
+> 3. In the **Customer** field type `Alicia`, then tap **Alicia Brennan**.
+> 4. In the **Measure** card at the top, tap **Scan room**.
+> 5. Type any room name, then tap **Start scanning**.
+> 6. Allow camera access, walk the phone around the room, tap **Done**.
 >
 > Room scanning uses the device's LiDAR sensor through Apple's RoomPlan framework to build a
-> dimensioned floor plan on the device. It cannot be done on the web, which is why this
-> capability exists only in the app. Contractors use the resulting wall and floor measurements to
-> price work that is billed by the square foot.
+> dimensioned floor plan on device. RoomPlan has no web API, so this cannot be done in a browser.
+> Contractors price wall and floor work from the measurements.
 >
-> **Requires an iPhone Pro, iPhone Pro Max or iPad Pro** — RoomPlan needs the LiDAR scanner and
-> reports itself unavailable on models without it, so the **Scan room** button is hidden on those
-> devices. On a non-LiDAR device the rest of the app works normally.
+> Requires an iPhone Pro or Pro Max — RoomPlan needs LiDAR, so **Scan room** is hidden on other
+> models. The rest of the app works normally.
 >
-> A second route to the same scanner: tap **⋯** (top right) → **My day** → the 8:30 job
-> **Estimate — whole-house repipe** → the **Quote** tab → **Scan a room**.
+> **Charge a card** reports that Stripe setup is incomplete: every shop connects its own Stripe
+> account and this sample shop has none.
 
-Word count: 195.
+Word count: 199 (Apple's field is capped at 4000 characters; the constraint that matters is that a
+reviewer reads it).
+
+A second route to the same scanner, kept **out** of the pasted text because it is date-sensitive —
+see below — but useful to Owen: tap **⋯** (top right) → **My day** → the 8:30 job
+**Estimate — whole-house repipe** → the **Quote** tab → **Scan a room**.
 
 ---
 
@@ -57,11 +63,24 @@ always "we could not sign in." The account is created through the Supabase Admin
 attempt. There is no confirmation link, no phone number and no SMS code anywhere in the path — a
 reviewer cannot receive mail sent to Owen's domain, so any of those would be an unpassable gate.
 
-**The composer path is primary because it is the most robust.** `/composer` is in the office route
-group, whose layout mounts the settings hydrator, and the Measure card needs nothing but a
-selected customer — no job in a particular state, no assignment, no prior scan.
+**The composer path is primary because it is the most robust, and because it is the only one that
+does not rot.** `/composer` is in the office route group, whose layout mounts the settings
+hydrator, and the Measure card needs nothing but a selected customer — no job in a particular
+state, no assignment, no prior scan. Crucially it is also **date-independent**: `shop-data.mjs`
+gives every job a `dayOffset` relative to *now* and the seeder resolves it in SQL at seed time, so
+the shop is only "today" on the day it was seeded. Apple normally reviews one to three days after
+submission, by which point My day is empty and any walkthrough that starts there dead-ends on a
+blank agenda. That is why the numbered steps never mention My day, and why the click-list in
+`docs/app-store/listing.md` puts a re-seed immediately before Submit and another one every couple
+of days the review stays pending.
 
-The My-day path is listed second, and it carries **one deploy precondition**: it works on a cold
+**The Charge-a-card sentence exists so a working error does not read as a broken app.** The
+invoice's primary button is `Charge a card — $304`, and on this shop it returns "this shop hasn't
+finished Stripe payment setup". That is correct — every shop connects its own Stripe account — but
+a reviewer will press the primary button, so the note gets there first.
+
+The My-day path is kept out of the pasted text but recorded above, and it carries **one deploy
+precondition** on top of the date problem: it works on a cold
 load only once the field layout also mounts `SettingsHydrator`. Before that change, a hard load of
 `/my-day` left `measurementEstimating` at its `false` placeholder and the **Scan a room** row was
 absent — while the same row appeared if you happened to soft-navigate in from an office route
