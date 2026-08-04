@@ -192,8 +192,13 @@ export class CreateJobFromEstimateUseCase {
     // Written after the job row exists, in the same transaction. Not part of insertForEstimate's
     // conflict path on purpose: if we lost the race the winner already carries its own lines, and
     // writing ours over them would replace the scope another request just committed.
+    //
+    // The estimate's total rides along because replaceLines otherwise re-derives one from the
+    // lines, and the accepted figure is tax-inclusive and possibly discounted — see the port doc.
+    // Passing it keeps the stored total identical to the number the customer said yes to, which is
+    // the one this use-case just wrote into the row above.
     if (lines.value.length > 0) {
-      await this.repo.replaceLines(job.value.props.id, lines.value, now);
+      await this.repo.replaceLines(job.value.props.id, lines.value, now, estimate.totalCents);
     }
 
     await this.bus.emit({

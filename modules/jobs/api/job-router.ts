@@ -28,7 +28,7 @@ import { ListCallbackCandidatesUseCase } from "../app/list-callback-candidates";
 import { ConfirmCallbackUseCase } from "../app/confirm-callback";
 import { DismissCallbackUseCase } from "../app/dismiss-callback";
 import { CallbackAutopsyUseCase } from "../app/callback-autopsy";
-import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO } from "./job-dto";
+import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO } from "./job-dto";
 import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
@@ -217,7 +217,7 @@ export const createJobRouter = () =>
           scheduledEnd: input.scheduledEnd ? new Date(input.scheduledEnd) : null,
           assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : null,
         });
-        return toJobDTO(orThrow(result));
+        return toJobDTOWithExecution(repo, orThrow(result));
       }),
 
     createFromEstimate: ownerOrOffice
@@ -233,7 +233,8 @@ export const createJobRouter = () =>
           ctx.deps.clock,
           ctx.deps.ids,
         );
-        return toJobDTO(
+        return toJobDTOWithExecution(
+          repo,
           orThrow(
             await useCase.exec({ orgId: ctx.principal.orgId, estimateId: asEstimateId(input.estimateId) }),
           ),
@@ -248,7 +249,8 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CreateManualJobUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
-        return toJobDTO(
+        return toJobDTOWithExecution(
+          repo,
           orThrow(
             await useCase.exec({
               id: input.id,
@@ -273,7 +275,7 @@ export const createJobRouter = () =>
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const job = await repo.findById(asJobId(input.jobId));
         if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     list: ownerOrOffice
@@ -414,7 +416,8 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new RescheduleJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(
+        return toJobDTOWithExecution(
+          repo,
           orThrow(
             await useCase.exec({
               jobId: asJobId(input.jobId),
@@ -431,7 +434,8 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new AssignJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(
+        return toJobDTOWithExecution(
+          repo,
           orThrow(
             await useCase.exec({
               jobId: asJobId(input.jobId),
@@ -447,7 +451,7 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
+        return toJobDTOWithExecution(repo, orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
       }),
 
     complete: ownerOrOffice
@@ -456,7 +460,7 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
+        return toJobDTOWithExecution(repo, orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
       }),
 
     cancel: ownerOrOffice
@@ -465,7 +469,8 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CancelJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(
+        return toJobDTOWithExecution(
+          repo,
           orThrow(await useCase.exec({ jobId: asJobId(input.jobId), reason: input.reason })),
         );
       }),
@@ -629,7 +634,8 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new UpdateJobUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(
+        return toJobDTOWithExecution(
+          repo,
           orThrow(
             await useCase.exec({
               jobId: asJobId(input.jobId),
@@ -681,7 +687,7 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new ConfirmCallbackUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId), originalJobId: asJobId(input.originalJobId), reason: input.reason })));
+        return toJobDTOWithExecution(repo, orThrow(await useCase.exec({ jobId: asJobId(input.jobId), originalJobId: asJobId(input.originalJobId), reason: input.reason })));
       }),
 
     dismissCallback: ownerOrOffice
@@ -690,7 +696,7 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new DismissCallbackUseCase(repo, ctx.deps.bus, ctx.deps.clock);
-        return toJobDTO(orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
+        return toJobDTOWithExecution(repo, orThrow(await useCase.exec({ jobId: asJobId(input.jobId) })));
       }),
 
     callbackAutopsy: ownerOrOffice

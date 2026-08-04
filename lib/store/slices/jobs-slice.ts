@@ -482,9 +482,57 @@ function withRecentLines(prior: Job, incoming: Job): Job {
   return { ...incoming, lines: prior.lines };
 }
 
-/** Compose every snapshot-merge guard (pending visits + recent checklist + recent lines). */
+/** True when a record carries no execution AT ALL — no lines, no add-ons, no photos, no answers. */
+function carriesNoExecution(j: Job): boolean {
+  return (
+    (j.lines?.length ?? 0) === 0 &&
+    (j.addons?.length ?? 0) === 0 &&
+    (j.photos?.length ?? 0) === 0 &&
+    Object.keys(j.verify?.ans ?? {}).length === 0
+  );
+}
+
+/**
+ * EXECUTION merge guard — the mirror of mergeIncomingInvoice's "a summary must not wipe what the
+ * store already knows".
+ *
+ * A record that carries NOTHING of a job's execution — no lines, no add-ons, no photos, no
+ * checklist answers — is almost never the truth about a job that has all four. It is a response
+ * built from a job header alone, and the store replaces jobs wholesale, so believing it deletes
+ * the price. That is what made the technician's done card flap: a visit tap returned a
+ * header-only job, the card read "No price set — the office invoices it" on an agreed $185, the
+ * next list refetch (which does carry lines) put the $185 back, and the next tap took it away.
+ *
+ * The routers no longer send such a record (toJobDTOWithExecution — that is the actual fix). This
+ * stays as the floor under it: a future endpoint that forgets its execution degrades to a
+ * momentarily stale job instead of to a confident $0 in front of a paying customer.
+ *
+ * WHAT IT COSTS, stated rather than hidden. A job genuinely stripped back to nothing on ANOTHER
+ * device reads stale here until this one reloads. The device that did the stripping is unaffected
+ * — its own optimistic write already emptied `prior`, so there is nothing to re-attach — and the
+ * all-four-empty test makes the case narrow. A stale price the shop can refresh is a smaller
+ * failure than a wrong price the technician cannot.
+ */
+function withExecution(prior: Job, incoming: Job): Job {
+  if (!carriesNoExecution(incoming) || carriesNoExecution(prior)) return incoming;
+  return {
+    ...incoming,
+    lines: prior.lines,
+    addons: prior.addons,
+    photos: prior.photos,
+    verify: prior.verify,
+  };
+}
+
+/**
+ * Compose every snapshot-merge guard (pending visits + recent checklist + recent lines +
+ * execution). Execution is OUTERMOST so it only fires when nothing before it restored the lines.
+ */
 function mergeIncomingJob(prior: Job, incoming: Job): Job {
-  return withRecentLines(prior, withRecentChecklist(prior, withPendingCreateVisits(prior, incoming)));
+  return withExecution(
+    prior,
+    withRecentLines(prior, withRecentChecklist(prior, withPendingCreateVisits(prior, incoming))),
+  );
 }
 
 /** Replace one job with the server-reconciled version (merge-guarded). */
@@ -516,9 +564,10 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
 
   // Hydrator path: wholesale list replace, but a list snapshot read before an
   // in-flight createVisit commits must not drop the optimistic visit (same
-  // pending-create guard as the mutation reconciles), and a snapshot read
-  // before an adopting mutation (quoting.accept) committed must not sweep out
-  // the adopted job (adoption guard).
+  // pending-create guard as the mutation reconciles), a snapshot read before an
+  // adopting mutation (quoting.accept) committed must not sweep out the adopted
+  // job (adoption guard), and a row carrying no execution at all must not strip
+  // a job the store knows is priced (execution guard — see withExecution).
   setJobs: (jobs) =>
     set((s) => {
       const now = Date.now();

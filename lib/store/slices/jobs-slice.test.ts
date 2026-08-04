@@ -49,6 +49,9 @@ vi.mock("@/lib/trpc/vanilla", () => ({
 import { createJobsSlice, buildJobUpdatePayload } from "./jobs-slice";
 import type { JobsSlice } from "./jobs-slice";
 import type { Job } from "@/lib/store/types";
+// The hydrator's OWN list mapper, so the execution-guard tests below are driven by the shape
+// v1.jobs.list really sends rather than by a store fixture written to suit the assertion.
+import { toStoreJob } from "@/features/jobs/jobs-hydrator";
 
 function makeStore() {
   let state: JobsSlice;
@@ -1520,5 +1523,132 @@ describe("optimistic visit writes never derive away a terminal status", () => {
 
     await flush();
     expect(get().jobs[0]!.status).toBe("scheduled");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The execution merge guard — a record carrying no execution must not un-price a job.
+//
+// The bug: the store REPLACES a job from whatever a mutation returns, and the visit endpoints
+// returned a job header with `lines: []` because toJobDTO defaults to an empty execution. So every
+// visit tap wiped the price client-side. The technician's done card then read "No price set — the
+// office invoices it" on an agreed $185, the next list refetch (which does carry lines) put the
+// $185 back, and the card flapped between the two in front of the customer.
+//
+// Driven through the REAL mappers — the hydrator's list mapper and the mutation-reconcile mapper —
+// because the whole failure lived in the gap between the two wire shapes, and a hand-written store
+// fixture would test neither.
+// ---------------------------------------------------------------------------
+
+describe("execution merge guard (a lines-less record cannot un-price a job)", () => {
+  const PRICED_LINE = {
+    id: "line-1",
+    description: "Annual plumbing inspection",
+    quantity: 1,
+    rate: { cents: 18500, currency: "USD" },
+    cost: { cents: 4000, currency: "USD" },
+    position: 0,
+  };
+
+  /** A v1.jobs.list row, shaped as the wire sends it, run through the hydrator's own mapper. */
+  const listRow = (id: string, lines: unknown[]) =>
+    toStoreJob({
+      id,
+      num: "JOB-2545",
+      leadId: "lead-1",
+      customerName: "Summit customer",
+      sourceEstimateId: null,
+      title: "Flat rate test 3",
+      svc: "service",
+      kind: "work",
+      status: "complete",
+      assigneeUserId: null,
+      scheduledStart: null,
+      // The stale header total the list used to carry on a priced job. The store derives money
+      // from the LINES, so this must not be what decides anything.
+      total: { cents: 0, currency: "USD" },
+      notes: "",
+      addr: "",
+      phone: "",
+      completion: null,
+      invRequested: false,
+      scope: null,
+      callbackOf: null,
+      callbackReason: null,
+      checklist: null,
+      requiredCerts: null,
+      visits: [],
+      createdAt: "2026-08-04T22:35:40.743Z",
+      lines,
+      addons: [],
+      verifyAnswers: [],
+      photos: [],
+    } as never);
+
+  const jobTotal = (j: Job) => (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
+
+  it("a hydrator refetch that carries the lines keeps the job priced", () => {
+    const { get } = makeStore();
+    get().setJobs([listRow("j-2545", [PRICED_LINE])]);
+    get().setJobs([listRow("j-2545", [PRICED_LINE])]);
+    expect(jobTotal(get().jobs[0]!)).toBe(185);
+  });
+
+  it("a refetch carrying NO execution leaves the priced job priced", () => {
+    const { get } = makeStore();
+    get().setJobs([listRow("j-2545", [PRICED_LINE])]);
+    expect(jobTotal(get().jobs[0]!)).toBe(185);
+
+    // The record the bug shipped: same job, no lines at all.
+    get().setJobs([listRow("j-2545", [])]);
+    expect(get().jobs[0]!.lines).toHaveLength(1);
+    expect(jobTotal(get().jobs[0]!)).toBe(185);
+  });
+
+  it("a visit tap whose response omits the execution does not un-price the job", async () => {
+    // This is the exact response shape the visit endpoints used to return: a full job header
+    // built by toJobDTO with no execution argument, so `lines` arrives absent.
+    const visitId = "aaaaaaaa-0000-0000-0000-00000000e001";
+    mockSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-2545", {
+        status: "complete",
+        visits: [makeVisitDTO(visitId, { status: "complete" })],
+      }),
+    );
+    const { get } = makeStore();
+    get().setJobs([
+      {
+        ...listRow("j-2545", [PRICED_LINE]),
+        origin: "db",
+        visits: [{ id: visitId, date: null, techId: null, start: null, dur: 2, status: "scheduled" }],
+      },
+    ]);
+
+    get().setVisitStatus("j-2545", visitId, "done", "office");
+    await flush();
+
+    expect(mockSetVisitStatus).toHaveBeenCalled();
+    expect(get().jobs[0]!.lines).toHaveLength(1);
+    expect(jobTotal(get().jobs[0]!)).toBe(185);
+  });
+
+  it("clearing the price on THIS device still clears it", async () => {
+    // The guard must not become a ratchet. setJobLines empties the store job optimistically, so
+    // by the time the (also empty) reconcile lands there is nothing left to re-attach.
+    mockSetLines.mockResolvedValue(makeJobDTO("j-2545", { lines: [] }));
+    const { get } = makeStore();
+    get().setJobs([{ ...listRow("j-2545", [PRICED_LINE]), origin: "db" }]);
+
+    const res = await get().setJobLines("j-2545", []);
+    expect(res.ok).toBe(true);
+    expect(get().jobs[0]!.lines).toHaveLength(0);
+    expect(jobTotal(get().jobs[0]!)).toBe(0);
+  });
+
+  it("a job that genuinely has no lines is not given somebody else's", () => {
+    const { get } = makeStore();
+    get().setJobs([listRow("j-unpriced", [])]);
+    get().setJobs([listRow("j-unpriced", [])]);
+    expect(get().jobs[0]!.lines).toHaveLength(0);
   });
 });

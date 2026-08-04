@@ -21,6 +21,7 @@ import {
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
 import { Job, JobVisit, type CallbackReason } from "../domain/job";
+import { JobLine } from "../domain/job-execution";
 import { DrizzleJobRepository } from "./drizzle-job-repository";
 
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
@@ -769,5 +770,108 @@ suite("DrizzleJobRepository against live Supabase RLS", () => {
     expect(origResult!.completedAt).not.toBeNull();
     expect(origResult!.callbackReason).toBeNull();
     expect(origResult!.callbackOf).toBeNull();
+  });
+
+  // ── jobs.total_cents moves with the lines ───────────────────────────────────
+  //
+  // The bug these pin: line writes never touched the stored total, so a job priced through the
+  // price builder read $185 on screen and $0 in the column Money's ready-to-bill rollup sums.
+  // Asserted through the repository against the live row, because the whole failure was that the
+  // in-memory aggregate and the persisted row disagreed.
+
+  const lineOf = (jobId: ReturnType<typeof asJobId>, quantity: number, rateCents: number, position = 1) => {
+    const r = JobLine.create({
+      id: randomUUID(),
+      jobId,
+      description: "Annual plumbing inspection",
+      quantity,
+      rateCents,
+      costCents: 0,
+      position,
+    });
+    if (!isOk(r)) throw new Error(r.error.message);
+    return r.value;
+  };
+
+  it("replaceLines writes the priced sum onto the job's stored total", async () => {
+    const orgA = asOrgId(orgAId);
+    const totals = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = draftJob(orgA, asLeadId(leadAId), { num: await repo.nextNumber() });
+      await repo.save(job);
+      const before = (await repo.findById(job.props.id))!.props.total;
+      await repo.replaceLines(job.props.id, [lineOf(job.props.id, 1, 18500)], new Date());
+      const after = (await repo.findById(job.props.id))!.props.total;
+      return { before, after };
+    });
+    expect(totals.before).toBe(0);
+    expect(totals.after).toBe(18500);
+  });
+
+  it("rounds PER LINE, exactly as the signed snapshot does", async () => {
+    // 2 × $1.115 rounds to 112¢ twice = 224¢. Rounding the SUM instead gives 223¢ — a cent the
+    // signature the customer put their name to would not agree with.
+    const orgA = asOrgId(orgAId);
+    const total = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = draftJob(orgA, asLeadId(leadAId), { num: await repo.nextNumber() });
+      await repo.save(job);
+      await repo.replaceLines(
+        job.props.id,
+        [lineOf(job.props.id, 0.5, 223, 1), lineOf(job.props.id, 0.5, 223, 2)],
+        new Date(),
+      );
+      return (await repo.findById(job.props.id))!.props.total;
+    });
+    expect(total).toBe(224);
+  });
+
+  it("clearing the lines un-prices the job rather than leaving the old headline", async () => {
+    const orgA = asOrgId(orgAId);
+    const totals = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = draftJob(orgA, asLeadId(leadAId), { num: await repo.nextNumber() });
+      await repo.save(job);
+      await repo.replaceLines(job.props.id, [lineOf(job.props.id, 1, 18500)], new Date());
+      const priced = (await repo.findById(job.props.id))!.props.total;
+      await repo.replaceLines(job.props.id, [], new Date());
+      const cleared = (await repo.findById(job.props.id))!.props.total;
+      return { priced, cleared };
+    });
+    expect(totals.priced).toBe(18500);
+    expect(totals.cleared).toBe(0);
+  });
+
+  it("the accepted estimate's tax-inclusive total survives the line swap", async () => {
+    // The one path where the line sum is NOT the price: a $400 quote at 10% tax owes $440, and the
+    // job's lines carry the $400. Deriving here would silently drop the tax off the sold work.
+    const orgA = asOrgId(orgAId);
+    const total = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = draftJob(orgA, asLeadId(leadAId), { num: await repo.nextNumber() });
+      await repo.save(job);
+      await repo.replaceLines(job.props.id, [lineOf(job.props.id, 1, 40000)], new Date(), 44000);
+      return (await repo.findById(job.props.id))!.props.total;
+    });
+    expect(total).toBe(44000);
+  });
+
+  it("addLine and removeLine keep the stored total honest too", async () => {
+    const orgA = asOrgId(orgAId);
+    const totals = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, orgA);
+      const job = draftJob(orgA, asLeadId(leadAId), { num: await repo.nextNumber() });
+      await repo.save(job);
+      const first = lineOf(job.props.id, 1, 12000, 1);
+      const second = lineOf(job.props.id, 2, 2500, 2);
+      await repo.addLine(first, new Date());
+      await repo.addLine(second, new Date());
+      const both = (await repo.findById(job.props.id))!.props.total;
+      await repo.removeLine(job.props.id, second.props.id, new Date());
+      const remaining = (await repo.findById(job.props.id))!.props.total;
+      return { both, remaining };
+    });
+    expect(totals.both).toBe(17000);
+    expect(totals.remaining).toBe(12000);
   });
 });

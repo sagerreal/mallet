@@ -103,6 +103,9 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
   let jobAId = "";
   let jobBId = "";
   let invBId = "";
+  // Its own org, because the ledger-order tests need a book with more paid invoices than fit on a
+  // page and must not have the other tests' rows drifting through it.
+  let orgLedgerId = "";
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
@@ -120,9 +123,24 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
     jobBId = jb!.id;
     const [ib] = await admin<{ id: string }[]>`insert into invoices (org_id, num, lead_id, status) values (${orgBId}, 'INV-B1', ${leadBId}, 'draft') returning id`;
     invBId = ib!.id;
+
+    const [l] = await admin<{ id: string }[]>`insert into orgs (name) values ('InvLedger ' || gen_random_uuid()) returning id`;
+    orgLedgerId = l!.id;
+    const [ll] = await admin<{ id: string }[]>`insert into leads (org_id, name) values (${orgLedgerId}, 'Ledger Lead') returning id`;
+    const ledgerLeadId = ll!.id;
+    // 60 settled invoices — more than one 50-row page. Settled STAMPS run oldest→newest so the
+    // last one written is the most recently settled, exactly like a shop's real book. Every row
+    // is fully paid, which is what the Paid view means (balance ≤ 0, not status text).
+    await admin`
+      insert into invoices (org_id, num, lead_id, status, total_cents, amount_paid_cents, sent_at, due_at, created_at, updated_at)
+      select ${orgLedgerId}, 'INV-OLD-' || n, ${ledgerLeadId}, 'paid', 10000, 10000,
+             now() - (n || ' days')::interval, now() - (n || ' days')::interval,
+             now() - (n || ' days')::interval, now() - (n || ' days')::interval
+      from generate_series(2, 61) as n`;
   });
 
   afterAll(async () => {
+    if (orgLedgerId) await admin`delete from orgs where id = ${orgLedgerId}`;
     if (orgAId) await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
     await admin.end({ timeout: 5 });
     await closeDb();
@@ -394,5 +412,71 @@ suite("DrizzleInvoiceRepository against live Supabase RLS", () => {
       );
     const [a, b] = await Promise.all([insert(), insert()]);
     expect([a, b].filter(Boolean)).toHaveLength(1); // exactly one applied
+  });
+
+  // ── The ledger's order inside a filtered view ───────────────────────────────
+  //
+  // The bug these pin: LEDGER_RANK is a workflow rank, and inside one status band every row
+  // carries the same rank. The only remaining ORDER BY key was `id` — a random v4 UUID — so the
+  // Money screen's Status filter returned its page in random order. On the pilot org the $185 the
+  // owner had just collected was rank 1 of 583 by when it settled and rank 290 by UUID: page 6 of
+  // a 50-row list, under the filter he had applied to go and find it.
+
+  it("Paid view: the payment you just took is the first row of page one", async () => {
+    const orgL = asOrgId(orgLedgerId);
+    const [lead] = await admin<{ id: string }[]>`select id from leads where org_id = ${orgLedgerId} limit 1`;
+    const [justSettled] = await admin<{ id: string }[]>`
+      insert into invoices (org_id, num, lead_id, status, total_cents, amount_paid_cents, sent_at, due_at, created_at, updated_at)
+      values (${orgLedgerId}, 'INV-JUST-PAID', ${lead!.id}, 'paid', 18500, 18500, now(), now(), now(), now())
+      returning id`;
+
+    const page = await withTenant(orgL, (tx) =>
+      new DrizzleInvoiceRepository(tx, orgL).list(
+        toPage({ limit: 50, cursor: null }),
+        { view: "paid" },
+        "ledger",
+      ),
+    );
+
+    expect(page.items).toHaveLength(50); // the book is deeper than one page, as the pilot org is
+    expect(page.items.map((i) => String(i.props.id))).toContain(justSettled!.id);
+    expect(String(page.items[0]!.props.id)).toBe(justSettled!.id);
+    expect(page.items[0]!.props.num).toBe("INV-JUST-PAID");
+  });
+
+  it("Paid view pages on the settle stamp without repeating or losing a row", async () => {
+    const orgL = asOrgId(orgLedgerId);
+    const both = await withTenant(orgL, async (tx) => {
+      const repo = new DrizzleInvoiceRepository(tx, orgL);
+      const first = await repo.list(toPage({ limit: 20, cursor: null }), { view: "paid" }, "ledger");
+      const second = await repo.list(
+        toPage({ limit: 20, cursor: first.nextCursor }),
+        { view: "paid" },
+        "ledger",
+      );
+      return { first, second };
+    });
+    const firstIds = both.first.items.map((i) => String(i.props.id));
+    const secondIds = both.second.items.map((i) => String(i.props.id));
+    expect(firstIds).toHaveLength(20);
+    expect(secondIds).toHaveLength(20);
+    expect(firstIds.filter((id) => secondIds.includes(id))).toEqual([]);
+  });
+
+  it("the UNFILTERED ledger still puts what needs attention first", async () => {
+    // The default order is deliberate and must not move: draft, then overdue, then part-paid, then
+    // sent, then settled. This org's 61 rows are all settled, so a draft added here has to lead.
+    const orgL = asOrgId(orgLedgerId);
+    const [lead] = await admin<{ id: string }[]>`select id from leads where org_id = ${orgLedgerId} limit 1`;
+    const [draft] = await admin<{ id: string }[]>`
+      insert into invoices (org_id, num, lead_id, status, total_cents)
+      values (${orgLedgerId}, 'INV-DRAFT-1', ${lead!.id}, 'draft', 5000)
+      returning id`;
+
+    const page = await withTenant(orgL, (tx) =>
+      new DrizzleInvoiceRepository(tx, orgL).list(toPage({ limit: 5, cursor: null }), undefined, "ledger"),
+    );
+
+    expect(String(page.items[0]!.props.id)).toBe(draft!.id);
   });
 });

@@ -10,6 +10,35 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DoneBlock, ScopeHandoffBlock, doneFootAction } from "./done-block";
 import type { Invoice, Job } from "@/lib/store/types";
+// The two REAL mappers the card's job comes through: the hydrator's list mapper (v1.jobs.list /
+// v1.field.myDay) and the mutation-reconcile mapper (every job-returning mutation).
+import { toStoreJob } from "@/features/jobs/jobs-hydrator";
+import { dtoJobToStoreJob } from "@/lib/store/dto-mapper";
+
+/** A v1.jobs.list row, shaped as the wire sends it. */
+const listJob = (o: Record<string, unknown>): Job =>
+  toStoreJob({
+    num: "JOB-2545", leadId: "lead-1", customerName: "Dana", sourceEstimateId: null,
+    title: "Flat rate test 3", svc: "service", kind: "work", assigneeUserId: null,
+    scheduledStart: null, total: { cents: 0, currency: "USD" }, notes: "", addr: "", phone: "",
+    completion: null, invRequested: false, scope: null, callbackOf: null, callbackReason: null,
+    checklist: null, requiredCerts: null, visits: [], createdAt: "2026-08-04T22:35:40.743Z",
+    lines: [], addons: [], verifyAnswers: [], photos: [],
+    ...o,
+  } as never);
+
+/** A full jobDTO, as every job-returning mutation now answers with. */
+const mutationJob = (o: Record<string, unknown>): Job =>
+  dtoJobToStoreJob({
+    num: "JOB-2545", leadId: "lead-1", sourceEstimateId: null, assigneeUserId: null,
+    title: "Flat rate test 3", svc: "service", kind: "work", scheduledStart: null,
+    scheduledEnd: null, startedAt: null, completedAt: null, canceledAt: null, cancelReason: null,
+    total: { cents: 18500, currency: "USD" }, notes: "", addr: "", phone: "", completion: null,
+    invRequested: false, scope: null, callbackOf: null, callbackReason: null, checklist: null,
+    requiredCerts: null, signature: null, visits: [], createdAt: "2026-08-04T22:35:40.743Z",
+    lines: [], addons: [], verifyAnswers: [], photos: [],
+    ...o,
+  } as never);
 
 describe("ScopeHandoffBlock — visit fee collection", () => {
   it("unscoped: renders the fee button AND the quiet 'Open the Quote tab' handoff stays", () => {
@@ -276,5 +305,72 @@ describe("DoneBlock / doneFootAction — a redacted device is not a free job", (
   it("once the invoice is loaded its OWN balance decides — the redaction stops mattering", () => {
     const due = { ...paidInvoice, status: "sent", payments: [] } as unknown as Invoice;
     expect(doneFootAction(hiddenPriceJob, undefined, due, false)).toBe("collect");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE CARD MUST NOT FLAP. A priced job read through the LIST shape and the same job read through a
+// MUTATION response have to produce the same card, because a refetch cycle alternates between
+// them. They did not: the mutation responses carried no execution at all, so tapping a visit made
+// the card read "No price set — the office invoices it" on JOB-2545's agreed $185, and the next
+// list refetch put the $185 straight back.
+//
+// Built through the REAL mappers rather than store fixtures — the whole failure was the gap
+// between two wire shapes, and a fixture written by hand tests neither of them.
+// ---------------------------------------------------------------------------
+
+describe("DoneBlock — the two wire shapes agree, so the card cannot flap", () => {
+  const priceLine = {
+    id: "line-1",
+    description: "Annual plumbing inspection",
+    quantity: 1,
+    rate: { cents: 18500, currency: "USD" },
+    cost: { cents: 4000, currency: "USD" },
+    position: 0,
+  };
+
+  const cardFor = (job: Job) =>
+    render(<DoneBlock {...doneBlockProps} job={job} canSendToOffice={false} canSetBill={false} />);
+
+  it("the LIST row renders the price, never 'No price set'", () => {
+    const job = listJob({
+      id: "job-2545",
+      status: "complete",
+      total: { cents: 0, currency: "USD" }, // the stale header total — the lines are the truth
+      lines: [priceLine],
+    });
+    cardFor(job);
+    expect(screen.getByText("$185")).toBeTruthy();
+    expect(screen.queryByText("No price set — the office invoices it.")).toBeNull();
+  });
+
+  it("the MUTATION response renders the same card", () => {
+    const job = mutationJob({ id: "job-2545", status: "complete", lines: [priceLine] });
+    cardFor(job);
+    expect(screen.getByText("$185")).toBeTruthy();
+    expect(screen.queryByText("No price set — the office invoices it.")).toBeNull();
+  });
+
+  it("and the foot action agrees across both shapes — take the money, on both", () => {
+    const fromList = listJob({ id: "job-2545", status: "complete", lines: [priceLine] });
+    const fromMutation = mutationJob({ id: "job-2545", status: "complete", lines: [priceLine] });
+    expect(doneFootAction(fromList, undefined, undefined)).toBe("collect");
+    expect(doneFootAction(fromMutation, undefined, undefined)).toBe("collect");
+  });
+
+  it("the lines-less shape is what used to break it — the foot went to hand-off", () => {
+    // Pinning the DIFFERENCE, so the value of the router fix is stated rather than assumed: a job
+    // whose price is missing from the response is offered to the office to bill instead of
+    // collected at the door. The routers no longer send this shape (toJobDTOWithExecution) and the
+    // store no longer accepts it over a priced job (withExecution in jobs-slice).
+    const stripped = mutationJob({ id: "job-2545", status: "complete", lines: [] });
+    expect(doneFootAction(stripped, undefined, undefined)).toBe("sendoffice");
+  });
+
+  it("a job with genuinely no lines still says so, on either shape", () => {
+    // The sentence has to stay reachable — it is the honest answer for unpriced work.
+    const fromList = listJob({ id: "job-none", status: "complete", lines: [] });
+    cardFor(fromList);
+    expect(screen.getByText("No price set — the office invoices it.")).toBeTruthy();
   });
 });

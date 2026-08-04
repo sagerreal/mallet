@@ -112,12 +112,15 @@ export function MoneyLedger() {
   // `ready` ranks 0, so concatenating is the same order the merged derive produced.
   const mq = useMoneyQueryState();
   const money = useMoneyQuery({ search: q, archived: moneySet === "archived", statusFilter });
+  // Under a status filter the database has already ordered the band — Paid comes back
+  // most-recently-settled first — and re-sorting the page here would undo it. See
+  // deriveMoneyRows.
   const source = useMemo(
     () =>
       moneySet === "active"
-        ? deriveMoneyRows(money.invoiceRows, money.readyJobs, leads)
+        ? deriveMoneyRows(money.invoiceRows, money.readyJobs, leads, Boolean(statusFilter))
         : deriveArchivedMoneyRows(money.invoiceRows, leads),
-    [moneySet, money.invoiceRows, money.readyJobs, leads],
+    [moneySet, money.invoiceRows, money.readyJobs, leads, statusFilter],
   );
   // Status, search and the ready-to-bill worklist are all resolved in the DATABASE now, so the
   // rows arriving here are already the right ones and are counted against the whole book rather

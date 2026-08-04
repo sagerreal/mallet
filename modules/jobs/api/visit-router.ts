@@ -11,7 +11,7 @@ import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
 import { RemoveVisitUseCase } from "../app/remove-visit";
 import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
-import { visitStatusEnum, jobDTO, toJobDTO } from "./job-dto";
+import { visitStatusEnum, jobDTO, toJobDTOWithExecution } from "./job-dto";
 
 // Shared input fragments.
 const jobIdVisitId = z.object({
@@ -62,6 +62,11 @@ const setVisitStatusInput = z.object({
 
 // Layer 5: thin transport. Build org-scoped use-cases from the request's tx + ports, delegate,
 // return the full refreshed jobDTO so the client re-syncs the whole job including all visits.
+//
+// "Full" means WITH the job's execution (toJobDTOWithExecution, not toJobDTO). These responses are
+// what the store replaces its job with, and a bare toJobDTO ships `lines: []` — so moving a visit
+// used to erase the job's price client-side until the next list refetch put it back. See the
+// helper's docstring.
 export const createVisitRouter = () =>
   router({
     createVisit: ownerOrOffice
@@ -85,7 +90,7 @@ export const createVisitRouter = () =>
           { jobId: input.jobId, orgId: ctx.principal.orgId },
           "job_visit.created",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     scheduleVisit: ownerOrOffice
@@ -108,7 +113,7 @@ export const createVisitRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.scheduled",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     updateVisitDuration: ownerOrOffice
@@ -128,7 +133,7 @@ export const createVisitRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.duration_updated",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     patchVisitSchedule: ownerOrOffice
@@ -157,7 +162,7 @@ export const createVisitRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.schedule_patched",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     removeVisit: ownerOrOffice
@@ -176,7 +181,7 @@ export const createVisitRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.removed",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     setVisitStatus: ownerOrOffice
@@ -201,7 +206,7 @@ export const createVisitRouter = () =>
           },
           "job_visit.status_set",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
 
     // "On my way". Separate from setVisitStatus because it is NOT a status change: the visit
@@ -224,6 +229,6 @@ export const createVisitRouter = () =>
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },
           "job_visit.enroute_set",
         );
-        return toJobDTO(job);
+        return toJobDTOWithExecution(repo, job);
       }),
   });

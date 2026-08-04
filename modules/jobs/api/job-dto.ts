@@ -17,6 +17,7 @@ import type {
   JobVerifyAnswer,
   JobPhoto,
 } from "../domain/job-execution";
+import type { JobId } from "@mallet/shared/types";
 
 // Shared DTOs for the jobs module. Both the office-facing job-router and the tech-facing
 // field-router import from here. Kept in one place so a schema change stays consistent.
@@ -399,6 +400,29 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     ...executionFields(execution),
   };
 };
+
+/**
+ * The full job DTO with the job's OWN execution, loaded rather than left empty.
+ *
+ * `toJobDTO(job)` defaults to `emptyExecution`, which puts `lines: []` on the wire — and the store
+ * reconciles a mutation response by REPLACING the job it holds. So every endpoint that answered a
+ * visit tap, a reschedule, an assign or an office field edit was telling the client "this job has
+ * no lines", and the client believed it. On the technician's done card that reads as literally
+ * "No price set — the office invoices it" on a job the customer had already agreed $185 for; the
+ * next list refetch (which DOES carry lines) put the price back, the next tap took it away again,
+ * and the card flapped between the two in front of the customer.
+ *
+ * An empty execution is a real answer for a job with no lines and an indistinguishable lie for a
+ * job that has them, which is why this is fixed by loading rather than by guessing client-side.
+ * One batched read (four IN-clause selects) on top of a write that already did several.
+ *
+ * Use this for any response the store reconciles from. `toJobDTO(job, execution)` stays for the
+ * use-cases that already return their own refreshed execution — no second read needed there.
+ */
+export const toJobDTOWithExecution = async (
+  repo: { listExecution(jobId: JobId): Promise<Execution> },
+  job: Job,
+) => toJobDTO(job, await repo.listExecution(job.props.id));
 
 export const callbackCandidateDTO = z.object({
   jobId: z.string(),

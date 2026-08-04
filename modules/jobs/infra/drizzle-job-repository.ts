@@ -252,7 +252,12 @@ export class DrizzleJobRepository implements JobRepository {
     if (!flipped) return false;
     // The sold scope replaces whatever the walkthrough carried — same swap the on-site pricing
     // path uses, inside the same tx as the flip.
-    await this.replaceLines(jobId, lines, now);
+    //
+    // The ACCEPTED ESTIMATE's total is passed through rather than derived from the lines: it is
+    // tax-INCLUSIVE and may carry a discount, and the job's lines are neither, so the line sum is
+    // a pre-tax, pre-discount subtotal (measured against the live DB: a $400 quote at 10% tax
+    // stores 44000 against a 40000 line sum). What the customer accepted is what the job owes.
+    await this.replaceLines(jobId, lines, now, patch.totalCents);
     await appendPendingVisit(this.tx, orgId, jobId, now);
     return true;
   }
@@ -517,6 +522,45 @@ export class DrizzleJobRepository implements JobRepository {
     return byJob;
   }
 
+  /**
+   * Re-derive `jobs.total_cents` from the job's own live lines, in ONE statement.
+   *
+   * WHY THIS EXISTS. `total_cents` was written once — at create, from the accepted estimate — and
+   * never again. Every line write since then left it behind: JOB-2545 in the pilot org carried a
+   * single $185 line and a stored total of $0, and so did JOB-2544 and JOB-1015. A job that has
+   * been priced has to know its own price, because the stored number is what Money's ready-to-bill
+   * rollup sums, what the `noPrice` view filters on, and what the Amount sort orders by. All three
+   * were quietly reporting zero on work the shop had already sold.
+   *
+   * THE FORMULA is `Σ round(quantity × rate_cents)` — rounded PER LINE, not on the sum. That is
+   * exactly `lineAmountCents` in modules/jobs/domain/job-signature.ts (what the field modal totals
+   * on screen and what the customer signs) and exactly the estimate repository's own SQL. Three
+   * places, one arithmetic: a signed $185 and a stored $185 must be the same $185.
+   *
+   * TAX. `total_cents` is tax-INCLUSIVE (see CreateJobFromEstimateUseCase.mint: "The total is
+   * tax-INCLUSIVE, so this records the split rather than adding anything to what is owed"). On the
+   * field and price-builder paths the tax the tech quoted is already inside the line rates
+   * (job-signature.ts says so explicitly and records taxCents as 0), so the line sum IS the
+   * tax-inclusive total and nothing is added here. The one path where that is NOT true — the
+   * estimate→job sale, whose total carries the estimate's tax and any discount, neither of which
+   * is reconstructible from the job's lines — passes its own figure through replaceLines instead.
+   *
+   * `override` is that figure. It is applied in the SAME statement rather than as a follow-up
+   * UPDATE so there is never an instant, even inside the transaction, where the row states a total
+   * nobody agreed to.
+   */
+  private async syncTotalFromLines(jobId: JobId, now: Date, override?: number): Promise<void> {
+    const derived = sql<number>`coalesce((
+      select sum(round(jl.quantity * jl.rate_cents))::int
+      from job_lines jl
+      where jl.job_id = ${jobId} and jl.org_id = ${this.orgId} and jl.deleted_at is null
+    ), 0)`;
+    await this.tx
+      .update(jobs)
+      .set({ totalCents: override ?? derived, updatedAt: now })
+      .where(and(eq(jobs.id, jobId), eq(jobs.orgId, this.orgId), isNull(jobs.deletedAt)));
+  }
+
   async addLine(line: JobLine, now: Date): Promise<void> {
     const p = line.props;
     await this.tx.insert(jobLines).values({
@@ -531,6 +575,7 @@ export class DrizzleJobRepository implements JobRepository {
       createdAt: now,
       updatedAt: now,
     });
+    await this.syncTotalFromLines(asJobId(p.jobId), now);
   }
 
   async updateLine(line: JobLine, now: Date): Promise<number> {
@@ -547,6 +592,7 @@ export class DrizzleJobRepository implements JobRepository {
       })
       .where(and(eq(jobLines.id, p.id), eq(jobLines.orgId, this.orgId), isNull(jobLines.deletedAt)))
       .returning({ id: jobLines.id });
+    if (rows.length > 0) await this.syncTotalFromLines(asJobId(p.jobId), now);
     return rows.length;
   }
 
@@ -563,36 +609,53 @@ export class DrizzleJobRepository implements JobRepository {
         ),
       )
       .returning({ id: jobLines.id });
+    if (rows.length > 0) await this.syncTotalFromLines(jobId, now);
     return rows.length;
   }
 
   // Bulk-replace the job's lines. Soft-deletes every current (non-deleted) line for the job,
-  // then inserts the new set. Both statements run in the same tenant tx; the ownerOrOffice
-  // orgTx re-throw guard rolls the whole swap back on any failure. org-scoped by both the
-  // implicit RLS tx and the explicit eq(orgId) filter (defense-in-depth + index use).
-  async replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date): Promise<void> {
+  // then inserts the new set, then re-derives jobs.total_cents from what is now there (see
+  // syncTotalFromLines — this is the write that used to be missing, so a job priced through the
+  // price builder, the field sign-off or the estimate conversion kept a stored total of $0
+  // forever). All three statements run in the same tenant tx; the ownerOrOffice orgTx re-throw
+  // guard rolls the whole swap back on any failure, so the lines and the total can never disagree.
+  // org-scoped by both the implicit RLS tx and the explicit eq(orgId) filter (defense-in-depth +
+  // index use).
+  //
+  // An EMPTY set zeroes the total, deliberately: clearing a job's price is un-pricing it, and
+  // leaving the old headline behind would bill the customer for lines that no longer exist.
+  //
+  // `totalCents` overrides the derivation for the accepted-estimate paths — see the port doc.
+  async replaceLines(
+    jobId: JobId,
+    lines: readonly JobLine[],
+    now: Date,
+    totalCents?: number,
+  ): Promise<void> {
     await this.tx
       .update(jobLines)
       .set({ deletedAt: now, updatedAt: now })
       .where(and(eq(jobLines.jobId, jobId), eq(jobLines.orgId, this.orgId), isNull(jobLines.deletedAt)));
-    if (lines.length === 0) return;
-    await this.tx.insert(jobLines).values(
-      lines.map((line) => {
-        const p = line.props;
-        return {
-          id: p.id,
-          orgId: this.orgId,
-          jobId: p.jobId,
-          description: p.description,
-          quantity: p.quantity,
-          rateCents: p.rate,
-          costCents: p.cost,
-          position: p.position,
-          createdAt: now,
-          updatedAt: now,
-        };
-      }),
-    );
+    if (lines.length > 0) {
+      await this.tx.insert(jobLines).values(
+        lines.map((line) => {
+          const p = line.props;
+          return {
+            id: p.id,
+            orgId: this.orgId,
+            jobId: p.jobId,
+            description: p.description,
+            quantity: p.quantity,
+            rateCents: p.rate,
+            costCents: p.cost,
+            position: p.position,
+            createdAt: now,
+            updatedAt: now,
+          };
+        }),
+      );
+    }
+    await this.syncTotalFromLines(jobId, now, totalCents);
   }
 
   /**
