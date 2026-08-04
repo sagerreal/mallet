@@ -16,6 +16,8 @@
     .legal .updated{color:var(--ink-soft);font-size:.9rem;margin-bottom:1.8rem}
     .legal h2{font-family:var(--font-display);font-size:1.3rem;margin:2rem 0 .6rem;letter-spacing:-.02em}
     .legal p,.legal li{color:var(--ink);font-size:1rem;line-height:1.65}
+    /* The global reset zeroes margins, so consecutive paragraphs would butt together. */
+    .legal p{margin:0 0 .85rem}
     .legal ul{margin:.5rem 0 .5rem 1.2rem} .legal li{margin:.3rem 0}
     .legal a{color:var(--amber-deep);text-decoration:underline}
     .legal strong{font-weight:700}
@@ -24,8 +26,8 @@
   </style>
 </head>
 <body>
-  <header class="nav" id="top">
-    <div class="wrap nav-inner">
+  <header class="navwrap" id="top">
+    <div class="nav wrap">
       <a class="wordmark" href="/" aria-label="Mallet home">
         <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="30" height="30"><rect width="32" height="32" rx="8" fill="#1B1A17"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#FAF8F3"/></svg></span>
         <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
@@ -149,6 +151,25 @@
       </div>
     </div>
   </footer>
+  <!-- Mobile nav. This page does not load main.js, so it carries the same toggle inline —
+       otherwise the burger renders on a phone and does nothing. -->
+  <script>
+    (function () {
+      var burger = document.querySelector('.nav-burger');
+      var panel = document.getElementById('mnav');
+      if (!burger || !panel) return;
+      burger.addEventListener('click', function () {
+        var open = panel.classList.toggle('open');
+        burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      Array.prototype.slice.call(panel.querySelectorAll('a')).forEach(function (a) {
+        a.addEventListener('click', function () {
+          panel.classList.remove('open');
+          burger.setAttribute('aria-expanded', 'false');
+        });
+      });
+    })();
+  </script>
   <!-- Vercel Web Analytics — cookieless, counts every visit (no consent gate) -->
   <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
   <script defer src="/_vercel/insights/script.js"></script>
