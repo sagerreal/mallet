@@ -86,11 +86,12 @@ export async function POST(req: Request): Promise<Response> {
             if (!r.ok) throw new Error(`reconcile record card payment failed: ${r.error.message}`);
           });
         },
-        // Quote deposits land on the estimate, through the SAME recorder the Stripe webhook uses —
-        // whichever of the two arrives second dedups to a no-op inside it.
-        recordDeposit: async (orgId, estimateId, amountCents) => {
+        // Quote deposits land on the estimate's deposit ledger, through the SAME recorder the
+        // Stripe webhook uses and keyed on the SAME payment_intent id — whichever of the two
+        // arrives second dedups to a no-op inside it.
+        recordDeposit: async (orgId, estimateId, amountCents, paymentRef) => {
           enrichRequestContext({ orgId });
-          return recordEstimateDeposit(orgId, estimateId, amountCents);
+          return recordEstimateDeposit(orgId, estimateId, amountCents, paymentRef);
         },
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });

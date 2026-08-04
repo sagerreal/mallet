@@ -72,6 +72,11 @@ const estimateDTO = z.object({
   tax: moneyDTO,
   total: moneyDTO,
   depositDue: moneyDTO,
+  // What has actually been COLLECTED, summed from the quote's deposit ledger. Distinct from
+  // depositDue (the ASK) and shipped alongside it because the office had no way to see a landed
+  // deposit at all — it only appeared once the final invoice netted it out, which is exactly what
+  // let a whole class of deposit bugs sit unnoticed.
+  depositPaid: moneyDTO,
   validDays: z.number().int().nullable(),
   sentAt: z.string().nullable(),
   // Is the shop still chasing this one, and how many nudges in.
@@ -388,6 +393,7 @@ const toEstimateDTO = (estimate: Estimate) => {
     tax: money(estimate.taxAmount()),
     total: money(estimate.total()),
     depositDue: money(estimate.depositDue()),
+    depositPaid: money(p.depPaid),
     validDays: p.validDays,
     sentAt: p.sentAt?.toISOString() ?? null,
     followUpOn: p.followUpOn ?? false,

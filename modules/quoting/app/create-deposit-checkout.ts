@@ -3,12 +3,8 @@ import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/ty
 import { platformFeeCents } from "@mallet/platform/payments/platform-fee";
 import type { DepositLinkGateway } from "../domain/deposit-link-gateway";
 import type { ConnectTargetReader } from "../domain/connect-target-reader";
+import { payableDepositCents } from "../domain/deposit-payable";
 import type { EstimateLoader } from "./record-estimate-deposit";
-
-// Stripe's minimum USD Checkout charge. Below it Stripe returns a deterministic 400, so guard here
-// rather than send a request that can only fail (a deterministic failure also counts toward the
-// shared circuit breaker). Same constant and same reasoning as CreatePaymentUseCase.
-const STRIPE_MIN_CHARGE_CENTS = 50;
 
 export interface CreateDepositCheckoutCommand {
   readonly orgId: OrgId;
@@ -52,14 +48,6 @@ export class CreateDepositCheckoutUseCase {
     if (outstanding <= 0) {
       return err(validation("The deposit on this quote is already paid.", "amount"));
     }
-    if (outstanding < STRIPE_MIN_CHARGE_CENTS) {
-      return err(
-        validation(
-          `The deposit ($${(outstanding / 100).toFixed(2)}) is too small to pay by card — contact the business to pay it.`,
-          "amount",
-        ),
-      );
-    }
 
     // A destination charge needs somewhere to settle. Without it the customer would be sent to a
     // checkout that cannot complete, so refuse and tell them the one thing they can do about it.
@@ -72,16 +60,33 @@ export class CreateDepositCheckoutUseCase {
       );
     }
 
-    const applicationFeeCents = platformFeeCents(outstanding);
+    // The SAME predicate the two page surfaces use to decide whether to offer the button, so this
+    // can only refuse something they would never have shown. 0 here means the card minimum.
+    const payable = payableDepositCents({
+      accepted: true,
+      depositDueCents: estimate.depositDue(),
+      depositPaidCents: estimate.props.depPaid,
+      cardPaymentAvailable: true,
+    });
+    if (payable === 0) {
+      return err(
+        validation(
+          `The deposit ($${(outstanding / 100).toFixed(2)}) is too small to pay by card — contact the business to pay it.`,
+          "amount",
+        ),
+      );
+    }
+
+    const applicationFeeCents = platformFeeCents(payable);
     const session = await this.gateway.createDepositSession({
       orgId: cmd.orgId,
       estimateId: cmd.estimateId,
-      amountCents: outstanding,
+      amountCents: payable,
       currency: "usd",
       // Stable per (org, estimate, amount, destination, fee): a double tap reuses the same Stripe
       // session instead of minting a second one. Includes the destination + fee so a later config
       // change cannot collide with a session created under the old settings.
-      idempotencyKey: `dep:${cmd.orgId}:${cmd.estimateId}:${outstanding}:${target.connectedAccountId}:${applicationFeeCents}`,
+      idempotencyKey: `dep:${cmd.orgId}:${cmd.estimateId}:${payable}:${target.connectedAccountId}:${applicationFeeCents}`,
       description: `Deposit — Quote ${estimate.props.num}`,
       connectedAccountId: target.connectedAccountId,
       applicationFeeCents,

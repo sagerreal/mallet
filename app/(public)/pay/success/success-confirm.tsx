@@ -37,6 +37,11 @@ export function SuccessConfirm() {
           body: JSON.stringify({ sessionId }),
         });
         if (!res.ok) return; // the webhook records it — keep the generic copy
+        // `recorded: true` is a precise claim from the server: this specific payment is on the
+        // ledger (written by this call, or already there under the same payment_intent id from the
+        // webhook's delivery). ONLY that upgrades the copy — anything else, including a deposit
+        // the estimate could not accept, leaves the neutral wording standing. The money is with
+        // Stripe either way; what must never be claimed is that it reached the bill.
         const data = (await res.json()) as { recorded?: boolean };
         if (!cancelled && data.recorded === true) setConfirmed(true);
       } catch {

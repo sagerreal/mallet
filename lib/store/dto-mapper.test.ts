@@ -66,6 +66,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     tax: makeMoneyDTO(1520),
     total: makeMoneyDTO(20520),   // $205.20
     depositDue: makeMoneyDTO(4104),
+    depositPaid: makeMoneyDTO(0),
     sentAt: null,
     acceptedAt: null,
     declinedAt: null,

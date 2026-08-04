@@ -368,6 +368,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
  *   taxBps  / 100     → pricing.tax
  *   depBps  / 100     → pricing.dep
  *   total.cents / 100 → cachedTotal     (dollars)
+ *   depositPaid.cents / 100 → depPaid   (dollars — collected, not the ask)
  *
  * @param dto - Full estimateDTO from the quoting router.
  * @param priorFu - Preserve the existing client-local follow-up state (fu is not persisted).
@@ -403,6 +404,7 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       dep: dto.depBps / 100,
     },
     cachedTotal: dto.total.cents / 100,   // cents → dollars
+    depPaid: dto.depositPaid.cents / 100, // cents → dollars (what was COLLECTED, not the ask)
     publicToken: dto.publicToken ?? undefined,  // null → undefined (absent when not yet set)
     publicUrl: dto.publicUrl ?? undefined,
     changeRequestedAt: dto.changeRequestedAt ?? undefined,

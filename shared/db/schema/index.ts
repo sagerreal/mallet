@@ -6,6 +6,7 @@ export * from "./staff-sms-sessions";
 export * from "./users";
 export * from "./leads";
 export * from "./estimates";
+export * from "./estimate-deposits";
 export * from "./number-sequences";
 export * from "./jobs";
 export * from "./invoices";

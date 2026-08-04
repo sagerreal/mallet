@@ -162,6 +162,13 @@ export interface Estimate {
    */
   cachedTotal?: number;
   /**
+   * Deposit actually COLLECTED on this quote, in DOLLARS. Distinct from pricing.dep, which is the
+   * percentage ASKED for — a quote can be accepted with a 30% deposit due and nothing paid, and
+   * telling those apart is the whole point of showing it. Absent until a full estimateDTO lands
+   * (the list summary omits it) and for locally-created estimates, where it is necessarily 0.
+   */
+  depPaid?: number;
+  /**
    * The unguessable share token for the customer-facing quote page (/q/<token>).
    * Populated by dtoEstimateToStore when the full estimateDTO is returned by a
    * mutation (draft/send/accept/decline/restore). Absent for list-hydrated

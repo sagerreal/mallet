@@ -56,13 +56,14 @@ export async function POST(req: Request): Promise<Response> {
             if (!r.ok) throw new Error(`record card payment failed: ${r.error.message}`);
           });
         },
-        // A quote deposit settles on the ESTIMATE, not in the payments ledger, so it takes its own
-        // recorder — the same one the /pay/success reconcile calls, keeping the two deliveries of
-        // one deposit on a single idempotent path. Before this arm existed a deposit session
-        // failed the invoice-shaped metadata check and was dropped as a logged 200.
-        recordDeposit: async (orgId, estimateId, amountCents) => {
+        // A quote deposit settles on the ESTIMATE's own append-only ledger, not in the invoice
+        // payments table, so it takes its own recorder — the same one the /pay/success reconcile
+        // calls, keyed on the same payment_intent id, keeping the two deliveries of one deposit on
+        // a single idempotent path. Before this arm existed a deposit session failed the
+        // invoice-shaped metadata check and was dropped as a logged 200.
+        recordDeposit: async (orgId, estimateId, amountCents, paymentRef) => {
           enrichRequestContext({ orgId });
-          return recordEstimateDeposit(orgId, estimateId, amountCents);
+          return recordEstimateDeposit(orgId, estimateId, amountCents, paymentRef);
         },
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });

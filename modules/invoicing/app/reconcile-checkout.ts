@@ -10,10 +10,11 @@ import { parseCheckoutMetadata, isDepositMetadata } from "./checkout-metadata";
 //   payment — the session's payment_intent id (pi_…), IDENTICAL to what the webhook uses
 //     (stripe-webhook.ts → RecordCardPaymentUseCase keys the ledger row on paymentIntentId).
 //     Keying on anything else (e.g. the session id) would let webhook + reconcile double-record.
-//   deposit — there is no ledger row to key: a deposit writes estimates.dep_paid_cents, and the
-//     payments table is invoice-scoped (composite FK) while an accepted quote has no invoice yet.
-//     The equivalent guarantee is the conditional UPDATE behind recordDeposit, which fires only
-//     while the stored deposit is strictly less than the incoming amount.
+//   deposit — the SAME payment_intent id, as `payment_ref` on its own append-only ledger
+//     (estimate_deposits, UNIQUE on (org_id, payment_ref)). Deposits cannot use the `payments`
+//     table (invoice-scoped by composite FK, and an accepted quote has no invoice yet), but they
+//     use the same IDENTITY, because identity is the only thing that separates one payment
+//     delivered twice from two different payments on one quote.
 
 export interface ReconcileCheckoutDeps {
   // Server-side session retrieve (StripeClient.retrieveCheckoutSession). Throwing signals a
@@ -27,9 +28,15 @@ export interface ReconcileCheckoutDeps {
     amountCents: number,
     paymentIntentId: string,
   ) => Promise<void>;
-  // Records the settled quote deposit onto the estimate. Returns whether the deposit is on the
-  // estimate (written now, or already there); false when the estimate cannot hold it.
-  recordDeposit: (orgId: string, estimateId: string, amountCents: number) => Promise<boolean>;
+  // Records the settled quote deposit on its ledger. Returns whether THIS PAYMENT is recorded
+  // (appended now, or already there under the same paymentRef); false when the estimate cannot
+  // hold it. `paymentRef` is the payment_intent id — identical to the webhook's.
+  recordDeposit: (
+    orgId: string,
+    estimateId: string,
+    amountCents: number,
+    paymentRef: string,
+  ) => Promise<boolean>;
   log: (message: string, ctx?: Record<string, unknown>) => void;
 }
 
@@ -54,17 +61,26 @@ export const reconcileCheckoutSession = async (
   }
 
   const amountCents = session.amount_total;
+  // Extracted ONCE, before the kind branch, exactly as stripe-webhook.ts does it: both recorders,
+  // on both delivery paths, must key on the same value or the dedup does not hold.
+  const paymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : (session.payment_intent?.id ?? null);
 
-  // Route by kind: absent/'payment' → invoice payment; 'deposit' → the estimate's deposit.
+  // Route by kind: absent/'payment' → invoice payment; 'deposit' → the estimate's deposit ledger.
   if (isDepositMetadata(metadata.value)) {
-    if (amountCents == null) {
-      deps.log("pay reconcile: paid deposit session missing amount", { sessionId });
+    // No payment_intent means no identity, and a deposit without identity cannot be deduplicated
+    // against the webhook's delivery of the same money.
+    if (amountCents == null || !paymentIntentId) {
+      deps.log("pay reconcile: paid deposit session missing amount or payment_intent", { sessionId });
       return { recorded: false, reason: "missing_fields" };
     }
     const recorded = await deps.recordDeposit(
       metadata.value.orgId,
       metadata.value.estimateId,
       amountCents,
+      paymentIntentId,
     );
     if (!recorded) {
       deps.log("pay reconcile: deposit could not be recorded on the estimate", {
@@ -77,10 +93,6 @@ export const reconcileCheckoutSession = async (
     return { recorded: true };
   }
 
-  const paymentIntentId =
-    typeof session.payment_intent === "string"
-      ? session.payment_intent
-      : (session.payment_intent?.id ?? null);
   if (!paymentIntentId || amountCents == null) {
     deps.log("pay reconcile: paid session missing payment_intent or amount", { sessionId });
     return { recorded: false, reason: "missing_fields" };

@@ -7,15 +7,21 @@ export interface StripeWebhookDeps {
   // retries.
   record: (orgId: string, invoiceId: string, amountCents: number, paymentIntentId: string) => Promise<void>;
   /**
-   * Records a settled quote DEPOSIT onto estimates.dep_paid_cents. Returns whether the deposit is
-   * on the estimate (true when this call wrote it OR a duplicate delivery already had); false when
-   * the estimate cannot hold it (missing, or no longer approved). Throwing means transient → 500.
+   * Records a settled quote DEPOSIT onto its own append-only ledger (estimate_deposits), from which
+   * estimates.dep_paid_cents is derived. Returns whether THIS PAYMENT is on that ledger — appended
+   * now, or already there from the reconcile delivery; false when the estimate cannot hold it
+   * (missing, or no longer approved). Throwing means transient → 500.
    *
-   * Idempotency is NOT the payment_intent key the invoice path uses: deposits do not write to the
-   * payments ledger (invoice-scoped, composite FK), so the guarantee comes from the conditional
-   * UPDATE behind this call — see RecordEstimateDepositUseCase.
+   * `paymentRef` is the settling payment_intent id — the SAME identity the invoice path dedupes on,
+   * and extracted from the session identically on both delivery paths. It is what tells one payment
+   * delivered twice apart from two different payments on one quote; by amount they are identical.
    */
-  recordDeposit: (orgId: string, estimateId: string, amountCents: number) => Promise<boolean>;
+  recordDeposit: (
+    orgId: string,
+    estimateId: string,
+    amountCents: number,
+    paymentRef: string,
+  ) => Promise<boolean>;
   log: (message: string, ctx?: Record<string, unknown>) => void;
 }
 
@@ -44,18 +50,28 @@ export const processStripeEvent = async (
   }
 
   const amountCents = session.amount_total;
+  // Extracted ONCE, before the kind branch, so both recorders key on exactly the same identity —
+  // the invoice ledger's idempotency key and the deposit ledger's payment_ref are the same value
+  // read the same way.
+  const paymentIntentId =
+    typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
 
   if (isDepositMetadata(metadata.value)) {
     // Amount from Stripe's own amount_total, never from metadata — metadata is what WE wrote at
-    // create time, and the charge is what actually settled.
-    if (amountCents == null) {
-      deps.log("stripe webhook: paid deposit session missing amount", { eventId: event.id });
+    // create time, and the charge is what actually settled. No payment_intent means no identity,
+    // and a deposit with no identity cannot be deduplicated: recording it risks double-counting a
+    // redelivery, so refuse rather than guess.
+    if (amountCents == null || !paymentIntentId) {
+      deps.log("stripe webhook: paid deposit session missing amount or payment_intent", {
+        eventId: event.id,
+      });
       return { status: 200 };
     }
     const recorded = await deps.recordDeposit(
       metadata.value.orgId,
       metadata.value.estimateId,
       amountCents,
+      paymentIntentId,
     );
     if (!recorded) {
       // 200 on purpose: retrying will not make an unapproved/absent estimate able to hold the
@@ -71,8 +87,6 @@ export const processStripeEvent = async (
     return { status: 200 };
   }
 
-  const paymentIntentId =
-    typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent?.id ?? null);
   if (!paymentIntentId || amountCents == null) {
     deps.log("stripe webhook: missing payment_intent or amount", { eventId: event.id });
     return { status: 200 };

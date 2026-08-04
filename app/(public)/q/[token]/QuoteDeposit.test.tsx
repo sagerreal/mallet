@@ -40,12 +40,13 @@ interface Options {
   readonly payableDepositCents?: number;
   readonly cardPaymentAvailable?: boolean;
   readonly depBps?: number;
+  readonly fixedSubtotalCents?: number;
 }
 
 function renderQuote(options: Options = {}) {
   return render(
     <QuoteLines
-      fixedSubtotalCents={100_000}
+      fixedSubtotalCents={options.fixedSubtotalCents ?? 100_000}
       optionalLines={[]}
       discBps={0}
       taxBps={0}
@@ -91,6 +92,29 @@ describe("pay-the-deposit primary — when it appears", () => {
   it("is absent after approval when the shop cannot take cards", async () => {
     renderQuote({ cardPaymentAvailable: false });
     await approve();
+    expect(screen.queryByRole("button", { name: PAY_BUTTON })).toBeNull();
+  });
+
+  // The two directions of the card-minimum floor. The post-approval branch used to apply only
+  // "cardPaymentAvailable && deposit > 0" while the page and the server both applied the 50¢
+  // minimum, so a sub-minimum deposit rendered a button the checkout would always refuse.
+  it("is absent after approval when the deposit is under the card minimum", async () => {
+    // $1.00 of work at 30% = 30¢, under the 50¢ USD Checkout minimum.
+    renderQuote({ fixedSubtotalCents: 100 });
+    await approve();
+    expect(screen.queryByRole("button", { name: PAY_BUTTON })).toBeNull();
+  });
+
+  it("appears after approval at exactly the card minimum", async () => {
+    // $1.67 at 30% = 50.1¢ → 50¢ after the domain's rounding: payable, and it must be offered.
+    renderQuote({ fixedSubtotalCents: 167 });
+    await approve();
+    expect(screen.getByRole("button", { name: PAY_BUTTON }).textContent).toContain("$0.50");
+  });
+
+  it("is absent on a return visit when the deposit is under the card minimum", () => {
+    // The page zeroes it through the same predicate, so nothing renders here either.
+    renderQuote({ settled: true, payableDepositCents: 0 });
     expect(screen.queryByRole("button", { name: PAY_BUTTON })).toBeNull();
   });
 

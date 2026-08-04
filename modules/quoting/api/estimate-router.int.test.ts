@@ -877,39 +877,81 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
 
   // ── deposits are COLLECTED, not assumed ────────────────────────────────────
   //
-  // Task 4 removed the fake depPaid stamping at accept, so the only thing that can move
-  // estimates.dep_paid_cents is a real payment landing through recordEstimateDeposit — the recorder
-  // BOTH Stripe entry points (webhook + /pay/success reconcile) call. These run it against the live
-  // DB, under real RLS, with the same conditional UPDATE production uses.
+  // Task 4 removed the fake depPaid stamping at accept, so the only thing that can record a
+  // deposit is a real payment landing through recordEstimateDeposit — the recorder BOTH Stripe
+  // entry points (webhook + /pay/success reconcile) call. These run it against the live DB, under
+  // real RLS, against the real estimate_deposits ledger and its UNIQUE (org_id, payment_ref).
 
-  it("records a deposit onto an accepted quote, and a duplicate delivery is a no-op", async () => {
+  /** dep_paid_cents as the DB actually holds it (admin connection — bypasses RLS deliberately). */
+  const depPaidOf = async (estimateId: string): Promise<number> => {
+    const [row] = await admin<{ dep_paid_cents: number }[]>`
+      select dep_paid_cents from estimates where id = ${estimateId}`;
+    return row!.dep_paid_cents;
+  };
+
+  /** The ledger rows behind that number. */
+  const ledgerOf = async (
+    estimateId: string,
+  ): Promise<{ payment_ref: string; amount_cents: number }[]> =>
+    admin<{ payment_ref: string; amount_cents: number }[]>`
+      select payment_ref, amount_cents from estimate_deposits
+       where estimate_id = ${estimateId} order by amount_cents`;
+
+  const acceptedQuote = async (title: string, depBps: number, rateCents: number) => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const drafted = await caller.v1.quoting.draft({
       leadId: leadAId,
-      title: "Deposit — happy path",
-      depBps: 3_000, // 30%
-      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+      title,
+      depBps,
+      lines: [{ description: "Labor", quantity: 1, rateCents }],
     });
     await caller.v1.quoting.send({ estimateId: drafted.id });
     const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    return { id: drafted.id, accepted };
+  };
+
+  it("records a deposit, and the SAME payment delivered twice writes exactly one ledger row", async () => {
+    const { id, accepted } = await acceptedQuote("Deposit — happy path", 3_000, 100_000);
     expect(accepted.status).toBe("accepted");
     expect(accepted.depositDue.cents).toBe(30_000);
-
-    const depPaid = async (): Promise<number> => {
-      const [row] = await admin<{ dep_paid_cents: number }[]>`
-        select dep_paid_cents from estimates where id = ${drafted.id}`;
-      return row!.dep_paid_cents;
-    };
-    expect(await depPaid()).toBe(0); // accepted, not paid
+    expect(await depPaidOf(id)).toBe(0); // accepted, not paid
 
     // The webhook lands.
-    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000)).toBe(true);
-    expect(await depPaid()).toBe(30_000);
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_same")).toBe(true);
+    expect(await depPaidOf(id)).toBe(30_000);
 
-    // The success-page reconcile lands with the SAME session amount. It must report success (the
-    // money IS on the estimate) while writing nothing — the WHERE guard matched no row.
-    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000)).toBe(true);
-    expect(await depPaid()).toBe(30_000); // not 60_000
+    // The success-page reconcile lands for the SAME payment_intent. It reports success — the money
+    // IS on the quote — while the UNIQUE (org_id, payment_ref) index makes the write a no-op.
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_same")).toBe(true);
+    expect(await depPaidOf(id)).toBe(30_000); // not 60_000
+    expect(await ledgerOf(id)).toHaveLength(1);
+  });
+
+  it("TWO DIFFERENT payments on one quote both persist, and dep_paid_cents is their SUM", async () => {
+    // The case a bare mutable integer could not express. Reachable in production: resignOnSite
+    // re-prices an accepted quote, so a second checkout session can exist alongside the first and
+    // both can settle. `SET` lost one of them; the ledger keeps both.
+    const { id } = await acceptedQuote("Deposit — two payments", 3_000, 100_000);
+
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_A")).toBe(true);
+    expect(await recordEstimateDeposit(orgAId, id, 60_000, "pi_int_B")).toBe(true);
+
+    expect(await depPaidOf(id)).toBe(90_000); // A + B, derived by SUM — not the larger, not one
+    expect(await ledgerOf(id)).toEqual([
+      { payment_ref: "pi_int_A", amount_cents: 30_000 },
+      { payment_ref: "pi_int_B", amount_cents: 60_000 },
+    ]);
+  });
+
+  it("a SMALLER later payment is kept too — arrival order decides nothing", async () => {
+    const { id } = await acceptedQuote("Deposit — smaller second", 3_000, 100_000);
+
+    expect(await recordEstimateDeposit(orgAId, id, 60_000, "pi_int_big")).toBe(true);
+    // Under the old `dep_paid_cents < amount` guard this wrote nothing AND reported success.
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_small")).toBe(true);
+
+    expect(await depPaidOf(id)).toBe(90_000);
+    expect(await ledgerOf(id)).toHaveLength(2);
   });
 
   it("refuses a deposit against a quote in another org, and against an unapproved quote", async () => {
@@ -922,20 +964,42 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     });
 
     // Not approved yet — a deposit on an unapproved quote is not a deposit.
-    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000)).toBe(false);
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000, "pi_int_unapproved")).toBe(false);
+    expect(await ledgerOf(drafted.id)).toHaveLength(0);
 
     await caller.v1.quoting.send({ estimateId: drafted.id });
     await caller.v1.quoting.accept({ estimateId: drafted.id });
 
-    // Cross-tenant: org B naming org A's estimate id. RLS scopes the read, so it resolves to
-    // nothing — indistinguishable from a missing estimate, and nothing is written.
-    expect(await recordEstimateDeposit(orgBId, drafted.id, 50_000)).toBe(false);
-    const [row] = await admin<{ dep_paid_cents: number }[]>`
-      select dep_paid_cents from estimates where id = ${drafted.id}`;
-    expect(row!.dep_paid_cents).toBe(0);
+    // Cross-tenant: org B naming org A's estimate id. RLS scopes both the read and the ledger
+    // write, so it resolves to nothing — indistinguishable from a missing estimate.
+    expect(await recordEstimateDeposit(orgBId, drafted.id, 50_000, "pi_int_crosstenant")).toBe(false);
+    expect(await depPaidOf(drafted.id)).toBe(0);
+    expect(await ledgerOf(drafted.id)).toHaveLength(0);
 
     // Its own org still can.
-    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000)).toBe(true);
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000, "pi_int_ownorg")).toBe(true);
+    expect(await depPaidOf(drafted.id)).toBe(50_000);
+  });
+
+  it("a save() on an accepted quote cannot wipe a collected deposit", async () => {
+    // save() upserts the whole aggregate, and setFollowUp / clearChangeRequest / resignOnSite all
+    // call it on accepted estimates from an in-memory copy loaded before the deposit landed.
+    // dep_paid_cents is therefore INSERT-ONLY in that upsert — collected money is written only by
+    // the ledger path. Before that, a follow-up toggle silently zeroed a real deposit.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const { id } = await acceptedQuote("Deposit — save() clobber", 3_000, 100_000);
+    expect(await recordEstimateDeposit(orgAId, id, 30_000, "pi_int_clobber")).toBe(true);
+    expect(await depPaidOf(id)).toBe(30_000);
+
+    // A perfectly ordinary office action that goes through save() with no status guard.
+    await caller.v1.quoting.setFollowUp({ estimateId: id, on: true, stage: 1 });
+
+    expect(await depPaidOf(id)).toBe(30_000); // still there
+    expect(await ledgerOf(id)).toHaveLength(1);
+    // And the office can SEE it — the DTO carries what was collected, not just the ask.
+    const fetched = await caller.v1.quoting.get({ estimateId: id });
+    expect(fetched.depositPaid.cents).toBe(30_000);
+    expect(fetched.depositDue.cents).toBe(30_000);
   });
 
   it("END TO END: accepted quote → deposit collected → job billed → invoice nets the deposit out", async () => {
@@ -953,9 +1017,10 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
     const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
     expect(accepted.total.cents).toBe(100_000);
     expect(accepted.depositDue.cents).toBe(30_000);
+    expect(accepted.depositPaid.cents).toBe(0); // agreed, not paid
 
     // 2. The deposit is COLLECTED (this is what Task 8 added; before it, nothing did this).
-    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000)).toBe(true);
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000, "pi_int_chain")).toBe(true);
 
     // 3. The job accept created runs and completes.
     const jobId = accepted.job!.id;

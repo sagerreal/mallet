@@ -24,6 +24,11 @@ const COPY: Record<Variant, { title: string; body: ReactNode; mark: string }> = 
   // A deposit settles on the QUOTE, and there is no invoice yet — saying one was updated would be
   // a promise about a document that does not exist. What the customer needs to know is that the
   // deposit is paid and it comes off the final bill.
+  //
+  // `deposit` is the NEUTRAL state and it is load-bearing: it is what shows when the server could
+  // not confirm the deposit reached the quote. It says only what is certainly true — the card
+  // went through — and claims nothing about the bill. Only `depositConfirmed`, reached solely on
+  // a verified `recorded: true`, makes that second claim.
   deposit: {
     title: "Deposit received",
     body: "Thank you — your deposit went through. You can close this page.",

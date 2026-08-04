@@ -439,31 +439,33 @@ export class Estimate {
   }
 
   /**
-   * Record a deposit that was actually COLLECTED.
+   * Carry the deposit total that has actually been COLLECTED on this quote.
    *
    * The counterpart to what accept() deliberately does not do: accepting is an agreement, this is
-   * money landing. Only an accepted quote can hold a deposit — taking one against a draft or a
-   * declined quote would credit a future invoice for a sale that was never made.
+   * money landing. Only an accepted quote can hold a deposit — crediting one against a draft or a
+   * declined quote would net money off a future invoice for a sale that was never made.
    *
-   * `amountCents` REPLACES depPaid rather than adding to it, because the two callers (the Stripe
-   * webhook and the success-page reconcile) carry the SAME settled session amount; adding would
-   * double-count the identical payment. The "record only when it grows" rule lives in the
-   * EstimateDepositWriter's WHERE clause, which is where concurrency can actually be decided.
+   * `totalCents` is the SUM of the quote's deposit-ledger rows, not one payment: the ledger
+   * (estimate_deposits, keyed on the settling payment_intent id) is the record of what was paid,
+   * and `depPaid` is only its cached total. That is why this replaces rather than adds — adding a
+   * per-payment amount here would double-count the redelivery of a single payment, and replacing
+   * with a per-payment amount would erase the first of two real ones. Neither question can be
+   * answered without payment identity, and identity lives in the ledger.
    *
-   * Not clamped to depositDue(): a customer who pays more than the ask has still paid it, and
-   * silently discarding the difference would put the shop's books out by the overpayment.
+   * Not clamped to depositDue(): a customer who paid more than the ask has still paid it, and
+   * discarding the difference would put the shop's books out by the overpayment.
    */
-  withDepositPaid(amountCents: number, now: Date): Result<Estimate, ValidationError> {
+  withDepositPaid(totalCents: number, now: Date): Result<Estimate, ValidationError> {
     if (this.p.status !== "accepted") {
       return err(validation("only an accepted estimate can take a deposit", "status"));
     }
-    if (!Number.isFinite(amountCents) || amountCents <= 0) {
-      return err(validation("a deposit must be a positive amount", "amountCents"));
+    if (!Number.isFinite(totalCents) || totalCents <= 0) {
+      return err(validation("a deposit must be a positive amount", "totalCents"));
     }
     return ok(
       new Estimate({
         ...this.p,
-        depPaid: money(Math.round(amountCents)),
+        depPaid: money(Math.round(totalCents)),
         updatedAt: now,
       }),
     );

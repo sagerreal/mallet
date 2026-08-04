@@ -7,6 +7,7 @@ import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-c
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DrizzlePublicEstimateReader } from "../infra/drizzle-public-estimate-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
+import { DrizzleEstimateDepositLedger } from "../infra/drizzle-estimate-deposit-ledger";
 import { StripeDepositGateway } from "../infra/stripe-deposit-gateway";
 import { CreateDepositCheckoutUseCase } from "./create-deposit-checkout";
 import { RecordEstimateDepositUseCase } from "./record-estimate-deposit";
@@ -72,17 +73,20 @@ export async function createPublicDepositCheckout(
 
 /**
  * Record a settled deposit against an estimate. Called by BOTH Stripe entry points (the webhook and
- * the /pay/success reconcile) with the same session amount; the conditional UPDATE inside
- * RecordEstimateDepositUseCase is what makes the second one a no-op.
+ * the /pay/success reconcile) with the same session amount AND the same `paymentRef` — the
+ * settling payment_intent id, which is what makes the second delivery a no-op.
  *
- * @returns true when the deposit is on the estimate (written now, or already there by the other
- * delivery); false when the estimate cannot hold it. Throws only on a transient infra failure, so
- * the webhook route can answer 500 and let Stripe retry.
+ * @returns true when THIS PAYMENT is on the estimate's deposit ledger — appended by this call, or
+ * already there under the same payment_ref. This is a precise claim, not a soft one: a payment
+ * that could not be recorded returns false. That distinction is what the customer-facing
+ * "Deposit confirmed" copy rests on, so it must never be blurred. Throws only on a transient infra
+ * failure, so the webhook route can answer 500 and let Stripe retry.
  */
 export async function recordEstimateDeposit(
   orgId: string,
   estimateId: string,
   amountCents: number,
+  paymentRef: string,
 ): Promise<boolean> {
   const tenant: OrgId = asOrgId(orgId);
   return withTenant(tenant, async (tx) => {
@@ -90,17 +94,19 @@ export async function recordEstimateDeposit(
     // Emit through the outbox in the SAME tx so estimate.deposit.paid is committed atomically with
     // the deposit write (not an in-memory bus that a rollback would leave lying).
     const bus = new OutboxEventBus(tx, tenant);
-    const useCase = new RecordEstimateDepositUseCase(repo, repo, bus, systemClock);
+    const ledger = new DrizzleEstimateDepositLedger(tx, tenant);
+    const useCase = new RecordEstimateDepositUseCase(repo, ledger, bus, systemClock);
     const result = await useCase.exec({
       orgId: tenant,
       estimateId: asEstimateId(estimateId),
       amountCents,
+      paymentRef,
     });
     if (isOk(result)) return true;
     // not_found / conflict are terminal: retrying will not make the estimate able to hold this
     // money. Log loudly (a real charge has nowhere to land) and let the caller answer 200.
     logger.error(
-      { orgId, estimateId, amountCents, err: result.error.message, kind: result.error.kind },
+      { orgId, estimateId, amountCents, paymentRef, err: result.error.message, kind: result.error.kind },
       "deposit could not be recorded on the estimate",
     );
     return false;

@@ -16,6 +16,7 @@ import { useState } from "react";
 import { fmt$, formatMoney } from "@/lib/format";
 import type { QuoteTier } from "@/modules/quoting/domain/estimate";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
+import { payableDepositCents } from "@/modules/quoting/domain/deposit-payable";
 import { SignaturePad } from "@/components/shared/signature-pad";
 
 /** Interaction phase — owned by QuoteLines so the add-on toggles above the
@@ -266,13 +267,23 @@ export function QuoteActions({
     // Just approved, so nothing can have been paid yet: the whole deposit is what's owed. The
     // deposit is asked for the moment the agreement is made — sending them away to wait for an
     // email is how a deposit stops getting collected.
-    const depositPayable = cardPaymentAvailable && depositCents > 0;
+    //
+    // Same predicate as the server's mint guard and the page's return-visit branch. This used to
+    // be a hand-written `cardPaymentAvailable && depositCents > 0`, which was missing the card
+    // minimum the other two applied — so a sub-minimum deposit rendered a button the server would
+    // always refuse.
+    const payable = payableDepositCents({
+      accepted: true,
+      depositDueCents: depositCents,
+      depositPaidCents: 0,
+      cardPaymentAvailable,
+    });
     return (
       <>
         <div className="deltabanner" style={{ textAlign: "center", marginTop: "var(--space-2)" }}>
           Approved — thank you! We&rsquo;ll be in touch soon.
         </div>
-        {depositPayable && <PayDepositButton token={token} amountCents={depositCents} />}
+        {payable > 0 && <PayDepositButton token={token} amountCents={payable} />}
       </>
     );
   }

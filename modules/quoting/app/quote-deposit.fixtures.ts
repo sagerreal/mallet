@@ -24,7 +24,11 @@ import {
   type ExternalServiceError,
 } from "@mallet/shared/types";
 import { Estimate, EstimateLine, type EstimateProps } from "../domain/estimate";
-import type { EstimateDepositWriter } from "../domain/estimate-deposit-writer";
+import type {
+  EstimateDepositLedger,
+  DepositLedgerEntry,
+  DepositLedgerResult,
+} from "../domain/estimate-deposit-ledger";
 import type {
   DepositLinkGateway,
   CreateDepositSessionCmd,
@@ -92,29 +96,52 @@ export const acceptedEstimate = (overrides: Partial<EstimateProps> = {}): Estima
 };
 
 /**
- * Deposit writer faithful to the Drizzle conditional UPDATE: it writes ONLY while the stored
- * dep_paid_cents is strictly less than the incoming amount and the row is still `accepted`, and it
- * reports the rowcount as a boolean. `beforeWrite` simulates a concurrent delivery landing between
- * the use-case's read and its write — the exact race the WHERE guard exists to lose safely.
+ * A FIELD-born accepted quote — the only kind `resignOnSite` will re-price, and therefore the only
+ * shape in which two live checkout sessions can exist for one quote's deposit.
  */
-export class FakeDepositWriter implements EstimateDepositWriter {
-  public writes = 0;
+export const fieldAcceptedEstimate = (overrides: Partial<EstimateProps> = {}): Estimate =>
+  acceptedEstimate({ origin: "field", ...overrides });
+
+/**
+ * Ledger faithful to the Drizzle adapter: an append-only map keyed on payment_ref, with
+ * `dep_paid_cents` DERIVED as the sum of its rows.
+ *
+ * The three behaviours the real thing has to have, and therefore the three this must have:
+ *   - the SAME payment_ref twice appends once (the UNIQUE (org_id, payment_ref) conflict);
+ *   - TWO DIFFERENT payment_refs both append, and the total ACCUMULATES;
+ *   - a non-accepted / missing estimate refuses (the INSERT … SELECT precondition), which is a
+ *     distinct outcome from a duplicate — one is money with nowhere to land, the other is harmless.
+ *
+ * `beforeAppend` simulates a concurrent delivery landing between the use-case's read and this
+ * write — the race the precondition and the unique index exist to lose safely.
+ */
+export class FakeDepositLedger implements EstimateDepositLedger {
+  public readonly rows: Array<{ paymentRef: string; amountCents: number }> = [];
   constructor(
     private readonly store: { estimate: Estimate },
-    private readonly beforeWrite?: () => void,
+    private readonly beforeAppend?: () => void,
   ) {}
 
-  async recordDepositPaid(estimateId: EstimateId, amountCents: number, now: Date): Promise<boolean> {
-    this.beforeWrite?.();
+  private sum(): number {
+    return this.rows.reduce((total, row) => total + row.amountCents, 0);
+  }
+
+  async append(entry: DepositLedgerEntry): Promise<DepositLedgerResult> {
+    this.beforeAppend?.();
+    if (this.rows.some((row) => row.paymentRef === entry.paymentRef)) {
+      return { kind: "duplicate", depositPaidCents: this.sum() };
+    }
     const current = this.store.estimate;
-    if (current.props.id !== estimateId) return false;
-    if (current.props.status !== "accepted") return false;
-    if (current.props.depPaid >= amountCents) return false; // WHERE dep_paid_cents < $amount
-    const next = current.withDepositPaid(amountCents, now);
-    if (!isOk(next)) return false;
+    // The INSERT … SELECT precondition: only a live, accepted estimate of this org yields a row.
+    if (current.props.id !== entry.estimateId || current.props.status !== "accepted") {
+      return { kind: "refused" };
+    }
+    this.rows.push({ paymentRef: entry.paymentRef, amountCents: entry.amountCents });
+    const total = this.sum();
+    const next = current.withDepositPaid(total, entry.receivedAt);
+    if (!isOk(next)) return { kind: "refused" };
     this.store.estimate = next.value;
-    this.writes += 1;
-    return true;
+    return { kind: "appended", depositPaidCents: total };
   }
 }
 

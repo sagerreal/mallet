@@ -27,7 +27,12 @@ const session = (metadata: Record<string, string>, amountTotal = 30_000): Stripe
 
 interface Calls {
   readonly payments: Array<{ invoiceId: string; amountCents: number; paymentIntentId: string }>;
-  readonly deposits: Array<{ orgId: string; estimateId: string; amountCents: number }>;
+  readonly deposits: Array<{
+    orgId: string;
+    estimateId: string;
+    amountCents: number;
+    paymentRef: string;
+  }>;
 }
 
 const spies = (depositResult = true) => {
@@ -40,8 +45,13 @@ const spies = (depositResult = true) => {
   ) => {
     calls.payments.push({ invoiceId, amountCents, paymentIntentId });
   };
-  const recordDeposit = async (orgId: string, estimateId: string, amountCents: number) => {
-    calls.deposits.push({ orgId, estimateId, amountCents });
+  const recordDeposit = async (
+    orgId: string,
+    estimateId: string,
+    amountCents: number,
+    paymentRef: string,
+  ) => {
+    calls.deposits.push({ orgId, estimateId, amountCents, paymentRef });
     return depositResult;
   };
   return { calls, record, recordDeposit };
@@ -60,7 +70,9 @@ describe("stripe webhook — deposit sessions", () => {
     );
 
     expect(result.status).toBe(200);
-    expect(calls.deposits).toEqual([{ orgId: ORG, estimateId: EST, amountCents: 30_000 }]);
+    expect(calls.deposits).toEqual([
+      { orgId: ORG, estimateId: EST, amountCents: 30_000, paymentRef: "pi_dep_1" },
+    ]);
     expect(calls.payments).toHaveLength(0);
   });
 
@@ -104,6 +116,43 @@ describe("stripe webhook — deposit sessions", () => {
     expect(logs.join(" ")).toMatch(/deposit/i);
   });
 
+  it("drops a paid deposit session with NO payment_intent — money with no identity can't dedupe", async () => {
+    const { calls, record, recordDeposit } = spies();
+    const noIdentity = {
+      ...session({ orgId: ORG, estimateId: EST, kind: "deposit" }),
+      payment_intent: null,
+    } as unknown as Stripe.Checkout.Session;
+
+    const result = await processStripeEvent(event(noIdentity), {
+      record,
+      recordDeposit,
+      log: () => undefined,
+    });
+
+    expect(result.status).toBe(200);
+    expect(calls.deposits).toHaveLength(0);
+    expect(calls.payments).toHaveLength(0);
+  });
+
+  it("passes the payment_intent id the INVOICE path would have used, from the same field", async () => {
+    // The two ledgers key on the same identity read the same way. If these ever diverge, the
+    // webhook and the reconcile stop deduping each other's delivery of one payment.
+    const { calls, record, recordDeposit } = spies();
+    await processStripeEvent(event(session({ orgId: ORG, estimateId: EST, kind: "deposit" })), {
+      record,
+      recordDeposit,
+      log: () => undefined,
+    });
+    const invoiceSpies = spies();
+    await processStripeEvent(event(session({ orgId: ORG, invoiceId: INV })), {
+      record: invoiceSpies.record,
+      recordDeposit: invoiceSpies.recordDeposit,
+      log: () => undefined,
+    });
+
+    expect(calls.deposits[0]!.paymentRef).toBe(invoiceSpies.calls.payments[0]!.paymentIntentId);
+  });
+
   it("drops a deposit session with a malformed estimateId without recording anything", async () => {
     const { calls, record, recordDeposit } = spies();
 
@@ -141,7 +190,9 @@ describe("reconcileCheckoutSession — deposit sessions", () => {
     const outcome = await reconcileCheckoutSession("cs_test_dep", deps);
 
     expect(outcome).toEqual({ recorded: true });
-    expect(calls.deposits).toEqual([{ orgId: ORG, estimateId: EST, amountCents: 30_000 }]);
+    expect(calls.deposits).toEqual([
+      { orgId: ORG, estimateId: EST, amountCents: 30_000, paymentRef: "pi_dep_1" },
+    ]);
     expect(calls.payments).toHaveLength(0);
   });
 
