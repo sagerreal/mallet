@@ -3,7 +3,7 @@ import { withTenant } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
-import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, processStripeEvent } from "@mallet/invoicing";
 import { getAppDeps } from "@/trpc/di";
 
@@ -24,7 +24,9 @@ export async function POST(req: Request): Promise<Response> {
   const signature = req.headers.get("stripe-signature");
   if (!signature) return new Response("missing signature", { status: 400 });
 
-  const client = new StripeClient(config.STRIPE_SECRET_KEY);
+  // Shared process-wide client (one breaker for all Stripe traffic) — a per-request client
+  // carried a breaker that was discarded before it could ever trip.
+  const client = getSharedStripeClient(config.STRIPE_SECRET_KEY);
   let event;
   try {
     event = client.constructEvent(raw, signature, config.STRIPE_WEBHOOK_SECRET);

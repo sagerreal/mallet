@@ -5,7 +5,8 @@ import { withTenant } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
-import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { FixedWindowLimiter } from "@mallet/platform/resilience";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, reconcileCheckoutSession } from "@mallet/invoicing";
 import { getAppDeps } from "@/trpc/di";
 
@@ -23,10 +24,26 @@ const bodySchema = z.object({
   sessionId: z.string().min(4).max(255).regex(/^cs_/),
 });
 
+// Throttle — the sharpest public edge: every accepted POST costs a REAL Stripe API retrieve.
+// Keyed on the caller's IP (Vercel-set x-forwarded-for, not client-forgeable there); when no IP
+// header exists the session id keys instead, so the endpoint is never unthrottled. Generous —
+// the success page fires this exactly once per checkout return.
+const reconcileLimiter = new FixedWindowLimiter({ limit: 10, windowMs: 60_000 });
+
+const clientIp = (req: Request): string | null =>
+  req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  req.headers.get("x-real-ip")?.trim() ||
+  null;
+
 export async function POST(req: Request): Promise<Response> {
   const config = loadConfig();
   if (!config.STRIPE_SECRET_KEY) {
     return NextResponse.json({ recorded: false }, { status: 503 });
+  }
+
+  const ip = clientIp(req);
+  if (ip && !reconcileLimiter.allow(`ip:${ip}`)) {
+    return NextResponse.json({ error: "too many requests — try again in a minute" }, { status: 429 });
   }
 
   let body: unknown;
@@ -39,8 +56,12 @@ export async function POST(req: Request): Promise<Response> {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid request." }, { status: 400 });
   }
+  if (!ip && !reconcileLimiter.allow(`sid:${parsed.data.sessionId}`)) {
+    return NextResponse.json({ error: "too many requests — try again in a minute" }, { status: 429 });
+  }
 
-  const client = new StripeClient(config.STRIPE_SECRET_KEY);
+  // Shared process-wide client: the breaker must see ALL Stripe traffic to ever trip.
+  const client = getSharedStripeClient(config.STRIPE_SECRET_KEY);
   const deps = getAppDeps();
 
   return runWithContext({ requestId: deps.ids.newId() }, async () => {

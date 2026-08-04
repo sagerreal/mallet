@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
+import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { getPublicInvoice, createPublicInvoiceCheckout } from "@/modules/invoicing/app/public-invoice";
 import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
 
@@ -18,6 +19,16 @@ export const dynamic = "force-dynamic";
 
 // Token format: 64 hex characters (32 bytes, base16). Validates before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
+
+// Per-token throttle (per warm instance — damping, not a hard global cap; see the limiter's own
+// note). Generous: a real customer refreshes a handful of times, not sixty. The POST budget is
+// tighter because each call reaches Stripe (the stable idempotency key makes retries reuse one
+// session, but the round-trips still count toward quota and the shared breaker).
+const getLimiter = new FixedWindowLimiter({ limit: 60, windowMs: 60_000 });
+const checkoutLimiter = new FixedWindowLimiter({ limit: 10, windowMs: 60_000 });
+
+const throttled = (): NextResponse =>
+  NextResponse.json({ error: "too many requests — try again in a minute" }, { status: 429 });
 
 const postBodySchema = z.object({
   action: z.literal("create_checkout"),
@@ -51,6 +62,7 @@ export async function GET(
   if (!TOKEN_RE.test(token)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (!getLimiter.allow(token)) return throttled();
 
   try {
     const view = await getPublicInvoice(token);
@@ -76,6 +88,7 @@ export async function POST(
   if (!TOKEN_RE.test(token)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (!checkoutLimiter.allow(token)) return throttled();
 
   let body: unknown;
   try {

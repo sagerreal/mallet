@@ -4,7 +4,7 @@ import { ownerDb } from "@mallet/shared/db/owner-client";
 import { withTenant } from "@mallet/shared/db/tx";
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { asInvoiceId, asOrgId, type OrgId } from "@mallet/shared/types";
-import { StripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { StripePaymentLinkGateway } from "../infra/stripe-payment-link-gateway";
@@ -76,7 +76,8 @@ export async function createPublicInvoiceCheckout(token: string): Promise<Public
     // Stripe unconfigured on this deployment — the same dark state the office path reports.
     return { kind: "rejected", message: "Online payment isn't available right now — contact the business to pay." };
   }
-  const stripe = new StripeClient(config.STRIPE_SECRET_KEY);
+  // Shared process-wide client: the breaker only works if it sees ALL Stripe traffic.
+  const stripe = getSharedStripeClient(config.STRIPE_SECRET_KEY);
 
   return withTenant(resolved.orgId, async (tx) => {
     return createCheckoutWithDeps(resolved.orgId, asInvoiceId(resolved.invoiceId), {

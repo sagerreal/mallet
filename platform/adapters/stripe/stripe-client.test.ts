@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import Stripe from "stripe";
 import { TimeoutError } from "@mallet/platform/resilience";
-import { isRetriableStripeError, StripeClient, type CreateCheckoutParams } from "./stripe-client";
+import { isRetriableStripeError, StripeClient, getSharedStripeClient, type CreateCheckoutParams } from "./stripe-client";
 
 // ---------------------------------------------------------------------------
 // isRetriableStripeError — pure function, no mocking needed
@@ -217,6 +217,24 @@ describe("StripeClient.createCheckoutSession", () => {
     ];
     expect(sessionParams.success_url).toBe("https://app.example.com/paid");
     expect(sessionParams.cancel_url).toBe("https://app.example.com/cancel");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getSharedStripeClient — one client (one breaker) per process
+// ---------------------------------------------------------------------------
+
+describe("getSharedStripeClient", () => {
+  it("returns the SAME instance across calls for the same key — the shared breaker contract", () => {
+    const a = getSharedStripeClient("sk_test_shared_key_one");
+    const b = getSharedStripeClient("sk_test_shared_key_one");
+    expect(a).toBe(b);
+  });
+
+  it("mints a fresh client when the secret key changes (rotation)", () => {
+    const a = getSharedStripeClient("sk_test_rotation_old");
+    const b = getSharedStripeClient("sk_test_rotation_new");
+    expect(a).not.toBe(b);
   });
 });
 

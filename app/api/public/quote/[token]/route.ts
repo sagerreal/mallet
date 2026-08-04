@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { logger } from "@mallet/shared/observability";
+import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 import type { AcceptPublicQuoteResult, RequestChangeResult } from "@/modules/quoting/app/public-quote";
 import type { TierChoiceRejection } from "@/modules/quoting/app/public-accept-policy";
@@ -21,6 +22,15 @@ export const dynamic = "force-dynamic";
 
 // Token format: 64 hex characters (32 bytes, base16). Validates before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
+
+// Per-token throttle (per warm instance — damping, see FixedWindowLimiter's note). Same
+// mechanism as the public invoice route. POST is tighter: accept/decline write, and a signature
+// retry loop is a handful of attempts, never twenty a minute.
+const getLimiter = new FixedWindowLimiter({ limit: 60, windowMs: 60_000 });
+const actionLimiter = new FixedWindowLimiter({ limit: 20, windowMs: 60_000 });
+
+const throttled = (): NextResponse =>
+  NextResponse.json({ error: "too many requests — try again in a minute" }, { status: 429 });
 
 const postBodySchema = z.object({
   action: z.enum(["accept", "decline", "request_change"]),
@@ -140,6 +150,7 @@ export async function GET(
   if (!TOKEN_RE.test(token)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (!getLimiter.allow(token)) return throttled();
 
   try {
     const view = await getPublicQuote(token);
@@ -226,6 +237,7 @@ export async function POST(
   if (!TOKEN_RE.test(token)) {
     return NextResponse.json({ error: "not found" }, { status: 404 });
   }
+  if (!actionLimiter.allow(token)) return throttled();
 
   let body: unknown;
   try {

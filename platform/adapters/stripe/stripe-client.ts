@@ -8,8 +8,8 @@ import { call, CircuitBreaker, TimeoutError } from "@mallet/platform/resilience"
 
 // Only TRANSIENT failures are worth retrying. A deterministic client error (bad request, auth,
 // declined card) fails identically on every attempt, so retrying it wastes round-trips AND — because
-// the breaker is shared process-wide (one StripeClient in the DI root) — counts N times toward the
-// circuit breaker, which could trip card payments for EVERY tenant. So those must throw on the first
+// the breaker is shared process-wide (ONE client via getSharedStripeClient below) — counts N times
+// toward the circuit breaker, which could trip card payments for EVERY tenant. So those must throw on the first
 // attempt; we retry only timeouts, dropped connections, 5xx (StripeAPIError), and 429 (rate limit).
 export const isRetriableStripeError = (error: unknown): boolean =>
   error instanceof TimeoutError ||
@@ -173,3 +173,20 @@ export class StripeClient {
     return this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
   }
 }
+
+// ── process-wide shared instance ─────────────────────────────────────────────
+//
+// The circuit breaker lives ON the client, so a client constructed per request carries a breaker
+// that is thrown away before it can ever accumulate five failures — a breaker that cannot trip.
+// Every request-path caller (DI root, webhook, reconcile, public checkout) must take the client
+// from here so one breaker sees ALL Stripe traffic in the process. Keyed by the secret key so a
+// rotation (or a test with a different key) mints a fresh client instead of talking with a stale
+// credential. Same lazy-singleton shape as trpc/di.ts's getAppDeps cache.
+let sharedClient: { key: string; client: StripeClient } | null = null;
+
+export const getSharedStripeClient = (secretKey: string): StripeClient => {
+  if (!sharedClient || sharedClient.key !== secretKey) {
+    sharedClient = { key: secretKey, client: new StripeClient(secretKey) };
+  }
+  return sharedClient.client;
+};
