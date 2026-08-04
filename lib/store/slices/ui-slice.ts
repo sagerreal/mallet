@@ -14,6 +14,15 @@ export interface UISlice extends UIState {
   pushModal: (id: ModalId, params?: Record<string, unknown>) => void;
   /** Pops to the parent drill-in if there is one, else closes — never a dead end. */
   closeModal: () => void;
+  /**
+   * TERMINAL close: clears the active modal AND the whole back-stack, whatever its depth.
+   *
+   * For a step that ENDS a flow rather than drilling into one — the field close-out's Done, where
+   * the next thing the tech does is on My day, not on the job sheet he came through. Popping N
+   * times would guess the depth, and the depth is not fixed: the visit-fee path pushes an extra
+   * level. Use only for a genuine terminal step; a drill-in still uses closeModal.
+   */
+  dismissModals: () => void;
   setCustSeg: (seg: "people" | "biz") => void;
   dismissAttention: (key: string) => void;
   undismissAttention: (key: string) => void;
@@ -45,6 +54,8 @@ export const createUISlice: StateCreator<UISlice, [], [], UISlice> = (set) => ({
       const parent = s.modalStack.at(-1) ?? null;
       return { activeModal: parent, modalStack: s.modalStack.slice(0, -1) };
     }),
+
+  dismissModals: () => set({ activeModal: null, modalStack: [] }),
 
   setCustSeg: (seg) => set({ custSeg: seg }),
 

@@ -214,7 +214,17 @@ export function TechJobModalContent() {
     // DURABLE id rather than re-deriving the job link — the same belt-and-braces the visit-fee
     // path uses. The link itself is now durable (invoicing.list carries sourceJobId), so this is
     // no longer load-bearing; it costs one property and removes the whole class of failure.
-    pushModal(MODAL.CLOSE_OUT, invoice ? { jobId, invoiceId: invoice.id } : { jobId });
+    // `from` declares the OPENER'S INTENT, and it is what the close-out branches on to decide
+    // where Done lands. Opened from here, the close-out is the last step of a field visit: the
+    // next thing this person does is the next stop, so Done dismisses to My day rather than
+    // popping back to a job sheet nobody needs again. Role can't stand in for this — an
+    // owner-operator collecting at the door is `owner` and still belongs on My day.
+    pushModal(
+      MODAL.CLOSE_OUT,
+      invoice
+        ? { jobId, invoiceId: invoice.id, from: "field-job" }
+        : { jobId, from: "field-job" },
+    );
   }, [jobId, invoice, pushModal]);
 
   const openInvoiceModal = useCallback(
@@ -250,7 +260,11 @@ export function TechJobModalContent() {
 
     // Already out the door (sent/partial/paid) — nothing to raise; take them straight to it.
     if (existingFeeInvoice && existingFeeInvoice.status !== "draft") {
-      pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId: existingFeeInvoice.id });
+      pushModal(MODAL.CLOSE_OUT, {
+        jobId,
+        invoiceId: existingFeeInvoice.id,
+        from: "field-job",
+      });
       return;
     }
 
@@ -261,7 +275,7 @@ export function TechJobModalContent() {
       setFeeError(error || "Couldn't raise the visit fee — check your connection and try again.");
       return;
     }
-    pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId });
+    pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId, from: "field-job" });
   }, [jobId, feeBusy, existingFeeInvoice, raiseVisitFee, pushModal]);
 
   const navigate = useCallback(() => {

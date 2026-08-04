@@ -44,6 +44,24 @@ describe("ui-slice modal back-stack", () => {
     expect(ui().activeModal).toBeNull();
   });
 
+  it("dismissModals clears the whole stack in ONE action, whatever its depth", () => {
+    // A TERMINAL step (the field close-out's Done) must leave nothing behind. Popping N times
+    // guesses the depth, and the depth is not fixed — the visit-fee path pushes an extra level.
+    ui().openModal(MODAL.TECH_JOB, { jobId: "j1" });
+    ui().pushModal(MODAL.CLOSE_OUT, { jobId: "j1", from: "field-job" });
+    ui().pushModal(MODAL.INVOICE, { invoiceId: "i1" });
+    ui().dismissModals();
+    expect(ui().activeModal).toBeNull();
+    expect(ui().modalStack).toEqual([]);
+  });
+
+  it("dismissModals from a single root leaves nothing open", () => {
+    ui().openModal(MODAL.TECH_JOB, { jobId: "j1" });
+    ui().dismissModals();
+    expect(ui().activeModal).toBeNull();
+    expect(ui().modalStack).toEqual([]);
+  });
+
   it("two-level drill-in pops in order (job → price builder → back to job)", () => {
     ui().openModal(MODAL.JOB, { jobId: "j1" });
     ui().pushModal(MODAL.PRICE_BUILDER, { jobId: "j1" });
