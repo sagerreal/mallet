@@ -348,7 +348,7 @@ domain, so any of those would be an unpassable gate.
 
 ### Notes
 
-Paste exactly this. **199 words.**
+Paste exactly this. **237 words.**
 
 ```
 Demo account (verified — no email confirmation, no SMS code):
@@ -368,7 +368,7 @@ To reach the LiDAR room scanner:
 
 Room scanning uses the device's LiDAR sensor through Apple's RoomPlan framework to build a dimensioned floor plan on device. RoomPlan has no web API, so this cannot be done in a browser. Contractors price wall and floor work from the measurements.
 
-Requires an iPhone Pro or Pro Max — RoomPlan needs LiDAR, so Scan room is hidden on other models. The rest of the app works normally.
+Requires an iPhone Pro, iPhone Pro Max or iPad Pro — RoomPlan needs the LiDAR scanner and reports itself unavailable on models without it. On a model without LiDAR the Scan room button is still shown, disabled, reading "This device reports no LiDAR sensor — room scanning needs an iPhone Pro or iPad Pro." The rest of the app works normally on any device.
 
 Charge a card reports that Stripe setup is incomplete: every shop connects its own Stripe account and this sample shop has none.
 ```
