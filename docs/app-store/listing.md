@@ -9,27 +9,28 @@ Nothing in this file has been uploaded. The binary facts live in
 
 ---
 
-## DECISION: four things only Owen can settle
+## DECISION: three settled, one to verify
 
-1. **The name "Mallet" is probably contested.** `MALLET.` (App Store id 1442692767, seller
-   *Mallet.Footwear Ltd*, category Shopping) is live in the US and GB storefronts and was last
-   updated 21 Jul 2026. Apple enforces uniqueness on the App Store name and normalises
-   punctuation and case when it does — `Mallet` vs `MALLET.` differ only by a full stop, so the
-   reservation may be refused. **Try `Mallet` first** in App Store Connect; it either takes it or
-   it does not, and that is a ten-second test. If it is refused, use one of these (all ≤30, all
-   still lead with the brand): `Mallet — Field Service` [22] · `Mallet Field Service` [20] ·
-   `Mallet Trade Software` [21]. This is a listing-name collision only, not a trademark problem:
-   footwear (Nice class 25) and trade software (classes 9/42) do not conflict.
+1. ~~**The name.**~~ **SETTLED — Owen: "you can do Mallet Software".** Try `Mallet` [6] first in
+   App Store Connect (a ten-second test); if it is refused, use **`Mallet Software`** [15].
+   Context for why a refusal is likely: `MALLET.` (App Store id 1442692767, seller
+   *Mallet.Footwear Ltd*, category Shopping) is live in the US and GB storefronts, last updated
+   21 Jul 2026, and Apple normalises punctuation and case when enforcing name uniqueness — so
+   `Mallet` and `MALLET.` may collide. This is a listing-name collision only, not a trademark
+   problem: footwear (Nice class 25) and trade software (classes 9/42) do not conflict.
 2. **Does the AI front desk go in the description?** It is written into the Description below,
    labelled as off by default. Reason to cut it: switching the toggle on **provisions a real
    Twilio phone number and starts answering real calls**, and a curious reviewer with owner
    credentials can flip it. Reason to keep it: it is a real capability and a differentiator.
    If you cut it, delete the "OPTIONAL, OFF UNTIL YOU SET IT UP" block — nothing else refers to it.
-3. **App Review contact.** Apple needs a first name, last name, phone number and email that a
-   human answers within a day. I have not invented one. Fill in the App Review Information block.
-4. **Fix the Geocoding billing before you submit, or the review note grows a line.** See
-   *Reviewer-tripping defects* — "Measure from satellite" cannot look up an address on production
-   right now.
+3. ~~**App Review contact.**~~ **SETTLED** — Owen Duggan, +1 781 385 0591,
+   owenduggan2003@gmail.com. Filled into the App Review Information block below.
+4. **Geocoding billing — Owen added a payment method on 4 Aug 2026; VERIFY before submitting.**
+   A billing account alone is not enough: the **Geocoding API** must also be *enabled* on the same
+   Google Cloud project as `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` (Console → APIs & Services → Library →
+   Geocoding API → Enable). Re-test by opening a quote for Alicia Brennan → Measure → **Measure
+   from satellite** and confirming the map centres on the house instead of showing
+   "Couldn't find … on the map". If it still fails, add the caveat sentence below to the Notes.
 
 ---
 
@@ -341,10 +342,10 @@ domain, so any of those would be an unpassable gate.
 
 | Field | Value |
 |---|---|
-| First name | *(DECISION 3 — fill in)* |
-| Last name | *(DECISION 3 — fill in)* |
-| Phone number | *(DECISION 3 — fill in)* |
-| Email address | *(DECISION 3 — fill in)* |
+| First name | Owen |
+| Last name | Duggan |
+| Phone number | +1 781 385 0591 |
+| Email address | owenduggan2003@gmail.com |
 
 ### Notes
 
