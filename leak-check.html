@@ -65,23 +65,6 @@
           <button class="lc-back" id="lcBack" type="button" hidden>&larr; back</button>
         </div>
 
-        <!-- ============ GATE — the score is earned, the email unlocks it ============ -->
-        <div class="lc-step" data-lc="gate">
-          <p class="hero-kicker">Your leak check</p>
-          <h2 class="lc-h sm">Your Leak Score is ready.</h2>
-          <div class="lc-locked" aria-hidden="true">
-            <div class="lc-dial lock"><span class="lc-num">&#63;&#63;</span><span class="lc-outof">/ 100</span></div>
-            <p class="lc-locknote">Score &middot; per-area leak bars &middot; dollars walking past your shop</p>
-          </div>
-          <p class="lc-formhead">Where should we send the full worksheet? Unlocks your score on the next screen.</p>
-          <div class="embed-card lc-embed">
-            <iframe id="lcTally"
-              data-tally-base="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
-              loading="lazy" width="100%" height="320" frameborder="0"
-              title="Unlock your Leak Score"></iframe>
-          </div>
-          <p class="lc-fine">One email with your worksheet + the fix plan. No drip campaign, no spam.</p>
-        </div>
 
         <!-- ============ RESULT ============ -->
         <div class="lc-step" data-lc="result">
@@ -125,7 +108,28 @@
             <div class="cta-row split lc-cta">
               <button class="btn-primary lg js-book-demo" type="button" data-calendly="https://calendly.com/trymallet/30min">Book the demo &mdash; bring these numbers</button>
             </div>
-            <p class="lc-sentnote"><span class="ok">&check;</span> Your worksheet + fix plan are on their way to your inbox.</p>
+          </div>
+
+          <!-- The email ask, AFTER the number. It used to sit in front of the score as a toll;
+               now it trades a real thing (the worksheet) for an address, next to a figure the
+               visitor is already looking at. Nobody is blocked, so the tool can be shared. -->
+          <div class="lc-worksheet">
+            <h3>Want the worksheet?</h3>
+            <p>Your numbers, the assumptions behind them, and the order I&rsquo;d fix them in &mdash; as a PDF you can bring to your bookkeeper. One email, no drip campaign.</p>
+            <div class="embed-card lc-embed">
+              <iframe id="lcTally"
+                data-tally-base="https://tally.so/embed/Y5gxDv?alignLeft=1&amp;hideTitle=1&amp;transparentBackground=1&amp;dynamicHeight=1"
+                loading="lazy" width="100%" height="320" frameborder="0"
+                title="Get the worksheet"></iframe>
+            </div>
+          </div>
+
+          <!-- Share. A calculator only travels if there is something to send, and the thing worth
+               sending is the number, not the homepage. Copy-link over social buttons: the share
+               that matters here is one plumber texting another, which no widget captures. -->
+          <div class="lc-share">
+            <p class="lc-sharehead">Know a shop that should run this?</p>
+            <button class="btn-outline" type="button" id="lcCopy" data-copied="Link copied">Copy the link</button>
           </div>
           <p class="lc-fine">Assumptions: half of missed calls are reachable and 40% book; unpaid invoices at your average job value. Estimates, not promises &mdash; the pilot measures the real numbers.</p>
         </div>
@@ -174,11 +178,11 @@
 
     function slice(x) { return Array.prototype.slice.call(x); }
     var steps = {}, els = {};
-    ['intro', 'quiz', 'gate', 'result'].forEach(function (k) {
+    ['intro', 'quiz', 'result'].forEach(function (k) {
       steps[k] = document.querySelector('[data-lc="' + k + '"]');
     });
     ['lcStart', 'lcCount', 'lcBar', 'lcQ', 'lcOpts', 'lcBack', 'lcScore', 'lcTier',
-     'barDesk', 'barQuote', 'barInv', 'lcLeak', 'lcLeakNote', 'lcStuck', 'lcTally'].forEach(function (id) {
+     'barDesk', 'barQuote', 'barInv', 'lcLeak', 'lcLeakNote', 'lcStuck', 'lcTally', 'lcCopy'].forEach(function (id) {
       els[id] = document.getElementById(id);
     });
 
@@ -342,19 +346,49 @@
         t.src = t.getAttribute('data-tally-src');
       }
 
-      show('gate');
-      track('leak_check_gate_shown', { score: score, trade: answers.trade });
+      // SHOW THE SCORE. The email used to be a toll gate in front of it — answer seven
+      // questions, then pay with your address to see the number you just earned.
+      //
+      // That gate is why this tool could never travel. Nobody forwards a friend a link that
+      // demands an email, so every share died at the door, and on Hacker News an email-walled
+      // calculator is one of the most reliably savaged patterns there is — the thread becomes
+      // about the wall instead of the product.
+      //
+      // The email ask did not disappear; it moved to the result, next to a score the visitor is
+      // already looking at, offering the detailed worksheet. Asking someone who just saw a real
+      // number converts better than extracting it from someone who has seen nothing, and it
+      // costs nothing when they say no.
+      show('result');
+      track('leak_check_complete', { score: score, leak_yr: Math.round(leakYr), trade: answers.trade, techs: answers.techs });
+      try { localStorage.setItem('mallet-lc-done', '1'); } catch (err) {}
 
-      // the Tally submission is the key: unlock the result when it lands
-      window.addEventListener('message', function unlock(e) {
+      // Still worth knowing who took the worksheet.
+      window.addEventListener('message', function captured(e) {
         var d = e.data;
         var submitted = (typeof d === 'string' && d.indexOf('Tally.FormSubmitted') !== -1) ||
                         (d && d.event === 'Tally.FormSubmitted');
         if (!submitted) return;
-        window.removeEventListener('message', unlock);
-        try { localStorage.setItem('mallet-lc-done', '1'); } catch (err) {}
-        show('result');
-        track('leak_check_complete', { score: score, leak_yr: Math.round(leakYr), trade: answers.trade, techs: answers.techs });
+        window.removeEventListener('message', captured);
+        track('leak_check_email', { score: score, trade: answers.trade });
+      });
+    }
+
+    // Copy-link share. navigator.clipboard needs a secure context and can be refused, so the
+    // failure path selects the URL in a temporary field rather than leaving a dead button.
+    if (els.lcCopy) {
+      els.lcCopy.addEventListener('click', function () {
+        var url = 'https://www.trymallet.com/leak-check';
+        var done = function () {
+          var was = els.lcCopy.textContent;
+          els.lcCopy.textContent = els.lcCopy.getAttribute('data-copied') || 'Copied';
+          setTimeout(function () { els.lcCopy.textContent = was; }, 2000);
+          track('leak_check_share');
+        };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(url).then(done, function () { window.prompt('Copy this link:', url); });
+        } else {
+          window.prompt('Copy this link:', url);
+        }
       });
     }
 

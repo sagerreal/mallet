@@ -1125,3 +1125,24 @@ input[type="range"]::-moz-range-track{height:4px;border-radius:99px;background:#
 .lc-time{border-top:1px dashed var(--line);margin-top:1.1rem;padding-top:1rem}
 .lc-time-fig{font-size:1.25rem;letter-spacing:-.015em;margin-top:.3rem}
 .lc-time-fig b{font-weight:700}
+
+/* ---- Leak check: worksheet ask + share -------------------------------------
+   Both live on the RESULT now. The email used to be a gate in front of the score;
+   moving it here is what lets the tool be shared at all, because nothing is
+   withheld from someone who follows a link. ------------------------------- */
+.lc-worksheet{
+  margin-top:28px; padding:22px 20px;
+  border:1.5px solid var(--line,#E6DFD2); border-radius:14px;
+  background:var(--card,#FFFDF8);
+}
+.lc-worksheet h3{ margin:0 0 6px; font-size:1.05rem }
+.lc-worksheet p{ margin:0 0 14px; color:var(--ink-2,#6B6459); line-height:1.55; font-size:.95rem }
+
+.lc-share{
+  margin-top:20px; padding-top:20px; border-top:1px solid var(--line,#E6DFD2);
+  display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap;
+}
+.lc-sharehead{ margin:0; color:var(--ink-2,#6B6459); font-size:.95rem }
+/* The button keeps its width when the label swaps to "Link copied", so the row
+   does not jump under the reader's finger at the moment they tap it. */
+#lcCopy{ min-width:148px; white-space:nowrap }
