@@ -1,5 +1,12 @@
 // Public surface for the invoicing module — the only sanctioned import seam (architecture rule).
 export { createInvoiceRouter } from "./api/invoice-router";
+// The technician's field-scoped money surface. Only the factory is public: the scope port, its
+// adapter, the guard and the redacted DTO stay module-private, so the redaction cannot be
+// bypassed by reaching around the router.
+export { createFieldInvoiceRouter } from "./api/field-invoice-router";
+// The one sentinel naming a visit-fee invoice — shared so the client's duplicate-collection guard
+// and the server's idempotency check are the SAME string rather than two that agree today.
+export { VISIT_FEE_TITLE } from "./app/raise-visit-fee";
 export type { Invoice, InvoiceStatus, InvoiceProps } from "./domain/invoice";
 export { INVOICE_STATUSES } from "./domain/invoice";
 export type { PaymentMethod } from "./domain/payment";

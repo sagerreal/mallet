@@ -77,6 +77,7 @@ class FakeInvoiceRepo implements InvoiceRepository {
   async applyPayment(): Promise<ApplyResult> { return { applied: false, invoice: this.stored }; }
   async findById(): Promise<Invoice | null> { return this.stored; }
   async findByPublicToken(): Promise<Invoice | null> { return this.stored; }
+  async listByScopeJob() { return []; }
   async findBySourceJob(): Promise<Invoice | null> { return null; }
   async list(_p: CursorPage): Promise<Paginated<Invoice>> { return { items: [], nextCursor: null }; }
   async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {

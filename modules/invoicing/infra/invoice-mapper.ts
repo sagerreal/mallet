@@ -59,6 +59,7 @@ export const toDomain = (
     orgId: asOrgId(row.orgId),
     num: row.num,
     sourceJobId: row.sourceJobId ? asJobId(row.sourceJobId) : null,
+    scopeJobId: row.scopeJobId ? asJobId(row.scopeJobId) : null,
     leadId: asLeadId(row.leadId),
     title: row.title,
     status: row.status,

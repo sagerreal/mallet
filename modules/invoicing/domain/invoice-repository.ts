@@ -58,6 +58,13 @@ export interface InvoiceRepository {
    */
   findByPublicToken(token: string): Promise<Invoice | null>;
   findBySourceJob(jobId: JobId): Promise<Invoice | null>;
+  /**
+   * Every non-deleted invoice SCOPED to a job (see InvoiceProps.scopeJobId), newest first.
+   *
+   * A list, not a single row, because unlike `source_job_id` the scope link carries no uniqueness
+   * — that is the whole reason it exists. Callers narrow it themselves.
+   */
+  listByScopeJob(jobId: JobId): Promise<Invoice[]>;
   list(page: CursorPage, filter?: InvoiceFilter, sort?: InvoiceSort, sortDir?: "asc" | "desc"): Promise<Paginated<Invoice>>;
 
   /**

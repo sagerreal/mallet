@@ -60,6 +60,7 @@ class FakeInvoiceRepository implements InvoiceRepository {
     return null;
   }
 
+  async listByScopeJob() { return []; }
   async findBySourceJob(_jobId: JobId): Promise<Invoice | null> {
     return null;
   }

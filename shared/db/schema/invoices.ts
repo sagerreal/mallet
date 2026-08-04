@@ -29,6 +29,22 @@ export const invoices = pgTable(
       .references(() => orgs.id, { onDelete: "cascade" }),
     num: text("num").notNull(),
     sourceJobId: uuid("source_job_id"),
+    /**
+     * The job this bill is ABOUT, when it is not the job it was raised FROM.
+     *
+     * Distinct from `source_job_id`, and deliberately not a substitute for it. `source_job_id`
+     * says "this invoice IS the bill for that job" and carries `invoices_org_source_job_uidx` —
+     * one active invoice per job. The declined-estimate visit fee must NOT consume that slot: the
+     * customer may still accept a quote on the same job later, and its real bill needs the slot.
+     * So the fee invoice stays lead-tied (`source_job_id IS NULL`) and records the job it was
+     * collected on here instead.
+     *
+     * Its only job is authorization: it is what lets a technician standing at the door collect a
+     * trip fee on the job in front of them (see assertFieldInvoiceScope, which authorizes through
+     * `source_job_id` OR this). NOT unique — several scope-linked invoices may point at one job,
+     * which is exactly why it cannot be folded into `source_job_id`.
+     */
+    scopeJobId: uuid("scope_job_id"),
     leadId: uuid("lead_id").notNull(),
     title: text("title"),
     status: text("status").notNull().default("draft"),
@@ -72,7 +88,17 @@ export const invoices = pgTable(
       columns: [t.orgId, t.sourceJobId],
       foreignColumns: [jobs.orgId, jobs.id],
     }),
+    // Composite, like every other child reference here: the scope link can only ever point at a
+    // job in the SAME org, enforced by the database rather than by the code that writes it.
+    foreignKey({
+      name: "invoices_scope_job_fk",
+      columns: [t.orgId, t.scopeJobId],
+      foreignColumns: [jobs.orgId, jobs.id],
+    }),
     index("invoices_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
+    // Deliberately a plain index, NOT unique: unlike source_job_id, several invoices may be scoped
+    // to one job. The field guard reads by (org, scope_job_id) to find a job's fee invoice.
+    index("invoices_org_scope_job_idx").on(t.orgId, t.scopeJobId),
     index("invoices_org_status_due_idx").on(t.orgId, t.status, t.dueAt),
     // Sort indexes for invoice-sorts.ts. due/oldestUnpaid share the due-date index; the existing
     // org_status_due_idx already covers the filtered collection queue.

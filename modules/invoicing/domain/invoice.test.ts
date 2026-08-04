@@ -18,6 +18,7 @@ const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   taxBps: 0,
   tax: zeroMoney,
   sourceJobId: null,
+  scopeJobId: null,
   leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
   title: "Deck rebuild",
   status: "draft",

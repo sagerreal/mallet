@@ -56,6 +56,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     return {
       num: p.num,
       sourceJobId: p.sourceJobId,
+      scopeJobId: p.scopeJobId,
       leadId: p.leadId,
       title: p.title,
       status: p.status,
@@ -182,6 +183,18 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       .limit(1);
     const header = rows[0];
     return header ? this.hydrate(header) : null;
+  }
+
+  // Scope-linked invoices for a job, newest first. NOT a findBySourceJob twin: scope_job_id has no
+  // unique index (several may exist), so this returns the collection and the caller decides — the
+  // visit-fee path narrows by title to answer "has this job's fee already been raised".
+  async listByScopeJob(jobId: JobId): Promise<Invoice[]> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.scopeJobId, jobId), isNull(invoices.deletedAt)))
+      .orderBy(desc(invoices.createdAt), desc(invoices.id));
+    return Promise.all(rows.map((header) => this.hydrate(header)));
   }
 
   /** Predicates shared by list() and count(), so the two can never answer different questions. */

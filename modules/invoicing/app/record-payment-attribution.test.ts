@@ -99,6 +99,7 @@ class CapturingRepo implements InvoiceRepository {
   async findByPublicToken(): Promise<Invoice | null> {
     return null;
   }
+  async listByScopeJob() { return []; }
   async findBySourceJob(): Promise<Invoice | null> {
     return null;
   }

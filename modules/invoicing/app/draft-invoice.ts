@@ -1,4 +1,4 @@
-import type { OrgId, LeadId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, LeadId, JobId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
 import { asInvoiceId, money, zeroMoney, addMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
@@ -21,6 +21,15 @@ export interface DraftInvoiceCommand {
   readonly title: string | null;
   readonly termsDays: number;
   readonly lines: readonly InvoiceLineInput[];
+  /**
+   * The job this lead-tied invoice is ABOUT, when there is one. Optional and null by default —
+   * an ordinary manual invoice is about nothing but its customer.
+   *
+   * `sourceJobId` stays null on this path regardless: a drafted invoice is never "the bill for"
+   * a job, and stamping it there would consume that job's one `invoices_org_source_job_uidx` slot.
+   * See InvoiceProps.scopeJobId.
+   */
+  readonly scopeJobId?: JobId | null;
 }
 
 // A standalone/manual invoice (no source job). Total is the sum of its line amounts.
@@ -62,6 +71,7 @@ export class DraftInvoiceUseCase {
       orgId: cmd.orgId,
       num,
       sourceJobId: null,
+      scopeJobId: cmd.scopeJobId ?? null,
       leadId: cmd.leadId,
       title: cmd.title,
       status: "draft",

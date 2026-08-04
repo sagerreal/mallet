@@ -108,6 +108,7 @@ class FakeInvoiceRepository implements InvoiceRepository {
     return null;
   }
 
+  async listByScopeJob() { return []; }
   async findBySourceJob(jobId: JobId): Promise<Invoice | null> {
     return [...this.store.values()].find((i) => i.props.sourceJobId === jobId) ?? null;
   }
@@ -460,6 +461,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
     //   3. findBySourceJob on the re-fetch returns the winner
     class RaceRepo extends FakeInvoiceRepository {
       private firstFindDone = false;
+      override async listByScopeJob() { return []; }
       override async findBySourceJob(jobId: JobId): Promise<Invoice | null> {
         if (!this.firstFindDone) {
           this.firstFindDone = true;
@@ -491,6 +493,7 @@ describe("CreateInvoiceFromJobUseCase", () => {
     //   - the re-fetch also returns null (winner was voided/deleted between insert and re-fetch)
     class GhostRaceRepo extends FakeInvoiceRepository {
       private firstFindDone = false;
+      override async listByScopeJob() { return []; }
       override async findBySourceJob(_jobId: JobId): Promise<Invoice | null> {
         if (!this.firstFindDone) {
           this.firstFindDone = true;

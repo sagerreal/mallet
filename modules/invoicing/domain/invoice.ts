@@ -31,6 +31,20 @@ export interface InvoiceProps {
   readonly orgId: OrgId;
   readonly num: string; // per-org "INV-<n>"
   readonly sourceJobId: JobId | null;
+  /**
+   * The job this bill is ABOUT, when it is not the job it was raised FROM. Null on almost every
+   * invoice.
+   *
+   * Set only where the two genuinely differ: the visit fee on a declined estimate is lead-tied
+   * (`sourceJobId: null`) so it does not consume the job's one `invoices_org_source_job_uidx`
+   * slot — the customer may still accept a quote on that job, and its real bill needs the slot —
+   * but a technician must still be able to collect it on the doorstep, which needs a job to
+   * authorize against. This is that job, and authorization is the only thing it is for.
+   *
+   * Never a fallback for `sourceJobId`: it carries no uniqueness, so nothing may infer "the bill
+   * for this job" from it.
+   */
+  readonly scopeJobId: JobId | null;
   readonly leadId: LeadId;
   readonly title: string | null;
   readonly status: InvoiceStatus;
@@ -91,13 +105,21 @@ const PO_NUMBER_MAX_LEN = 64;
  * Input to Invoice.create. The tax split may be omitted: most invoices are drafted by hand and no
  * tax was ever computed for them, which is different from a computed split that happens to be zero.
  */
-export type InvoiceCreateProps = Omit<InvoiceProps, "taxBps" | "tax" | "poNumber" | "publicToken"> & {
+export type InvoiceCreateProps = Omit<
+  InvoiceProps,
+  "taxBps" | "tax" | "poNumber" | "publicToken" | "scopeJobId"
+> & {
   readonly taxBps?: number;
   readonly tax?: Money;
   // Both optional with a null default: most construction sites (drafts, job invoices) have
   // neither — the PO arrives from the customer later, the token is minted at send time.
   readonly poNumber?: string | null;
   readonly publicToken?: string | null;
+  /**
+   * Optional with a null default because almost nothing sets it: an ordinary bill is raised FROM
+   * its job (`sourceJobId`) and has no separate scope. Only the visit-fee path passes one.
+   */
+  readonly scopeJobId?: JobId | null;
 };
 
 export class Invoice {
@@ -136,6 +158,7 @@ export class Invoice {
         tax,
         poNumber: props.poNumber ?? null,
         publicToken: props.publicToken ?? null,
+        scopeJobId: props.scopeJobId ?? null,
       }),
     );
   }

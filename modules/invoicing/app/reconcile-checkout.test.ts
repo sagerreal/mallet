@@ -84,6 +84,7 @@ class FakeRepo implements InvoiceRepository {
   async nextNumber(): Promise<string> { return "INV-1"; }
   async save(): Promise<void> {}
   async insertForJob(): Promise<boolean> { return true; }
+  async listByScopeJob() { return []; }
   async findBySourceJob(): Promise<Invoice | null> { return null; }
   async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
     return { openCents: 0, overdueCents: 0, openCount: 0 };

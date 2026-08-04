@@ -49,6 +49,7 @@ class FakeInvoiceRepository implements InvoiceRepository {
   // The rest are required by the interface but unused by SendInvoiceUseCase.
   async nextNumber(): Promise<string> { return "INV-1"; }
   async insertForJob(): Promise<boolean> { return true; }
+  async listByScopeJob() { return []; }
   async findBySourceJob(): Promise<Invoice | null> { return null; }
   async insertPayment(_o: OrgId, _i: InvoiceId, _p: Payment): Promise<boolean> { return true; }
   async applyPayment(_id: InvoiceId, _amt: number): Promise<ApplyResult> {

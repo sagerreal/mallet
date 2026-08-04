@@ -1,4 +1,4 @@
-import { and, asc, count, eq, isNull } from "drizzle-orm";
+import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import {
   orgs,
   orgSettings,
@@ -217,6 +217,31 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       connectedAccountId: row?.connectedAccountId ?? null,
       chargesEnabled: row?.chargesEnabled ?? false,
     };
+  }
+
+  /**
+   * Focused, side-effect-free read of the shop's visit/diagnostic fee, IN CENTS.
+   *
+   * `booking.serviceFee` is stored in DOLLARS inside the booking jsonb blob (documented on
+   * BookingCfg), and every caller outside settings works in cents — so the conversion happens here,
+   * once, rather than at each call site where a missed ×100 would undercharge a customer 100-fold.
+   *
+   * No lazy create (mirrors getTechSeesPrice / getConnectTarget): a shop that never opened Settings
+   * reads as no fee configured, which the caller must treat as "don't offer it" rather than "$0".
+   * Class-only, not on the SettingsRepository port — same as getConnectTarget: a focused read for
+   * another module's adapter, not part of the settings use-cases' contract.
+   */
+  async getServiceFeeCents(): Promise<number> {
+    const rows = await this.tx
+      .select({ fee: sql<string | null>`${orgSettings.booking} ->> 'serviceFee'` })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    const raw = rows[0]?.fee;
+    const dollars = raw === null || raw === undefined ? 0 : Number(raw);
+    // A malformed blob must not become NaN cents on a customer's bill.
+    if (!Number.isFinite(dollars) || dollars <= 0) return 0;
+    return Math.round(dollars * 100);
   }
 
   // ── OrgNameWriter ──────────────────────────────────────────────────────────
