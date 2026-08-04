@@ -7,29 +7,30 @@
  *   - renders the QR + an "Open payment page" anchor (_blank / noreferrer);
  *   - a DRAFT invoice is SENT first — createPayment is only called after sendInvoice
  *     resolves ok (it refuses drafts), and a failed send stops the mint;
- *   - polls v1.invoicing.get every 4s and hands the DTO to onPaid on paid/partial,
+ *   - polls the invoice every 4s and hands the fresh record to onPaid on paid/partial,
  *     then stops; transient poll errors keep polling;
  *   - PRECONDITION_FAILED (no Stripe Connect) shows the SERVER's sentence;
  *   - the "They paid another way — record it instead" fallback is ALWAYS visible —
  *     never a dead end — and a 5-minute wall-clock cap lands on a plain sentence.
+ *
+ * Both the mint and the poll go through lib/store/invoice-write.ts, which picks the office or
+ * the field API. The SURFACE is asserted here: a technician holding the QR is refused by every
+ * v1.invoicing.* procedure, so a card step that mints against the office router never flips to
+ * paid on their screen.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { CardCheckoutStep } from "./close-out-card-step";
+import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import type { Invoice } from "@/lib/store/types";
 
-const mockCreatePayment = vi.fn<(input: unknown) => Promise<{ url: string }>>();
-const mockGet = vi.fn<(input: unknown) => Promise<unknown>>();
+const mockCreatePayment = vi.fn<(surface: InvoiceWriteSurface, invoiceId: string) => Promise<{ url: string }>>();
+const mockGet = vi.fn<(surface: InvoiceWriteSurface, invoiceId: string) => Promise<Invoice>>();
 
-vi.mock("@/lib/trpc/vanilla", () => ({
-  trpcVanilla: {
-    v1: {
-      invoicing: {
-        createPayment: { mutate: (input: unknown) => mockCreatePayment(input) },
-        get: { query: (input: unknown) => mockGet(input) },
-      },
-    },
-  },
+vi.mock("@/lib/store/invoice-write", () => ({
+  mintCheckoutSession: (surface: InvoiceWriteSurface, invoiceId: string) =>
+    mockCreatePayment(surface, invoiceId),
+  readInvoice: (surface: InvoiceWriteSurface, invoiceId: string) => mockGet(surface, invoiceId),
 }));
 
 vi.mock("qrcode", () => ({
@@ -63,14 +64,16 @@ const sendOk = vi.fn(() => Promise.resolve({ ok: true as const }));
 
 function renderStep(overrides: {
   invoice?: Invoice;
+  surface?: InvoiceWriteSurface;
   sendInvoice?: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  onPaid?: (dto: unknown) => void;
+  onPaid?: (invoice: Invoice) => void;
   onRecordInstead?: () => void;
   onCancel?: () => void;
 } = {}) {
   const props = {
     invoice: overrides.invoice ?? makeInvoice(),
     amount: 450,
+    surface: overrides.surface ?? ("office" as InvoiceWriteSurface),
     sendInvoice: overrides.sendInvoice ?? sendOk,
     onPaid: overrides.onPaid ?? vi.fn(),
     onRecordInstead: overrides.onRecordInstead ?? vi.fn(),
@@ -97,7 +100,7 @@ describe("CardCheckoutStep — mint once + QR + open link", () => {
     await act(async () => {});
 
     expect(mockCreatePayment).toHaveBeenCalledTimes(1);
-    expect(mockCreatePayment).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(mockCreatePayment).toHaveBeenCalledWith("office", "inv-1");
 
     expect(await screen.findByAltText("Payment QR code")).toBeTruthy();
     const link = screen.getByText("Open payment page") as HTMLAnchorElement;
@@ -168,10 +171,10 @@ describe("CardCheckoutStep — polling", () => {
     vi.useRealTimers();
   });
 
-  it("a poll flip to paid hands the DTO to onPaid and stops the interval", async () => {
+  it("a poll flip to paid hands the fresh record to onPaid and stops the interval", async () => {
     mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
-    const paidDto = { id: "inv-1", status: "paid" };
-    mockGet.mockResolvedValue(paidDto);
+    const paid = makeInvoice({ status: "paid" });
+    mockGet.mockResolvedValue(paid);
     const onPaid = vi.fn();
     renderStep({ onPaid });
     await act(async () => {}); // mint lands
@@ -179,9 +182,9 @@ describe("CardCheckoutStep — polling", () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_000);
     });
-    expect(mockGet).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(mockGet).toHaveBeenCalledWith("office", "inv-1");
     expect(onPaid).toHaveBeenCalledTimes(1);
-    expect(onPaid).toHaveBeenCalledWith(paidDto);
+    expect(onPaid).toHaveBeenCalledWith(paid);
 
     // Interval stopped — no further reads, no second onPaid.
     await act(async () => {
@@ -193,15 +196,15 @@ describe("CardCheckoutStep — polling", () => {
 
   it("partial advances the same way (paid-progress)", async () => {
     mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
-    const partialDto = { id: "inv-1", status: "partial" };
-    mockGet.mockResolvedValue(partialDto);
+    const partial = makeInvoice({ status: "partial" });
+    mockGet.mockResolvedValue(partial);
     const onPaid = vi.fn();
     renderStep({ onPaid });
     await act(async () => {});
     await act(async () => {
       await vi.advanceTimersByTimeAsync(4_000);
     });
-    expect(onPaid).toHaveBeenCalledWith(partialDto);
+    expect(onPaid).toHaveBeenCalledWith(partial);
   });
 
   it("transient poll errors are swallowed and polling continues", async () => {
@@ -234,6 +237,40 @@ describe("CardCheckoutStep — polling", () => {
       await vi.advanceTimersByTimeAsync(20_000);
     });
     expect(mockGet.mock.calls.length).toBe(callsAtCap); // polling stopped
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The field surface. A technician's token is refused by every v1.invoicing.* procedure, so if
+// either of these two calls went to the office router the QR would either never appear or never
+// flip to paid — with the customer standing there having already scanned it.
+// ---------------------------------------------------------------------------
+describe("CardCheckoutStep — a technician's checkout goes to the FIELD API", () => {
+  beforeEach(() => {
+    mockCreatePayment.mockReset();
+    mockGet.mockReset();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("mints AND polls through the field surface, and still flips to paid", async () => {
+    mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
+    const paid = makeInvoice({ status: "paid" });
+    mockGet.mockResolvedValue(paid);
+    const onPaid = vi.fn();
+    renderStep({ surface: "field", onPaid });
+    await act(async () => {});
+
+    expect(mockCreatePayment).toHaveBeenCalledWith("field", "inv-1");
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_000);
+    });
+    expect(mockGet).toHaveBeenCalledWith("field", "inv-1");
+    expect(onPaid).toHaveBeenCalledWith(paid);
   });
 });
 

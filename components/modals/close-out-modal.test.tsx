@@ -15,11 +15,18 @@
  * Task 6: the PayBlock's card path is a REAL Stripe Checkout (QR + open link, poll to paid);
  * the fake tap simulation and the inert save-card checkbox are gone. The wiring describe at
  * the bottom drives method → card → mint → poll → adoptInvoice → done through the real modal.
+ *
+ * "Tech collects at the door": this sheet now OPENS for a technician, so every money write it
+ * makes names its API — `v1.fieldInvoicing.*` for the field, `v1.invoicing.*` for the desk — and
+ * the office-only capabilities inside it (the price builder, the found-work OK-pill, the
+ * what-was-done line, the hand-off) are absent rather than dead for them. The describes at the
+ * bottom are the regression fence on both halves.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { BillAsk, CloseOutModalContent } from "./close-out-modal";
 import { toStoreInvoice } from "@/features/money/invoices-hydrator";
+import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import type { Job, Lead, Invoice } from "@/lib/store/types";
 import { MODAL } from "@/lib/store/modal-ids";
 
@@ -72,19 +79,22 @@ vi.mock("@/lib/store/app-store", () => ({
     }),
 }));
 
-// The card step talks to the server directly (mint + poll) — mocked wholesale here.
-const mockCreatePayment = vi.fn<(input: unknown) => Promise<{ url: string }>>();
-const mockGetInvoice = vi.fn<(input: unknown) => Promise<unknown>>();
+// The card step and the pre-record freshness check go through the endpoint picker — mocked
+// wholesale here, with the SURFACE as the first argument so the routing is assertable.
+const mockCreatePayment = vi.fn<(surface: InvoiceWriteSurface, invoiceId: string) => Promise<{ url: string }>>();
+const mockGetInvoice = vi.fn<(surface: InvoiceWriteSurface, invoiceId: string) => Promise<Invoice>>();
 
-vi.mock("@/lib/trpc/vanilla", () => ({
-  trpcVanilla: {
-    v1: {
-      invoicing: {
-        createPayment: { mutate: (input: unknown) => mockCreatePayment(input) },
-        get: { query: (input: unknown) => mockGetInvoice(input) },
-      },
-    },
-  },
+vi.mock("@/lib/store/invoice-write", () => ({
+  mintCheckoutSession: (surface: InvoiceWriteSurface, invoiceId: string) =>
+    mockCreatePayment(surface, invoiceId),
+  readInvoice: (surface: InvoiceWriteSurface, invoiceId: string) => mockGetInvoice(surface, invoiceId),
+}));
+
+// The role decides the write surface AND which controls exist at all. Default: the office, so
+// every pre-existing expectation in this file describes unchanged office behaviour.
+let mockRole: "owner" | "office" | "tech" = "owner";
+vi.mock("@/features/identity/hooks", () => ({
+  useMe: () => ({ data: { role: mockRole, userId: "tech-1" }, isLoading: false }),
 }));
 
 vi.mock("@/lib/trpc/list-cache", () => ({ invalidateLists: vi.fn() }));
@@ -96,6 +106,11 @@ vi.mock("qrcode", () => ({
 vi.mock("@/features/settings/use-org-service-fee", () => ({
   useOrgServiceFee: () => 89,
 }));
+
+// Outer reset: every describe below starts from the office unless it says otherwise.
+beforeEach(() => {
+  mockRole = "owner";
+});
 
 function makeJob(overrides: Partial<Job> = {}): Job {
   return {
@@ -208,6 +223,7 @@ describe("CloseOutModalContent — the visit-fee flow's invoiceId param", () => 
     render(<CloseOutModalContent />);
     expect(mockAddInvoice).toHaveBeenCalledWith(
       expect.objectContaining({ jobId: "job-1", leadId: "lead-1" }),
+      "office",
     );
   });
 
@@ -248,35 +264,29 @@ const cardInvoice: Invoice = {
   total: 450, depPaid: 0, payments: [], status: "sent", age: 0, archived: false, origin: "db",
 } as unknown as Invoice;
 
-// Full invoiceDTO shape — the parent runs it through dtoInvoiceToStore on adopt.
-const paidDto = {
+// What a fresh read resolves to. `readInvoice` now owns both the call and the DTO→store mapping
+// (it has to: the office and the field answer with different wire shapes), so what reaches this
+// component is already a store Invoice.
+const paidRecord = {
   id: "inv-1",
   num: "INV-810",
-  sourceJobId: "job-1",
+  jobId: "job-1",
   leadId: "lead-1",
+  cust: "Dana Alvarez",
+  phone: "",
   title: "Fix water heater",
   status: "paid",
-  total: { cents: 45_000, currency: "USD" },
-  taxBps: 0,
-  tax: { cents: 0, currency: "USD" },
-  depositPaid: { cents: 0, currency: "USD" },
-  payments: [
-    { amount: { cents: 45_000, currency: "USD" }, method: "card", receivedAt: "2026-06-30T12:00:00.000Z" },
-  ],
+  total: 450,
+  tax: 0,
+  depPaid: 0,
+  payments: [{ amt: 450, when: "12:00 PM", method: "card" }],
   termsDays: 7,
-  lines: [
-    {
-      description: "Fix water heater",
-      quantity: 1,
-      rate: { cents: 45_000, currency: "USD" },
-      cost: { cents: 0, currency: "USD" },
-    },
-  ],
-  createdAt: "2026-06-30T12:00:00.000Z",
+  lines: [{ d: "Fix water heater", q: 1, r: 450 }],
+  age: 0,
   dueAt: "2026-07-07",
-  followUpOn: false,
-  followUpStage: 0,
-};
+  archived: false,
+  origin: "db",
+} as unknown as Invoice;
 
 describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => {
   beforeEach(() => {
@@ -298,7 +308,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
 
   async function openCardStep() {
     mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
-    mockGetInvoice.mockResolvedValue(paidDto);
+    mockGetInvoice.mockResolvedValue(paidRecord);
     render(<CloseOutModalContent />);
     fireEvent.click(screen.getByText("Take payment — $450"));
     fireEvent.click(screen.getByText("Card"));
@@ -309,7 +319,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     await openCardStep();
 
     expect(mockCreatePayment).toHaveBeenCalledTimes(1);
-    expect(mockCreatePayment).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(mockCreatePayment).toHaveBeenCalledWith("office", "inv-1");
     // Already "sent" — no draft-send needed.
     expect(mockSendInvoice).not.toHaveBeenCalled();
 
@@ -332,7 +342,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
       await vi.advanceTimersByTimeAsync(4_000);
     });
 
-    expect(mockGetInvoice).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(mockGetInvoice).toHaveBeenCalledWith("office", "inv-1");
     expect(mockAdoptInvoice).toHaveBeenCalledTimes(1);
     expect(mockAdoptInvoice).toHaveBeenCalledWith(
       expect.objectContaining({ id: "inv-1", status: "paid", origin: "db", total: 450 }),
@@ -350,21 +360,21 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     let resolveSend!: (v: { ok: boolean; error?: string }) => void;
     mockSendInvoice.mockImplementationOnce(() => new Promise((res) => (resolveSend = res)));
     mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
-    mockGetInvoice.mockResolvedValue(paidDto);
+    mockGetInvoice.mockResolvedValue(paidRecord);
 
     render(<CloseOutModalContent />);
     fireEvent.click(screen.getByText("Take payment — $450"));
     fireEvent.click(screen.getByText("Card"));
     await act(async () => {});
 
-    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1");
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1", "office");
     expect(mockCreatePayment).not.toHaveBeenCalled(); // send not resolved yet
 
     await act(async () => {
       resolveSend({ ok: true });
     });
     expect(mockCreatePayment).toHaveBeenCalledTimes(1);
-    expect(mockCreatePayment).toHaveBeenCalledWith({ invoiceId: "inv-1" }); // ONE id end-to-end
+    expect(mockCreatePayment).toHaveBeenCalledWith("office", "inv-1"); // ONE id end-to-end
     await act(async () => {});
     expect(screen.getByAltText("Payment QR code")).toBeTruthy();
     expect(screen.getByText("Open payment page")).toBeTruthy();
@@ -377,7 +387,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
       message: serverSentence,
       data: { code: "PRECONDITION_FAILED" },
     });
-    mockGetInvoice.mockResolvedValue(paidDto);
+    mockGetInvoice.mockResolvedValue(paidRecord);
 
     render(<CloseOutModalContent />);
     fireEvent.click(screen.getByText("Take payment — $450"));
@@ -430,13 +440,13 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
   it("a DRAFT is sent (awaited ok) BEFORE recordPayment fires — order asserted", async () => {
     mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
     // Fresh pre-record read sees the draft — not paid, proceed.
-    mockGetInvoice.mockResolvedValue({ ...paidDto, status: "draft" });
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice);
     let resolveSend!: (v: { ok: boolean; error?: string }) => void;
     mockSendInvoice.mockImplementationOnce(() => new Promise((res) => (resolveSend = res)));
 
     await clickRecordCash();
 
-    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1");
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1", "office");
     expect(mockRecordPayment).not.toHaveBeenCalled(); // send not resolved yet
 
     await act(async () => {
@@ -446,13 +456,14 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     expect(mockRecordPayment).toHaveBeenCalledWith(
       "inv-1",
       expect.objectContaining({ amt: 450, method: "cash" }),
+      "office",
     );
     expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
   });
 
   it("a failed send BLOCKS the record: error named in place, nothing recorded, no Approved", async () => {
     mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
-    mockGetInvoice.mockResolvedValue({ ...paidDto, status: "draft" });
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice);
     mockSendInvoice.mockImplementationOnce(() =>
       Promise.resolve({ ok: false, error: "an invoice needs at least one line" }),
     );
@@ -465,11 +476,11 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
   });
 
   it("paid-via-QR race: the fresh read sees paid → adopt + done, recordPayment NEVER fires", async () => {
-    mockGetInvoice.mockResolvedValue(paidDto); // customer finished the checkout already
+    mockGetInvoice.mockResolvedValue(paidRecord); // customer finished the checkout already
 
     await clickRecordCash();
 
-    expect(mockGetInvoice).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(mockGetInvoice).toHaveBeenCalledWith("office", "inv-1");
     expect(mockRecordPayment).not.toHaveBeenCalled();
     expect(mockSendInvoice).not.toHaveBeenCalled(); // already sent AND already paid
     expect(mockAdoptInvoice).toHaveBeenCalledWith(
@@ -493,8 +504,8 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
   // cannot dedupe a double tap — and on a PARTIAL amount the invoice stays payable, so the
   // second record genuinely applies. Single-flight: re-entry is a no-op, the button reads busy.
   it("two rapid taps on Record record EXACTLY once (single-flight, button disabled in flight)", async () => {
-    let resolveGet!: (v: unknown) => void;
-    mockGetInvoice.mockImplementationOnce(() => new Promise((res) => (resolveGet = res)));
+    let resolveGet!: (v: Invoice) => void;
+    mockGetInvoice.mockImplementationOnce(() => new Promise<Invoice>((res) => (resolveGet = res)));
 
     render(<CloseOutModalContent />);
     fireEvent.click(screen.getByText("Take payment — $450"));
@@ -510,7 +521,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     fireEvent.click(screen.getByText(/Recording…/).closest("button") as HTMLButtonElement); // third tap, mid-flight
 
     await act(async () => {
-      resolveGet({ ...paidDto, status: "sent" }); // not paid — the record proceeds
+      resolveGet({ ...paidRecord, status: "sent" } as Invoice); // not paid — the record proceeds
     });
 
     expect(mockRecordPayment).toHaveBeenCalledTimes(1);
@@ -521,12 +532,12 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
   // a store row optimistically flipped to "sent" over a server row still in draft would
   // otherwise record straight into the draft guard (silent rollback behind "Approved").
   it("store says sent but the server row is draft → send is awaited before the record", async () => {
-    mockGetInvoice.mockResolvedValue({ ...paidDto, status: "draft" }); // server truth
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice); // server truth
     mockInvoices = [cardInvoice]; // store says "sent"
 
     await clickRecordCash();
 
-    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1");
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1", "office");
     expect(mockRecordPayment).toHaveBeenCalledTimes(1);
     // Order: the send resolved before the record fired (both landed inside one flush,
     // so the call-order assertion is the invocationCallOrder below).
@@ -659,5 +670,181 @@ describe("CloseOutModalContent — never an empty sheet", () => {
 
     expect(mockAddInvoice).not.toHaveBeenCalled();
     expect(screen.getByText("Take payment — $450")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE TECHNICIAN AT THE DOOR.
+//
+// This sheet used to be protected only by being unreachable. It opens for a technician now, so
+// the two properties that matter are asserted here together: every money write reaches
+// v1.fieldInvoicing.* (an office procedure would FORBIDDEN with the customer standing there),
+// and every office-only capability inside the sheet is ABSENT rather than dead.
+// ---------------------------------------------------------------------------
+
+describe("CloseOutModalContent — a technician collects", () => {
+  beforeEach(() => {
+    mockRole = "tech";
+    mockActiveParams = { jobId: "job-1" };
+    mockJobs = [cardJob];
+    mockLeads = [feeLead];
+    mockInvoices = [cardInvoice];
+    mockAddInvoice.mockClear();
+    mockAdoptInvoice.mockClear();
+    mockRecordPayment.mockClear();
+    mockSendInvoice.mockClear();
+    mockSendInvoice.mockImplementation(() => Promise.resolve({ ok: true }));
+    mockCreatePayment.mockReset();
+    mockGetInvoice.mockReset();
+  });
+
+  it("shows the balance and the payment surfaces", () => {
+    render(<CloseOutModalContent />);
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    expect(screen.getByText("Cash")).toBeTruthy();
+    expect(screen.getByText("Check")).toBeTruthy();
+    expect(screen.getByText("Bank")).toBeTruthy();
+  });
+
+  it("raises the invoice through the FIELD surface, never the office one", () => {
+    mockInvoices = [];
+    render(<CloseOutModalContent />);
+    expect(mockAddInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: "job-1", leadId: "lead-1" }),
+      "field",
+    );
+  });
+
+  it("reads, sends and records through the FIELD surface", async () => {
+    mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice);
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Cash"));
+    fireEvent.click(screen.getByText(/Record cash — paid/));
+    await act(async () => {});
+
+    expect(mockGetInvoice).toHaveBeenCalledWith("field", "inv-1");
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1", "field");
+    expect(mockRecordPayment).toHaveBeenCalledWith(
+      "inv-1",
+      expect.objectContaining({ amt: 450, method: "cash" }),
+      "field",
+    );
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
+  });
+
+  it("the card checkout mints through the FIELD surface", async () => {
+    mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
+    mockGetInvoice.mockResolvedValue(paidRecord);
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Card"));
+    await act(async () => {});
+    expect(mockCreatePayment).toHaveBeenCalledWith("field", "inv-1");
+  });
+
+  it("offers no what-was-done box and no hand-off — both are ownerOrOffice writes", () => {
+    render(<CloseOutModalContent />);
+    expect(screen.queryByText("What was done")).toBeNull();
+    expect(screen.queryByText(/Log & send to office/)).toBeNull();
+  });
+
+  // A hide-prices device cannot compute the job's total, so the optimistic row it draws while the
+  // create is in flight carries $0. Rendering that puts "Done" — nothing owed — in front of a
+  // technician sent to collect $840, and a tap during the round-trip dismisses the sheet.
+  it("waits for the server's balance rather than drawing the redacted job's $0", () => {
+    mockJobs = [{ ...cardJob, lines: [{ d: "Fix water heater", q: 1, r: null }] } as unknown as Job];
+    // The optimistic row addInvoice just inserted: origin "manual", total 0.
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [], origin: "manual" } as unknown as Invoice];
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText("Reading the balance…")).toBeTruthy();
+    expect(screen.queryByText(/Take payment/)).toBeNull();
+    expect(screen.queryByText("Done")).toBeNull();
+  });
+
+  it("renders the sheet the moment the server's record lands", () => {
+    mockJobs = [{ ...cardJob, lines: [{ d: "Fix water heater", q: 1, r: null }] } as unknown as Job];
+    mockInvoices = [{ ...cardInvoice, lines: [], origin: "db" } as unknown as Invoice];
+    render(<CloseOutModalContent />);
+
+    expect(screen.queryByText("Reading the balance…")).toBeNull();
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+  });
+
+  // Prices visible: the optimistic total is correct, so nothing waits. This is the fence that stops
+  // the gate above from quietly becoming "every technician stares at a spinner".
+  it("does NOT wait when this device can see the job's rates", () => {
+    mockInvoices = [{ ...cardInvoice, origin: "manual" } as unknown as Invoice];
+    render(<CloseOutModalContent />);
+
+    expect(screen.queryByText("Reading the balance…")).toBeNull();
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+  });
+
+  it("never shows the price BUILDER, even on a genuinely unpriced job", () => {
+    const unpricedJob = { ...cardJob, lines: [] } as Job;
+    mockJobs = [unpricedJob];
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
+    render(<CloseOutModalContent />);
+    expect(screen.queryByText("No price on this job yet — what did it run?")).toBeNull();
+    // …and with nothing owed and no office writes to offer, the foot is a plain Done, never a
+    // hand-off button their token would refuse.
+    expect(screen.getByText("Done")).toBeTruthy();
+  });
+
+  it("found work is read-only and does NOT disable Take payment", () => {
+    const jobWithFoundWork = {
+      ...cardJob,
+      addons: [{ id: 1, d: "Expansion tank", q: 1, r: 320, status: "proposed" }],
+    } as unknown as Job;
+    mockJobs = [jobWithFoundWork];
+    render(<CloseOutModalContent />);
+
+    // The list is there — the technician can see what is NOT on this bill…
+    expect(screen.getByText("Expansion tank")).toBeTruthy();
+    expect(screen.getByText(/not on this bill/)).toBeTruthy();
+    // …but the approval pill is the office's.
+    expect(screen.queryByText(/OK’d — include/)).toBeNull();
+    expect(screen.queryByText("Leave off")).toBeNull();
+    // And the pay button is LIVE: the only way to clear `pending` is setAddonStatus, which is
+    // office-only by law, so a disable here could never be cleared from this device.
+    const pay = screen.getByText("Take payment — $450").closest("button") as HTMLButtonElement;
+    expect(pay.disabled).toBe(false);
+  });
+});
+
+describe("CloseOutModalContent — the office keeps its own gates (regression fence)", () => {
+  beforeEach(() => {
+    mockActiveParams = { jobId: "job-1" };
+    mockLeads = [feeLead];
+    mockInvoices = [cardInvoice];
+  });
+
+  it("found work still blocks Take payment and still offers the OK-pill", () => {
+    const jobWithFoundWork = {
+      ...cardJob,
+      addons: [{ id: 1, d: "Expansion tank", q: 1, r: 320, status: "proposed" }],
+    } as unknown as Job;
+    mockJobs = [jobWithFoundWork];
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText(/awaiting the customer/)).toBeTruthy();
+    expect(screen.getByText(/OK’d — include/)).toBeTruthy();
+    const pay = screen.getByText("Take payment — $450").closest("button") as HTMLButtonElement;
+    expect(pay.disabled).toBe(true);
+  });
+
+  it("still offers the what-was-done box, the hand-off, and the price builder", () => {
+    mockJobs = [{ ...cardJob, lines: [] } as Job];
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText("What was done")).toBeTruthy();
+    expect(screen.getByText("No price on this job yet — what did it run?")).toBeTruthy();
+    expect(screen.getByText(/Log & send to office/)).toBeTruthy();
   });
 });

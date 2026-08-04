@@ -16,11 +16,10 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { userMessage } from "@/lib/trpc/error-map";
 import { CheckoutQr } from "@/components/shared/checkout-qr";
+import { mintCheckoutSession, readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import type { Invoice } from "@/lib/store/types";
-import type { InvoiceDTO } from "@/lib/store/dto-mapper";
 
 const POLL_MS = 4_000;
 /** Wall-clock cap on the poll (precedent: the field surface's bounded refetching). */
@@ -37,10 +36,16 @@ export interface CardCheckoutStepProps {
   invoice: Invoice;
   /** Dollars — the FULL balance: createPayment always charges the invoice balance. */
   amount: number;
+  /**
+   * Which API the mint and the poll go to. A technician's token is refused by every
+   * `v1.invoicing.*` procedure, so on "field" both calls take the job-authorized siblings —
+   * without which the card path never flips to paid on the device holding the QR code.
+   */
+  surface: InvoiceWriteSurface;
   /** The store's sendInvoice — a draft must be genuinely SENT before minting. */
   sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  /** The poll saw the invoice flip paid/partial — the parent adopts the DTO and advances. */
-  onPaid: (dto: InvoiceDTO) => void;
+  /** The poll saw the invoice flip paid/partial — the parent adopts the record and advances. */
+  onPaid: (invoice: Invoice) => void;
   /** "They paid another way — record it instead." Falls back to the record step. */
   onRecordInstead: () => void;
   onCancel: () => void;
@@ -49,6 +54,7 @@ export interface CardCheckoutStepProps {
 export function CardCheckoutStep({
   invoice,
   amount,
+  surface,
   sendInvoice,
   onPaid,
   onRecordInstead,
@@ -65,9 +71,16 @@ export function CardCheckoutStep({
   const aliveRef = useRef(true);
   const settledRef = useRef(false);
   const onPaidRef = useRef(onPaid);
+  // The poll's mapper needs the record it is refreshing (cust/phone/email are not on either
+  // wire shape). Held in a ref, not a dependency: the store hands this component a NEW invoice
+  // object on every write, and putting it in the effect's deps would tear down and restart the
+  // interval each time — resetting the wall-clock cap and, worse, re-arming a poll the settle
+  // guard had already retired.
+  const invoiceRef = useRef(invoice);
 
   useEffect(() => {
     onPaidRef.current = onPaid;
+    invoiceRef.current = invoice;
   });
 
   useEffect(() => {
@@ -92,9 +105,7 @@ export function CardCheckoutStep({
             return;
           }
         }
-        const session = await trpcVanilla.v1.invoicing.createPayment.mutate({
-          invoiceId: invoice.id,
-        });
+        const session = await mintCheckoutSession(surface, invoice.id);
         if (aliveRef.current) setUrl(session.url);
       } catch (err: unknown) {
         // Domain refusals pass their own sentence through userMessage —
@@ -103,7 +114,7 @@ export function CardCheckoutStep({
         if (aliveRef.current) setError(userMessage(err, MINT_FALLBACK));
       }
     })();
-  }, [invoice.id, invoice.status, sendInvoice]);
+  }, [invoice.id, invoice.status, sendInvoice, surface]);
 
   // ---- poll the invoice while the QR is up ----------------------------------
   // The webhook is the source of truth for RECORDING the payment; this only reads
@@ -119,14 +130,13 @@ export function CardCheckoutStep({
         setExpired(true);
         return;
       }
-      trpcVanilla.v1.invoicing.get
-        .query({ invoiceId: invoice.id })
-        .then((dto) => {
-          if (dto.status !== "paid" && dto.status !== "partial") return;
+      readInvoice(surface, invoice.id, invoiceRef.current)
+        .then((fresh) => {
+          if (fresh.status !== "paid" && fresh.status !== "partial") return;
           if (settledRef.current) return;
           settledRef.current = true;
           clearInterval(iv);
-          onPaidRef.current(dto);
+          onPaidRef.current(fresh);
         })
         .catch(() => {
           // Transient poll failure (offline blip, 500) — deliberately kept quiet and
@@ -135,7 +145,7 @@ export function CardCheckoutStep({
         });
     }, POLL_MS);
     return () => clearInterval(iv);
-  }, [url, expired, invoice.id]);
+  }, [url, expired, invoice.id, surface]);
 
   return (
     <div className="cotap">

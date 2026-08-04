@@ -25,14 +25,17 @@ import {
   useActiveModal,
   useCloseModal,
 } from "@/lib/store/app-store";
+import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
 import { CardCheckoutStep } from "./close-out-card-step";
-import { dtoInvoiceToStore, type InvoiceDTO } from "@/lib/store/dto-mapper";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
+// ONE definition of the redaction signal, shared with the tech job modal that opens this sheet —
+// a second copy of a predicate this subtle is how "hidden" quietly becomes "$0" again.
+import { pricesHidden } from "./tech-job-modal/helpers";
+import { readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { invalidateLists } from "@/lib/trpc/list-cache";
-import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type {
   Invoice,
   InvoiceLine,
@@ -51,7 +54,12 @@ function fmt$(n: number): string {
   return "$" + Math.round(n).toLocaleString("en-US");
 }
 
-/** jobTotal — sum of the job's line amounts (prototype jobTotal / tech-job-modal). */
+/**
+ * jobTotal — sum of the job's line amounts (prototype jobTotal / tech-job-modal).
+ *
+ * `?? 0` is only honest once `pricesHidden` has been ruled out: on a device the shop withholds
+ * rates from, every line reduces to nothing and a $840 job sums to $0. Ask both.
+ */
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
@@ -508,8 +516,10 @@ interface PayBlockProps {
   }) => Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }>;
   /** The store's sendInvoice — the card step must SEND a draft before minting. */
   sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
-  /** The card step's poll saw paid/partial — the parent adopts the fresh DTO. */
-  onCardPaid: (dto: InvoiceDTO) => void;
+  /** Which API the card step's mint + poll go to. See CardCheckoutStepProps.surface. */
+  surface: InvoiceWriteSurface;
+  /** The card step's poll saw paid/partial — the parent adopts the fresh record. */
+  onCardPaid: (invoice: Invoice) => void;
   onFinish: () => void;
   onCancel: () => void;
 }
@@ -525,6 +535,7 @@ function PayBlock({
   lead,
   onApprove,
   sendInvoice,
+  surface,
   onCardPaid,
   onFinish,
   onCancel,
@@ -623,11 +634,12 @@ function PayBlock({
       <CardCheckoutStep
         invoice={invoice}
         amount={due}
+        surface={surface}
         sendInvoice={sendInvoice}
-        onPaid={(dto) => {
-          // The webhook already recorded the money; adopt the fresh DTO (no
+        onPaid={(fresh) => {
+          // The webhook already recorded the money; adopt the fresh record (no
           // recordPayment double-write) and land on the existing done step.
-          onCardPaid(dto);
+          onCardPaid(fresh);
           setP({ step: "done", method: "card", amt: due });
         }}
         onRecordInstead={() => setP({ step: "record", method: "cash", amt: due })}
@@ -813,17 +825,31 @@ interface FoundWorkSettleProps {
   pending: Addon[];
   onInclude: (addon: Addon) => void;
   onSkip: (addon: Addon) => void;
+  /**
+   * May settle found work — `v1.jobs.setAddonStatus` / `setAddonInvSkip`, both ownerOrOffice.
+   * The office OK-pill IS the approval gate and `v1.field.addAddon` hard-codes `status:
+   * "proposed"` for exactly that reason, so letting a technician approve their own found work
+   * would invert a stated law. False renders the list READ-ONLY.
+   */
+  canSettle: boolean;
 }
 
-function FoundWorkSettle({ pending, onInclude, onSkip }: FoundWorkSettleProps) {
+function FoundWorkSettle({ pending, onInclude, onSkip, canSettle }: FoundWorkSettleProps) {
   if (!pending.length) return null;
   const sum = pending.reduce((s, a) => s + (a.q ?? 1) * (a.r ?? 0), 0);
 
   return (
     <div className="reqcard" style={{ marginBottom: "var(--space-3)" }}>
       <b>
-        ⚠ {fmt$(sum)} in found work awaiting the customer&rsquo;s OK
+        {canSettle
+          ? `⚠ ${fmt$(sum)} in found work awaiting the customer’s OK`
+          : `⚠ ${fmt$(sum)} in found work — not on this bill`}
       </b>
+      {canSettle ? null : (
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
+          The office quotes it. Collect what was agreed.
+        </div>
+      )}
       <div style={{ marginTop: "var(--space-2)" }}>
         {pending.map((a) => (
           <div key={a.id} className="stage-row">
@@ -831,12 +857,16 @@ function FoundWorkSettle({ pending, onInclude, onSkip }: FoundWorkSettleProps) {
               <b style={{ fontWeight: 600 }}>{a.d}</b>{" "}
               <span className="muted">· {fmt$((a.q ?? 1) * (a.r ?? 0))}</span>
             </div>
-            <button className="btn sm primary" onClick={() => onInclude(a)}>
-              ✓ OK&rsquo;d — include
-            </button>
-            <button className="btn sm ghost" onClick={() => onSkip(a)}>
-              Leave off
-            </button>
+            {canSettle ? (
+              <>
+                <button className="btn sm primary" onClick={() => onInclude(a)}>
+                  ✓ OK&rsquo;d — include
+                </button>
+                <button className="btn sm ghost" onClick={() => onSkip(a)}>
+                  Leave off
+                </button>
+              </>
+            ) : null}
           </div>
         ))}
       </div>
@@ -981,6 +1011,15 @@ export function CloseOutModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
 
+  // WHO IS HOLDING THIS SHEET. Until this change the close-out had zero role checks and was
+  // protected only by being unreachable — the tech job modal never opened it for a technician.
+  // It opens for them now, so every write below has to say which API it goes to, and the office
+  // capabilities with no field sibling have to say so themselves. Fail closed: an unresolved role
+  // reads as the field.
+  const me = useMe();
+  const isOffice = me.data?.role === "owner" || me.data?.role === "office";
+  const surface: InvoiceWriteSurface = isOffice ? "office" : "field";
+
   // RAW arrays only — never a derived array inside a selector.
   const jobs = useAppStore((s) => s.jobs);
   const invoices = useAppStore((s) => s.invoices);
@@ -1043,27 +1082,33 @@ export function CloseOutModalContent() {
     if (creatingRef.current === job.id) return;
     creatingRef.current = job.id;
     setCreateError(null);
-    const { persisted } = addInvoice({
-      jobId: job.id,
-      leadId: job.leadId,
-      cust: custNameOf(job, lead),
-      phone: job.phone || lead?.phone || "",
-      title: job.title,
-      lines: (job.lines ?? []).map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, c: l.c ?? 0 })),
-      total: jobTotal(job),
-      depPaid: 0,
-      payments: [],
-      status: "draft",
-      age: 0,
-      archived: false,
-    });
+    const { persisted } = addInvoice(
+      {
+        jobId: job.id,
+        leadId: job.leadId,
+        cust: custNameOf(job, lead),
+        phone: job.phone || lead?.phone || "",
+        title: job.title,
+        // The optimistic draw only. The server snapshots the job's OWN lines onto the invoice
+        // and answers with them, so a device that cannot see rates (`r: null` → 0 here) never
+        // writes a fabricated $0 anywhere — this shape is replaced wholesale by the reconcile.
+        lines: (job.lines ?? []).map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, c: l.c ?? 0 })),
+        total: jobTotal(job),
+        depPaid: 0,
+        payments: [],
+        status: "draft",
+        age: 0,
+        archived: false,
+      },
+      surface,
+    );
     // Never rejects (the slice resolves { ok, error }). Clearing the guard on BOTH outcomes is
     // what makes Retry possible at all.
     void persisted.then(({ ok, error }) => {
       creatingRef.current = null;
       if (!ok) setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
     });
-  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt]);
+  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface]);
 
   const retryCreate = useCallback(() => {
     creatingRef.current = null;
@@ -1076,7 +1121,15 @@ export function CloseOutModalContent() {
   // never hydrates settings; see features/settings/use-org-service-fee.ts). Only fetched when
   // BillAsk will actually render (mirrors its own render condition below), so an already-priced
   // close-out never fires the extra request.
-  const needsBillAsk = Boolean(job && invoice && (invoice.total ?? 0) <= 0 && jobTotal(job) <= 0);
+  //
+  // OFFICE ONLY, twice over. BillAsk commits through `v1.jobs.setLines` + `v1.invoicing.patchLines`
+  // — both ownerOrOffice, both bulk REPLACES, and neither was widened (an append-only field
+  // sibling is still owed), so for a technician the builder has no route at all. And per the
+  // owner's price-visibility rule, a shop that hides prices from techs hides the price BUILDER
+  // from them too: they may read the balance they are collecting, they may not author it.
+  const needsBillAsk = Boolean(
+    isOffice && job && invoice && (invoice.total ?? 0) <= 0 && jobTotal(job) <= 0,
+  );
   const orgServiceFee = useOrgServiceFee(needsBillAsk);
 
   // ---- states before the sheet can render. NONE of them may be blank: this modal's shell is
@@ -1123,6 +1176,27 @@ export function CloseOutModalContent() {
           </div>
         </div>
         <ListLoading rows={3} label="Raising the invoice…" />
+      </>
+    );
+  }
+
+  // The optimistic row this sheet just drew carries `total: jobTotal(job)` — which on a device the
+  // shop withholds rates from is 0, not the real bill. Rendering it would put "Done" (nothing owed)
+  // in front of a technician who was sent to collect $840, for as long as the round-trip takes, and
+  // a tap during that window dismisses the sheet. The server's answer always carries the balance
+  // (see modules/invoicing/api/field-invoice-dto.ts), so wait for it and say what is happening.
+  // Office callers and any device that CAN see rates computed a correct optimistic total and are
+  // unaffected. A failed create rolls the row back, so this never outlives the error notice above.
+  if (invoice.origin !== "db" && pricesHidden(job)) {
+    return (
+      <>
+        <div className="sheet-head">
+          <h2>Wrap up — {custNameOf(job, lead)}</h2>
+          <div className="sheet-meta">
+            <span>{job.title}</span>
+          </div>
+        </div>
+        <ListLoading rows={3} label="Reading the balance…" />
       </>
     );
   }
@@ -1194,7 +1268,7 @@ export function CloseOutModalContent() {
     let liveStatus = invoice.status;
     if (invoice.origin === "db") {
       try {
-        const fresh = await trpcVanilla.v1.invoicing.get.query({ invoiceId: invoice.id });
+        const fresh = await readInvoice(surface, invoice.id, invoice);
         if (fresh.status === "paid") {
           adoptPaidInvoice(fresh);
           return { ok: true, alreadyPaid: true };
@@ -1206,7 +1280,7 @@ export function CloseOutModalContent() {
       }
     }
     if (liveStatus === "draft") {
-      const sent = await sendInvoice(invoice.id);
+      const sent = await sendInvoice(invoice.id, surface);
       if (!sent.ok) {
         return {
           ok: false,
@@ -1214,7 +1288,7 @@ export function CloseOutModalContent() {
         };
       }
     }
-    recordPayment(invoice.id, { amt, when: "Just now", method, onFile });
+    recordPayment(invoice.id, { amt, when: "Just now", method, onFile }, surface);
     // A card on file is NOT recorded here. This used to write a hardcoded
     // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
     // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
@@ -1223,12 +1297,13 @@ export function CloseOutModalContent() {
 
   // ---- a checkout payment landed (card-step poll, or the pre-record check) ---
   // The Stripe webhook already RECORDED the payment server-side; adopting the
-  // fresh DTO (local id kept stable, mirroring the slice's reconcile convention)
-  // flips DueCard/status immediately — no recordPayment double-write.
-  function adoptPaidInvoice(dto: InvoiceDTO) {
+  // fresh record (local id kept stable, mirroring the slice's reconcile convention)
+  // flips DueCard/status immediately — no recordPayment double-write. The read that
+  // produced it already picked the caller's own API and mapper (see invoice-write.ts).
+  function adoptPaidInvoice(fresh: Invoice) {
     if (!invoice) return;
     invalidateLists("invoices", "jobs");
-    adoptInvoice({ ...dtoInvoiceToStore(dto, invoice), id: invoice.id });
+    adoptInvoice({ ...fresh, id: invoice.id });
   }
 
   // ---- send to office (sendForInvoicing) ------------------------------------
@@ -1248,35 +1323,43 @@ export function CloseOutModalContent() {
         </div>
       </div>
 
-      {/* What was done — goes on the invoice the customer sees (completionNote). */}
-      <Field
-        label="What was done"
-        style={{ marginBottom: "var(--space-3)" }}
-        hint={
-          <span className="muted" style={{ fontWeight: 500 }}>
-            — goes on the invoice the customer sees
-          </span>
-        }
-      >
-        {/* The placeholder is short enough to READ on a phone. The old hint needed
-            490px inside a 309px field, so it was cut off mid-word on every device a
-            tech actually owns. */}
-        <input
-          type="text"
-          defaultValue={job.completion || ""}
-          placeholder="e.g. Replaced 40-gal water heater"
-          onChange={(e) => updateJob(job.id, { completion: e.target.value })}
-          style={{
-            width: "100%",
-            boxSizing: "border-box",
-            border: "1.5px solid var(--line)",
-            borderRadius: "var(--radius-sm)",
-            padding: "var(--space-2) var(--space-3)",
-            fontFamily: "inherit",
-            fontSize: "var(--type-base)",
-          }}
-        />
-      </Field>
+      {/* What was done — goes on the invoice the customer sees (completionNote).
+          OFFICE ONLY: `job.completion` rides `v1.jobs.update`, ownerOrOffice, and the field
+          router has no `setCompletion` sibling yet (`v1.field.setVisitNotes` is a different
+          column — visit notes are not the job's completion line). A technician typing here would
+          watch the text save and silently roll back, so the field gets no box rather than a
+          lying one. This is the one control the person who did the work should own; it is owed
+          a field endpoint, not a disabled input. */}
+      {isOffice ? (
+        <Field
+          label="What was done"
+          style={{ marginBottom: "var(--space-3)" }}
+          hint={
+            <span className="muted" style={{ fontWeight: 500 }}>
+              — goes on the invoice the customer sees
+            </span>
+          }
+        >
+          {/* The placeholder is short enough to READ on a phone. The old hint needed
+              490px inside a 309px field, so it was cut off mid-word on every device a
+              tech actually owns. */}
+          <input
+            type="text"
+            defaultValue={job.completion || ""}
+            placeholder="e.g. Replaced 40-gal water heater"
+            onChange={(e) => updateJob(job.id, { completion: e.target.value })}
+            style={{
+              width: "100%",
+              boxSizing: "border-box",
+              border: "1.5px solid var(--line)",
+              borderRadius: "var(--radius-sm)",
+              padding: "var(--space-2) var(--space-3)",
+              fontFamily: "inherit",
+              fontSize: "var(--type-base)",
+            }}
+          />
+        </Field>
+      ) : null}
 
       {/* Bill-ask — ONLY when there is GENUINELY no price. A persisted on-site
           price flows job.lines → invoice.total via ensureInvoiceForJob, so we
@@ -1284,7 +1367,7 @@ export function CloseOutModalContent() {
           lines summing above zero (covers the frame before the invoice effect
           re-derives). Never show the suggestBill heuristic once a real price
           exists — that produced the phantom $475. */}
-      {(invoice.total ?? 0) <= 0 && jobTotal(job) <= 0 ? (
+      {needsBillAsk ? (
         <BillAsk
           job={job}
           suggested={suggestBill(job, pricebook)}
@@ -1294,8 +1377,14 @@ export function CloseOutModalContent() {
         />
       ) : null}
 
-      {/* Found-work settlement — pending add-ons awaiting the customer's OK. */}
-      <FoundWorkSettle pending={pending} onInclude={includeAddon} onSkip={skipAddon} />
+      {/* Found-work settlement — pending add-ons awaiting the customer's OK. Read-only for the
+          field, where the OK-pill is not the technician's to press. */}
+      <FoundWorkSettle
+        pending={pending}
+        onInclude={includeAddon}
+        onSkip={skipAddon}
+        canSettle={isOffice}
+      />
 
       {/* Verify gaps — required checks still open (collapsible; never blocks). */}
       <VerifyGaps
@@ -1316,7 +1405,8 @@ export function CloseOutModalContent() {
             invoice={invoice}
             lead={lead}
             onApprove={approvePayment}
-            sendInvoice={sendInvoice}
+            sendInvoice={(id) => sendInvoice(id, surface)}
+            surface={surface}
             onCardPaid={adoptPaidInvoice}
             onFinish={() => {
               setPayOpen(false);
@@ -1328,7 +1418,13 @@ export function CloseOutModalContent() {
       ) : (
         /* THE terminal action, docked where the thumb is. Money due → Take
            payment is the primary with send-to-office quiet beside it; nothing
-           due → send-to-office IS the wrap-up confirm. */
+           due → send-to-office IS the wrap-up confirm.
+
+           Take payment is BLOCKED on unsettled found work for the office only. Clearing
+           `pending` means calling setAddonStatus, which is ownerOrOffice by law — so the same
+           disable on a technician's device is a button that can never become live, on the one
+           screen where the customer is standing there with cash. They collect what was agreed;
+           the found-work list above says, read-only, what is not on this bill. */
         <div
           className="sheet-foot"
           style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", alignItems: "center" }}
@@ -1337,19 +1433,30 @@ export function CloseOutModalContent() {
             <>
               <button
                 className="sheet-pri"
-                style={{ flex: 1, ...(pending.length > 0 ? { opacity: 0.55, cursor: "not-allowed" } : {}) }}
-                disabled={pending.length > 0}
+                style={{
+                  flex: 1,
+                  ...(isOffice && pending.length > 0 ? { opacity: 0.55, cursor: "not-allowed" } : {}),
+                }}
+                disabled={isOffice && pending.length > 0}
                 onClick={() => setPayOpen(true)}
               >
                 Take payment — {fmt$(due)}
               </button>
-              <button className="btn" style={{ minHeight: 48 }} onClick={sendToOffice}>
-                Log &amp; send to office →
-              </button>
+              {isOffice ? (
+                <button className="btn" style={{ minHeight: 48 }} onClick={sendToOffice}>
+                  Log &amp; send to office →
+                </button>
+              ) : null}
             </>
-          ) : (
+          ) : isOffice ? (
             <button className="sheet-pri" onClick={sendToOffice}>
               Log &amp; send to office →
+            </button>
+          ) : (
+            /* Nothing owed and no office writes to offer — the bill is settled or unpriced, and
+               either way the technician is done here. Never a dead hand-off button. */
+            <button className="sheet-pri" onClick={close}>
+              Done
             </button>
           )}
         </div>

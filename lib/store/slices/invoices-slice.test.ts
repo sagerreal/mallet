@@ -26,6 +26,12 @@ const createFromJobMutate = vi.fn();
 const draftMutate = vi.fn();
 const sendMutate = vi.fn();
 const recordPaymentMutate = vi.fn();
+// The field-scoped siblings. Every write below takes an InvoiceWriteSurface (default "office"),
+// so these must never fire unless a caller explicitly asked for the field.
+const fieldCreateFromJobMutate = vi.fn();
+const fieldSendMutate = vi.fn();
+const fieldRecordPaymentMutate = vi.fn();
+const raiseVisitFeeMutate = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
@@ -38,6 +44,12 @@ vi.mock("@/lib/trpc/vanilla", () => ({
         send: { mutate: (...a: unknown[]) => sendMutate(...a) },
         recordPayment: { mutate: (...a: unknown[]) => recordPaymentMutate(...a) },
         void: { mutate: (...a: unknown[]) => voidMutate(...a) },
+      },
+      fieldInvoicing: {
+        createFromJob: { mutate: (...a: unknown[]) => fieldCreateFromJobMutate(...a) },
+        send: { mutate: (...a: unknown[]) => fieldSendMutate(...a) },
+        recordPayment: { mutate: (...a: unknown[]) => fieldRecordPaymentMutate(...a) },
+        raiseVisitFee: { mutate: (...a: unknown[]) => raiseVisitFeeMutate(...a) },
       },
     },
   },
@@ -768,5 +780,146 @@ describe("optimistic writes move a summary row's money immediately", () => {
     const inv = s.state.invoices[0]!;
     expect(invPaid(inv)).toBe(200);
     expect(invDue(inv)).toBe(1300);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE WRITE SURFACE.
+//
+// Three of this slice's writes are also made by a technician standing at the customer's door,
+// whose token every ownerOrOffice procedure refuses. They take an InvoiceWriteSurface that
+// defaults to "office", so nothing above changes; these pin down that "field" genuinely reaches
+// the job-authorized siblings and never the desk's.
+// ---------------------------------------------------------------------------
+
+/** The field wire shape — a separate, smaller type, never a filtered copy of the office DTO. */
+const fieldDto = (over: Record<string, unknown> = {}) => ({
+  id: "inv-1", num: "INV-800", sourceJobId: "job-9", scopeJobId: null, leadId: "lead-1",
+  customerName: "Ada", title: "Deck", status: "sent",
+  total: { cents: 100_000, currency: "USD" }, tax: { cents: 0, currency: "USD" },
+  depositPaid: { cents: 0, currency: "USD" }, amountPaid: { cents: 0, currency: "USD" },
+  due: { cents: 100_000, currency: "USD" }, termsDays: 7, lines: [], payments: [],
+  sentAt: null, dueAt: null, createdAt: new Date().toISOString(), ...over,
+});
+
+describe("the write surface — field vs office", () => {
+  beforeEach(() => {
+    createFromJobMutate.mockReset();
+    sendMutate.mockReset();
+    recordPaymentMutate.mockReset();
+    fieldCreateFromJobMutate.mockReset();
+    fieldSendMutate.mockReset();
+    fieldRecordPaymentMutate.mockReset();
+    raiseVisitFeeMutate.mockReset();
+  });
+
+  it("addInvoice('field') raises through fieldInvoicing, never invoicing", async () => {
+    fieldCreateFromJobMutate.mockResolvedValue(fieldDto());
+    const s = makeSlice();
+    const { persisted } = s.state.addInvoice(
+      { ...makeInvoice(), jobId: "job-9" } as unknown as Omit<Invoice, "id" | "num">,
+      "field",
+    );
+    await persisted;
+    expect(fieldCreateFromJobMutate).toHaveBeenCalledTimes(1);
+    expect(createFromJobMutate).not.toHaveBeenCalled();
+  });
+
+  it("sendInvoice('field') and recordPayment('field') do the same", async () => {
+    fieldSendMutate.mockResolvedValue(fieldDto());
+    fieldRecordPaymentMutate.mockResolvedValue(fieldDto({ status: "paid" }));
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "sent" })]);
+
+    await s.state.sendInvoice("inv-1", "field");
+    s.state.recordPayment("inv-1", { amt: 1000, when: "Just now", method: "cash" }, "field");
+    await Promise.resolve();
+
+    expect(fieldSendMutate).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(fieldRecordPaymentMutate).toHaveBeenCalledTimes(1);
+    expect(sendMutate).not.toHaveBeenCalled();
+    expect(recordPaymentMutate).not.toHaveBeenCalled();
+  });
+
+  // There is no field `draft`: it mints a lead-tied invoice with caller-chosen lines against ANY
+  // lead, so it is not job-scoped and no guard is expressible for it. A technician holding a
+  // store-local invoice therefore has nothing to send — and must be told that, not handed a
+  // FORBIDDEN dressed up as a network failure.
+  it("sendInvoice('field') on a store-local invoice refuses in place, calling NO office endpoint", async () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ origin: "manual" })]);
+
+    const res = await s.state.sendInvoice("inv-1", "field");
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("never raised on the server");
+    expect(draftMutate).not.toHaveBeenCalled();
+    expect(sendMutate).not.toHaveBeenCalled();
+    expect(fieldSendMutate).not.toHaveBeenCalled();
+    // …and the optimistic "sent" flip is rolled back, so the sheet does not claim it went out.
+    expect(s.state.invoices[0]?.status).toBe("draft");
+  });
+
+  it("the default surface is the office — every existing caller is unchanged", async () => {
+    sendMutate.mockResolvedValue(dbDto({ status: "sent" }));
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "draft" })]);
+    await s.state.sendInvoice("inv-1");
+    expect(sendMutate).toHaveBeenCalledWith({ invoiceId: "inv-1" });
+    expect(fieldSendMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("raiseVisitFee", () => {
+  beforeEach(() => {
+    raiseVisitFeeMutate.mockReset();
+    draftMutate.mockReset();
+    sendMutate.mockReset();
+  });
+
+  it("sends the jobId and NOTHING else, and adopts the server's invoice", async () => {
+    raiseVisitFeeMutate.mockResolvedValue(
+      fieldDto({ id: "inv-fee", sourceJobId: null, scopeJobId: "job-9", title: "Visit fee — service call" }),
+    );
+    const s = makeSlice();
+
+    const res = await s.state.raiseVisitFee("job-9");
+
+    expect(raiseVisitFeeMutate).toHaveBeenCalledWith({ jobId: "job-9" });
+    expect(Object.keys((raiseVisitFeeMutate.mock.calls[0] as [Record<string, unknown>])[0])).toEqual(["jobId"]);
+    expect(res).toEqual({ ok: true, invoiceId: "inv-fee" });
+    // Adopted, not re-persisted — the flow already landed server-side.
+    expect(s.state.invoices).toHaveLength(1);
+    expect(s.state.invoices[0]?.id).toBe("inv-fee");
+    expect(s.state.invoices[0]?.origin).toBe("db");
+    // scopeJobId is the AUTHORIZING job, not the job whose bill this is: it must not become the
+    // store's jobId, or a surface looking a job's bill up by jobId would find the fee instead.
+    expect(s.state.invoices[0]?.jobId).toBeNull();
+    // The old client-side path is gone entirely.
+    expect(draftMutate).not.toHaveBeenCalled();
+  });
+
+  it("never leaves an optimistic row behind when the server refuses", async () => {
+    raiseVisitFeeMutate.mockRejectedValue(
+      new Error("this shop hasn't set a visit fee — add one in Settings before charging it"),
+    );
+    const s = makeSlice();
+
+    const res = await s.state.raiseVisitFee("job-9");
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("visit fee");
+    expect(s.state.invoices).toHaveLength(0);
+  });
+
+  it("a second raise reconciles the SAME row rather than adding a duplicate", async () => {
+    const dto = fieldDto({ id: "inv-fee", sourceJobId: null, scopeJobId: "job-9" });
+    raiseVisitFeeMutate.mockResolvedValue(dto);
+    const s = makeSlice();
+
+    await s.state.raiseVisitFee("job-9");
+    await s.state.raiseVisitFee("job-9"); // idempotent server-side — same invoice comes back
+
+    expect(s.state.invoices).toHaveLength(1);
   });
 });

@@ -41,6 +41,8 @@ import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { VISIT_FEE_TITLE } from "@/features/invoices/visit-fee";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
+import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
+import { isJobAssignedTo } from "@/lib/store/job-assignment";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
 import { fmt$ } from "@/lib/format";
@@ -80,9 +82,10 @@ export function TechJobModalContent() {
   const [tab, setTab] = useState<TechTab>("job");
 
   // Role gate: this modal is shared by owner/office (full controls) and techs.
-  // Controls wired to ownerOrOffice endpoints (visit status, add-ons, payments,
-  // send-to-office) would FORBIDDEN + silently roll back for a tech — they are
-  // office-only. Fail closed: until the role loads, show the tech (reduced) view.
+  // Controls wired to ownerOrOffice endpoints with NO field sibling (visit status, add-on
+  // approval, send-to-office, on-site re-pricing) would FORBIDDEN + silently roll back for a
+  // tech — they stay office-only. Fail closed: until the role loads, show the tech (reduced)
+  // view. Taking payment is NOT one of them any more; see canTakePayment below.
   const me = useMe();
   const isOffice = me.data?.role === "owner" || me.data?.role === "office";
 
@@ -116,25 +119,20 @@ export function TechJobModalContent() {
   const overrideVerifyItem = useAppStore((s) => s.overrideVerifyItem);
   const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
   const addJobPhoto = useAppStore((s) => s.addJobPhoto);
-  // Visit-fee collection (Task 5, rebuilt after review): the fee is a LEAD-tied MANUAL invoice
-  // (addInvoice with jobId: null + sendInvoice) — never job-tied. invoices.source_job_id
-  // carries a partial unique index (one active invoice per job); a job-tied fee invoice would
-  // permanently claim that slot, so a later quote-accept converting this same job could never
-  // raise its real bill (createFromJob's idempotent findBySourceJob would just hand back the
-  // $89 fee draft forever). job.lines is never touched by this flow.
-  const addInvoice = useAppStore((s) => s.addInvoice);
-  const updateInvoice = useAppStore((s) => s.updateInvoice);
-  const sendInvoice = useAppStore((s) => s.sendInvoice);
-  const removeLocalInvoice = useAppStore((s) => s.removeLocalInvoice);
+  // Visit-fee collection. The fee is a LEAD-tied invoice (never job-tied): invoices.source_job_id
+  // carries a partial unique index (one active invoice per job), so a job-tied fee would
+  // permanently claim that slot and a later quote-accept on this same job could never raise its
+  // real bill. The job rides `scope_job_id` instead — a link that leaves the slot free and exists
+  // so the technician at the door can be AUTHORIZED to collect. job.lines is never touched.
+  const raiseVisitFee = useAppStore((s) => s.raiseVisitFee);
   // The durable re-collection signal: any non-archived (non-void) invoice for THIS LEAD titled
-  // VISIT_FEE_TITLE. Title + leadId survive reload (both come through the invoices hydrator);
-  // jobId does not — the server never stamps sourceJobId on a manual invoice.
+  // VISIT_FEE_TITLE. Title + leadId survive a reload on the office surface (both come through the
+  // invoices hydrator); on the field surface the store holds no invoices until this flow adopts
+  // one, so a technician's guard is per-session — which is safe, because the raise is idempotent
+  // per job in the DATABASE now: a second tap returns the SAME invoice instead of a duplicate.
   //
-  // Reused for two things: (1) whether the button hides — only once the fee is genuinely out
-  // the door (sent/partial/paid); an unsent "draft" keeps the button visible, since a tap on
-  // it RESUMES that same invoice rather than raising a duplicate — draft-invoice.ts has no
-  // lead/title idempotency, so a naive retry would mint a second server draft. (2) which
-  // invoice collectVisitFee resumes/checks below.
+  // The button hides only once the fee is genuinely out the door (sent/partial/paid); an unsent
+  // draft keeps it visible, since a tap RESUMES that same invoice.
   const existingFeeInvoice = useAppStore((s) =>
     s.invoices.find((i) => i.leadId === leadId && i.title === VISIT_FEE_TITLE && !i.archived),
   );
@@ -155,11 +153,24 @@ export function TechJobModalContent() {
   // return) reuses this exact value; job is guaranteed non-null there.
   const scopingCandidate = job ? isUnpricedEstimate(job) : false;
 
+  // THE PAYMENT GATE — deliberately not "am I a tech", but "am I on this job", mirroring the
+  // server's own `assertFieldInvoiceScope` (Job.isAssignedTo + status complete). A technician may
+  // transact on the job in front of them; they may never administer the shop's money.
+  //
+  // It is a SEPARATE name from isOffice and must stay one: folding the two together would send a
+  // technician's visit taps to v1.visits.* (see visitSurface below) and kill their clock.
+  const assignedToMe = isJobAssignedTo(job?.visits, me.data?.userId);
+  const canTakePayment = isOffice || assignedToMe;
+  // Which API this viewer's money writes go to. Office keeps the desk's endpoints; everyone else
+  // goes through v1.fieldInvoicing.*, which is job-authorized and answers with a redacted record.
+  const invoiceSurface: InvoiceWriteSurface = isOffice ? "office" : "field";
+
   // The field shell never mounts SettingsHydrator (it only mounts in the office layout — see
   // features/settings/use-org-service-fee.ts), so `booking.serviceFee` in the store is never
-  // hydrated on this surface. Fetch the real fee once, only when the fee button could actually
-  // render: a done, unpriced-estimate visit, viewed by office/owner (billing writes are
-  // ownerOrOffice-only server-side — a tech could never collect it anyway).
+  // hydrated on this surface. Fetch the real fee once, only when the OFFICE fee button could
+  // actually render: v1.settings.get is ownerOrOffice, so a technician's copy would be FORBIDDEN
+  // anyway — and they do not need it. `raiseVisitFee` reads the fee from the shop's own settings
+  // server-side, so the amount is never an input and the field button simply names no number.
   const orgServiceFee = useOrgServiceFee(done && isOffice && scopingCandidate);
   const [feeBusy, setFeeBusy] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
@@ -183,13 +194,19 @@ export function TechJobModalContent() {
   );
 
   const chargeOnFile = useCallback(() => {
-    // charge the balance to the card on file — the "paid before they left" play.
+    // charge the balance to the card on file — the "paid before they left" play. Unreachable on
+    // the field surface by construction (the field customer DTO carries no card), but the write
+    // still names its surface: nothing here may depend on a control happening to be hidden.
     if (!invoice) return;
     const card = lead?.card;
     const dueNow = invDue(invoice);
     if (dueNow <= 0 || !card) return;
-    recordPayment(invoice.id, { amt: dueNow, when: "Just now", method: "card", onFile: true });
-  }, [invoice, lead, recordPayment]);
+    recordPayment(
+      invoice.id,
+      { amt: dueNow, when: "Just now", method: "card", onFile: true },
+      invoiceSurface,
+    );
+  }, [invoice, lead, recordPayment, invoiceSurface]);
 
   const openCloseOut = useCallback(() => {
     if (!jobId) return;
@@ -211,100 +228,41 @@ export function TechJobModalContent() {
     close();
   }, [jobId, updateJob, close]);
 
-  // Remove a failed fee-send's LOCAL record only when it never reached the server at all
-  // (origin still "manual" — a true local orphan). A send-leg failure after a successful draft
-  // leg keeps origin "db" (sendInvoice's split rollback) — that real server row must stay so a
-  // retry resumes it instead of minting a duplicate draft. Reads fresh store state (not a
-  // render-time closure) since this depends on what sendInvoice itself just did. Extracted so
-  // collectVisitFee's own branching stays under the lint complexity ceiling.
-  const cleanupOrphanedFeeDraft = useCallback(
-    (invoiceId: string) => {
-      const current = useAppStore.getState().invoices.find((i) => i.id === invoiceId);
-      if (current && current.origin !== "db") {
-        removeLocalInvoice(invoiceId);
-      }
-    },
-    [removeLocalInvoice],
-  );
-
-  // Collect the org's visit fee on a declined estimate visit (Task 5, rebuilt after review,
-  // twice). Raised as a LEAD-tied MANUAL invoice — addInvoice with jobId: null keeps it off
-  // the fromJob/createFromJob path entirely (that path is also refused outright for a
-  // genuinely unpriced estimate — see CreateInvoiceFromJobUseCase — and, worse, claims the
-  // job's one invoice slot via source_job_id's partial unique index). job.lines is never
-  // touched. Does NOT open the close-out sheet until the send has genuinely completed — a
-  // failed send must never leave the tech staring at a dead/empty payment sheet.
+  // Collect the shop's visit fee on a declined estimate visit.
   //
-  // A retry RESUMES a surviving draft rather than minting a duplicate: draft-invoice.ts has no
-  // lead/title idempotency, so a second addInvoice+sendInvoice on retry would raise a
-  // genuinely NEW server row (indistinguishable from the first) — N flaky-connection retries
-  // would orphan N independently-sendable "Visit fee" drafts in the Money ledger, a latent
-  // duplicate-charge risk.
+  // ONE call, to `v1.fieldInvoicing.raiseVisitFee`, carrying the JOB ID AND NOTHING ELSE. That is
+  // the whole point of this rewrite: the old flow drafted the invoice client-side through
+  // `v1.invoicing.draft`, which (a) is ownerOrOffice, so the technician standing at the door — the
+  // only person who knows the customer declined — got FORBIDDEN, and (b) stamped no scope link, so
+  // even a fee the office raised was unreachable by the person sent to collect it.
+  //
+  // Everything that used to live here is now the server's, and safer for it: the AMOUNT comes from
+  // the shop's settings (the tablet cannot choose what the customer is charged), the ID is minted
+  // server-side (a caller-supplied one would be an unchecked write target — "raise a fee on my own
+  // job, into THAT invoice"), and the raise is idempotent on the job in the database, so the
+  // duplicate-draft retry hazard — and the local-orphan cleanup that mitigated it — are both gone.
+  //
+  // The sheet is opened only once a real invoice exists, so a refusal never strands the technician
+  // in front of an empty payment sheet; the refusal itself is named in place instead.
   const collectVisitFee = useCallback(async () => {
-    if (!job || !jobId || feeBusy) return;
-    const fee = orgServiceFee ?? 0;
-    if (fee <= 0) return; // no $0 fee collection — mirrors the button's own render guard
+    if (!jobId || feeBusy) return;
     setFeeError(null);
 
-    // Already sent/partial/paid — nothing left to send; just take the tech to collection.
+    // Already out the door (sent/partial/paid) — nothing to raise; take them straight to it.
     if (existingFeeInvoice && existingFeeInvoice.status !== "draft") {
       pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId: existingFeeInvoice.id });
       return;
     }
 
     setFeeBusy(true);
-
-    let invoiceId: string;
-    if (existingFeeInvoice) {
-      // A prior attempt's draft survived — either it never reached the server, or its send
-      // leg failed AFTER a successful draft leg (sendInvoice now keeps origin "db" for that
-      // case specifically so this resume path exists). Reuse the same row.
-      invoiceId = existingFeeInvoice.id;
-    } else {
-      const { invoice: inv } = addInvoice({
-        jobId: null, // manual path — never claims this job's one invoice slot
-        leadId: job.leadId,
-        cust: custName,
-        phone: job.phone || lead?.phone || "",
-        title: VISIT_FEE_TITLE,
-        lines: [{ d: VISIT_FEE_TITLE, q: 1, r: fee }],
-        total: fee,
-        depPaid: 0,
-        payments: [],
-        status: "draft",
-        age: 0,
-        archived: false,
-      });
-      // Best-effort local hint for close-out's SAME-session lookup below — the send's server
-      // reconcile overwrites this back to null on success (the domain never sets sourceJobId
-      // on a manual invoice), so it is never the durable signal; the invoiceId passed to
-      // CLOSE_OUT is what close-out actually relies on.
-      updateInvoice(inv.id, { jobId });
-      invoiceId = inv.id;
-    }
-
-    const { ok, error } = await sendInvoice(invoiceId);
+    const { ok, invoiceId, error } = await raiseVisitFee(jobId);
     setFeeBusy(false);
-    if (!ok) {
-      cleanupOrphanedFeeDraft(invoiceId);
-      setFeeError(error || "Couldn't send the fee invoice — check your connection and try again.");
+    if (!ok || !invoiceId) {
+      setFeeError(error || "Couldn't raise the visit fee — check your connection and try again.");
       return;
     }
     pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId });
-  }, [
-    job,
-    jobId,
-    lead,
-    custName,
-    orgServiceFee,
-    feeBusy,
-    existingFeeInvoice,
-    addInvoice,
-    updateInvoice,
-    sendInvoice,
-    cleanupOrphanedFeeDraft,
-    pushModal,
-  ]);
+  }, [jobId, feeBusy, existingFeeInvoice, raiseVisitFee, pushModal]);
 
   const navigate = useCallback(() => {
     // maps deep-link — open the address in the device's maps app.
@@ -326,7 +284,8 @@ export function TechJobModalContent() {
   // foot; every other state gets a plain full-width Done so the field view is
   // never dismissable only via the tiny shell ✕. All non-destructive. An
   // unpriced estimate never gets a billing foot — its close-out is the handoff.
-  const footKind = done && isOffice && !scoping ? doneFootAction(job, lead, invoice) : null;
+  const footKind =
+    done && canTakePayment && !scoping ? doneFootAction(job, lead, invoice, isOffice) : null;
   const footDue = invoice ? invDue(invoice) : jobTotal(job);
   const footCard = lead?.card;
   const footPri =
@@ -435,32 +394,39 @@ export function TechJobModalContent() {
       )}
 
       {/* 4. The close-out HERO. A done, UNPRICED ESTIMATE gets the scope handoff for every
-          role — there is no bill on a scoping visit, so no billing branch may render. Otherwise
-          the billing DoneBlock stays office-only: charge-on-file / take-payment / send-to-office
-          all write through ownerOrOffice endpoints. A job that is NOT done has no hero of its
-          own: the address above and the visit row below are what the technician needs on the
-          doorstep, and they are already there. */}
+          role — there is no bill on a scoping visit, so no billing branch may render. The
+          billing DoneBlock now renders for anyone who may COLLECT on this job: the office, or a
+          technician assigned to it — that is the whole "take payment at the door" change, and the
+          per-control gates inside the card keep the office-only writes (hand-off, on-site
+          re-pricing, the unredacted receipt) where they were. A job that is NOT done has no hero
+          of its own: the address above and the visit row below are what the technician needs on
+          the doorstep, and they are already there. */}
       {done && scoping ? (
         <ScopeHandoffBlock
           scoped={hasScope}
           onOpenQuoteTab={() => setTab("quote")}
-          // Office-only: billing writes (addInvoice's manual draft/send) are ownerOrOffice
-          // server-side, so a tech would only get FORBIDDEN — feeAmount 0 hides the button for
-          // them, the same guard that hides it while the fee is unset/loading.
-          feeAmount={isOffice ? (orgServiceFee ?? 0) : 0}
+          // The office waits for its own settings read so the button can name the number; a
+          // technician gets the button as soon as the job is theirs, and the server names the
+          // amount by raising the invoice.
+          canCollectFee={isOffice ? (orgServiceFee ?? 0) > 0 : canTakePayment}
+          feeAmount={isOffice ? orgServiceFee : null}
           hasFeeInvoice={hasFeeInvoice}
           onCollectFee={collectVisitFee}
           feeError={feeError}
         />
-      ) : done && isOffice ? (
+      ) : done && canTakePayment ? (
         <DoneBlock
           job={job}
           lead={lead}
           invoice={invoice}
           onOpenCloseOut={openCloseOut}
-          onOpenInvoice={openInvoiceModal}
+          // Office only — the invoice modal reads the unredacted office record (line cost, the
+          // customer's pay-link token). Omitted for the field, so the receipt link isn't drawn.
+          onOpenInvoice={isOffice ? openInvoiceModal : undefined}
           onChargeOnFile={chargeOnFile}
           onSendToOffice={sendToOffice}
+          canSendToOffice={isOffice}
+          canSetBill={isOffice}
         />
       ) : null}
 

@@ -16,12 +16,21 @@
  *   "db"     — reconciled from a backend DTO; subsequent mutations go to the DB.
  *
  * WIRED mutations (backend endpoint exists):
- *   addInvoice (fromJob path)  → v1.invoicing.createFromJob  (when jobId is set + job is "db")
- *   sendInvoice                → v1.invoicing.draft + v1.invoicing.send sequence
- *   recordPayment              → v1.invoicing.recordPayment
+ *   addInvoice (fromJob path)  → invoicing.createFromJob  (when jobId is set + job is "db")
+ *   sendInvoice                → invoicing.draft + invoicing.send sequence
+ *   recordPayment              → invoicing.recordPayment
+ *   raiseVisitFee              → v1.fieldInvoicing.raiseVisitFee  (one path for BOTH surfaces)
  *   archiveInvoice             → v1.invoicing.void  (any db invoice, incl. drafts)
  *   updateInvoice   → v1.invoicing.updateMetadata (db invoices; DB-backed fields only)
  *   setInvoiceLines → v1.invoicing.patchLines     (db invoices; recomputes total)
+ *
+ * THE WRITE SURFACE. The first three take an `InvoiceWriteSurface` ("office" by default), because
+ * the same three writes are also made by a TECHNICIAN standing at the customer's door, whose token
+ * is refused by every `ownerOrOffice` procedure above. `lib/store/invoice-write.ts` picks the
+ * endpoint and the matching DTO mapper; this slice keeps the optimistic / reconcile / rollback
+ * mechanics, which are identical either way. The remaining mutations have NO field sibling and
+ * take no surface — void, updateMetadata and patchLines are office capabilities by design (see
+ * modules/invoicing/api/field-invoice-router.ts for why each one stays there).
  *
  * DEFERRED (no backend endpoint yet — store-local only):
  *   addInvoice (blank path)    — skips network; DB row created at sendInvoice time
@@ -33,6 +42,14 @@ import type { Invoice, InvoiceLine, Payment } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
+import {
+  persistInvoiceFromJob,
+  persistRecordPayment,
+  persistSendInvoice,
+  raiseVisitFee as raiseVisitFeeOnServer,
+  type InvoicePaymentMethod,
+  type InvoiceWriteSurface,
+} from "@/lib/store/invoice-write";
 import { reportWriteError } from "../write-error";
 import { userMessage } from "@/lib/trpc/error-map";
 
@@ -93,6 +110,18 @@ export function buildInvoiceMetadataPayload(
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * What a technician is told when they try to send a store-local invoice.
+ *
+ * THE FIELD SURFACE HAS NO DRAFT, deliberately: `invoicing.draft` mints a lead-tied invoice with
+ * caller-chosen lines against ANY lead, so it is not job-scoped and no field guard is even
+ * expressible for it (see modules/invoicing/api/field-invoice-router.ts). A technician holding a
+ * row that never reached the server therefore has nothing to send, and calling the office endpoint
+ * from there would be a FORBIDDEN dressed up as a network failure. This says what is actually true.
+ */
+const FIELD_CANNOT_DRAFT =
+  "This bill was never raised on the server — close this and tap Take payment again.";
 
 function snapshotInv(invoices: Invoice[], id: string): Invoice | undefined {
   return invoices.find((i) => i.id === id);
@@ -199,20 +228,36 @@ export interface InvoicesSlice {
    * { job, persisted }. On the blank/manual path `persisted` resolves { ok: true } immediately —
    * nothing was promised to the server yet; sendInvoice does that.
    */
-  addInvoice: (draft: Omit<Invoice, "id" | "num">) => {
+  addInvoice: (
+    draft: Omit<Invoice, "id" | "num">,
+    surface?: InvoiceWriteSurface,
+  ) => {
     invoice: Invoice;
     persisted: Promise<{ ok: boolean; error?: string }>;
   };
   updateInvoice: (id: string, patch: Partial<Invoice>) => void;
   setInvoiceLines: (id: string, lines: InvoiceLine[]) => void;
-  recordPayment: (id: string, payment: Payment) => void;
+  recordPayment: (id: string, payment: Payment, surface?: InvoiceWriteSurface) => void;
   /**
    * Resolves { ok, error } once the send genuinely completes (never rejects) so a caller that
    * must not proceed until the invoice is actually sent (e.g. opening a payment sheet on it)
    * can await it. Existing fire-and-forget callers are unaffected — the resolved value is
    * optional to consume. Mirrors setJobLines/setVisitNotes's Promise<{ok, error?}> convention.
    */
-  sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  sendInvoice: (id: string, surface?: InvoiceWriteSurface) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Charge the shop's trip fee on a scoping visit the customer declined, and put the resulting
+   * invoice in the store.
+   *
+   * NO optimistic row, unlike every other create here: the server mints the id (it refuses a
+   * client-authored one — see invoice-write.ts) and it is idempotent per job, so there is nothing
+   * to be optimistic with and nothing to roll back. A second tap resumes the same invoice instead
+   * of minting a duplicate, which is what the old client-side draft+send path could not promise.
+   *
+   * Resolves { ok, invoiceId } / { ok: false, error } and never rejects — the caller opens the
+   * payment sheet on the id, or names the refusal in place.
+   */
+  raiseVisitFee: (jobId: string) => Promise<{ ok: boolean; invoiceId?: string; error?: string }>;
   archiveInvoice: (id: string) => void;
   /**
    * Remove a store-local invoice that never reached the server (or whose sendInvoice failed
@@ -264,7 +309,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   //   origin: "manual" until send time. v1.invoicing.draft requires lines >= 1,
   //   so we can't fire it here on an empty draft.
   // ---------------------------------------------------------------------------
-  addInvoice: (draft) => {
+  addInvoice: (draft, surface = "office") => {
     const id = crypto.randomUUID();
     const inv: Invoice = {
       ...draft,
@@ -284,10 +329,9 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       return { invoice: inv, persisted: Promise.resolve({ ok: true }) };
     }
 
-    const persisted = trpcVanilla.v1.invoicing.createFromJob
-      .mutate({ jobId: draft.jobId, id })
+    const persisted = persistInvoiceFromJob(surface, { jobId: draft.jobId, id }, inv)
       .then(
-        (dto) => {
+        (reconciled) => {
           invalidateLists("invoices", "jobs");
           // Reconcile — ADOPT the server id (dto.id). On a fresh create it IS the client id
           // (passed through above). On the idempotent path — the job already had an invoice —
@@ -295,7 +339,6 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           // recordPayment, createPayment, get) sends the store id to the server, and the old
           // `{...reconciled, id}` clobber made all of them NOT_FOUND (rollback + dev-only log)
           // while the UI showed success.
-          const reconciled = dtoInvoiceToStore(dto, inv);
           set((s) => ({
             invoices: s.invoices
               // Drop any OTHER row already carrying the server id (keep the one being replaced)
@@ -422,7 +465,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   // Callers: invoice-modal.tsx record(), cust-invoice-modal.tsx pay(),
   //          close-out-modal.tsx approvePayment(), money-ledger.tsx onCharge().
   // ---------------------------------------------------------------------------
-  recordPayment: (id, payment) => {
+  recordPayment: (id, payment, surface = "office") => {
     const prior = snapshotInv(get().invoices, id);
 
     // 1. Optimistic update.
@@ -452,16 +495,18 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
 
     const idempotencyKey = crypto.randomUUID();
 
-    trpcVanilla.v1.invoicing.recordPayment
-      .mutate({
+    persistRecordPayment(
+      surface,
+      {
         invoiceId: id,
         amountCents: Math.round(payment.amt * 100),  // dollars → cents
-        method: payment.method as "card" | "ach" | "cash" | "check" | "card_terminal",
+        method: payment.method as InvoicePaymentMethod,
         idempotencyKey,
-      })
-      .then((dto) => {
+      },
+      inv,
+    )
+      .then((reconciled) => {
         invalidateLists("invoices", "jobs");
-        const reconciled = dtoInvoiceToStore(dto, inv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
       })
       .catch((err: unknown) => {
@@ -481,7 +526,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   //
   // Callers: invoice-modal.tsx send(), close-out-modal.tsx approvePayment().
   // ---------------------------------------------------------------------------
-  sendInvoice: (id) => {
+  sendInvoice: (id, surface = "office") => {
     const inv = get().invoices.find((i) => i.id === id);
     const prior = snapshotInv(get().invoices, id);
 
@@ -495,7 +540,12 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     if (!inv) return Promise.resolve({ ok: false, error: "invoice not found" });
 
     if (inv.origin !== "db") {
-      // "manual" path: must draft first, then send.
+      // "manual" path: must draft first, then send. The field surface has no draft at all — see
+      // FIELD_CANNOT_DRAFT.
+      if (surface === "field") {
+        set((s) => ({ invoices: s.invoices.map((i) => (i.id === id ? { ...i, status: "draft" } : i)) }));
+        return Promise.resolve({ ok: false, error: FIELD_CANNOT_DRAFT });
+      }
       // v1.invoicing.draft requires lines >= 1.
       if (!inv.lines.length || !inv.leadId) {
         // Can't draft without lines or leadId — stay store-local.
@@ -572,12 +622,9 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     }
 
     // "db" path: send directly.
-    return trpcVanilla.v1.invoicing.send
-      .mutate({ invoiceId: id })
-      .then((dto) => {
+    return persistSendInvoice(surface, id, get().invoices.find((i) => i.id === id) ?? inv)
+      .then((reconciled) => {
         invalidateLists("invoices", "jobs");
-        const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
-        const reconciled = dtoInvoiceToStore(dto, currentInv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
         return { ok: true };
       })
@@ -587,6 +634,40 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the invoice." };
       });
   },
+
+  // ---------------------------------------------------------------------------
+  // raiseVisitFee — the trip fee on a declined estimate, raised SERVER-side.
+  //
+  // No optimistic row: the amount comes from the shop's settings (this device may never have
+  // read them) and the id is minted by the server, so there is nothing honest to draw until the
+  // response lands. Adopt-on-success mirrors adoptEstimate — a flow that already persisted must
+  // not be re-persisted through an add* action.
+  //
+  // Idempotent per job in the DATABASE, so the failure mode the old client-side draft+send path
+  // carried — N flaky retries minting N independently-sendable "Visit fee" drafts — is gone, and
+  // with it the orphan cleanup that used to be needed here.
+  // ---------------------------------------------------------------------------
+  raiseVisitFee: (jobId) =>
+    raiseVisitFeeOnServer(jobId, undefined).then(
+      (invoice) => {
+        invalidateLists("invoices", "jobs");
+        set((s) => ({
+          invoices: s.invoices.some((i) => i.id === invoice.id)
+            ? reconcileInv(s.invoices, invoice)
+            : [invoice, ...s.invoices],
+        }));
+        return { ok: true, invoiceId: invoice.id };
+      },
+      (err: unknown) => {
+        reportWriteError("raiseVisitFee", err);
+        // The domain refusals here are the ones the person at the door needs verbatim — "this
+        // shop hasn't set a visit fee", "finish the visit before charging the fee".
+        return {
+          ok: false,
+          error: userMessage(err, "Couldn't raise the visit fee — check your connection and try again."),
+        };
+      },
+    ),
 
   // ---------------------------------------------------------------------------
   // removeLocalInvoice — deletes a store-local-only invoice (an optimistic addInvoice whose

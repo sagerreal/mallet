@@ -28,6 +28,17 @@ export type EstimateDTO = RouterOutputs["v1"]["quoting"]["draft"];
 export type InvoiceDTO = RouterOutputs["v1"]["invoicing"]["draft"];
 
 /**
+ * The invoice as it crosses to a TECHNICIAN's device — a separate, smaller shape, never a
+ * filtered copy of `InvoiceDTO` (see modules/invoicing/api/field-invoice-dto.ts).
+ *
+ * It always carries the money a person at the door must be able to read (total, balance, the
+ * payments already taken); it carries NO line `cost` at all, no `publicToken`/`publicUrl`, no
+ * signed-amount `authorization`, no follow-up policy. Line `rate` is null when the shop hides
+ * prices from techs.
+ */
+export type FieldInvoiceDTO = RouterOutputs["v1"]["fieldInvoicing"]["get"];
+
+/**
  * The LIST shapes — deliberately separate types, because they are deliberately smaller.
  *
  * A summary carries what a row needs; the full DTO carries lines, payments and tax. Passing a
@@ -614,6 +625,68 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     poNumber: dto.poNumber ?? undefined,
     publicToken: dto.publicToken ?? undefined,
     publicUrl: dto.publicUrl ?? undefined,
+    archived: dto.status === "void",
+    origin: "db",
+  };
+}
+
+/**
+ * A FIELD invoice DTO → a store Invoice. The technician's read path.
+ *
+ * Two things differ from dtoInvoiceToStore, and both are deliberate:
+ *
+ * 1. `lines` is EMPTIED when the shop hides prices from techs. The wire carries the descriptions
+ *    with `rate: null` — "hidden from you", explicitly not $0 — and the store's InvoiceLine has
+ *    no way to say that (`r` is a plain number). Writing a 0 there would put a fabricated price
+ *    in front of a customer, so the breakdown is dropped instead and the invoice's own `total` /
+ *    `due` — which the field DTO always sends, whatever the setting — carry the money. That is
+ *    what makes "Balance due $840 — collect" honest on a device that may not see line rates.
+ * 2. `publicToken`/`publicUrl`, `authorization`, `poNumber` and the follow-up state are absent
+ *    from the wire, so they are absent here. A prior record's copy is NOT carried forward: this
+ *    mapper's output must never appear to hold a pay-link the field response did not send.
+ *
+ * `due` + `paidTotal` are taken from the server rather than re-derived, and `partial` is NOT set:
+ * this is a full read of the record, just a narrower one.
+ *
+ * `priorInv` is OPTIONAL because the field surface has a genuine no-prior path: a technician's
+ * store holds no invoices at all (InvoicesHydrator is !isTech-gated and `invoicing.list` is
+ * office-only), so `fieldInvoicing.raiseVisitFee` adopts a record this device has never seen. It
+ * only ever supplies the three fields the wire does not carry — cust/phone/email — and the
+ * customer's name comes back on the DTO anyway.
+ */
+export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice): Invoice {
+  const total = dto.total.cents / 100;
+  const due = dto.due.cents / 100;
+  const pricesHidden = dto.lines.some((l) => l.rate === null);
+  return {
+    id: dto.id,
+    num: dto.num,
+    // The bill's own job. A visit-fee invoice is lead-tied and carries `scopeJobId` instead —
+    // deliberately NOT folded in here: it is the job that AUTHORIZES the fee, not the job whose
+    // bill this is, and the surfaces that look a job's invoice up by `jobId` must not find it.
+    jobId: dto.sourceJobId,
+    leadId: dto.leadId,
+    cust: dto.customerName ?? priorInv?.cust ?? "",
+    phone: priorInv?.phone ?? "",
+    email: priorInv?.email,
+    title: dto.title ?? "Invoice",
+    status: dto.status,
+    total,
+    tax: dto.tax.cents / 100,
+    depPaid: dto.depositPaid.cents / 100,
+    paidTotal: dto.amountPaid.cents / 100,
+    due,
+    payments: dto.payments.map((p) => ({
+      amt: p.amount.cents / 100,
+      when: new Date(p.receivedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      method: p.method,
+    })),
+    termsDays: dto.termsDays,
+    lines: pricesHidden
+      ? []
+      : dto.lines.map((l) => ({ d: l.description, q: l.quantity, r: (l.rate?.cents ?? 0) / 100 })),
+    age: daysSince(dto.createdAt),
+    dueAt: dto.dueAt,
     archived: dto.status === "void",
     origin: "db",
   };
