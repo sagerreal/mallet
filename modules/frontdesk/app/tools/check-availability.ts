@@ -55,7 +55,7 @@ const checkAvailabilityParameters: Record<string, unknown> = {
     lane: {
       type: "string",
       enum: [...AVAILABILITY_LANES],
-      description: "The booking lane for the job: repair, estimate, or flat-rate service.",
+      description: "The booking lane: flat (the price is known) or estimate (someone goes to look). \"repair\" is accepted only for backward compatibility and means an estimate with the visit fee.",
     },
     urgency: {
       type: "string",

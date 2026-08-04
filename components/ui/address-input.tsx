@@ -207,7 +207,13 @@ export function AddressInput({
       e.preventDefault();
       const chosen = suggestions[activeIdx];
       if (chosen) selectSuggestion(chosen);
-    } else if (e.key === "Escape") {
+    } else if (e.key === "Escape" && open && suggestions.length > 0) {
+      // Escape while the list is open closes the LIST, not the modal above it. The Modal shell
+      // listens for Escape at the document level, so without stopPropagation this keystroke
+      // destroyed the whole form the input sat in (CustomerPicker names the same hazard).
+      // With no list open, Escape falls through to the modal — closing it is then what the
+      // user meant.
+      e.stopPropagation();
       setSuggestions([]);
       setOpen(false);
       setActiveIdx(-1);

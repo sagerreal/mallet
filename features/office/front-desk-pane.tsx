@@ -225,7 +225,9 @@ export function FrontDeskPane() {
   // index (append order is stable — addBookingService pushes to the end).
   function handleAddService(svc: NewServiceInput) {
     const newIdx = bk.services.length;
-    addBookingService(svc.name);
+    // The fee flag is the MODAL's answer, never a silent inherit — an "Estimate" pick meaning a
+    // free quote must not leave the AI charging that caller the visit fee.
+    addBookingService(svc.name, svc.feeApplies);
     updateBookingService(newIdx, "lane", svc.lane);
     if (svc.lane === "flat" && svc.price !== "") updateBookingService(newIdx, "price", svc.price);
     if (svc.triggers.trim()) updateBookingService(newIdx, "triggers", svc.triggers.trim());

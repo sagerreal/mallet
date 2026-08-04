@@ -15,6 +15,10 @@ import { LANE_OPTIONS, flatPriceMissing } from "./booking-lanes";
 export interface NewServiceInput {
   name: string;
   lane: BookingService["lane"];
+  /** Estimate lane: the visit fee applies and the tech prices on site. Chosen HERE, never
+   *  inherited silently — an owner who picked "Estimate" meaning a free quote must not discover
+   *  the AI has been charging their callers $89. */
+  feeApplies: boolean;
   price: string;
   triggers: string;
 }
@@ -29,14 +33,18 @@ export function AddServiceModal({
   onAdd: (svc: NewServiceInput) => void;
 }) {
   const [name, setName] = useState("");
-  const [lane, setLane] = useState<ServiceLane>("repair");
+  const [lane, setLane] = useState<ServiceLane>("estimate");
+  // Defaults ON: the commonest quick-add is the service call (tech prices it on site). Visible
+  // and unticked in one click, which is the whole difference from the silent inherit it replaces.
+  const [feeApplies, setFeeApplies] = useState(true);
   const laneGroup = useGroupLabel();
   const [price, setPrice] = useState("");
   const [triggers, setTriggers] = useState("");
 
   function reset() {
     setName("");
-    setLane("repair");
+    setLane("estimate");
+    setFeeApplies(true);
     setPrice("");
     setTriggers("");
   }
@@ -45,7 +53,7 @@ export function AddServiceModal({
     // A flat lane with no price would fall back to speaking the SERVICE FEE, a different number
     // than the owner means to charge — so it is refused here rather than saved quietly.
     if (!name.trim() || flatPriceMissing(lane, price)) return;
-    onAdd({ name: name.trim(), lane, price, triggers });
+    onAdd({ name: name.trim(), lane, feeApplies: lane === "estimate" && feeApplies, price, triggers });
     reset();
     onClose();
   }
@@ -78,6 +86,16 @@ export function AddServiceModal({
             options={LANE_OPTIONS}
             aria-labelledby={laneGroup.labelProps.id}
           />
+          {lane === "estimate" && (
+            <label className="colchk">
+              <input
+                type="checkbox"
+                checked={feeApplies}
+                onChange={(e) => setFeeApplies(e.target.checked)}
+              />
+              Visit fee applies — the tech prices it on site
+            </label>
+          )}
           {lane === "flat" && (
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
               <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>$</span>

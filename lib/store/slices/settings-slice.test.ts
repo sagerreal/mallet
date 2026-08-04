@@ -307,7 +307,7 @@ describe("settings-slice persistence", () => {
     const store = makeStore();
     const before = store.get().booking.services.length;
     store.get().seedBookingServices([
-      { name: "Leak repair", lane: "repair", triggers: "leak, dripping" },
+      { name: "Leak repair", lane: "estimate", feeApplies: true, triggers: "leak, dripping" },
       { name: "Repipe / larger job", lane: "estimate", triggers: "repipe" },
     ]);
     expect(store.get().booking.services.length).toBe(before + 2);
@@ -316,7 +316,7 @@ describe("settings-slice persistence", () => {
 
     // Re-seeding the same names (any case) adds nothing and does not persist again.
     store.get().seedBookingServices([
-      { name: "LEAK REPAIR", lane: "repair", triggers: "x" },
+      { name: "LEAK REPAIR", lane: "estimate", feeApplies: true, triggers: "x" },
     ]);
     expect(store.get().booking.services.length).toBe(before + 2);
     await Promise.resolve();
@@ -327,7 +327,7 @@ describe("settings-slice persistence", () => {
     mockUpdateConfig.mockRejectedValueOnce(new Error("fail"));
     const store = makeStore();
     const before = store.get().booking.services.length;
-    store.get().seedBookingServices([{ name: "Storm work", lane: "repair", triggers: "tree fell" }]);
+    store.get().seedBookingServices([{ name: "Storm work", lane: "estimate", feeApplies: true, triggers: "tree fell" }]);
     await Promise.resolve();
     await Promise.resolve();
     expect(store.get().booking.services.length).toBe(before);

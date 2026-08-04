@@ -12,6 +12,7 @@ import {
   bookVisitParameters,
   type BookLane,
   type BookVisitInput,
+  normalizeBookLane,
 } from "./book-visit-input";
 import {
   confirmationSpeak,
@@ -75,10 +76,12 @@ export const BOOK_VISIT_ERROR_SPEAK =
 export const BOOK_VISIT_OUT_OF_AREA_SPEAK =
   "That address looks outside the area we cover — let me take a message so the office can point you to someone.";
 
-// The job/disposition kind for a lane: estimate lane → "estimate" (booked_estimate), everything
+// The job/disposition kind for a lane: anything that is not a flat price is an ESTIMATE visit —
 // else → "work" (booked_job). Used for BOTH the job's kind column and result.data.kind (see
 // disposition.ts). data.emergency escalates above both.
-const kindForLane = (lane: BookLane): JobKind => (lane === "estimate" ? "estimate" : "work");
+// someone goes to look before there is a price. The old repair lane booked kind='work', which is
+// how a voice-booked service call rendered as priced work it never was.
+const kindForLane = (lane: BookLane): JobKind => (normalizeBookLane(lane) === "estimate" ? "estimate" : "work");
 
 // ── slot_start validation (bounds-check a model-supplied clock time) ─────────────
 // slot_start is the START of the window the caller picked (from check_availability's data.slots),
@@ -133,8 +136,21 @@ const isValidSlotStart = (input: BookVisitInput, settings: OrgSettings): boolean
 // ── Duration (from the org's configured visit minutes, never guessed) ────────────
 // repair/flat → a repair visit; estimate → a scope visit. Both come from settings so the office
 // controls the block length; install minutes are intentionally NOT used here (no install lane).
-const visitMinutesFor = (lane: BookLane, settings: OrgSettings): number =>
-  lane === "estimate" ? settings.props.visitScopeMinutes : settings.props.visitRepairMinutes;
+// A FEE visit (the old service call — tech prices it on site, likely fixes it same trip) gets the
+// repair block; a free quote-first estimate gets the shorter scope block. The flag comes from the
+// CONFIGURED SERVICE when one matches, never from the model's own lane claim.
+const visitMinutesFor = (lane: BookLane, feeApplies: boolean, settings: OrgSettings): number => {
+  if (normalizeBookLane(lane) === "flat") return settings.props.visitRepairMinutes;
+  return feeApplies ? settings.props.visitRepairMinutes : settings.props.visitScopeMinutes;
+};
+
+/** The configured service's fee flag, matched by name; a stale-prompt 'repair' lane implies it. */
+const feeAppliesFor = (input: { service_name: string; lane: BookLane }, settings: OrgSettings): boolean => {
+  const wanted = input.service_name.trim().toLowerCase();
+  const svc = settings.props.booking.services.find((s) => s.name.trim().toLowerCase() === wanted);
+  if (svc) return svc.lane === "estimate" && svc.feeApplies === true;
+  return input.lane === "repair";
+};
 
 // The confirmation phrasing (price provenance, slot phrase, task text) lives in book-visit-speak.ts
 // so this file stays a thin orchestration gate under the file-size limit.
@@ -266,7 +282,7 @@ const bookConfirmed = async (
     assigneeUserId,
     scheduledDate: input.slot_date,
     scheduledStart: input.slot_start,
-    durationHours: minutesToHours(visitMinutesFor(input.lane, settings)),
+    durationHours: minutesToHours(visitMinutesFor(input.lane, feeAppliesFor(input, settings), settings)),
     notes: input.problem,
     lat: jobPoint?.lat ?? null,
     lng: jobPoint?.lng ?? null,

@@ -1,3 +1,4 @@
+import { normalizeBookingService } from "../domain/org-settings";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { CensusGeocoder } from "@mallet/frontdesk";
@@ -26,6 +27,7 @@ import {
   jobTermDTO,
   leadSourceDTO,
   bookingCfgDTO,
+  bookingCfgInputDTO,
   toSettingsDTO,
   toOrgSettingsDTO,
   toPricebookDTO,
@@ -91,7 +93,7 @@ const updateConfigInput = z.object({
   // are NEVER accepted from the client (a client can't be trusted to supply a point). null clears
   // the origin; an empty string is treated the same by the geocode-on-save flow.
   serviceOriginAddress: z.string().max(500).nullable().optional(),
-  booking: bookingCfgDTO.optional(),
+  booking: bookingCfgInputDTO.optional(),
 });
 
 // Layer 5: thin transport. Parse/normalize input at the boundary, construct the org-scoped
@@ -140,7 +142,17 @@ export const createSettingsRouter = () =>
           repo,
           ctx.deps.clock,
           new CensusGeocoder(),
-        ).exec(input, ctx.principal.orgId);
+        ).exec(
+            {
+              ...input,
+              // Legacy 'repair' lanes normalise before the domain types see them — stale clients
+              // and stored blobs both come through this input.
+              booking: input.booking
+                ? { ...input.booking, services: input.booking.services.map(normalizeBookingService) }
+                : undefined,
+            },
+            ctx.principal.orgId,
+          );
         return toOrgSettingsDTO(orThrow(result));
       }),
 

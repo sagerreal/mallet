@@ -57,7 +57,10 @@ export type AddSourceResult = { ok: true } | { ok: false; reason: "empty" | "dup
 
 export interface BookingService {
   name: string;
-  lane: "repair" | "flat" | "estimate";
+  lane: "flat" | "estimate";
+  /** Estimate lane only: the org's visit fee applies and the tech prices it on site — the old
+   *  "service call". Absent/false = free estimate, quoted after the visit. */
+  feeApplies?: boolean;
   price?: number;
   /** Link to a pricebook entry — the phone speaks THAT entry's current price (server-resolved).
    * null/absent = unlinked, `price` above is spoken as before. */
@@ -304,8 +307,8 @@ export interface SettingsSlice {
   removeSource: (id: string) => void;
 
   // booking
-  updateBookingService: (index: number, field: keyof BookingService, value: string | string[]) => void;
-  addBookingService: (name: string) => void;
+  updateBookingService: (index: number, field: keyof BookingService, value: string | string[] | boolean) => void;
+  addBookingService: (name: string, feeApplies?: boolean) => void;
   // Append a starter-playbook batch (deduped case-insensitively by name against existing
   // services) and persist ONCE. Used by trade onboarding — never replaces owner services.
   seedBookingServices: (services: BookingService[]) => void;
@@ -484,6 +487,14 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
         services: s.booking.services.map((svc, i) => {
           if (i !== index) return svc;
           if (field === "price") return { ...svc, price: Math.max(0, Number(value) || 0) };
+          // Leaving the estimate lane clears the fee flag: a flat service carrying feeApplies is
+          // a dormant misread for any reader that forgets to gate on lane first.
+          if (field === "lane") {
+            const lane = value as BookingService["lane"];
+            return lane === "estimate" ? { ...svc, lane } : { ...svc, lane, feeApplies: undefined };
+          }
+          // false → undefined keeps untouched services clean in the blob (requiredCerts pattern).
+          if (field === "feeApplies") return { ...svc, feeApplies: value === true ? true : undefined };
           // "" = unlink (undefined keeps the blob clean, matching requiredCerts below).
           if (field === "pricebookServiceId") return { ...svc, pricebookServiceId: value === "" ? undefined : (value as string) };
           if (field === "requiredCerts") {
@@ -498,14 +509,14 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     persistBooking(get, set, snapshot);
   },
 
-  addBookingService: (name) => {
+  addBookingService: (name, feeApplies = true) => {
     const nm = name.trim();
     if (!nm) return;
     const snapshot = get().booking;
     set((s) => ({
       booking: {
         ...s.booking,
-        services: [...s.booking.services, { name: nm, lane: "repair", triggers: "" }],
+        services: [...s.booking.services, { name: nm, lane: "estimate", ...(feeApplies ? { feeApplies: true } : {}), triggers: "" }],
       },
     }));
     persistBooking(get, set, snapshot);

@@ -146,6 +146,9 @@ const toSafeServiceView = (
 ): Record<string, unknown> => ({
   name: svc.name,
   lane: svc.lane,
+  // A boolean, not an owner-spoken amount, so the price-redaction rationale below does not cover
+  // it — and without it a fee visit and a free estimate are indistinguishable to the field AI.
+  ...(svc.feeApplies ? { feeApplies: true } : {}),
   triggers: svc.triggers,
   ...(svc.emergencyTriggers ? { emergencyTriggers: svc.emergencyTriggers } : {}),
   ...(svc.requiredCerts && svc.requiredCerts.length > 0
@@ -158,7 +161,7 @@ const buildGetOrgServiceContextTool = (scope: FieldToolScope, deps: FieldToolDep
   meta: {
     name: "get_org_service_context",
     description:
-      "Returns the org's configured booking services — name, lane (repair/estimate/flat), trigger phrases, emergency triggers, and required certifications. No prices or ballparks. Use this to understand what services this org offers, which situations trigger which service type, and what credentials a tech must have for each service.",
+      "Returns the org's configured booking services — name, lane (estimate/flat, estimate optionally with feeApplies), trigger phrases, emergency triggers, and required certifications. No prices or ballparks. Use this to understand what services this org offers, which situations trigger which service type, and what credentials a tech must have for each service.",
     inputSchema: noArgs,
     mutating: false,
   },

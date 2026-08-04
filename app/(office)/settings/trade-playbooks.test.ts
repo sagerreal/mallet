@@ -52,7 +52,7 @@ describe("trade starter playbooks", () => {
     for (const t of TRADE_PLAYBOOKS) {
       expect(t.services.length).toBeGreaterThanOrEqual(2);
       for (const s of t.services) {
-        expect(["repair", "estimate", "flat"]).toContain(s.lane);
+        expect(["estimate", "flat"]).toContain(s.lane);
         expect(s.name.trim().length).toBeGreaterThan(0);
         expect(s.triggers.trim().length).toBeGreaterThan(0);
       }
@@ -71,11 +71,13 @@ describe("trade starter playbooks", () => {
     }
   });
 
-  it("emergency words only on bookable (repair) services, and never gas (gas = the 911 rule)", () => {
+  it("emergency words only on fee visits — someone who will FIX it — and never gas (the 911 rule)", () => {
     for (const t of TRADE_PLAYBOOKS) {
       for (const s of t.services) {
         if (s.emergencyTriggers) {
-          expect(s.lane).toBe("repair");
+          // An emergency caller needs a tech who prices and fixes on site: the fee visit.
+          expect(s.lane).toBe("estimate");
+          expect(s.feeApplies).toBe(true);
           expect(s.emergencyTriggers.toLowerCase()).not.toMatch(/\bgas\b/);
         }
       }
@@ -98,8 +100,9 @@ describe("trade starter playbooks", () => {
     }
   });
 
-  it("Other is a generic pair: one bookable service call + one quote-first job", () => {
+  it("Other is a generic pair: one fee visit + one free quote-first estimate", () => {
     const other = playbookFor("other");
-    expect(other?.services.map((s) => s.lane).sort()).toEqual(["estimate", "repair"]);
+    expect(other?.services.every((s) => s.lane === "estimate")).toBe(true);
+    expect(other?.services.map((s) => s.feeApplies === true).sort()).toEqual([false, true]);
   });
 });

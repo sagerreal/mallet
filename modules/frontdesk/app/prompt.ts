@@ -7,6 +7,8 @@ import type { CallerContext } from "../domain/assistant";
 export interface PromptService {
   readonly name: string;
   readonly lane: ServiceLane;
+  /** Estimate lane: the visit fee applies and the tech prices on site (the old service call). */
+  readonly feeApplies?: boolean;
   readonly price?: number;
   readonly triggers: string;
   readonly emergencyTriggers?: string;
@@ -117,6 +119,7 @@ const CONFIRM_RULES: readonly string[] = [
   "For a returning caller, prefer the number from the caller-ID context over asking again.",
 ] as const;
 
+// The fee-visit script — the old "repair"/service-call lane, now the estimate lane's fee flag.
 const REPAIR_SCRIPT =
   "The tech diagnoses the problem and gives you an exact price on-site. Frame it that way — " +
   "never quote a repair price yourself. Then offer a few start times spread across the day " +
@@ -229,8 +232,9 @@ const formatDayHours = (label: string, open: number, close: number): string =>
 const formatFeeLine = (fee: number, credited: boolean): string => {
   const credit = credited ? ", credited toward the work if the customer goes ahead" : "";
   return (
-    `Service call fee: $${fee}${credit}. This applies ONLY to services listed as the "repair" ` +
-    `lane. NEVER state it on an estimate-lane call — those visits are free.`
+    `Visit fee: $${fee}${credit}. It applies ONLY to estimate-lane services marked ` +
+    `"visit fee applies" — on those calls the fee is the whole price conversation. ` +
+    `NEVER state any price on a no-fee estimate call: those visits are free.`
   );
 };
 
@@ -238,11 +242,12 @@ const formatServiceLine = (s: PromptService): string => {
   // triggers is owner free text → redact stray prices; the flat-lane priceSuffix is the
   // sanctioned price and is appended AFTER redaction so it always renders.
   const priceSuffix = s.lane === "flat" && s.price !== undefined ? ` · $${s.price}` : "";
+  const feeSuffix = s.lane === "estimate" && s.feeApplies ? " · visit fee applies" : "";
   // ballpark is the ONLY owner free-text field NOT redacted — it is a sanctioned price the
   // owner authored for the AI to read verbatim. Empty/whitespace → omit (treat as unset).
   const ballpark = s.ballpark?.trim();
   const ballparkSuffix = ballpark ? ` · ballpark: ${ballpark}` : "";
-  const base = `- ${s.name} · ${s.lane} · ${redactPriceTokens(s.triggers)}${priceSuffix}${ballparkSuffix}`;
+  const base = `- ${s.name} · ${s.lane}${feeSuffix} · ${redactPriceTokens(s.triggers)}${priceSuffix}${ballparkSuffix}`;
   // emergencyTriggers is owner free text → redact stray prices before interpolating.
   if (s.emergencyTriggers && s.emergencyTriggers.trim().length > 0) {
     return `${base} · emergency: ${redactPriceTokens(s.emergencyTriggers)}`;
@@ -297,11 +302,12 @@ const buildServicesSection = (services: readonly PromptService[]): string => {
   const lines = services.map(formatServiceLine);
   return [
     `## ${SECTIONS.services}`,
-    "Each service: name · lane · triggers[ · price]. Lane tells you how to handle price:",
+    "Each service: name · lane[ · visit fee applies] · triggers[ · price]. Lane tells you how to handle price:",
+    "When you call check_availability or book_visit, pass service_name EXACTLY as written above — the fee, the visit length and the confirmation script are looked up by that name, and a paraphrase books the caller a free visit they were told costs money.",
     ...lines,
     "",
-    `repair lane: ${REPAIR_SCRIPT}`,
-    `estimate lane: ${ESTIMATE_SCRIPT}`,
+    `estimate lane with "visit fee applies": ${REPAIR_SCRIPT}`,
+    `estimate lane without a fee: ${ESTIMATE_SCRIPT}`,
     `flat lane: ${FLAT_PREFIX}`,
   ].join("\n");
 };

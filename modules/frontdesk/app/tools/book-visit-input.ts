@@ -4,11 +4,18 @@
 // circular import back through the tool, and so book-visit.ts stays under the file-size limit.
 import { z } from "zod";
 
-// The three booking lanes + urgencies (mirror check_availability's closed enums so the model can't
-// smuggle a garbage lane past the boundary). repair/flat book a work job; estimate books a scope
-// visit as an estimate-kind job so it rides the board unchanged.
+// TWO booking lanes + urgencies (mirror check_availability's closed enums so the model can't
+// smuggle a garbage lane past the boundary). flat books priced work; estimate books a scoping
+// visit (kind 'estimate'), with or without the org's visit fee — that flag lives on the SERVICE,
+// not the lane, so the tool looks it up rather than trusting the model.
+//
+// "repair" stays in the accepted enum ONLY as legacy tolerance: a call answered by an assistant
+// built from the pre-collapse prompt can still book mid-rollout. normalizeBookLane maps it.
 export const BOOK_LANES = ["repair", "estimate", "flat"] as const;
 export type BookLane = (typeof BOOK_LANES)[number];
+export type NormalizedBookLane = "estimate" | "flat";
+export const normalizeBookLane = (lane: BookLane): NormalizedBookLane =>
+  lane === "flat" ? "flat" : "estimate";
 export const BOOK_URGENCIES = ["normal", "emergency"] as const;
 export type BookLaneUrgency = (typeof BOOK_URGENCIES)[number];
 

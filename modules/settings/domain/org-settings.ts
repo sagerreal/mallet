@@ -12,11 +12,35 @@ const HOUR_MAX = 24;
 
 // --- Value types ---------------------------------------------------------
 
-export type ServiceLane = "repair" | "estimate" | "flat";
+/**
+ * TWO lanes since the flat-rate/estimate rework: "flat" (the caller hears the price) and
+ * "estimate" (someone goes to look). The old third lane — "repair", the service call — was an
+ * estimate booking with two extra properties: the caller is told the tech prices it on site, and
+ * the org's visit fee applies. That is `feeApplies` on the service now, not a lane.
+ *
+ * Legacy "repair" values still arrive from stored booking blobs and stale clients;
+ * normalizeBookingService maps them at this boundary so nothing downstream ever sees one.
+ */
+export type ServiceLane = "estimate" | "flat";
+
+export type LegacyServiceLane = ServiceLane | "repair";
+
+export function normalizeBookingService<T extends { lane: LegacyServiceLane; feeApplies?: boolean }>(
+  svc: T,
+): Omit<T, "lane"> & { lane: ServiceLane } {
+  if (svc.lane === "repair") return { ...svc, lane: "estimate", feeApplies: true };
+  // The flag only means something on the estimate lane; a flat service carrying it is a dormant
+  // misread for any reader that forgets to gate on lane first, so it is stripped here.
+  if (svc.lane === "flat" && svc.feeApplies) return { ...svc, lane: "flat", feeApplies: undefined };
+  return svc as Omit<T, "lane"> & { lane: ServiceLane };
+}
 
 export interface BookingService {
   readonly name: string;
   readonly lane: ServiceLane;
+  /** Estimate lane only: the org's visit fee applies, and the caller is told the tech prices it
+   *  on site (the old "service call"). Absent/false = a free estimate, quote after the visit. */
+  readonly feeApplies?: boolean;
   /** Price in DOLLARS (matches the prototype control — not cents). Optional for "estimate" lanes. */
   readonly price?: number;
   /**
@@ -305,6 +329,9 @@ export class OrgSettings {
         hoursSunOpen: clampHour(props.hoursSunOpen),
         hoursSunClose: clampHour(props.hoursSunClose),
         areaRadiusMi: Math.max(0, Math.round(props.areaRadiusMi)),
+        // Legacy 'repair' lanes normalise here — the one boundary every read and write passes
+        // through, so stored blobs and stale clients both come out as estimate + feeApplies.
+        booking: { ...props.booking, services: props.booking.services.map(normalizeBookingService) },
       }),
     );
   }
