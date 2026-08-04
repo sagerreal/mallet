@@ -8,6 +8,7 @@ import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/obs
 import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, reconcileCheckoutSession } from "@mallet/invoicing";
+import { recordEstimateDeposit } from "@mallet/quoting";
 import { getAppDeps } from "@/trpc/di";
 
 // Success-page reconcile — a plain Next route (NOT tRPC), unauthenticated by design: the customer
@@ -84,6 +85,12 @@ export async function POST(req: Request): Promise<Response> {
             });
             if (!r.ok) throw new Error(`reconcile record card payment failed: ${r.error.message}`);
           });
+        },
+        // Quote deposits land on the estimate, through the SAME recorder the Stripe webhook uses —
+        // whichever of the two arrives second dedups to a no-op inside it.
+        recordDeposit: async (orgId, estimateId, amountCents) => {
+          enrichRequestContext({ orgId });
+          return recordEstimateDeposit(orgId, estimateId, amountCents);
         },
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });

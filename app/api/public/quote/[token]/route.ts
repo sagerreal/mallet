@@ -5,6 +5,7 @@ import { logger } from "@mallet/shared/observability";
 import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { getPublicQuote, acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
 import type { AcceptPublicQuoteResult, RequestChangeResult } from "@/modules/quoting/app/public-quote";
+import { createPublicDepositCheckout } from "@/modules/quoting/app/public-quote-deposit";
 import type { TierChoiceRejection } from "@/modules/quoting/app/public-accept-policy";
 import { QUOTE_TIERS } from "@/modules/quoting/domain/estimate";
 import type { Estimate, QuoteTier } from "@/modules/quoting/domain/estimate";
@@ -33,7 +34,7 @@ const throttled = (): NextResponse =>
   NextResponse.json({ error: "too many requests — try again in a minute" }, { status: 429 });
 
 const postBodySchema = z.object({
-  action: z.enum(["accept", "decline", "request_change"]),
+  action: z.enum(["accept", "decline", "request_change", "create_deposit_checkout"]),
   reason: z.string().max(500).optional(),
   message: z.string().trim().min(1).max(2000).optional(),
   // Accept-time selection of OPTIONAL add-on line IDs. SECURITY: an ID subset only —
@@ -228,6 +229,28 @@ async function handleAccept(
   return NextResponse.json({ estimate: estimateToJson(acceptResult.estimate) });
 }
 
+/**
+ * Start a Stripe-hosted checkout for the deposit still owed on this quote.
+ *
+ * No body beyond the action: the amount, the estimate and the org all come from stored data. The
+ * customer holding the link may not name a price. Rejections carry the use-case's own copy, which
+ * is already written for this reader (see CreateDepositCheckoutUseCase).
+ */
+async function handleDepositCheckout(token: string): Promise<NextResponse> {
+  const outcome = await createPublicDepositCheckout(token);
+  if (outcome.kind === "ok") return NextResponse.json({ url: outcome.url });
+  if (outcome.kind === "not_found") {
+    return NextResponse.json({ error: "not found" }, { status: 404 });
+  }
+  if (outcome.kind === "unavailable") {
+    return NextResponse.json(
+      { error: "Card payment is temporarily unavailable — try again in a few minutes." },
+      { status: 503 },
+    );
+  }
+  return NextResponse.json({ error: outcome.message }, { status: 409 });
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ token: string }> },
@@ -269,6 +292,10 @@ export async function POST(
             }
           : undefined;
       return await handleAccept(token, selectedLineIds, chosenTier, signature);
+    }
+
+    if (action === "create_deposit_checkout") {
+      return await handleDepositCheckout(token);
     }
 
     if (action === "decline") {

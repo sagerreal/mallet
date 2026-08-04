@@ -439,6 +439,37 @@ export class Estimate {
   }
 
   /**
+   * Record a deposit that was actually COLLECTED.
+   *
+   * The counterpart to what accept() deliberately does not do: accepting is an agreement, this is
+   * money landing. Only an accepted quote can hold a deposit — taking one against a draft or a
+   * declined quote would credit a future invoice for a sale that was never made.
+   *
+   * `amountCents` REPLACES depPaid rather than adding to it, because the two callers (the Stripe
+   * webhook and the success-page reconcile) carry the SAME settled session amount; adding would
+   * double-count the identical payment. The "record only when it grows" rule lives in the
+   * EstimateDepositWriter's WHERE clause, which is where concurrency can actually be decided.
+   *
+   * Not clamped to depositDue(): a customer who pays more than the ask has still paid it, and
+   * silently discarding the difference would put the shop's books out by the overpayment.
+   */
+  withDepositPaid(amountCents: number, now: Date): Result<Estimate, ValidationError> {
+    if (this.p.status !== "accepted") {
+      return err(validation("only an accepted estimate can take a deposit", "status"));
+    }
+    if (!Number.isFinite(amountCents) || amountCents <= 0) {
+      return err(validation("a deposit must be a positive amount", "amountCents"));
+    }
+    return ok(
+      new Estimate({
+        ...this.p,
+        depPaid: money(Math.round(amountCents)),
+        updatedAt: now,
+      }),
+    );
+  }
+
+  /**
    * Freeze this estimate into the document a signature refers to.
    *
    * Reads only from `this`, so the frozen copy is by construction the same numbers the page

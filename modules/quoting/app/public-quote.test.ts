@@ -290,7 +290,9 @@ class FakePublicEstimateReader {
     if (!e) return null;
     this.viewedTokens.push(token);
     const customerFirstName = e.leadName.split(" ")[0] ?? e.leadName;
-    return { estimate: e.estimate, orgName: e.orgName, customerFirstName };
+    // chargesEnabled gates the page's pay-the-deposit primary; these cases are about
+    // accept/decline/change, so the fixture reports the shop as card-ready.
+    return { estimate: e.estimate, orgName: e.orgName, customerFirstName, chargesEnabled: true };
   }
 
   async resolveOrgByToken(token: string): Promise<{ estimateId: string; orgId: OrgId } | null> {

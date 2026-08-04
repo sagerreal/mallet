@@ -9,6 +9,7 @@ import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 import { acceptPublicQuote, declinePublicQuote, requestChangePublicQuote } from "@/modules/quoting/app/public-quote";
+import { recordEstimateDeposit } from "@/modules/quoting/app/public-quote-deposit";
 import { GET as publicQuoteGET } from "@/app/api/public/quote/[token]/route";
 
 // Capstone: the whole quoting stack via createCaller — auth, RBAC, org-scoped tx, use-cases,
@@ -873,4 +874,101 @@ suite("quoting tRPC router (full stack, live RLS)", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
+
+  // ── deposits are COLLECTED, not assumed ────────────────────────────────────
+  //
+  // Task 4 removed the fake depPaid stamping at accept, so the only thing that can move
+  // estimates.dep_paid_cents is a real payment landing through recordEstimateDeposit — the recorder
+  // BOTH Stripe entry points (webhook + /pay/success reconcile) call. These run it against the live
+  // DB, under real RLS, with the same conditional UPDATE production uses.
+
+  it("records a deposit onto an accepted quote, and a duplicate delivery is a no-op", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const drafted = await caller.v1.quoting.draft({
+      leadId: leadAId,
+      title: "Deposit — happy path",
+      depBps: 3_000, // 30%
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    expect(accepted.status).toBe("accepted");
+    expect(accepted.depositDue.cents).toBe(30_000);
+
+    const depPaid = async (): Promise<number> => {
+      const [row] = await admin<{ dep_paid_cents: number }[]>`
+        select dep_paid_cents from estimates where id = ${drafted.id}`;
+      return row!.dep_paid_cents;
+    };
+    expect(await depPaid()).toBe(0); // accepted, not paid
+
+    // The webhook lands.
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000)).toBe(true);
+    expect(await depPaid()).toBe(30_000);
+
+    // The success-page reconcile lands with the SAME session amount. It must report success (the
+    // money IS on the estimate) while writing nothing — the WHERE guard matched no row.
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000)).toBe(true);
+    expect(await depPaid()).toBe(30_000); // not 60_000
+  });
+
+  it("refuses a deposit against a quote in another org, and against an unapproved quote", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const drafted = await caller.v1.quoting.draft({
+      leadId: leadAId,
+      title: "Deposit — refusals",
+      depBps: 5_000,
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+
+    // Not approved yet — a deposit on an unapproved quote is not a deposit.
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000)).toBe(false);
+
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    await caller.v1.quoting.accept({ estimateId: drafted.id });
+
+    // Cross-tenant: org B naming org A's estimate id. RLS scopes the read, so it resolves to
+    // nothing — indistinguishable from a missing estimate, and nothing is written.
+    expect(await recordEstimateDeposit(orgBId, drafted.id, 50_000)).toBe(false);
+    const [row] = await admin<{ dep_paid_cents: number }[]>`
+      select dep_paid_cents from estimates where id = ${drafted.id}`;
+    expect(row!.dep_paid_cents).toBe(0);
+
+    // Its own org still can.
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 50_000)).toBe(true);
+  });
+
+  it("END TO END: accepted quote → deposit collected → job billed → invoice nets the deposit out", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const lead = await caller.v1.customers.create({ name: "Deposit Chain Customer" });
+
+    // 1. Quote it: $1,000 of work, 30% deposit asked for.
+    const drafted = await caller.v1.quoting.draft({
+      leadId: lead.id,
+      title: "Water heater swap",
+      depBps: 3_000,
+      lines: [{ description: "Install", quantity: 1, rateCents: 100_000 }],
+    });
+    await caller.v1.quoting.send({ estimateId: drafted.id });
+    const accepted = await caller.v1.quoting.accept({ estimateId: drafted.id });
+    expect(accepted.total.cents).toBe(100_000);
+    expect(accepted.depositDue.cents).toBe(30_000);
+
+    // 2. The deposit is COLLECTED (this is what Task 8 added; before it, nothing did this).
+    expect(await recordEstimateDeposit(orgAId, drafted.id, 30_000)).toBe(true);
+
+    // 3. The job accept created runs and completes.
+    const jobId = accepted.job!.id;
+    await caller.v1.jobs.start({ jobId });
+    const done = await caller.v1.jobs.complete({ jobId });
+    expect(done.status).toBe("complete");
+
+    // 4. Billing the job credits the deposit through invoicing's EstimateDepositReader (Task 2).
+    const invoice = await caller.v1.invoicing.createFromJob({ jobId });
+    expect(invoice.total.cents).toBe(100_000);
+    expect(invoice.depositPaid.cents).toBe(30_000);
+    // The bill asks for what is actually still owed — total minus the deposit already in hand.
+    expect(invoice.total.cents - invoice.depositPaid.cents - invoice.amountPaid.cents).toBe(70_000);
+  });
+
 });

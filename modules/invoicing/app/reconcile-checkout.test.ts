@@ -117,6 +117,12 @@ interface RecordCall {
   paymentIntentId: string;
 }
 
+// Every case in THIS file is an invoice payment. A deposit recorder that throws makes any
+// accidental routing to the deposit arm a loud failure rather than a silently-passing test.
+const noDeposits = async (): Promise<boolean> => {
+  throw new Error("deposit recorder must not be reached by an invoice-payment session");
+};
+
 const collectingDeps = (s: Stripe.Checkout.Session) => {
   const calls: RecordCall[] = [];
   const deps: ReconcileCheckoutDeps = {
@@ -124,6 +130,7 @@ const collectingDeps = (s: Stripe.Checkout.Session) => {
     recordPayment: async (orgId, invoiceId, amountCents, paymentIntentId) => {
       calls.push({ orgId, invoiceId, amountCents, paymentIntentId });
     },
+    recordDeposit: noDeposits,
     log: () => undefined,
   };
   return { calls, deps };
@@ -162,12 +169,15 @@ describe("reconcileCheckoutSession", () => {
     expect(calls).toHaveLength(0);
   });
 
-  it("returns unsupported for the deposit arm (Task 8 replaces this) without recording", async () => {
+  // A deposit session carries estimateId, never invoiceId — so an invoice-shaped one tagged
+  // kind:"deposit" is malformed metadata, not a deposit. It must reach NEITHER recorder.
+  // The live deposit arm is covered in deposit-routing.test.ts.
+  it("refuses a deposit-tagged session that carries no estimateId, without recording", async () => {
     const { calls, deps } = collectingDeps(
       session({ metadata: { orgId: ORG, invoiceId: INV, kind: "deposit" } }),
     );
     const outcome = await reconcileCheckoutSession("cs_test_abc123", deps);
-    expect(outcome).toEqual({ recorded: false, reason: "unsupported" });
+    expect(outcome).toEqual({ recorded: false, reason: "invalid_metadata" });
     expect(calls).toHaveLength(0);
   });
 
@@ -199,6 +209,7 @@ describe("reconcileCheckoutSession", () => {
         });
         if (!r.ok) throw new Error(r.error.message);
       },
+      recordDeposit: noDeposits,
       log: () => undefined,
     };
   };
@@ -239,13 +250,14 @@ describe("reconcileCheckoutSession", () => {
         type: "checkout.session.completed",
         data: { object: session() },
       } as unknown as Stripe.Event,
-      { record, log: () => undefined },
+      { record, recordDeposit: noDeposits, log: () => undefined },
     );
 
     // 2. The success-page reconcile fires for the SAME session.
     const outcome = await reconcileCheckoutSession("cs_test_abc123", {
       retrieveSession: async () => session(),
       recordPayment: record,
+      recordDeposit: noDeposits,
       log: () => undefined,
     });
 

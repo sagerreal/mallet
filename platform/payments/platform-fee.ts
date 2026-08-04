@@ -2,6 +2,10 @@
 // A flat 0.25% is skimmed as the Stripe application_fee_amount on each destination charge; the
 // remainder settles to the shop. Held as a single basis-points constant so the rate is a one-line
 // change and never a magic number scattered across the charge path.
+//
+// Lives in platform/, not in a module's domain: it is MALLET's economics on the Stripe rails, and
+// more than one module now mints destination charges (invoicing bills a job, quoting collects a
+// deposit). A per-module copy of this number would eventually be two different rates.
 export const PLATFORM_FEE_BPS = 25; // 0.25%
 
 const BPS_DIVISOR = 10_000;

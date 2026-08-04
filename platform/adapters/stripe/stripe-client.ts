@@ -17,16 +17,30 @@ export const isRetriableStripeError = (error: unknown): boolean =>
   error instanceof Stripe.errors.StripeAPIError ||
   error instanceof Stripe.errors.StripeRateLimitError;
 
+/**
+ * WHAT the money is for. Stamped into the session metadata as `kind`, which is how the webhook and
+ * the success-page reconcile decide which recorder a settled session belongs to — an invoice
+ * payment goes to the payments ledger, a quote deposit goes to estimates.dep_paid_cents. A single
+ * untagged `invoiceId` could not express the second one, and a deposit session that fell through
+ * to the invoice recorder would credit an unrelated invoice.
+ *
+ * Sessions minted before `kind` existed carry only {orgId, invoiceId}; both readers still treat an
+ * absent kind as "payment", so in-flight ones settle correctly.
+ */
+export type CheckoutSubject =
+  | { readonly kind: "payment"; readonly invoiceId: string }
+  | { readonly kind: "deposit"; readonly estimateId: string };
+
 export interface CreateCheckoutParams {
   readonly amountCents: number;
   readonly currency: string; // "usd"
   readonly orgId: string;
-  readonly invoiceId: string;
+  readonly subject: CheckoutSubject;
   readonly description: string;
   readonly idempotencyKey: string;
   readonly successUrl: string;
   readonly cancelUrl: string;
-  // Reserved for the Connect migration (destination charges) — unused in the pilot platform charge.
+  // Connect destination charge: settle to the shop's connected account and skim the platform fee.
   readonly connectedAccountId?: string;
   readonly applicationFeeCents?: number;
 }
@@ -64,7 +78,12 @@ export class StripeClient {
   }
 
   async createCheckoutSession(params: CreateCheckoutParams): Promise<CheckoutResult> {
-    const metadata = { orgId: params.orgId, invoiceId: params.invoiceId };
+    // Stamped on BOTH the session and the payment intent: the webhook reads the session's copy,
+    // and the intent's copy survives on the charge for anyone auditing it in the Stripe dashboard.
+    const metadata: Record<string, string> =
+      params.subject.kind === "deposit"
+        ? { orgId: params.orgId, estimateId: params.subject.estimateId, kind: "deposit" }
+        : { orgId: params.orgId, invoiceId: params.subject.invoiceId, kind: "payment" };
     // Destination charge (Connect, PR2): settle the funds to the shop's connected account and skim
     // Mallet's application fee. on_behalf_of makes the charge present as the shop's; transfer_data
     // .destination routes the money. Attached only when a connected account is supplied so the

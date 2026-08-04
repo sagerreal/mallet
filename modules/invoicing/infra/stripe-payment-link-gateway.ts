@@ -24,7 +24,7 @@ export class StripePaymentLinkGateway implements PaymentLinkGateway {
         amountCents: cmd.amountCents,
         currency: cmd.currency,
         orgId: cmd.orgId,
-        invoiceId: cmd.invoiceId,
+        subject: { kind: "payment", invoiceId: cmd.invoiceId },
         description: cmd.description,
         idempotencyKey: cmd.idempotencyKey,
         // {CHECKOUT_SESSION_ID} is a literal placeholder Stripe substitutes at redirect time — it

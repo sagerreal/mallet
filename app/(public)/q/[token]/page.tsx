@@ -28,6 +28,10 @@ import { tierViewsFor } from "./tier-view";
 // Token format: 64 hex chars. Validate before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
 
+// Stripe's minimum USD Checkout charge. Mirrors CreateDepositCheckoutUseCase's guard so the page
+// never offers a deposit button the server would refuse.
+const STRIPE_MIN_CHARGE_CENTS = 50;
+
 interface Params {
   token: string;
 }
@@ -144,7 +148,7 @@ export default async function PublicQuotePage({
     );
   }
 
-  const { estimate, orgName, customerFirstName } = view;
+  const { estimate, orgName, customerFirstName, chargesEnabled } = view;
   const p = estimate.props;
 
   // Derive initials from org name for the brand badge.
@@ -171,6 +175,19 @@ export default async function PublicQuotePage({
   const fixedLines = p.lines.filter((l) => !l.props.isOptional);
   const optLines = p.lines.filter((l) => l.props.isOptional);
   const fixedSubtotalCents = estimate.subtotal();
+
+  // The deposit a RETURNING customer can still pay: what the accepted quote asks for, minus what
+  // has actually been collected. Zeroed — so no button renders at all — whenever paying it is
+  // impossible: an unaccepted quote, nothing left owed, a shop that can't take cards, or an amount
+  // under Stripe's card minimum (which the use-case refuses, so offering it would be a dead
+  // button). Derived from the domain's own depositDue(), never recomputed here.
+  const depositOutstandingCents = isAccepted
+    ? Math.max(0, estimate.depositDue() - p.depPaid)
+    : 0;
+  const payableDepositCents =
+    chargesEnabled && depositOutstandingCents >= STRIPE_MIN_CHARGE_CENTS
+      ? depositOutstandingCents
+      : 0;
 
   return (
     <main
@@ -261,6 +278,8 @@ export default async function PublicQuotePage({
               orgName={orgName}
               changeAlreadyRequested={Boolean(p.changeRequestedAt)}
               settled={isDone}
+              payableDepositCents={payableDepositCents}
+              cardPaymentAvailable={chargesEnabled}
             />
           ) : (
             <>
@@ -294,9 +313,11 @@ export default async function PublicQuotePage({
                 taxBps={p.taxBps}
                 depBps={p.depBps}
                 token={token}
-              orgName={orgName}
+                orgName={orgName}
                 changeAlreadyRequested={Boolean(p.changeRequestedAt)}
                 settled={isDone}
+                payableDepositCents={payableDepositCents}
+                cardPaymentAvailable={chargesEnabled}
               />
             </>
           )}

@@ -39,7 +39,7 @@ import { useState } from "react";
 import { fmt$ } from "@/lib/format";
 import type { QuoteTier } from "@/modules/quoting/domain/estimate";
 import { LineRow } from "./LineRow";
-import { QuoteActions, type QuotePhase } from "./QuoteActions";
+import { QuoteActions, PayDepositButton, type QuotePhase } from "./QuoteActions";
 import { TierPicker } from "./TierPicker";
 import { computeQuoteTotals, lineAmountCents, sumLineAmountsCents } from "./quote-totals";
 
@@ -84,6 +84,18 @@ interface QuoteLinesBaseProps {
    * approval IS the agreement, so the agreement has to stay readable.
    */
   readonly settled?: boolean;
+  /**
+   * The deposit still owed on an ALREADY-accepted quote, and payable right now — the page computes
+   * it from stored data (depositDue − depPaid, zeroed when the shop can't take a card or the
+   * amount is under the card minimum). 0 means render no deposit button at all.
+   *
+   * Only used on the `settled` path: a quote approved in THIS session has nothing paid yet, so
+   * QuoteActions uses the live computed deposit instead — the server-rendered number here was
+   * captured before the customer's add-on selection was committed.
+   */
+  readonly payableDepositCents?: number;
+  /** Can the shop take a card at all (Connect onboarded + charges enabled). */
+  readonly cardPaymentAvailable?: boolean;
 }
 
 interface SingleQuoteLinesProps extends QuoteLinesBaseProps {
@@ -234,7 +246,17 @@ function resolveLines(props: QuoteLinesProps, selectedTier: QuoteTier | null): R
 // ---- island -----------------------------------------------------------------
 
 export function QuoteLines(props: QuoteLinesProps) {
-  const { discBps, taxBps, depBps, token, orgName, changeAlreadyRequested, settled = false } = props;
+  const {
+    discBps,
+    taxBps,
+    depBps,
+    token,
+    orgName,
+    changeAlreadyRequested,
+    settled = false,
+    payableDepositCents = 0,
+    cardPaymentAvailable = false,
+  } = props;
   const tiered = props.tiers != null ? props : null;
 
   // Good/Better/Best: which option the customer is looking at. Defaults to the
@@ -338,12 +360,21 @@ export function QuoteLines(props: QuoteLinesProps) {
           totalCents={totals.totalCents}
           orgName={orgName}
           depositCents={totals.depositCents}
+          cardPaymentAvailable={cardPaymentAvailable}
           changeAlreadyRequested={changeAlreadyRequested}
           selectedLineIds={[...selectedIds]}
           chosenTier={selectedTier}
           phase={phase}
           onPhaseChange={handlePhaseChange}
         />
+      )}
+
+      {/* Returning to an approved quote whose deposit is still owed. The approve/decline buttons
+          are correctly gone (that decision is made), but the deposit is an OPEN action — dropping
+          it here would leave the customer holding a link that asks for money it gives them no way
+          to pay. Zero when nothing is owed or the shop can't take a card, so nothing renders. */}
+      {settled && payableDepositCents > 0 && (
+        <PayDepositButton token={token} amountCents={payableDepositCents} />
       )}
     </>
   );

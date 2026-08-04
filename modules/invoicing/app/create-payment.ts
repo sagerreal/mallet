@@ -3,7 +3,7 @@ import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/ty
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
 import type { ConnectTargetReader } from "../domain/connect-target-reader";
-import { platformFeeCents } from "../domain/platform-fee";
+import { platformFeeCents } from "@mallet/platform/payments/platform-fee";
 
 // Stripe's minimum charge for a USD Checkout Session. A balance below this is rejected by Stripe
 // with a deterministic 400, so we guard it here rather than send a request that can only fail (a

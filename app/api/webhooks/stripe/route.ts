@@ -5,6 +5,7 @@ import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, processStripeEvent } from "@mallet/invoicing";
+import { recordEstimateDeposit } from "@mallet/quoting";
 import { getAppDeps } from "@/trpc/di";
 
 // Stripe webhook — a plain Next route (NOT tRPC). Reads the RAW body, verifies the signature, then
@@ -54,6 +55,14 @@ export async function POST(req: Request): Promise<Response> {
             });
             if (!r.ok) throw new Error(`record card payment failed: ${r.error.message}`);
           });
+        },
+        // A quote deposit settles on the ESTIMATE, not in the payments ledger, so it takes its own
+        // recorder — the same one the /pay/success reconcile calls, keeping the two deliveries of
+        // one deposit on a single idempotent path. Before this arm existed a deposit session
+        // failed the invoice-shaped metadata check and was dropped as a logged 200.
+        recordDeposit: async (orgId, estimateId, amountCents) => {
+          enrichRequestContext({ orgId });
+          return recordEstimateDeposit(orgId, estimateId, amountCents);
         },
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });

@@ -290,6 +290,11 @@ describe("processStripeEvent", () => {
         record: async (orgId: string, invoiceId: string, cents: number, pi: string) => {
           calls.push({ orgId, invoiceId, cents, pi });
         },
+        // Every case here is an invoice payment; throwing makes an accidental route to the
+        // deposit arm a loud failure instead of a silently-passing test.
+        recordDeposit: async (): Promise<boolean> => {
+          throw new Error("deposit recorder must not be reached by an invoice-payment session");
+        },
         log: () => undefined,
       },
     };

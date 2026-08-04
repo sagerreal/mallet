@@ -16,13 +16,14 @@ import {
 } from "@mallet/shared/types";
 import type { Estimate, EstimateLine } from "../domain/estimate";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
+import type { EstimateDepositWriter } from "../domain/estimate-deposit-writer";
 import type { AiDraftSnapshot } from "../domain/edit-delta";
 import { toDomain, type EstimateLineRow } from "./estimate-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
 // RLS appends org_id = current_org_id() to every statement — this class never filters by org
 // itself. orgId is used only to stamp written rows and to scope the number sequence.
-export class DrizzleEstimateRepository implements EstimateRepository {
+export class DrizzleEstimateRepository implements EstimateRepository, EstimateDepositWriter {
   constructor(
     private readonly tx: TenantTx,
     private readonly orgId: OrgId,
@@ -287,6 +288,37 @@ export class DrizzleEstimateRepository implements EstimateRepository {
 
   listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Estimate>> {
     return this.loadPage([isNull(estimates.deletedAt), eq(estimates.leadId, leadId)], page);
+  }
+
+  /**
+   * Record a COLLECTED deposit — one guarded UPDATE, the concurrency story in its WHERE clause.
+   *
+   * The same deposit arrives twice by design (Stripe webhook + /pay/success reconcile), and the
+   * two can be in flight simultaneously. `dep_paid_cents < $amount` is what makes that safe: the
+   * second statement matches zero rows and returns false, so the caller reports "already recorded"
+   * instead of writing the same money again. Same shape and same reasoning as jobs'
+   * flipScopeVisitJob.
+   *
+   * `status = 'accepted'` and `deleted_at IS NULL` ride in the same WHERE rather than being trusted
+   * from the caller's earlier read: a quote that was archived (or somehow moved off accepted)
+   * between the read and this write must not take a deposit. Never save() — an aggregate upsert
+   * would carry a whole stale row over a concurrent change.
+   */
+  async recordDepositPaid(id: EstimateId, amountCents: number, now: Date): Promise<boolean> {
+    const rows = await this.tx
+      .update(estimates)
+      .set({ depPaidCents: amountCents, updatedAt: now })
+      .where(
+        and(
+          eq(estimates.id, id),
+          eq(estimates.orgId, this.orgId),
+          eq(estimates.status, "accepted"),
+          isNull(estimates.deletedAt),
+          sql`${estimates.depPaidCents} < ${amountCents}`,
+        ),
+      )
+      .returning({ id: estimates.id });
+    return rows.length > 0;
   }
 
   // Soft-delete (archive) the estimate. Returns the number of affected rows: 0 means not found or

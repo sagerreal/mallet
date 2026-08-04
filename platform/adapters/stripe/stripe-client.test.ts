@@ -85,7 +85,7 @@ const baseParams: CreateCheckoutParams = {
   amountCents: 9_999,
   currency: "usd",
   orgId: "org-aaa",
-  invoiceId: "inv-bbb",
+  subject: { kind: "payment", invoiceId: "inv-bbb" },
   description: "Roof repair — invoice #42",
   idempotencyKey: "idem-key-001",
   successUrl: "https://example.test/success",
@@ -178,24 +178,57 @@ describe("StripeClient.createCheckoutSession", () => {
     expect(lineItem.price_data.product_data.name).toBe("Plumbing");
   });
 
-  it("attaches orgId and invoiceId as metadata on both session and payment_intent", async () => {
+  it("attaches orgId, invoiceId and kind:'payment' as metadata on both session and payment_intent", async () => {
     const { client, fake } = makeClient();
     fake.checkout.sessions.create.mockResolvedValueOnce({
       url: "https://checkout.stripe.com/pay/cs_meta",
       id: "cs_meta",
     });
 
-    await client.createCheckoutSession({ ...baseParams, orgId: "org-x", invoiceId: "inv-y" });
+    await client.createCheckoutSession({
+      ...baseParams,
+      orgId: "org-x",
+      subject: { kind: "payment", invoiceId: "inv-y" },
+    });
 
     const [sessionParams] = fake.checkout.sessions.create.mock.calls[0] as [
       {
-        metadata: { orgId: string; invoiceId: string };
-        payment_intent_data: { metadata: { orgId: string; invoiceId: string } };
+        metadata: Record<string, string>;
+        payment_intent_data: { metadata: Record<string, string> };
       },
       unknown,
     ];
-    expect(sessionParams.metadata).toEqual({ orgId: "org-x", invoiceId: "inv-y" });
-    expect(sessionParams.payment_intent_data.metadata).toEqual({ orgId: "org-x", invoiceId: "inv-y" });
+    const expected = { orgId: "org-x", invoiceId: "inv-y", kind: "payment" };
+    expect(sessionParams.metadata).toEqual(expected);
+    expect(sessionParams.payment_intent_data.metadata).toEqual(expected);
+  });
+
+  // A quote deposit carries the ESTIMATE, not an invoice — that is what lets the webhook and the
+  // success-page reconcile send it to the deposit recorder instead of crediting some invoice.
+  it("attaches orgId, estimateId and kind:'deposit' for a deposit subject, on both objects", async () => {
+    const { client, fake } = makeClient();
+    fake.checkout.sessions.create.mockResolvedValueOnce({
+      url: "https://checkout.stripe.com/pay/cs_dep",
+      id: "cs_dep",
+    });
+
+    await client.createCheckoutSession({
+      ...baseParams,
+      orgId: "org-x",
+      subject: { kind: "deposit", estimateId: "est-z" },
+    });
+
+    const [sessionParams] = fake.checkout.sessions.create.mock.calls[0] as [
+      {
+        metadata: Record<string, string>;
+        payment_intent_data: { metadata: Record<string, string> };
+      },
+      unknown,
+    ];
+    const expected = { orgId: "org-x", estimateId: "est-z", kind: "deposit" };
+    expect(sessionParams.metadata).toEqual(expected);
+    expect(sessionParams.payment_intent_data.metadata).toEqual(expected);
+    expect(sessionParams.metadata.invoiceId).toBeUndefined();
   });
 
   it("passes success_url and cancel_url through to the Stripe SDK", async () => {
