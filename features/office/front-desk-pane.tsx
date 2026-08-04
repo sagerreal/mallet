@@ -214,7 +214,11 @@ export function FrontDeskPane() {
     const playbook = playbookFor(tradeKey);
     if (!playbook) return;
     seedBookingServices(playbook.services);
-    if (tradeKey !== "other") setTrade(playbook.label);
+    // `playbook.key`, NOT `playbook.label`. The label was passed here and nothing downstream
+    // matched it: tradeMeasures() resolves the lowercase pricebook key, so "Plumbing" answered
+    // false and this button wrote measurement_estimating=false to the database for every shop
+    // that touched it. `setTrade` now takes a `TradeKey`, so a label is a compile error.
+    if (tradeKey !== "other") setTrade(playbook.key);
   }
 
   // Modal-driven add: create the named service, then fill lane/price/description on the new

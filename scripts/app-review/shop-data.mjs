@@ -50,6 +50,16 @@ export const SETTINGS = {
   // THE 4.2 SWITCH. Without this the Measure surfaces and the "Scan a room" row are absent
   // from the whole app, and the native RoomPlan scanner — the reason this is not a web page
   // in a wrapper — is unreachable. See docs/app-review-notes.md.
+  //
+  // TRUE ON A PLUMBING SHOP, ON PURPOSE, AND NOW SAFE. `tradeMeasures("plumbing")` is FALSE by
+  // design (plumbing prices per job), so this pair used to be self-contradictory: any path that
+  // re-derived the flag from the trade switched the scanner off — and one of those paths was the
+  // always-visible "Starter playbook" button on the Front Desk tab, meaning a reviewer poking at
+  // Front Desk could destroy the scanner for the rest of the review. Resolved in the app, not
+  // here: the trade may now GRANT measurement estimating and never revokes it
+  // (lib/store/slices/settings-slice.ts setTrade, modules/identity's onboarding), so nothing
+  // re-derives this to false behind the user. The demo shop stays a plumbing shop — its jobs,
+  // customers and pricebook all are — and keeps the capability its review depends on.
   measurementEstimating: true,
   // Prices must be visible on the field surface: the reviewer signs in as the owner and
   // walks the tech's Quote tab, and a redacted money column reads as a broken screen.
@@ -86,9 +96,11 @@ export const SETTINGS = {
    *
    * SHAPE IS VALIDATED ON THE READ PATH, and getting it wrong is not a cosmetic mistake: this
    * blob is part of `settingsDTO`, so a row that fails `bookingCfgDTO` makes `v1.settings.get`
-   * return 500 — which takes SettingsHydrator down with it, leaves `toggles` at their `false`
-   * placeholders, and silently removes the Measure card and the "Scan a room" row from the whole
-   * app. Two rules, both learned the hard way here:
+   * return 500 — which takes SettingsHydrator down with it and leaves every toggle at its
+   * placeholder. That used to silently remove the Measure card and the "Scan a room" row from the
+   * whole app; the measurement gate now fails OPEN on an unanswered read
+   * (lib/measurement-gate.ts), but the Settings screens still break, so get this right.
+   * Two rules, both learned the hard way here:
    *   - `lane` is exactly one of "repair" | "estimate" | "flat". There is no "install".
    *   - `triggers` is a comma-separated STRING, not an array.
    * See modules/settings/api/settings-dto.ts (bookingServiceDTO).
@@ -239,8 +251,9 @@ export const PRICEBOOK_ITEMS = [
  *   - `kind: "estimate"` with NO priced lines — that is what keeps the Quote tab's Scope
  *     section (which carries the "Scan a room" row) the whole tab, instead of the price
  *     builder taking over. See components/modals/tech-job-modal/quote-tab.tsx.
- *   - status must NOT be complete — the tab goes read-only on a closed job and the scan
- *     row disappears with the rest of the writes.
+ *   - status must NOT be complete — myDay returns only scheduled + in-progress work, so a
+ *     completed job is not on the agenda at all. (The tab also goes read-only on a closed job,
+ *     but that no longer HIDES the scan row — it renders disabled, saying the job is closed.)
  */
 export const JOBS = [
   {

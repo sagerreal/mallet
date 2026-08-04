@@ -8,8 +8,12 @@
  *      office pipeline's "quote it ›" card reads via scopedEstimateVisit, so a
  *      saved scope lights up the office Quoting lane with zero pipeline work),
  *      the job's photo strip (uploadFieldPhoto — the copilot's capture path),
- *      and a "Scan a room" row when the org measures (measurementEstimating)
- *      AND the platform can (useRoomScanAvailable).
+ *      and a "Scan a room" row unless the org's settings have arrived and said
+ *      this shop does not measure. That row renders on EVERY device and on a
+ *      CLOSED job: live when this one can scan, disabled-with-its-reason when it
+ *      cannot (no LiDAR, a browser rather than the iPhone app, a job that is
+ *      done, or a settings read that never landed) — see
+ *      components/shared/scan-unavailable.
  *   2. On an ESTIMATE visit: the dual exit — "Quote it now" (reveals the same
  *      builder + present flow the repair path uses) or "Send scope to the
  *      office" (the notes write IS the handoff; sent-ness is DERIVED from the
@@ -29,7 +33,10 @@
 import { useCallback, useRef, useState } from "react";
 import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { useRoomScanAvailable } from "@/lib/native/room-scan";
+import { useRoomScanAvailability } from "@/lib/native/room-scan";
+import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unavailable";
+import { measurementSurfacesVisible } from "@/lib/measurement-gate";
+import { useMeasurementGate } from "@/features/settings/measurement-gate-provider";
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
@@ -228,10 +235,30 @@ export interface QuoteTabProps {
 
 export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
   const setVisitNotes = useAppStore((s) => s.setVisitNotes);
-  const measurementEstimating = useAppStore((s) => s.toggles.measurementEstimating);
+  const measurementGate = useMeasurementGate();
   const pushModal = usePushModal();
   const close = useCloseModal();
-  const scanAvailable = useRoomScanAvailable();
+  const scan = useRoomScanAvailability();
+
+  // What is in the way of a live scan, or null if nothing is.
+  //
+  // DEVICE first: on a desktop browser "open the iPhone app" is the true and useful sentence
+  // whatever else is going on, and it is the most fundamental fact of the three.
+  //
+  // Then the SETTINGS gate, ahead of the job's own state. `"unknown"` fails OPEN so the row is
+  // never silently deleted by a failed read (lib/measurement-gate.ts) — but open means visible,
+  // not live: this button opens the room card, which creates an estimate job server-side, and a
+  // shop that turned measuring off on purpose must not get rows written into it because a settings
+  // read 500'd. It sits ahead of `job-closed` because reopening the job would not make the scan
+  // work while the gate is unknown, and a next step that does not unblock anything is not one.
+  const scanBlocker: ScanBlocker | null =
+    scan.status !== "ready"
+      ? { kind: "device", availability: scan }
+      : measurementGate === "unknown"
+        ? { kind: "settings-unknown" }
+        : readOnly
+          ? { kind: "job-closed" }
+          : null;
 
   const isEstimate = jobMode(job) === "estimate";
   const quoted = jobQuoted(job);
@@ -288,15 +315,32 @@ export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
             onSave={saveScope}
           />
           <ScopePhotos job={job} disabled={readOnly} />
-          {measurementEstimating && scanAvailable && !readOnly && (
+          {/* Scanning is offered unless the org's settings have arrived and said this shop does
+              not measure. NOTHING else hides this row — every other "no" renders the control
+              disabled with its reason:
+                · this device/browser cannot scan  → the device blocker;
+                · the job is CLOSED                → the job-closed blocker. It used to be
+                  `!readOnly`, i.e. gone. This is the office job sheet too, and the demo shop
+                  seeds completed jobs, so an owner opening one got Scope, photos and a silently
+                  missing scanner — the exact absence this whole component exists to kill;
+                · settings never loaded            → `"unknown"`, which fails OPEN
+                  (lib/measurement-gate.ts) into a DISABLED row with the settings-unknown reason.
+                  One 500 from v1.settings.get used to remove the row from every surface in the app
+                  with no explanation anywhere; failing open the other way — leaving it live —
+                  would hand a non-measuring shop a button that writes an estimate job. */}
+          {measurementSurfacesVisible(measurementGate) && (
             <div style={{ marginTop: "var(--space-3)" }}>
-              <button
-                type="button"
-                className="btn sm"
-                onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
-              >
-                Scan a room
-              </button>
+              {scanBlocker === null ? (
+                <button
+                  type="button"
+                  className="btn sm scanbtn"
+                  onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
+                >
+                  Scan a room
+                </button>
+              ) : (
+                <ScanUnavailable blocker={scanBlocker} label="Scan a room" />
+              )}
             </div>
           )}
         </div>

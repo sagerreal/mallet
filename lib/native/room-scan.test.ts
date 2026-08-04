@@ -3,21 +3,31 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
 
 const nativePlugin = vi.fn();
+const isNativeShell = vi.fn();
 
 vi.mock("@/lib/native-bridge", () => ({
   nativePlugin: (...a: unknown[]) => nativePlugin(...a),
+  isNativeShell: () => isNativeShell(),
 }));
 
-// Import after the mock so the module under test picks up the mocked nativePlugin.
+// Import after the mock so the module under test picks up the mocked native bridge.
 import {
   roomScanPlugin,
-  roomScanAvailable,
+  roomScanAvailability,
   captureRoom,
   RoomScanPayloadError,
   RoomScanCaptureError,
-  useRoomScanAvailable,
-  resetRoomScanAvailableCache,
+  useRoomScanAvailability,
+  resetRoomScanAvailabilityCache,
+  ROOM_SCAN_PROBE_TIMEOUT_MS,
+  ROOM_SCAN_PROBE_MAX_ATTEMPTS,
 } from "./room-scan";
+
+/** Most cases below run "inside the shell" — the browser case is its own test. */
+function inShell(plugin: unknown): void {
+  isNativeShell.mockReturnValue(true);
+  nativePlugin.mockReturnValue(plugin);
+}
 
 describe("roomScanPlugin", () => {
   beforeEach(() => vi.clearAllMocks());
@@ -35,29 +45,90 @@ describe("roomScanPlugin", () => {
   });
 });
 
-describe("roomScanAvailable", () => {
+describe("roomScanAvailability", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("is false when the plugin is absent", async () => {
-    nativePlugin.mockReturnValue(null);
-    await expect(roomScanAvailable()).resolves.toBe(false);
+  it("is no-native-app in a browser — no Capacitor bridge at all", async () => {
+    isNativeShell.mockReturnValue(false);
+    await expect(roomScanAvailability()).resolves.toEqual({ status: "no-native-app" });
   });
 
-  it("is true when the plugin reports available", async () => {
-    nativePlugin.mockReturnValue({ available: vi.fn().mockResolvedValue({ available: true }) });
-    await expect(roomScanAvailable()).resolves.toBe(true);
+  it("does not even look for the plugin when there is no bridge", async () => {
+    isNativeShell.mockReturnValue(false);
+    await roomScanAvailability();
+    expect(nativePlugin).not.toHaveBeenCalled();
   });
 
-  it("is false when the plugin reports unavailable (e.g. no LiDAR)", async () => {
-    nativePlugin.mockReturnValue({
-      available: vi.fn().mockResolvedValue({ available: false, reason: "no_lidar" }),
-    });
-    await expect(roomScanAvailable()).resolves.toBe(false);
+  /**
+   * "Checking whether this device can scan." is the SSR/first-paint string for every user, and it
+   * used to have no way out: `available()` is a promise, and a promise that never settles left the
+   * hook on `checking` for the rest of the session — a permanently disabled control whose reason
+   * says to wait, forever. The probe now bounds itself, so the hook always lands on a DEFINITE
+   * state (it renders whatever this function resolves to).
+   *
+   * A probe that cannot answer is treated as `scanner-missing`, the same as one that rejected: it
+   * is a build/session fault, not a fact about the device, and it must never read as a yes.
+   */
+  it("times out a probe that never settles, rather than hanging on checking forever", async () => {
+    vi.useFakeTimers();
+    try {
+      inShell({ available: vi.fn().mockReturnValue(new Promise(() => {})) });
+
+      const pending = roomScanAvailability();
+      await vi.advanceTimersByTimeAsync(ROOM_SCAN_PROBE_TIMEOUT_MS + 1);
+
+      await expect(pending).resolves.toEqual({ status: "scanner-missing" });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
-  it("is false when the availability check itself throws", async () => {
-    nativePlugin.mockReturnValue({ available: vi.fn().mockRejectedValue(new Error("boom")) });
-    await expect(roomScanAvailable()).resolves.toBe(false);
+  it("clears the timeout when the probe answers promptly — no stray pending timer", async () => {
+    vi.useFakeTimers();
+    try {
+      inShell({ available: vi.fn().mockResolvedValue({ available: true }) });
+
+      await expect(roomScanAvailability()).resolves.toEqual({ status: "ready" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("is scanner-missing when the bridge is there but the plugin is not registered", async () => {
+    inShell(null);
+    await expect(roomScanAvailability()).resolves.toEqual({ status: "scanner-missing" });
+  });
+
+  it("is ready when the plugin reports available", async () => {
+    inShell({ available: vi.fn().mockResolvedValue({ available: true }) });
+    await expect(roomScanAvailability()).resolves.toEqual({ status: "ready" });
+  });
+
+  it("is no-lidar when the plugin reports the device cannot scan", async () => {
+    inShell({ available: vi.fn().mockResolvedValue({ available: false, reason: "no_lidar" }) });
+    await expect(roomScanAvailability()).resolves.toEqual({ status: "no-lidar" });
+  });
+
+  it("is scanner-missing when the availability probe itself rejects — a failed probe is not a yes", async () => {
+    inShell({ available: vi.fn().mockRejectedValue(new Error("boom")) });
+    await expect(roomScanAvailability()).resolves.toEqual({ status: "scanner-missing" });
+  });
+
+  it("distinguishes no-plugin from plugin-says-unsupported — the two must never collapse", async () => {
+    inShell(null);
+    const noPlugin = await roomScanAvailability();
+    inShell({ available: vi.fn().mockResolvedValue({ available: false }) });
+    const unsupported = await roomScanAvailability();
+
+    expect(noPlugin.status).not.toBe(unsupported.status);
+  });
+
+  it("never returns checking — that is a hook-only state", async () => {
+    isNativeShell.mockReturnValue(false);
+    expect((await roomScanAvailability()).status).not.toBe("checking");
+    inShell({ available: vi.fn().mockResolvedValue({ available: true }) });
+    expect((await roomScanAvailability()).status).not.toBe("checking");
   });
 });
 
@@ -155,37 +226,130 @@ describe("captureRoom", () => {
   });
 });
 
-describe("useRoomScanAvailable", () => {
+describe("useRoomScanAvailability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    resetRoomScanAvailableCache();
+    resetRoomScanAvailabilityCache();
   });
 
-  it("starts false and resolves true once the plugin reports available", async () => {
-    nativePlugin.mockReturnValue({ available: vi.fn().mockResolvedValue({ available: true }) });
+  it("starts at checking — never at a guess, so no user is told the wrong reason", async () => {
+    inShell({ available: vi.fn().mockResolvedValue({ available: true }) });
 
-    const { result } = renderHook(() => useRoomScanAvailable());
-    expect(result.current).toBe(false);
+    const { result } = renderHook(() => useRoomScanAvailability());
+    expect(result.current).toEqual({ status: "checking" });
 
-    await waitFor(() => expect(result.current).toBe(true));
+    await waitFor(() => expect(result.current).toEqual({ status: "ready" }));
   });
 
-  it("resolves false when the plugin is absent", async () => {
-    nativePlugin.mockReturnValue(null);
+  it("resolves to no-lidar on a device the plugin says cannot scan", async () => {
+    inShell({ available: vi.fn().mockResolvedValue({ available: false }) });
 
-    const { result } = renderHook(() => useRoomScanAvailable());
-    await waitFor(() => expect(result.current).toBe(false));
+    const { result } = renderHook(() => useRoomScanAvailability());
+    await waitFor(() => expect(result.current).toEqual({ status: "no-lidar" }));
+  });
+
+  it("resolves to no-native-app in a browser", async () => {
+    isNativeShell.mockReturnValue(false);
+
+    const { result } = renderHook(() => useRoomScanAvailability());
+    await waitFor(() => expect(result.current).toEqual({ status: "no-native-app" }));
   });
 
   it("probes the plugin only once across multiple mounted hooks", async () => {
     const available = vi.fn().mockResolvedValue({ available: true });
-    nativePlugin.mockReturnValue({ available });
+    inShell({ available });
 
-    const first = renderHook(() => useRoomScanAvailable());
-    const second = renderHook(() => useRoomScanAvailable());
+    const first = renderHook(() => useRoomScanAvailability());
+    const second = renderHook(() => useRoomScanAvailability());
 
-    await waitFor(() => expect(first.result.current).toBe(true));
-    await waitFor(() => expect(second.result.current).toBe(true));
+    await waitFor(() => expect(first.result.current).toEqual({ status: "ready" }));
+    await waitFor(() => expect(second.result.current).toEqual({ status: "ready" }));
+    expect(available).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * The module-level cache kept the FIRST answer for the app's lifetime, so one transient
+   * rejection latched "the scanner is missing" for the whole session with only a reload to escape.
+   * scanner-missing is the one status that can be transient (a rejected or timed-out probe), so it
+   * gets a bounded retry — and stays bounded, because a shell built without the plugin will never
+   * answer differently.
+   */
+  it("re-probes a transient scanner-missing, then recovers", async () => {
+    const available = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("bridge not up yet"))
+      .mockResolvedValue({ available: true });
+    inShell({ available });
+
+    const first = renderHook(() => useRoomScanAvailability());
+    await waitFor(() => expect(first.result.current).toEqual({ status: "scanner-missing" }));
+    first.unmount();
+
+    const second = renderHook(() => useRoomScanAvailability());
+    await waitFor(() => expect(second.result.current).toEqual({ status: "ready" }));
+    expect(available).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * THE BUDGET COUNTS PROBES, NOT SUBSCRIBERS.
+   *
+   * The probe promise is shared, so every mounted consumer runs its own `.then` on it. The
+   * bookkeeping used to live there, which meant three surfaces mounted TOGETHER — the composer's
+   * panel, a room card and the field Quote tab all mount at once — turned one rejected probe into
+   * three attempts, exhausted the bound on the first try and cached `scanner-missing` for the rest
+   * of the session. That is precisely the session-long latch the retry exists to prevent, and no
+   * test caught it because every other case here mounts consumers one at a time.
+   *
+   * Mounted concurrently, one probe must still cost one attempt — so the very next mount re-probes
+   * and finds the bridge up.
+   */
+  it("charges ONE attempt for one probe however many consumers share it", async () => {
+    const available = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("bridge not up yet"))
+      .mockResolvedValue({ available: true });
+    inShell({ available });
+
+    // Concurrent, not sequential: all three mount before any `.then` runs.
+    const consumers = [
+      renderHook(() => useRoomScanAvailability()),
+      renderHook(() => useRoomScanAvailability()),
+      renderHook(() => useRoomScanAvailability()),
+    ];
+    for (const c of consumers) {
+      await waitFor(() => expect(c.result.current).toEqual({ status: "scanner-missing" }));
+    }
+    // One native round trip was made, whatever was on screen.
+    expect(available).toHaveBeenCalledTimes(1);
+    for (const c of consumers) c.unmount();
+
+    // …and it cost one attempt, so the budget is not spent and the next mount recovers.
+    const next = renderHook(() => useRoomScanAvailability());
+    await waitFor(() => expect(next.result.current).toEqual({ status: "ready" }));
+    expect(available).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops re-probing after the bound — a shell with no plugin is not retried forever", async () => {
+    const available = vi.fn().mockRejectedValue(new Error("no plugin in this build"));
+    inShell({ available });
+
+    for (let i = 0; i < ROOM_SCAN_PROBE_MAX_ATTEMPTS + 3; i += 1) {
+      const { result, unmount } = renderHook(() => useRoomScanAvailability());
+      await waitFor(() => expect(result.current).toEqual({ status: "scanner-missing" }));
+      unmount();
+    }
+    expect(available).toHaveBeenCalledTimes(ROOM_SCAN_PROBE_MAX_ATTEMPTS);
+  });
+
+  it("never re-probes a settled answer — no-lidar is a fact, not a hiccup", async () => {
+    const available = vi.fn().mockResolvedValue({ available: false });
+    inShell({ available });
+
+    for (let i = 0; i < 3; i += 1) {
+      const { result, unmount } = renderHook(() => useRoomScanAvailability());
+      await waitFor(() => expect(result.current).toEqual({ status: "no-lidar" }));
+      unmount();
+    }
     expect(available).toHaveBeenCalledTimes(1);
   });
 });
