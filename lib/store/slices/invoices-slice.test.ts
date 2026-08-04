@@ -312,7 +312,12 @@ describe("sendInvoice — manual (lead-tied) invoice: exactly one server create,
     expect(s.state.invoices[0]?.status).toBe("draft");
   });
 
-  it("resolves ok:false when send rejects after a successful draft", async () => {
+  // Round-3 finding: a full restore-to-prior here used to silently clobber origin back to
+  // "manual" even though the draft leg genuinely succeeded — a REAL server row exists. That
+  // made a caller's local-orphan cleanup (removeLocalInvoice, origin !== "db") delete the
+  // pointer to that real row, and a retry then minted a SECOND server draft (draft-invoice.ts
+  // has no lead/title dedup) — N flaky retries, N orphaned "Visit fee" drafts in the ledger.
+  it("resolves ok:false when send rejects after a successful draft, but origin STAYS db (the real server row survives)", async () => {
     draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
     sendMutate.mockRejectedValue(new Error("send failed"));
     const s = makeSlice();
@@ -326,7 +331,38 @@ describe("sendInvoice — manual (lead-tied) invoice: exactly one server create,
     const result = await s.state.sendInvoice("inv-1");
 
     expect(result.ok).toBe(false);
+    expect(result.error).toBe("send failed");
     expect(createFromJobMutate).not.toHaveBeenCalled();
+    // The draft leg's own reconcile already stamped origin: "db" — the send-leg failure must
+    // restore ONLY the optimistic status flip, never the whole pre-draft snapshot.
+    const survivor = s.state.invoices.find((i) => i.id === "inv-1");
+    expect(survivor?.origin).toBe("db");
+    expect(survivor?.status).toBe("draft");
+  });
+
+  it("a retry after a send-leg failure resumes the SAME server draft (db path — no second draft.mutate)", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    sendMutate.mockRejectedValueOnce(new Error("send failed"));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1",
+        title: "Visit fee — service call", lines: [{ d: "x", q: 1, r: 89 }], total: 89, status: "draft",
+      }),
+    ]);
+
+    const first = await s.state.sendInvoice("inv-1");
+    expect(first.ok).toBe(false);
+    expect(draftMutate).toHaveBeenCalledTimes(1);
+
+    // The invoice is now origin "db" — sendInvoice's SECOND call takes the "db" path (send
+    // directly), never re-drafting.
+    sendMutate.mockResolvedValueOnce(dbDto({ id: "inv-1", status: "sent" }));
+    const second = await s.state.sendInvoice("inv-1");
+
+    expect(second).toEqual({ ok: true });
+    expect(draftMutate).toHaveBeenCalledTimes(1); // still exactly one — no duplicate draft
+    expect(sendMutate).toHaveBeenCalledTimes(2);
   });
 
   it("a db-origin invoice's send still resolves ok:true (signature change is additive)", async () => {

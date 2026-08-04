@@ -363,6 +363,19 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         return Promise.resolve({ ok: false, error: "an invoice needs at least one line" });
       }
 
+      // The two legs (draft, then send) get DIFFERENT rollback behavior on failure — the
+      // two-argument .then(onFulfilled, onRejected) form scopes each rejection handler to
+      // exactly the mutate call it's attached to (unlike a single trailing .catch(), which
+      // can't tell which leg failed):
+      //   - draft-leg failure: no server row was ever created — full restore to `prior` is
+      //     correct (origin reverts to "manual", matching reality).
+      //   - send-leg failure AFTER a successful draft: a REAL server row now exists (origin
+      //     was just reconciled to "db"). A full restore to `prior` would silently clobber
+      //     origin back to "manual", orphaning that real row — the caller can no longer tell
+      //     this apart from a true local-only failure, and a naive retry mints a SECOND server
+      //     draft (draft-invoice.ts has no lead/title idempotency). Restore ONLY the status
+      //     flip (back to "draft"); origin stays "db" so a retry resumes the SAME row via this
+      //     function's "db" path below instead of minting a duplicate.
       return trpcVanilla.v1.invoicing.draft
         .mutate({
           id: inv.id,
@@ -376,23 +389,43 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
             costCents:   Math.round((l.c ?? 0) * 100),   // dollars → cents; 0 when absent
           })),
         })
-        .then((draftDto) => {
-          invalidateLists("invoices", "jobs");
-          // Step 1 reconcile: stamps origin: "db" on the newly created row.
-          const reconciled = dtoInvoiceToStore(draftDto, inv);
-          set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
-          // Step 2: send using the server's canonical invoice id.
-          return trpcVanilla.v1.invoicing.send.mutate({ invoiceId: draftDto.id });
-        })
-        .then((sendDto) => {
-          invalidateLists("invoices", "jobs");
-          // Step 2 reconcile: sendDto is always defined here — if draft threw, .catch ran instead.
-          const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
-          const reconciled = dtoInvoiceToStore(sendDto, currentInv);
-          set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
-          return { ok: true };
-        })
+        .then(
+          (draftDto) => {
+            invalidateLists("invoices", "jobs");
+            // Step 1 reconcile: stamps origin: "db" on the newly created row.
+            const reconciled = dtoInvoiceToStore(draftDto, inv);
+            set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+            // Step 2: send using the server's canonical invoice id.
+            return trpcVanilla.v1.invoicing.send.mutate({ invoiceId: draftDto.id }).then(
+              (sendDto) => {
+                invalidateLists("invoices", "jobs");
+                const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
+                const reconciledSend = dtoInvoiceToStore(sendDto, currentInv);
+                set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciledSend, id }) }));
+                return { ok: true };
+              },
+              (err: unknown) => {
+                set((s) => ({
+                  invoices: s.invoices.map((i) => (i.id === id ? { ...i, status: "draft" } : i)),
+                }));
+                reportWriteError("sendInvoice", err);
+                return {
+                  ok: false,
+                  error: err instanceof Error ? err.message : "Couldn't send the invoice.",
+                };
+              },
+            );
+          },
+          (err: unknown) => {
+            if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
+            reportWriteError("sendInvoice", err);
+            return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the invoice." };
+          },
+        )
         .catch((err: unknown) => {
+          // Defensive fallback for a genuinely unexpected failure outside either mutate call
+          // (e.g. a thrown error inside the reconcile logic itself) — full restore is the
+          // safest default when it's unclear which leg's own rollback (above) already ran.
           if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
           reportWriteError("sendInvoice", err);
           return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the invoice." };

@@ -52,7 +52,7 @@ const mockUpdateInvoice = vi.fn((id: string, patch: Record<string, unknown>) => 
   mockInvoices = mockInvoices.map((i) => (i.id === id ? { ...i, ...patch } : i));
 });
 const mockSendInvoice = vi.fn(
-  (): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
+  (_id: string): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
 );
 // The real removeLocalInvoice (lib/store/slices/invoices-slice.ts) — mirrors its origin guard
 // so a test can't accidentally assert away a real safety check the slice itself enforces.
@@ -60,38 +60,50 @@ const mockRemoveLocalInvoice = vi.fn((id: string) => {
   mockInvoices = mockInvoices.filter((i) => !(i.id === id && i.origin !== "db"));
 });
 
+// Shared by both the hook call AND useAppStore.getState() below — collectVisitFee reads store
+// state imperatively (via getState()) after a failed send to check the invoice's FRESH origin,
+// mirroring the real Zustand store's own getState() escape hatch (an established pattern
+// elsewhere in this codebase — e.g. cust-quote-modal.tsx, board-cards.tsx).
+function mockStoreState(): Record<string, unknown> {
+  return {
+    jobs: mockJobs,
+    leads: mockLeads,
+    invoices: mockInvoices,
+    toggles: { techSeesPrice: mockSeesPrice },
+    setVisitStatus: mockSetVisitStatus,
+    updateJob: mockUpdateJob,
+    recordPayment: noop,
+    addAddon: noop,
+    setAddonStatus: noop,
+    checkVerifyItem: noop,
+    overrideVerifyItem: noop,
+    uncheckVerifyItem: noop,
+    addJobPhoto: noop,
+    addInvoice: mockAddInvoice,
+    updateInvoice: mockUpdateInvoice,
+    sendInvoice: mockSendInvoice,
+    removeLocalInvoice: mockRemoveLocalInvoice,
+    // Quote tab (estimating part 3) selectors.
+    services: [],
+    laborRates: [],
+    brand: { name: "E2E Plumbing" },
+    setVisitNotes: mockSetVisitNotes2,
+    adoptJobPhotoPath: noop,
+    signJobQuote: noop,
+  };
+}
+
+function useAppStoreMock(selector: (s: Record<string, unknown>) => unknown) {
+  return selector(mockStoreState());
+}
+useAppStoreMock.getState = mockStoreState;
+
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
   useOpenModal: () => mockOpenModal,
   usePushModal: () => mockOpenModal,
   useCloseModal: () => noop,
-  useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({
-      jobs: mockJobs,
-      leads: mockLeads,
-      invoices: mockInvoices,
-      toggles: { techSeesPrice: mockSeesPrice },
-      setVisitStatus: mockSetVisitStatus,
-      updateJob: mockUpdateJob,
-      recordPayment: noop,
-      addAddon: noop,
-      setAddonStatus: noop,
-      checkVerifyItem: noop,
-      overrideVerifyItem: noop,
-      uncheckVerifyItem: noop,
-      addJobPhoto: noop,
-      addInvoice: mockAddInvoice,
-      updateInvoice: mockUpdateInvoice,
-      sendInvoice: mockSendInvoice,
-      removeLocalInvoice: mockRemoveLocalInvoice,
-      // Quote tab (estimating part 3) selectors.
-      services: [],
-      laborRates: [],
-      brand: { name: "E2E Plumbing" },
-      setVisitNotes: mockSetVisitNotes2,
-      adoptJobPhotoPath: noop,
-      signJobQuote: noop,
-    }),
+  useAppStore: useAppStoreMock,
 }));
 
 // Keep native/scan + supabase out of jsdom (the Quote tab imports both modules).
@@ -723,6 +735,24 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
   });
 
+  // Round-3: an unsent draft — even one that already reached the server (origin "db", e.g. a
+  // surviving row from a prior send-leg failure) — must NOT hide the button. Only once the fee
+  // is genuinely out the door (sent/partial/paid) does the button go away.
+  it("owner: an unsent draft fee invoice (origin db) keeps the button visible — a tap resumes it", () => {
+    mockRole = "owner";
+    mockOrgFee = 89;
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [{ d: "Visit fee — service call", q: 1, r: 89 }],
+        total: 89, depPaid: 0, payments: [], status: "draft", age: 0, archived: false, origin: "db",
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+  });
+
   it("owner: hides the fee button when the org fee is 0/unset", () => {
     mockRole = "owner";
     mockOrgFee = 0;
@@ -808,6 +838,52 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     await vi.waitFor(() => {
       expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-fee-1" });
     });
+  });
+
+  // Round-3 reviewer finding: sendInvoice's manual path used to do a FULL restore-to-prior on
+  // ANY failure — including a send-leg failure AFTER the draft leg genuinely succeeded, which
+  // silently clobbered origin back to "manual" even though a REAL server row now existed. Round
+  // 2's removeLocalInvoice(origin !== "db") then deleted the pointer to that real row, and a
+  // retry minted a SECOND server draft (draft-invoice.ts has no lead/title dedup) — N flaky
+  // retries, N orphaned "Visit fee" drafts, each independently sendable (a latent duplicate
+  // charge). sendInvoice now keeps origin "db" for exactly this case (see
+  // invoices-slice.test.ts), and this test proves collectVisitFee reads that correctly: the
+  // record survives, the button stays visible, and a retry RESUMES the same id.
+  it("owner: draft-ok/send-fail keeps the origin-db record — a retry resumes the SAME invoice, never mints a duplicate", async () => {
+    mockRole = "owner";
+    mockOrgFee = 89;
+    mockJobs = [doneEstimate()];
+    // Mimics sendInvoice's real split rollback for this exact scenario (the mock replaces the
+    // whole slice, so it can't exercise the real draft/send mutate calls — invoices-slice.test.ts
+    // covers those directly): origin flips to "db" even though this call resolves ok:false.
+    mockSendInvoice.mockImplementationOnce((id: string) => {
+      mockInvoices = mockInvoices.map((i) => (i.id === id ? { ...i, origin: "db", status: "draft" } : i));
+      return Promise.resolve({ ok: false, error: "send failed" });
+    });
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText("Collect the visit fee — $89"));
+
+    expect(await screen.findByText("send failed")).toBeTruthy();
+
+    // The record is origin "db" — a real server row — so it must NOT be treated as a local
+    // orphan: removeLocalInvoice never fires, and the record survives in the store.
+    expect(mockRemoveLocalInvoice).not.toHaveBeenCalled();
+    expect(mockInvoices.find((i) => i.id === "inv-fee-1")?.origin).toBe("db");
+
+    // The button stays visible — an unsent draft is resumable, not "already collected".
+    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+
+    // Retry: resumes the SAME id — no second addInvoice (which would, in the real slice,
+    // raise a second server draft.mutate).
+    fireEvent.click(screen.getByText("Collect the visit fee — $89"));
+    await vi.waitFor(() => {
+      expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-fee-1" });
+    });
+    expect(mockAddInvoice).toHaveBeenCalledTimes(1); // only the FIRST tap ever created one
+    expect(mockSendInvoice).toHaveBeenCalledTimes(2);
+    expect(mockSendInvoice).toHaveBeenNthCalledWith(1, "inv-fee-1");
+    expect(mockSendInvoice).toHaveBeenNthCalledWith(2, "inv-fee-1");
   });
 
   it("owner: falls back to functional copy when the send fails without a server message", async () => {

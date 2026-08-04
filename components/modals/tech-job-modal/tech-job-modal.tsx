@@ -126,19 +126,19 @@ export function TechJobModalContent() {
   const updateInvoice = useAppStore((s) => s.updateInvoice);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
   const removeLocalInvoice = useAppStore((s) => s.removeLocalInvoice);
-  // Durable re-collection guard: any non-archived invoice for THIS LEAD titled VISIT_FEE_TITLE.
-  // Title + leadId survive reload (both come through the invoices hydrator); jobId does not —
-  // the server never stamps sourceJobId on a manual invoice, so it's checked only when the
-  // local record still happens to carry it (see the local patch in collectVisitFee below).
-  const hasFeeInvoice = useAppStore((s) =>
-    s.invoices.some(
-      (i) =>
-        i.leadId === leadId &&
-        i.title === VISIT_FEE_TITLE &&
-        !i.archived &&
-        (i.jobId == null || i.jobId === jobId),
-    ),
+  // The durable re-collection signal: any non-archived (non-void) invoice for THIS LEAD titled
+  // VISIT_FEE_TITLE. Title + leadId survive reload (both come through the invoices hydrator);
+  // jobId does not — the server never stamps sourceJobId on a manual invoice.
+  //
+  // Reused for two things: (1) whether the button hides — only once the fee is genuinely out
+  // the door (sent/partial/paid); an unsent "draft" keeps the button visible, since a tap on
+  // it RESUMES that same invoice rather than raising a duplicate — draft-invoice.ts has no
+  // lead/title idempotency, so a naive retry would mint a second server draft. (2) which
+  // invoice collectVisitFee resumes/checks below.
+  const existingFeeInvoice = useAppStore((s) =>
+    s.invoices.find((i) => i.leadId === leadId && i.title === VISIT_FEE_TITLE && !i.archived),
   );
+  const hasFeeInvoice = Boolean(existingFeeInvoice) && existingFeeInvoice?.status !== "draft";
 
   // Derived values computed after all hooks (never inside selectors to avoid
   // creating new object references on every store write).
@@ -211,52 +211,86 @@ export function TechJobModalContent() {
     if (curVisit) onVisitStatus(curVisit.id, "scheduled");
   }, [curVisit, onVisitStatus]);
 
-  // Collect the org's visit fee on a declined estimate visit (Task 5, rebuilt after review).
-  // Raised as a LEAD-tied MANUAL invoice — addInvoice with jobId: null keeps it off the
-  // fromJob/createFromJob path entirely (that path is also refused outright for a genuinely
-  // unpriced estimate — see CreateInvoiceFromJobUseCase — and, worse, claims the job's one
-  // invoice slot via source_job_id's partial unique index). job.lines is never touched. Does
-  // NOT open the close-out sheet until the send has genuinely completed — a failed send must
-  // never leave the tech staring at a dead/empty payment sheet.
+  // Remove a failed fee-send's LOCAL record only when it never reached the server at all
+  // (origin still "manual" — a true local orphan). A send-leg failure after a successful draft
+  // leg keeps origin "db" (sendInvoice's split rollback) — that real server row must stay so a
+  // retry resumes it instead of minting a duplicate draft. Reads fresh store state (not a
+  // render-time closure) since this depends on what sendInvoice itself just did. Extracted so
+  // collectVisitFee's own branching stays under the lint complexity ceiling.
+  const cleanupOrphanedFeeDraft = useCallback(
+    (invoiceId: string) => {
+      const current = useAppStore.getState().invoices.find((i) => i.id === invoiceId);
+      if (current && current.origin !== "db") {
+        removeLocalInvoice(invoiceId);
+      }
+    },
+    [removeLocalInvoice],
+  );
+
+  // Collect the org's visit fee on a declined estimate visit (Task 5, rebuilt after review,
+  // twice). Raised as a LEAD-tied MANUAL invoice — addInvoice with jobId: null keeps it off
+  // the fromJob/createFromJob path entirely (that path is also refused outright for a
+  // genuinely unpriced estimate — see CreateInvoiceFromJobUseCase — and, worse, claims the
+  // job's one invoice slot via source_job_id's partial unique index). job.lines is never
+  // touched. Does NOT open the close-out sheet until the send has genuinely completed — a
+  // failed send must never leave the tech staring at a dead/empty payment sheet.
+  //
+  // A retry RESUMES a surviving draft rather than minting a duplicate: draft-invoice.ts has no
+  // lead/title idempotency, so a second addInvoice+sendInvoice on retry would raise a
+  // genuinely NEW server row (indistinguishable from the first) — N flaky-connection retries
+  // would orphan N independently-sendable "Visit fee" drafts in the Money ledger, a latent
+  // duplicate-charge risk.
   const collectVisitFee = useCallback(async () => {
     if (!job || !jobId || feeBusy) return;
     const fee = orgServiceFee ?? 0;
     if (fee <= 0) return; // no $0 fee collection — mirrors the button's own render guard
     setFeeError(null);
+
+    // Already sent/partial/paid — nothing left to send; just take the tech to collection.
+    if (existingFeeInvoice && existingFeeInvoice.status !== "draft") {
+      pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId: existingFeeInvoice.id });
+      return;
+    }
+
     setFeeBusy(true);
-    const inv = addInvoice({
-      jobId: null, // manual path — never claims this job's one invoice slot
-      leadId: job.leadId,
-      cust: custName,
-      phone: job.phone || lead?.phone || "",
-      title: VISIT_FEE_TITLE,
-      lines: [{ d: VISIT_FEE_TITLE, q: 1, r: fee }],
-      total: fee,
-      depPaid: 0,
-      payments: [],
-      status: "draft",
-      age: 0,
-      archived: false,
-    });
-    // Best-effort local hint for the guard above and for close-out's invoice lookup during
-    // THIS session — the send below's server reconcile will overwrite it back to null (the
-    // domain never sets sourceJobId on a manual invoice), so it is never the durable signal;
-    // the invoiceId passed to CLOSE_OUT below is what close-out actually relies on.
-    updateInvoice(inv.id, { jobId });
-    const { ok, error } = await sendInvoice(inv.id);
+
+    let invoiceId: string;
+    if (existingFeeInvoice) {
+      // A prior attempt's draft survived — either it never reached the server, or its send
+      // leg failed AFTER a successful draft leg (sendInvoice now keeps origin "db" for that
+      // case specifically so this resume path exists). Reuse the same row.
+      invoiceId = existingFeeInvoice.id;
+    } else {
+      const inv = addInvoice({
+        jobId: null, // manual path — never claims this job's one invoice slot
+        leadId: job.leadId,
+        cust: custName,
+        phone: job.phone || lead?.phone || "",
+        title: VISIT_FEE_TITLE,
+        lines: [{ d: VISIT_FEE_TITLE, q: 1, r: fee }],
+        total: fee,
+        depPaid: 0,
+        payments: [],
+        status: "draft",
+        age: 0,
+        archived: false,
+      });
+      // Best-effort local hint for close-out's SAME-session lookup below — the send's server
+      // reconcile overwrites this back to null on success (the domain never sets sourceJobId
+      // on a manual invoice), so it is never the durable signal; the invoiceId passed to
+      // CLOSE_OUT is what close-out actually relies on.
+      updateInvoice(inv.id, { jobId });
+      invoiceId = inv.id;
+    }
+
+    const { ok, error } = await sendInvoice(invoiceId);
     setFeeBusy(false);
     if (!ok) {
-      // The optimistic draft never reached the server (sendInvoice's own rollback reverts it
-      // to its pre-send "manual" snapshot on any failure, including one after a partially
-      // successful draft+send sequence — see sendInvoice's catch). Left in the store it would
-      // satisfy hasFeeInvoice's lead+title guard forever, permanently hiding this retry button
-      // until reload, while also leaking into the Money ledger and the office job-modal (which
-      // still matches it via the un-reconciled local jobId hint above).
-      removeLocalInvoice(inv.id);
+      cleanupOrphanedFeeDraft(invoiceId);
       setFeeError(error || "Couldn't send the fee invoice — check your connection and try again.");
       return;
     }
-    pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId: inv.id });
+    pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId });
   }, [
     job,
     jobId,
@@ -264,10 +298,11 @@ export function TechJobModalContent() {
     custName,
     orgServiceFee,
     feeBusy,
+    existingFeeInvoice,
     addInvoice,
     updateInvoice,
     sendInvoice,
-    removeLocalInvoice,
+    cleanupOrphanedFeeDraft,
     pushModal,
   ]);
 
