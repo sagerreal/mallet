@@ -1756,10 +1756,13 @@
   .setup-dots span.on{background:var(--ink)}
   .setup-panel{max-height:56vh;overflow-y:auto;margin:0 -4px;padding:0 var(--space-1)}
   .setup-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--space-3);margin-top:var(--space-5);padding-top:var(--space-4);border-top:1px solid var(--line)}
-  /* in-field Tap-to-Pay capture + approved states */
+  /* in-field payment capture + approved states */
   .copay-methods{display:flex;gap:var(--space-2);flex-wrap:wrap}
   .copay-tap{flex:1;min-width:168px;min-height:54px;display:flex;flex-direction:column;align-items:flex-start;justify-content:center;gap:var(--space-1);line-height:1.15}
   .copay-tap span{font-weight:500;font-size:var(--type-xs);color:var(--ink-3)}
+  /* An in-flight record must LOOK unusable — same scoped treatment as .mh-acts above
+     (a global .btn:disabled rule would move every existing visual baseline). */
+  .copay-methods .btn:disabled,.copay-record .btn:disabled{opacity:.55;cursor:not-allowed}
   .cotap{text-align:center;padding:var(--space-6) var(--space-4);border:1.5px solid var(--manila-line);border-radius:var(--radius-lg);background:var(--manila);margin-top:var(--space-2)}
   .cotap-amt{font-size:var(--type-3xl);font-weight:800;line-height:1}
   .cotap-ring{width:86px;height:86px;border-radius:50%;background:var(--card);border:1.5px solid var(--manila-line);display:flex;align-items:center;justify-content:center;margin:var(--space-4) auto var(--space-3);color:var(--ink);animation:tappulse 1.5s ease-in-out infinite}

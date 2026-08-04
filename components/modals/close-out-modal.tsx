@@ -538,6 +538,14 @@ function PayBlock({
   // A record that could NOT proceed (draft send failed, server refused) — named in
   // place on the step the tech is looking at, never a silent "Approved".
   const [payErr, setPayErr] = useState<string | null>(null);
+  // SINGLE-FLIGHT. approve() is async (fresh read + possibly an awaited send), so the
+  // button stays mounted through a network round-trip — and every recordPayment mints a
+  // FRESH idempotency key, so the server cannot dedupe a double tap. On a PARTIAL amount
+  // the invoice stays payable and a second record genuinely applies. The ref is the
+  // re-entry gate (synchronous — two taps in one tick both see stale state); the state
+  // drives the visible busy treatment.
+  const inFlightRef = useRef(false);
+  const [busy, setBusy] = useState(false);
 
   const amtIn = (
     <>
@@ -561,38 +569,54 @@ function PayBlock({
 
   // ---- charge card on file → record, jump to done (coPay 'onfile') -----------
   async function chargeOnFile() {
-    const amt = clampAmt(p.amt, due);
+    if (inFlightRef.current) return; // single-flight — a double tap must not double-record
+    inFlightRef.current = true;
+    setBusy(true);
     setPayErr(null);
-    const res = await onApprove({ amt, method: "card", onFile: true });
-    if (!res.ok) {
-      setPayErr(res.error ?? "Couldn't record the payment — try again.");
-      return;
+    try {
+      const amt = clampAmt(p.amt, due);
+      const res = await onApprove({ amt, method: "card", onFile: true });
+      if (!res.ok) {
+        setPayErr(res.error ?? "Couldn't record the payment — try again.");
+        return;
+      }
+      if (res.alreadyPaid) {
+        // The checkout QR (or an emailed link) already collected the balance.
+        setP({ step: "done", method: "card", amt: due });
+        return;
+      }
+      setP({ step: "done", method: "card", amt, onFile: true });
+    } finally {
+      inFlightRef.current = false;
+      setBusy(false);
     }
-    if (res.alreadyPaid) {
-      // The checkout QR (or an emailed link) already collected the balance.
-      setP({ step: "done", method: "card", amt: due });
-      return;
-    }
-    setP({ step: "done", method: "card", amt, onFile: true });
   }
 
   // ---- record a payment taken outside the app (coPay 'approve') --------------
   // Done only renders once onApprove genuinely succeeded — a refused record must
   // never show "Approved" (the old fire-and-forget did exactly that).
   async function approve() {
-    const amt = clampAmt(p.amt, due);
-    const method = p.method ?? "cash";
+    if (inFlightRef.current) return; // single-flight — a double tap must not double-record
+    inFlightRef.current = true;
+    setBusy(true);
     setPayErr(null);
-    const res = await onApprove({ amt, method, onFile: false });
-    if (!res.ok) {
-      setPayErr(res.error ?? "Couldn't record the payment — try again.");
-      return;
+    try {
+      const amt = clampAmt(p.amt, due);
+      const method = p.method ?? "cash";
+      const res = await onApprove({ amt, method, onFile: false });
+      if (!res.ok) {
+        setPayErr(res.error ?? "Couldn't record the payment — try again.");
+        return;
+      }
+      if (res.alreadyPaid) {
+        setP({ step: "done", method: "card", amt: due });
+        return;
+      }
+      setP({ step: "done", method, amt });
+    } finally {
+      inFlightRef.current = false;
+      setBusy(false);
     }
-    if (res.alreadyPaid) {
-      setP({ step: "done", method: "card", amt: due });
-      return;
-    }
-    setP({ step: "done", method, amt });
   }
 
   // step: card — a REAL Stripe Checkout as a QR (the simulated tap is gone) ----
@@ -619,6 +643,7 @@ function PayBlock({
     const lbl = p.method === "ach" ? "bank transfer" : p.method;
     return (
       <div
+        className="copay-record"
         style={{ marginTop: "var(--space-2)", display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}
       >
         {amtIn}
@@ -636,8 +661,8 @@ function PayBlock({
             }}
           />
         ) : null}
-        <button className="btn primary" onClick={approve}>
-          Record {lbl} — paid
+        <button className="btn primary" disabled={busy} onClick={approve}>
+          {busy ? "Recording…" : <>Record {lbl} — paid</>}
         </button>
         <span
           className="linklike"
@@ -717,10 +742,11 @@ function PayBlock({
         {card ? (
           <button
             className="btn primary copay-tap"
+            disabled={busy}
             onClick={chargeOnFile}
           >
             <b>
-              Charge {card.brand} ···· {card.last4}
+              {busy ? "Charging…" : <>Charge {card.brand} ···· {card.last4}</>}
             </b>
             <span>
               {card.via ? "saved from " + card.via + " · " : ""}instant, no tap
@@ -1050,6 +1076,10 @@ export function CloseOutModalContent() {
     onFile: boolean;
   }): Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }> {
     if (!invoice) return { ok: false, error: "invoice not found" };
+    // The server's answer outranks the store's for the send decision below: a store row
+    // optimistically flipped to "sent" over a server row still in draft would otherwise
+    // record straight into the draft guard — silent rollback behind "Approved".
+    let liveStatus = invoice.status;
     if (invoice.origin === "db") {
       try {
         const fresh = await trpcVanilla.v1.invoicing.get.query({ invoiceId: invoice.id });
@@ -1057,12 +1087,13 @@ export function CloseOutModalContent() {
           adoptPaidInvoice(fresh);
           return { ok: true, alreadyPaid: true };
         }
+        liveStatus = fresh.status;
       } catch {
         // Unreadable (offline blip) — proceed with the record; the server remains
         // the final guard and the slice rolls back an optimistic write it refuses.
       }
     }
-    if (invoice.status === "draft") {
+    if (liveStatus === "draft") {
       const sent = await sendInvoice(invoice.id);
       if (!sent.ok) {
         return {

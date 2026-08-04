@@ -479,4 +479,51 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     expect(mockRecordPayment).toHaveBeenCalledTimes(1); // server remains the final guard
     expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
   });
+
+  // Fix round 2: approve() went async in round 1, so "Record cash — paid" stays mounted
+  // through the network round-trip. Each record mints a FRESH idempotency key, so the server
+  // cannot dedupe a double tap — and on a PARTIAL amount the invoice stays payable, so the
+  // second record genuinely applies. Single-flight: re-entry is a no-op, the button reads busy.
+  it("two rapid taps on Record record EXACTLY once (single-flight, button disabled in flight)", async () => {
+    let resolveGet!: (v: unknown) => void;
+    mockGetInvoice.mockImplementationOnce(() => new Promise((res) => (resolveGet = res)));
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Cash"));
+
+    const recordBtn = screen.getByText(/Record cash — paid/).closest("button") as HTMLButtonElement;
+    fireEvent.click(recordBtn);
+    fireEvent.click(recordBtn); // the double tap
+    await act(async () => {});
+
+    // In flight: visually busy AND genuinely disabled.
+    expect((screen.getByText(/Recording…/).closest("button") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByText(/Recording…/).closest("button") as HTMLButtonElement); // third tap, mid-flight
+
+    await act(async () => {
+      resolveGet({ ...paidDto, status: "sent" }); // not paid — the record proceeds
+    });
+
+    expect(mockRecordPayment).toHaveBeenCalledTimes(1);
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
+  });
+
+  // Fix round 2 LOW: the send-vs-not decision must trust the FRESH read, not the store —
+  // a store row optimistically flipped to "sent" over a server row still in draft would
+  // otherwise record straight into the draft guard (silent rollback behind "Approved").
+  it("store says sent but the server row is draft → send is awaited before the record", async () => {
+    mockGetInvoice.mockResolvedValue({ ...paidDto, status: "draft" }); // server truth
+    mockInvoices = [cardInvoice]; // store says "sent"
+
+    await clickRecordCash();
+
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1");
+    expect(mockRecordPayment).toHaveBeenCalledTimes(1);
+    // Order: the send resolved before the record fired (both landed inside one flush,
+    // so the call-order assertion is the invocationCallOrder below).
+    const sendOrder = mockSendInvoice.mock.invocationCallOrder[0] ?? 0;
+    const recordOrder = mockRecordPayment.mock.invocationCallOrder[0] ?? 0;
+    expect(sendOrder).toBeLessThan(recordOrder);
+  });
 });
