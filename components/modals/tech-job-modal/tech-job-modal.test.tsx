@@ -46,7 +46,9 @@ const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
 const mockAddInvoice = vi.fn((draft: Record<string, unknown>) => {
   const inv = { ...draft, id: "inv-fee-1", num: "INV-900", origin: "manual" } as Invoice;
   mockInvoices = [...mockInvoices, inv];
-  return inv;
+  // { invoice, persisted } — the slice's real shape (mirrors addJob). The manual path never
+  // reaches the server here, so `persisted` resolves ok immediately, exactly as the slice does.
+  return { invoice: inv, persisted: Promise.resolve({ ok: true }) };
 });
 const mockUpdateInvoice = vi.fn((id: string, patch: Record<string, unknown>) => {
   mockInvoices = mockInvoices.map((i) => (i.id === id ? { ...i, ...patch } : i));
@@ -986,5 +988,76 @@ describe("Task A2 — section memos skip re-render on checklist tap", () => {
       ?.textContent ?? "";
     expect(clAfter).not.toContain("○");
     expect(clAfter).toContain("✓");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The FLAT-RATE done job that was completed straight from My Day: its visit was never placed
+// on the Schedule board, so the field has no visit to show and none to reopen.
+//
+// Two regressions from this branch land here: Reopen buttons that took the tap and did nothing
+// (a job-level reopen does not exist — the write is per VISIT), and the close-out sheet being
+// opened without the invoice id it already knows.
+// ---------------------------------------------------------------------------
+
+const UNPLACED_DONE_JOB = () =>
+  makeJob({
+    status: "done",
+    lines: [{ d: "Flat rate — drain clear", q: 1, r: 185 }],
+    addons: [],
+    // Completed from My Day, never dragged onto the board: no date, no crew, no start.
+    visits: [{ id: "v1", date: null, techId: null, start: null, dur: 1, status: "done" }],
+  });
+
+describe("done job whose visit was never placed", () => {
+  it("renders no Reopen control at all — there is no visit for it to move", () => {
+    mockJobs = [UNPLACED_DONE_JOB()];
+    render(<TechJobModalContent />);
+    // The done hero renders (this is the surface Owen was on)…
+    expect(screen.getByText("✓ Job done")).toBeTruthy();
+    // …and neither the hero's Reopen nor the visit section's is on screen.
+    expect(screen.queryByText("↩ Reopen")).toBeNull();
+  });
+
+  it("still offers Reopen when the visit WAS placed", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        lines: [{ d: "Flat rate — drain clear", q: 1, r: 185 }],
+        addons: [],
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getAllByText("↩ Reopen")[0]!);
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "scheduled", "office");
+  });
+});
+
+describe("opening close-out from the done hero", () => {
+  it("passes the invoice id this surface already knows, so the sheet matches on a durable id", () => {
+    mockJobs = [UNPLACED_DONE_JOB()];
+    mockInvoices = [
+      {
+        id: "inv-7", num: "INV-7", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Flat rate", lines: [], total: 185, depPaid: 0, payments: [],
+        status: "draft", age: 0, archived: false,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText(/Take payment/));
+
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-7" });
+  });
+
+  it("passes the job alone when no invoice exists yet — the sheet raises one", () => {
+    mockJobs = [UNPLACED_DONE_JOB()];
+    mockInvoices = [];
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText(/Take payment/));
+
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1" });
   });
 });

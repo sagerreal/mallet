@@ -8,7 +8,8 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { ScopeHandoffBlock } from "./done-block";
+import { DoneBlock, ScopeHandoffBlock } from "./done-block";
+import type { Job } from "@/lib/store/types";
 
 describe("ScopeHandoffBlock — visit fee collection", () => {
   it("unscoped: renders the fee button AND the quiet 'Open the Quote tab' handoff stays", () => {
@@ -96,5 +97,46 @@ describe("ScopeHandoffBlock — visit fee collection", () => {
     expect(
       screen.getByText("Couldn't collect the fee — check your connection and try again."),
     ).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DoneBlock — Reopen is a VISIT write, so it must not render when there is no visit to move.
+//
+// THE BUG: a job completed straight from My Day has no PLACED visit (the field only shows
+// placed ones), so the handler had nothing to call. The button rendered anyway, took the tap
+// and did nothing.
+// ---------------------------------------------------------------------------
+
+const doneJob = {
+  id: "job-1", leadId: "lead-1", svc: "service", origin: "db", title: "Water heater",
+  addr: "12 Oak St", phone: "", status: "done", archived: false,
+  lines: [{ d: "Flat rate", q: 1, r: 185 }], addons: [], photos: [], notes: "", acts: [], visits: [],
+} as unknown as Job;
+
+const doneBlockProps = {
+  job: doneJob,
+  lead: undefined,
+  invoice: undefined,
+  onOpenCloseOut: vi.fn(),
+  onOpenInvoice: vi.fn(),
+  onChargeOnFile: vi.fn(),
+  onSendToOffice: vi.fn(),
+  onReopen: vi.fn(),
+};
+
+describe("DoneBlock — Reopen is hidden when there is nothing to reopen", () => {
+  it("no placed visit → no Reopen button", () => {
+    render(<DoneBlock {...doneBlockProps} canReopen={false} />);
+    expect(screen.queryByText("↩ Reopen")).toBeNull();
+    // The card itself still renders — hiding a dead control must not blank the hero.
+    expect(screen.getByText("✓ Job done")).toBeTruthy();
+  });
+
+  it("a placed visit → Reopen renders and fires", () => {
+    const onReopen = vi.fn();
+    render(<DoneBlock {...doneBlockProps} onReopen={onReopen} canReopen={true} />);
+    fireEvent.click(screen.getByText("↩ Reopen"));
+    expect(onReopen).toHaveBeenCalledTimes(1);
   });
 });

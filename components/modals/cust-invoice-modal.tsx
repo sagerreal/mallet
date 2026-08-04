@@ -28,6 +28,7 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/trpc/client";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
+import { invDue, invPaid } from "@/lib/store/invoice-balance";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Brand, Invoice, Job, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
@@ -38,15 +39,8 @@ import { ModalLoading } from "./modal-loading";
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
 
 
-/** invPaid — sum of payment amounts (prototype invPaid). */
-function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** invDue — total − deposit − payments (floor 0) (prototype invDue). */
-function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/* invPaid / invDue now come from lib/store/invoice-balance (imported above) — ONE definition,
+   because the customer's copy of the bill must agree with the shop's to the penny. */
 
 /** custCard — saved card on the linked lead (prototype custCard). */
 function custCard(invoice: Invoice, leads: Lead[]): Lead["card"] | null {

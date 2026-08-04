@@ -7,24 +7,18 @@
  */
 
 import type { Invoice, Job, Lead } from "@/lib/store/types";
+import { invPaid, invDue } from "@/lib/store/invoice-balance";
 import { jobDoneDate, jobTotal } from "@/features/jobs/today-derive";
 import { todayISO } from "@/lib/clock";
 
 // ---- invoice money math (single source; mirrored from the prototype) ---------
 
-/** Sum of recorded payment amounts. */
-export function invPaid(i: Invoice): number {
-  // A record built from a LIST row carries no payments — the endpoint does not send them — but the
-  // server already computed the balance, so paidTotal holds its answer. Preferring it is what
-  // keeps a ledger row from reading as fully unpaid.
-  if (i.paidTotal !== undefined) return i.paidTotal;
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** What's still owed — total − deposit − payments (floor 0). */
-export function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/**
+ * Paid / still-owed: ONE definition, in lib/store/invoice-balance.ts. Re-exported here so the
+ * ledger's existing importers are unchanged — five hand-copied versions of this math is what
+ * let the same invoice read fully unpaid in the field and part-paid in the office.
+ */
+export { invPaid, invDue };
 
 /**
  * Past its due date and still owed.

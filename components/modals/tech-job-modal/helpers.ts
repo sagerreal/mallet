@@ -30,15 +30,14 @@ export function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
 
-/** invPaid — sum of payment amounts (prototype invPaid). */
-export function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** invDue — total − deposit − payments, floored at 0 (prototype invDue). */
-export function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/**
+ * invPaid / invDue — ONE definition, in lib/store/invoice-balance.ts.
+ *
+ * This module's own copy re-derived the balance from `depPaid` + `payments`, neither of which a
+ * LIST row carries, so the done card read the full total as owed until a mutation reconcile
+ * loaded the real record — and back again on the next refetch.
+ */
+export { invPaid, invDue } from "@/lib/store/invoice-balance";
 
 /** priced → "install" (blue), unpriced job → "service" (brown), estimate → estimate (prototype jobMode, 4002). */
 export function jobMode(j: Job): string {

@@ -498,7 +498,7 @@ describe("addInvoice fromJob — one id end-to-end", () => {
     );
     const s = makeSlice();
     s.seed([]);
-    const inv = s.state.addInvoice(fromJobDraft());
+    const { invoice: inv } = s.state.addInvoice(fromJobDraft());
 
     expect(createFromJobMutate).toHaveBeenCalledTimes(1);
     expect(createFromJobMutate).toHaveBeenCalledWith({ jobId: "job-1", id: inv.id });
@@ -515,7 +515,7 @@ describe("addInvoice fromJob — one id end-to-end", () => {
     );
     const s = makeSlice();
     s.seed([]);
-    const inv = s.state.addInvoice(fromJobDraft());
+    const { invoice: inv } = s.state.addInvoice(fromJobDraft());
 
     await flush();
     expect(s.state.invoices).toHaveLength(1);
@@ -534,5 +534,133 @@ describe("addInvoice fromJob — one id end-to-end", () => {
 
     await flush();
     expect(s.state.invoices.filter((i) => i.id === "inv-server-9")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setInvoices — a hydrator SNAPSHOT must not erase what the summary cannot carry.
+//
+// The list DTO is a header: no lines, no payment history, and (until this branch) no job link.
+// Replacing the store row with it wholesale meant every refetch threw away the reconciled
+// record a mutation had just written — the field close-out's done card flipped branches and its
+// payment sheet, which finds the job's invoice through jobId, went blank.
+// ---------------------------------------------------------------------------
+
+describe("setInvoices — summary rows merge, never clobber", () => {
+  const summaryRow = (over: Partial<Invoice> = {}): Invoice =>
+    makeInvoice({
+      jobId: null, lines: [], payments: [], depPaid: 0, termsDays: undefined,
+      partial: true, total: 1000, due: 400, paidTotal: 600, ...over,
+    });
+
+  it("keeps the job link, the payment history and the lines a full record already had", () => {
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1", jobId: "job-1", payments: [{ amt: 600, when: "Jul 30", method: "card" }],
+        lines: [{ d: "Water heater", q: 1, r: 1000 }], termsDays: 30,
+      }),
+    ]);
+
+    s.state.setInvoices([summaryRow({ id: "inv-1" })]);
+
+    const merged = s.state.invoices[0]!;
+    expect(merged.jobId).toBe("job-1");
+    expect(merged.payments).toHaveLength(1);
+    expect(merged.lines).toHaveLength(1);
+    expect(merged.termsDays).toBe(30);
+  });
+
+  it("still takes the server's own answers from the snapshot", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", jobId: "job-1", status: "draft", total: 100 })]);
+
+    s.state.setInvoices([summaryRow({ id: "inv-1", status: "partial" })]);
+
+    const merged = s.state.invoices[0]!;
+    expect(merged.status).toBe("partial");
+    expect(merged.total).toBe(1000);
+    expect(merged.due).toBe(400);
+  });
+
+  it("takes a FULL row whole — a mutation reconcile is authoritative, not a header", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", jobId: "job-1", lines: [{ d: "Old", q: 1, r: 1 }] })]);
+
+    s.state.setInvoices([makeInvoice({ id: "inv-1", jobId: null, lines: [] })]);
+
+    expect(s.state.invoices[0]?.jobId).toBeNull();
+    expect(s.state.invoices[0]?.lines).toEqual([]);
+  });
+
+  it("drops rows the snapshot no longer lists (the snapshot owns WHICH invoices exist)", () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1" }), makeInvoice({ id: "inv-2" })]);
+
+    s.state.setInvoices([summaryRow({ id: "inv-2" })]);
+
+    expect(s.state.invoices.map((i) => i.id)).toEqual(["inv-2"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addInvoice rollback — row-level, not wholesale.
+//
+// The catch restored an array snapshot taken BEFORE the optimistic insert, so every invoice the
+// hydrator landed while the create was in flight was discarded with it: one failed create
+// emptied the ledger.
+// ---------------------------------------------------------------------------
+
+describe("addInvoice — a failed create removes ONE row", () => {
+  beforeEach(() => {
+    createFromJobMutate.mockReset();
+  });
+
+  const flush = () => new Promise((r) => setTimeout(r, 0));
+  const fromJobDraft = () => {
+    const { id: _id, num: _num, ...rest } = makeInvoice({ jobId: "job-1", origin: undefined });
+    return rest;
+  };
+
+  it("keeps invoices the hydrator landed mid-flight", async () => {
+    createFromJobMutate.mockRejectedValue(new Error("nope"));
+    const s = makeSlice();
+    s.seed([]);
+
+    const { invoice, persisted } = s.state.addInvoice(fromJobDraft());
+    // The hydrator's snapshot lands while createFromJob is still in flight.
+    s.state.setInvoices([makeInvoice({ id: "inv-hydrated", partial: true })]);
+
+    await persisted;
+    await flush();
+
+    expect(s.state.invoices.map((i) => i.id)).toEqual(["inv-hydrated"]);
+    expect(s.state.invoices.some((i) => i.id === invoice.id)).toBe(false);
+  });
+
+  it("resolves { ok: false } with the server's own reason so the caller can show it", async () => {
+    createFromJobMutate.mockRejectedValue(
+      Object.assign(new Error("job must be complete before it can be invoiced"), {
+        data: { code: "CONFLICT" },
+      }),
+    );
+    const s = makeSlice();
+    s.seed([]);
+
+    const { persisted } = s.state.addInvoice(fromJobDraft());
+    const result = await persisted;
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("job must be complete before it can be invoiced");
+  });
+
+  it("resolves { ok: true } once the server confirms", async () => {
+    createFromJobMutate.mockImplementation((input: unknown) =>
+      Promise.resolve(dbDto({ id: (input as { id: string }).id, sourceJobId: "job-1" })),
+    );
+    const s = makeSlice();
+    s.seed([]);
+
+    await expect(s.state.addInvoice(fromJobDraft()).persisted).resolves.toEqual({ ok: true });
   });
 });

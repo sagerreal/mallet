@@ -155,7 +155,7 @@ export function MoneyLedger() {
     const lead = leads.find((l) => l.id === j.leadId);
     // Office surface: rates are never redacted here; ?? 0 only satisfies the shared type.
     const total = (j.lines ?? []).reduce((s, l) => s + l.q * (l.r ?? 0), 0);
-    const inv = addInvoice({
+    const { invoice: inv } = addInvoice({
       jobId: j.id,
       leadId: j.leadId,
       cust: lead?.name ?? "",
@@ -173,7 +173,7 @@ export function MoneyLedger() {
   }
 
   function newInvoice() {
-    const inv = addInvoice({
+    const { invoice: inv } = addInvoice({
       jobId: null,
       leadId: "",
       cust: "",

@@ -28,6 +28,15 @@ export interface DoneBlockProps {
   onChargeOnFile: () => void;
   onSendToOffice: () => void;
   onReopen: () => void;
+  /**
+   * Is there a visit Reopen can actually move?
+   *
+   * Reopen writes a VISIT status. A job completed straight from My Day can have no PLACED visit
+   * at all (the field only ever shows placed ones), and then the handler had nothing to call —
+   * the button rendered, took the tap and did nothing. False hides it: a control that cannot
+   * act must not be on screen.
+   */
+  canReopen: boolean;
 }
 
 // DoneBlock uses a custom comparator — it only reads job.invRequested and job.lines
@@ -39,6 +48,7 @@ export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boole
     a.onChargeOnFile === b.onChargeOnFile &&
     a.onSendToOffice === b.onSendToOffice &&
     a.onReopen === b.onReopen &&
+    a.canReopen === b.canReopen &&
     a.lead === b.lead &&
     a.invoice === b.invoice &&
     a.job.invRequested === b.job.invRequested &&
@@ -154,19 +164,21 @@ function DoneBlockFn({
   onOpenInvoice,
   onSendToOffice,
   onReopen,
+  canReopen,
 }: DoneBlockProps) {
   // a draft invoice may already exist (opened pay then backed out) — that must
   // NOT remove the send-to-office option; due is read off it when present.
   const due = invoice ? invDue(invoice) : jobTotal(job);
   const card = lead?.card ?? null;
 
-  const reopen = (
+  // Absent when there is no placed visit to move — see canReopen.
+  const reopen = canReopen ? (
     <div style={{ display: "flex", justifyContent: "flex-end", margin: "var(--space-4) 0 0" }}>
       <button className="btn sm ghost" onClick={onReopen}>
         ↩ Reopen
       </button>
     </div>
-  );
+  ) : null;
 
   // Paid — a priced invoice fully settled.
   if (invoice && (invoice.total ?? 0) > 0 && invDue(invoice) <= 0) {

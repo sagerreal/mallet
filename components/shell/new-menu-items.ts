@@ -49,7 +49,7 @@ export function useNewMenuItems(close: () => void): readonly NewMenuItem[] {
     {
       label: "New invoice",
       action: () => {
-        const inv = addInvoice({
+        const { invoice: inv } = addInvoice({
           jobId: null, leadId: "", cust: "", phone: "", title: "New invoice",
           lines: [], total: 0, depPaid: 0, payments: [], status: "draft", age: 0, archived: false,
         });

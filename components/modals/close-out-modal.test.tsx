@@ -19,6 +19,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, act } from "@testing-library/react";
 import { BillAsk, CloseOutModalContent } from "./close-out-modal";
+import { toStoreInvoice } from "@/features/money/invoices-hydrator";
 import type { Job, Lead, Invoice } from "@/lib/store/types";
 import { MODAL } from "@/lib/store/modal-ids";
 
@@ -32,7 +33,14 @@ let mockJobs: Job[] = [];
 let mockLeads: Lead[] = [];
 let mockInvoices: Invoice[] = [];
 const noop = vi.fn();
-const mockAddInvoice = vi.fn(() => ({ id: "unexpected", num: "INV-999" }));
+// { invoice, persisted } — the slice's real shape. `persisted` never rejects; the modal awaits
+// it to clear its create guard and, on { ok: false }, to render the reason instead of a blank sheet.
+let mockCreatePersisted: () => Promise<{ ok: boolean; error?: string }> = () =>
+  Promise.resolve({ ok: true });
+const mockAddInvoice = vi.fn(() => ({
+  invoice: { id: "unexpected", num: "INV-999" },
+  persisted: mockCreatePersisted(),
+}));
 const mockAdoptInvoice = vi.fn();
 const mockRecordPayment = vi.fn();
 const mockSendInvoice = vi.fn<(id: string) => Promise<{ ok: boolean; error?: string }>>(() =>
@@ -525,5 +533,131 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     const sendOrder = mockSendInvoice.mock.invocationCallOrder[0] ?? 0;
     const recordOrder = mockRecordPayment.mock.invocationCallOrder[0] ?? 0;
     expect(sendOrder).toBeLessThan(recordOrder);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The sheet can never dead-end.
+//
+// THE BUG: the body returned null whenever it had no invoice yet, inside a modal shell that
+// was already on screen. `creatingRef` was stamped on the first render and NEVER cleared, so a
+// createFromJob that FAILED — a technician hitting the ownerOrOffice gate gets FORBIDDEN, a job
+// the server does not consider complete gets CONFLICT — left the technician holding a collapsed
+// white sliver with nothing on it but a ✕, with no way to tell what happened or to try again.
+// ---------------------------------------------------------------------------
+
+describe("CloseOutModalContent — never an empty sheet", () => {
+  const deferredCreate = () => {
+    let settle: (r: { ok: boolean; error?: string }) => void = () => {};
+    const promise = new Promise<{ ok: boolean; error?: string }>((res) => {
+      settle = res;
+    });
+    return { promise, settle };
+  };
+
+  beforeEach(() => {
+    mockActiveParams = { jobId: "job-1" };
+    mockJobs = [cardJob];
+    mockLeads = [feeLead];
+    mockInvoices = []; // no invoice for this job yet — the auto-create path
+    mockAddInvoice.mockClear();
+    mockCreatePersisted = () => Promise.resolve({ ok: true });
+  });
+
+  it("shows that the invoice is being raised while the create is in flight", () => {
+    const pending = deferredCreate();
+    mockCreatePersisted = () => pending.promise;
+
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText("Raising the invoice…")).toBeTruthy();
+    // The sheet still says which job it is — the technician is never looking at a blank panel.
+    expect(screen.getByText("Fix water heater")).toBeTruthy();
+  });
+
+  it("renders the server's own reason when the create fails, not a blank sheet", async () => {
+    mockCreatePersisted = () =>
+      Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" });
+
+    render(<CloseOutModalContent />);
+    await act(async () => {});
+
+    expect(screen.getByText("Couldn't raise the invoice")).toBeTruthy();
+    expect(screen.getByText("job must be complete before it can be invoiced")).toBeTruthy();
+    expect(screen.queryByText("Raising the invoice…")).toBeNull();
+  });
+
+  it("Try again re-fires the create, and the sheet renders once the invoice lands", async () => {
+    mockCreatePersisted = () => Promise.resolve({ ok: false, error: "Your role can't do that." });
+
+    const { rerender } = render(<CloseOutModalContent />);
+    await act(async () => {});
+    expect(mockAddInvoice).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("Your role can't do that.")).toBeTruthy();
+
+    // The retry genuinely re-fires the mutation — this is what the never-cleared guard ref made
+    // impossible, and why the sliver was permanent.
+    const pending = deferredCreate();
+    mockCreatePersisted = () => pending.promise;
+    fireEvent.click(screen.getByText("Try again"));
+    await act(async () => {});
+
+    expect(mockAddInvoice).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("Your role can't do that.")).toBeNull();
+    expect(screen.getByText("Raising the invoice…")).toBeTruthy();
+
+    // …and once the invoice reaches the store, the real close-out replaces the notice.
+    mockInvoices = [cardInvoice];
+    await act(async () => {
+      pending.settle({ ok: true });
+    });
+    rerender(<CloseOutModalContent />);
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+  });
+
+  it("says so when handed an invoice id this device never loaded", () => {
+    mockActiveParams = { jobId: "job-1", invoiceId: "inv-not-here" };
+
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText("That invoice isn't loaded")).toBeTruthy();
+    expect(mockAddInvoice).not.toHaveBeenCalled();
+  });
+
+  it("says so when the job itself isn't loaded", () => {
+    mockJobs = [];
+
+    render(<CloseOutModalContent />);
+
+    expect(screen.getByText(/This job isn't loaded/)).toBeTruthy();
+  });
+
+  // The end-to-end shape of the original bug: the store row the HYDRATOR produces — not a
+  // hand-written fixture — must carry the job link, or this sheet finds nothing and either
+  // raises a duplicate invoice or (before the fix) renders a white sliver forever.
+  it("finds the job's invoice on a row built by the real list mapper", () => {
+    mockInvoices = [
+      toStoreInvoice({
+        id: "inv-1",
+        num: "INV-810",
+        leadId: "lead-1",
+        sourceJobId: "job-1",
+        customerName: "Dana Alvarez",
+        customerPhone: "",
+        title: "Fix water heater",
+        status: "sent",
+        total: { cents: 45_000, currency: "USD" },
+        due: { cents: 45_000, currency: "USD" },
+        dueAt: null,
+        followUpOn: false,
+        followUpStage: 0,
+        createdAt: "2026-07-30T09:00:00.000Z",
+      } as Parameters<typeof toStoreInvoice>[0]),
+    ];
+
+    render(<CloseOutModalContent />);
+
+    expect(mockAddInvoice).not.toHaveBeenCalled();
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
   });
 });

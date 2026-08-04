@@ -1416,3 +1416,81 @@ describe("setJobLines persist + refetch survival", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// The optimistic status derivation — the THIRD copy of the terminal-status rule.
+//
+// dbe2fc8 gave the two DTO mappers (dto-mapper's dtoJobToStoreJob and the jobs hydrator's
+// toStoreJob) a guard: a terminal backend status always outranks the visit-placement recalc.
+// It missed this one, and no test covered it — which is exactly why that commit shipped green.
+//
+// A job completed straight from My Day has one complete visit that nobody dragged onto the
+// Schedule board, so NOTHING is placed. Without the guard, the next optimistic visit write
+// derived that job back to "unscheduled": its revenue dropped out of Money's ready-to-bill list
+// and the field's done card swapped out from under the technician mid-close-out.
+// ---------------------------------------------------------------------------
+
+describe("optimistic visit writes never derive away a terminal status", () => {
+  const UNPLACED_DONE_VISIT = {
+    id: "aaaaaaaa-0000-0000-0000-0000000000f1",
+    date: null, techId: null, start: null, dur: 1, status: "done",
+  };
+  const PLACED_DONE_VISIT = {
+    id: "aaaaaaaa-0000-0000-0000-0000000000f2",
+    date: "2026-07-30", techId: "tech-1", start: 9, dur: 1, status: "done",
+  };
+
+  const seedDoneJob = (get: ReturnType<typeof makeStore>["get"], visits: Job["visits"]) => {
+    get().setJobs([{ ...draft, id: "j-done", origin: "db", status: "done", visits }]);
+  };
+
+  beforeEach(() => {
+    mockSetVisitStatus.mockReset();
+    mockUpdateVisitDuration.mockReset();
+    mockCreateVisit.mockReset();
+  });
+
+  it("keeps a done job done when its only visit was never placed", () => {
+    mockUpdateVisitDuration.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDoneJob(get, [UNPLACED_DONE_VISIT]);
+
+    get().updateVisit("j-done", UNPLACED_DONE_VISIT.id, { dur: 2 });
+
+    expect(get().jobs[0]!.status).toBe("done");
+  });
+
+  it("keeps a done job done when a new (unplaced) visit is added to it", () => {
+    mockCreateVisit.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDoneJob(get, [UNPLACED_DONE_VISIT]);
+
+    get().addVisit("j-done");
+
+    expect(get().jobs[0]!.status).toBe("done");
+  });
+
+  it("still reads an unplaced visit on a NON-terminal job as unscheduled", () => {
+    mockUpdateVisitDuration.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    get().setJobs([
+      { ...draft, id: "j-open", origin: "db", status: "scheduled", visits: [
+        { ...UNPLACED_DONE_VISIT, status: "scheduled" },
+      ] },
+    ]);
+
+    get().updateVisit("j-open", UNPLACED_DONE_VISIT.id, { dur: 2 });
+
+    expect(get().jobs[0]!.status).toBe("unscheduled");
+  });
+
+  it("still lets Reopen move a done job with a PLACED visit back to scheduled", () => {
+    mockSetVisitStatus.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDoneJob(get, [PLACED_DONE_VISIT]);
+
+    get().setVisitStatus("j-done", PLACED_DONE_VISIT.id, "scheduled", "office");
+
+    expect(get().jobs[0]!.status).toBe("scheduled");
+  });
+});

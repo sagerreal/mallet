@@ -6,7 +6,7 @@ interface Store {
   invoices: unknown[];
   jobs: unknown[];
   leads: unknown[];
-  addInvoice: (d: unknown) => { id: string };
+  addInvoice: (d: unknown) => { invoice: { id: string }; persisted: Promise<{ ok: boolean }> };
   recordPayment: () => void;
   updateInvoice: () => void;
   toggles: { techSeesPrice: boolean; frontDesk: boolean; autoRemind: boolean; measurementEstimating: boolean };
@@ -23,7 +23,7 @@ let moneyState = {
 };
 const openModal = vi.fn();
 const push = vi.fn();
-const addInvoice = vi.fn(() => ({ id: "inv-1" }));
+const addInvoice = vi.fn(() => ({ invoice: { id: "inv-1" }, persisted: Promise.resolve({ ok: true }) }));
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),

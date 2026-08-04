@@ -19,7 +19,7 @@
 
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useAppStore,
   useActiveModal,
@@ -27,8 +27,10 @@ import {
 } from "@/lib/store/app-store";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
+import { ListLoading } from "@/components/shared/list-loading";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { dtoInvoiceToStore, type InvoiceDTO } from "@/lib/store/dto-mapper";
+import { invDue, invPaid } from "@/lib/store/invoice-balance";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type {
@@ -54,15 +56,11 @@ function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
 
-/** invPaid — sum of payment amounts (prototype invPaid). */
-function invPaid(i: Invoice): number {
-  return (i.payments ?? []).reduce((s, p) => s + (p.amt ?? 0), 0);
-}
-
-/** invDue — total − deposit − payments, floored at 0 (prototype invDue). */
-function invDue(i: Invoice): number {
-  return Math.max(0, (i.total ?? 0) - (i.depPaid ?? 0) - invPaid(i));
-}
+/**
+ * invPaid / invDue — ONE definition, in lib/store/invoice-balance.ts. The sheet's own copy
+ * ignored the server's balance on a summary row, so the amount on the Take-payment button
+ * disagreed with the ledger's.
+ */
 
 /** custCard — the saved card lives on the linked lead (prototype custCard). */
 function custCard(lead: Lead | undefined): Lead["card"] | null {
@@ -928,6 +926,54 @@ function VerifyGaps({ job, onCheck, onRephoto, onOverride }: VerifyGapsProps) {
 }
 
 // ===========================================================================
+//  A sheet that cannot show the close-out yet — but never a blank one
+// ===========================================================================
+
+interface CloseOutNoticeProps {
+  /** The sticky sheet title, so the technician still knows which sheet this is. */
+  title: string;
+  /** The job line under it, when a job is loaded. */
+  subtitle?: string;
+  /** What went wrong, in the shop's words. */
+  heading?: string;
+  /** The next step. Never a bare apology. */
+  message: string;
+  /** Present only when there is genuinely something to re-fire. */
+  onRetry?: () => void;
+}
+
+/**
+ * The honest stand-in for the close-out sheet. Composed from the same .sheet-head + .loadfail
+ * primitives the office list surfaces use (see components/shared/load-failed.tsx) — the copy
+ * differs because a bill that could not be RAISED is not a list that failed to load, and the
+ * reason is usually a domain refusal ("job must be complete before it can be invoiced",
+ * "Your role can't do that") that the technician needs to read verbatim.
+ */
+function CloseOutNotice({ title, subtitle, heading, message, onRetry }: CloseOutNoticeProps) {
+  return (
+    <>
+      <div className="sheet-head">
+        <h2>{title}</h2>
+        {subtitle ? (
+          <div className="sheet-meta">
+            <span>{subtitle}</span>
+          </div>
+        ) : null}
+      </div>
+      <div className="loadfail" role="alert">
+        {heading ? <p className="loadfail-h">{heading}</p> : null}
+        <p className="loadfail-s">{message}</p>
+        {onRetry ? (
+          <button className="btn" onClick={onRetry}>
+            Try again
+          </button>
+        ) : null}
+      </div>
+    </>
+  );
+}
+
+// ===========================================================================
 //  THE MODAL BODY — "Wrap up — {custName}" (prototype openCloseOut)
 // ===========================================================================
 
@@ -975,11 +1021,18 @@ export function CloseOutModalContent() {
   // ---- ensureInvoiceForJob (prototype) — find the job's invoice, else create
   //      one from the job. Creation runs in an effect (never mutate the store
   //      during render); a ref guards against a duplicate before the new invoice
-  //      shows up in `invoices`. Until it exists we render nothing (one frame). --
+  //      shows up in `invoices`.
   const invoice = job
     ? invoices.find((i) => (invoiceIdParam ? i.id === invoiceIdParam : i.jobId === job.id))
     : undefined;
   const creatingRef = useRef<string | null>(null);
+  // The create's outcome, so this sheet always has something honest to render. It used to
+  // return null while `creatingRef` was stamped — and the ref was never cleared, so a create
+  // that FAILED (a technician hitting the ownerOrOffice gate on createFromJob gets FORBIDDEN)
+  // left an empty white panel with nothing but a ✕ on it, forever.
+  const [createError, setCreateError] = useState<string | null>(null);
+  // Bumped by Retry: clears the guard ref and re-runs the effect below.
+  const [createAttempt, setCreateAttempt] = useState(0);
 
   useEffect(() => {
     if (!job || invoice) return;
@@ -989,7 +1042,8 @@ export function CloseOutModalContent() {
     if (invoiceIdParam) return;
     if (creatingRef.current === job.id) return;
     creatingRef.current = job.id;
-    addInvoice({
+    setCreateError(null);
+    const { persisted } = addInvoice({
       jobId: job.id,
       leadId: job.leadId,
       cust: custNameOf(job, lead),
@@ -1003,7 +1057,19 @@ export function CloseOutModalContent() {
       age: 0,
       archived: false,
     });
-  }, [job, invoice, lead, addInvoice, invoiceIdParam]);
+    // Never rejects (the slice resolves { ok, error }). Clearing the guard on BOTH outcomes is
+    // what makes Retry possible at all.
+    void persisted.then(({ ok, error }) => {
+      creatingRef.current = null;
+      if (!ok) setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
+    });
+  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt]);
+
+  const retryCreate = useCallback(() => {
+    creatingRef.current = null;
+    setCreateError(null);
+    setCreateAttempt((n) => n + 1);
+  }, []);
 
   // The org's real visit fee for BillAsk's "+ Service / diagnostic fee" preset — read outside
   // the store (this modal's only entry, the tech job modal, lives in the field shell, which
@@ -1013,7 +1079,53 @@ export function CloseOutModalContent() {
   const needsBillAsk = Boolean(job && invoice && (invoice.total ?? 0) <= 0 && jobTotal(job) <= 0);
   const orgServiceFee = useOrgServiceFee(needsBillAsk);
 
-  if (!job || !invoice) return null;
+  // ---- states before the sheet can render. NONE of them may be blank: this modal's shell is
+  //      already on screen by the time this component mounts, so returning null leaves the
+  //      technician holding a white panel with a ✕ and no way to tell what went wrong.
+  if (!job) {
+    return (
+      <CloseOutNotice
+        title="Wrap up"
+        message="This job isn't loaded. Close this and open it again from My day."
+      />
+    );
+  }
+  if (!invoice) {
+    if (createError) {
+      return (
+        <CloseOutNotice
+          title={`Wrap up — ${custNameOf(job, lead)}`}
+          subtitle={job.title}
+          message={createError}
+          heading="Couldn't raise the invoice"
+          onRetry={retryCreate}
+        />
+      );
+    }
+    if (invoiceIdParam) {
+      // Handed an invoice id that isn't in the store. Nothing to retry here — the sheet was
+      // opened against a record this device never loaded.
+      return (
+        <CloseOutNotice
+          title={`Wrap up — ${custNameOf(job, lead)}`}
+          subtitle={job.title}
+          heading="That invoice isn't loaded"
+          message="Close this and tap Take payment again from the job."
+        />
+      );
+    }
+    return (
+      <>
+        <div className="sheet-head">
+          <h2>Wrap up — {custNameOf(job, lead)}</h2>
+          <div className="sheet-meta">
+            <span>{job.title}</span>
+          </div>
+        </div>
+        <ListLoading rows={3} label="Raising the invoice…" />
+      </>
+    );
+  }
 
   const custName = custNameOf(job, lead);
   const due = invDue(invoice);

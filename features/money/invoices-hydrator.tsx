@@ -6,9 +6,9 @@
  * the result into the Zustand store so every existing consumer (money ledger,
  * OK queue, pipeline, etc.) sees real DB data without changes.
  *
- * The list endpoint returns invoiceSummaryDTO — id/num/leadId/title/status/
- * total{cents}/due{cents}/dueAt/createdAt. Lines and payments are only on the
- * full invoiceDTO (fetched per-modal via invoicing.get). The store Invoice.lines
+ * The list endpoint returns invoiceSummaryDTO — id/num/leadId/sourceJobId/title/
+ * status/total{cents}/due{cents}/dueAt/createdAt. Lines and payments are only on
+ * the full invoiceDTO (fetched per-modal via invoicing.get). The store Invoice.lines
  * defaults to [] and Invoice.payments to [] until the modal loads the full record.
  *
  * Units: the store Invoice.total/depPaid are in DOLLARS. The DTO money field
@@ -44,15 +44,20 @@ function daysAgo(isoDate: string): number {
   return Math.floor((Date.now() - new Date(isoDate).getTime()) / 86_400_000);
 }
 
-function toStoreInvoice(dto: InvoiceSummaryDTO): Invoice {
+export function toStoreInvoice(dto: InvoiceSummaryDTO): Invoice {
   // void invoices are archived — hidden from the live ledger, same as prototype.
   const archived = dto.status === "void";
+  const total = dto.total.cents / 100;
+  const due = dto.due.cents / 100;
 
   return {
     id: dto.id,
     num: dto.num,
-    // sourceJobId in the full DTO; not in summary — null until modal loads full record.
-    jobId: null,
+    // The job this bill was raised from. It used to be hard-coded null here "until the modal
+    // loads the full record", which made the link a mutation had just stamped disappear on the
+    // very next refetch — the field close-out's done card flipped between two branches and its
+    // payment sheet, which finds the invoice through this link, rendered an empty shell.
+    jobId: dto.sourceJobId,
     leadId: dto.leadId,
     // cust: money-derive.invCustName falls back to leads[leadId].name, so "" is correct.
     cust: "",
@@ -63,13 +68,19 @@ function toStoreInvoice(dto: InvoiceSummaryDTO): Invoice {
     // invStatusKey in money-derive handles draft/sent/partial/paid; void treated as archived.
     status: dto.status,
     // Money values are DOLLARS — DTO .cents divided by 100 at hydration.
-    total: dto.total.cents / 100,
-    // depositPaid not in summary DTO; 0 until full record is loaded.
+    total,
+    // depositPaid is not in the summary DTO — the deposit is not knowable from a list row, and
+    // this field must never be used to smuggle the balance in (it would report real payments as
+    // a deposit on the invoice's face).
     depPaid: 0,
-    // amountPaid not in summary DTO; 0 until full record is loaded.
-    // invDue = total - depPaid - invPaid(payments); using due.cents from DTO is more
-    // accurate but invDue recalculates from parts. We store total and let payments=[]
-    // and depPaid=0 make invDue approximate (= total). The modal hydrates the real value.
+    // The server's own answers for "what is still owed" and "what has been paid", carried as
+    // themselves. The payment history is absent from a list row, so a balance re-derived from
+    // the parts on this record would read the full total as owed even for a part-paid invoice —
+    // which is exactly what made the done card's amount change on every refetch. invDue prefers
+    // `due` while `partial` is set; invPaid prefers `paidTotal`. Kept in step with
+    // dtoInvoiceSummaryToStore, the other mapper for this same DTO.
+    due,
+    paidTotal: Math.max(0, total - due),
     payments: [],
     age: daysAgo(dto.createdAt),
     // termsDays: not in summary DTO; undefined until modal loads full record.

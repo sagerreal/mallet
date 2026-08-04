@@ -74,7 +74,13 @@ import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
 import { isVisitPlaced } from "../visit-placement";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
-import { dtoJobToStoreJob, dtoChecklistToStore, hourToHHMM, type JobDTO } from "@/lib/store/dto-mapper";
+import {
+  dtoJobToStoreJob,
+  dtoChecklistToStore,
+  hourToHHMM,
+  isTerminalStoreJobStatus,
+  type JobDTO,
+} from "@/lib/store/dto-mapper";
 import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
@@ -262,16 +268,29 @@ function isPersistableLine(l: JobLine): boolean {
   return l.r != null && l.d.trim().length > 0;
 }
 
-/** Derive job status from its placed visits. */
-function recalcStatus(visits: Visit[]): string {
+/**
+ * Derive job status from its placed visits — the OPTIMISTIC copy of the rule the two DTO
+ * mappers apply on the way back from the server (dtoJobToStoreJob, jobs-hydrator's toStoreJob).
+ *
+ * Placement state must never derive AWAY a terminal status. A job completed straight from My Day
+ * has one complete visit that nobody dragged onto the Schedule board, so `scheduled_date` is
+ * null, nothing counts as placed, and the old rule read that job back as "unscheduled" — its
+ * revenue vanished from Money's ready-to-bill list and the field's done card swapped out from
+ * under the technician on the next optimistic visit write. Both mappers were given this guard;
+ * this third copy was missed, and no test covered it.
+ *
+ * A visit that genuinely MOVES still moves the job (Reopen, a re-drag): those paths act on a
+ * PLACED visit, so the recalc below runs exactly as before.
+ */
+function recalcStatus(job: Job, visits: Visit[]): string {
   const placed = visits.filter(isVisitPlaced);
-  if (!placed.length) return "unscheduled";
+  if (!placed.length) return isTerminalStoreJobStatus(job.status) ? job.status : "unscheduled";
   if (placed.every((v) => v.status === "done")) return "done";
   return "scheduled";
 }
 
 function withVisits(job: Job, visits: Visit[]): Job {
-  return { ...job, visits, status: recalcStatus(visits) };
+  return { ...job, visits, status: recalcStatus(job, visits) };
 }
 
 /** Set one verify answer immutably. */

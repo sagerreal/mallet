@@ -113,6 +113,16 @@ const summaryDTO = z.object({
   num: z.string(),
   leadId: z.string().uuid(),
   /**
+   * The job this bill was raised from, or null for a lead-tied (manual) invoice.
+   *
+   * On the summary for the same reason `customerName` is: the browser stores the link as
+   * `invoice.jobId`, and the list is what re-hydrates that store. Omitting it here meant every
+   * refetch nulled the link a mutation had just stamped — the field close-out's done card
+   * oscillated between "ready to bill" and "take payment", and the payment sheet, which finds
+   * the job's invoice through this link, rendered an empty shell.
+   */
+  sourceJobId: z.string().uuid().nullable(),
+  /**
    * The customer's name, resolved SERVER-side.
    *
    * The ledger looked this up in the store's leads collection, which works only while every lead
@@ -325,6 +335,7 @@ const toSummaryDTO = (
     id: p.id,
     num: p.num,
     leadId: p.leadId,
+    sourceJobId: p.sourceJobId,
     customerName,
     customerPhone,
     title: p.title,

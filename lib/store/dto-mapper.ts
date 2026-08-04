@@ -167,6 +167,22 @@ function toStoreJobStatusInternal(s: string): string {
   return "unscheduled";
 }
 
+/** The one word the store uses for a job the backend has closed — both `complete` and
+ *  `canceled` map to it. */
+export const STORE_JOB_STATUS_DONE = "done";
+
+/**
+ * Is this STORE job status terminal — i.e. the backend has closed the job?
+ *
+ * Exported because three places derive a job's status from its visits and all three must give a
+ * terminal status precedence over visit placement: this module, features/jobs/jobs-hydrator.tsx,
+ * and the optimistic leg in lib/store/slices/jobs-slice.ts. The slice copy carried no guard,
+ * which is how a completed job kept reading back as "unscheduled".
+ */
+export function isTerminalStoreJobStatus(status: string): boolean {
+  return status === STORE_JOB_STATUS_DONE;
+}
+
 // ---------------------------------------------------------------------------
 // DTO → store mappers (public)
 // ---------------------------------------------------------------------------
@@ -482,7 +498,9 @@ export function dtoInvoiceSummaryToStore(
   return {
     id: dto.id,
     num: dto.num,
-    jobId: null,
+    // The job this bill was raised from — on the summary DTO now, so the link survives a list
+    // refetch instead of being nulled on every one.
+    jobId: dto.sourceJobId,
     leadId: dto.leadId,
     cust: dto.customerName ?? priorInv.cust,
     phone: priorInv.phone,
@@ -493,6 +511,9 @@ export function dtoInvoiceSummaryToStore(
     depPaid: 0,
     // Everything already paid, deposit included — the server's figure, not a re-derivation.
     paidTotal: Math.max(0, total - due),
+    // And the balance itself, which invDue prefers while `partial` is set. Kept in step with
+    // the invoices hydrator's toStoreInvoice, the other mapper for this same DTO.
+    due,
     payments: [],
     lines: [],
     // A summary row — no lines/jobId/history; deciders must fetch the full record.

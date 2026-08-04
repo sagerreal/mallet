@@ -471,6 +471,14 @@ export interface Invoice {
    */
   paidTotal?: number;
   /**
+   * The balance the SERVER says is still owed, in dollars — present only on a `partial` row.
+   *
+   * A summary DTO carries no deposit and no payment history, so a balance re-derived from the
+   * parts on this record reads the whole total as owed. `invDue` prefers this figure while
+   * `partial` is set; a fully-loaded invoice has none, because there the parts ARE the truth.
+   */
+  due?: number;
+  /**
    * True when this row was built from a LIST/summary DTO — no lines, no jobId, no payment
    * history. A surface that DECIDES anything from those fields (the invoice modal choosing
    * editor vs read-only) must wait for the full record instead of trusting a partial row:

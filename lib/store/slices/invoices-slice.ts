@@ -34,6 +34,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import { reportWriteError } from "../write-error";
+import { userMessage } from "@/lib/trpc/error-map";
 
 // Continue the sample's INV numbers.
 // After reconcile, the server-canonical `num` overwrites this optimistic value.
@@ -105,13 +106,67 @@ function restoreInv(invoices: Invoice[], prior: Invoice): Invoice[] {
   return invoices.map((i) => (i.id === prior.id ? prior : i));
 }
 
+/**
+ * Fold a hydrator SNAPSHOT row onto what the store already knows — the invoice mirror of
+ * mergeIncomingJob in jobs-slice.
+ *
+ * A summary row is a HEADER: no lines, no payment history, no terms, no signed amount. Letting
+ * it replace a record the modal or a mutation reconcile had already filled in threw all of that
+ * away on every refetch — the whole reason the field close-out's done card and payment sheet
+ * flapped. The incoming row still wins on everything the list DOES carry (status, total, the
+ * balance, the customer, follow-up state); it just stops erasing what it never knew.
+ *
+ * The merged row stays `partial`, because it still isn't a full server read — a surface that
+ * must decide from lines/history keeps fetching the real record.
+ */
+function mergeIncomingInvoice(prior: Invoice, incoming: Invoice): Invoice {
+  if (!incoming.partial) return incoming;
+  return {
+    ...incoming,
+    // The job link — the field surfaces find a job's bill through it, and it is the field the
+    // list used to null on every refetch.
+    jobId: incoming.jobId ?? prior.jobId,
+    lines: incoming.lines?.length ? incoming.lines : prior.lines,
+    payments: incoming.payments?.length ? incoming.payments : prior.payments,
+    depPaid: incoming.depPaid || prior.depPaid,
+    termsDays: incoming.termsDays ?? prior.termsDays,
+    poNumber: incoming.poNumber ?? prior.poNumber,
+    publicToken: incoming.publicToken ?? prior.publicToken,
+    publicUrl: incoming.publicUrl ?? prior.publicUrl,
+    tax: incoming.tax ?? prior.tax,
+    pricing: incoming.pricing ?? prior.pricing,
+    authorization: incoming.authorization ?? prior.authorization,
+    cust: incoming.cust || prior.cust,
+    phone: incoming.phone || prior.phone,
+    email: incoming.email ?? prior.email,
+  };
+}
+
 export interface InvoicesSlice {
   invoices: Invoice[];
-  /** Replace the entire invoices array — called by the server hydrator. */
+  /**
+   * Replace the invoices array with a server snapshot — called by the hydrator. Summary rows
+   * are merged onto what the store already holds rather than clobbering it (see
+   * mergeIncomingInvoice): a list row carries no lines, no payment history and no job link.
+   */
   setInvoices: (invoices: Invoice[]) => void;
   /** Put an invoice fetched by id into the store, without a network write. See adoptLead. */
   adoptInvoice: (invoice: Invoice) => void;
-  addInvoice: (draft: Omit<Invoice, "id" | "num">) => Invoice;
+  /**
+   * Optimistically inserts the invoice and, on the fromJob path, fires v1.invoicing.createFromJob.
+   *
+   * Returns `{ invoice }` synchronously (the optimistic record with the client-authored id) and
+   * `persisted` — a promise that resolves { ok } once the server confirms, or { ok: false, error }
+   * after the row was rolled back. It NEVER rejects, so fire-and-forget callers stay safe while
+   * an interactive caller (the close-out sheet, which cannot render at all until this invoice
+   * exists) can await it and show the real reason instead of an empty sheet. Mirrors addJob's
+   * { job, persisted }. On the blank/manual path `persisted` resolves { ok: true } immediately —
+   * nothing was promised to the server yet; sendInvoice does that.
+   */
+  addInvoice: (draft: Omit<Invoice, "id" | "num">) => {
+    invoice: Invoice;
+    persisted: Promise<{ ok: boolean; error?: string }>;
+  };
   updateInvoice: (id: string, patch: Partial<Invoice>) => void;
   setInvoiceLines: (id: string, lines: InvoiceLine[]) => void;
   recordPayment: (id: string, payment: Payment) => void;
@@ -136,7 +191,15 @@ export interface InvoicesSlice {
 export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSlice> = (set, get) => ({
   invoices: [],
 
-  setInvoices: (invoices) => set({ invoices }),
+  // Hydrator path: the snapshot is authoritative for which invoices exist and for every field
+  // it carries, but a summary row must not erase the fields it cannot carry (mergeIncomingInvoice).
+  setInvoices: (invoices) =>
+    set((s) => ({
+      invoices: invoices.map((incoming) => {
+        const prior = s.invoices.find((i) => i.id === incoming.id);
+        return prior ? mergeIncomingInvoice(prior, incoming) : incoming;
+      }),
+    })),
 
   // ---------------------------------------------------------------------------
   // adoptInvoice — an invoice the store never hydrated, fetched by id.
@@ -175,16 +238,20 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     };
 
     // 1. Optimistic update.
-    const prior = get().invoices.slice();
     set((s) => ({ invoices: [inv, ...s.invoices] }));
 
     // 2. fromJob path: fire createFromJob when jobId is provided. The client id rides the
     //    input (the use case preserves it for the NEW row), so a fresh create echoes it back
     //    and the ids never split.
-    if (draft.jobId && draft.leadId) {
-      trpcVanilla.v1.invoicing.createFromJob
-        .mutate({ jobId: draft.jobId, id })
-        .then((dto) => {
+    if (!draft.jobId || !draft.leadId) {
+      // Blank path: DB row deferred to sendInvoice. Nothing is in flight, so nothing can fail.
+      return { invoice: inv, persisted: Promise.resolve({ ok: true }) };
+    }
+
+    const persisted = trpcVanilla.v1.invoicing.createFromJob
+      .mutate({ jobId: draft.jobId, id })
+      .then(
+        (dto) => {
           invalidateLists("invoices", "jobs");
           // Reconcile — ADOPT the server id (dto.id). On a fresh create it IS the client id
           // (passed through above). On the idempotent path — the job already had an invoice —
@@ -200,15 +267,23 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
               .filter((i) => i.id !== reconciled.id || i.id === id)
               .map((i) => (i.id === id ? reconciled : i)),
           }));
-        })
-        .catch((err: unknown) => {
-          set({ invoices: prior });
+          return { ok: true };
+        },
+        (err: unknown) => {
+          // Row-level rollback: drop the one row this call added. Restoring a whole-array
+          // snapshot taken before the optimistic write ALSO discarded every invoice the
+          // hydrator landed while this create was in flight — a failed create emptied the
+          // ledger. restoreInv/reconcileInv are per-row for the same reason.
+          set((s) => ({ invoices: s.invoices.filter((i) => i.id !== id) }));
           reportWriteError("addInvoice", err);
-        });
-    }
-    // Blank path: DB row deferred to sendInvoice.
+          return {
+            ok: false,
+            error: userMessage(err, "Couldn't raise the invoice — check your connection and try again."),
+          };
+        },
+      );
 
-    return inv;
+    return { invoice: inv, persisted };
   },
 
   // ---------------------------------------------------------------------------

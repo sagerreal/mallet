@@ -193,8 +193,12 @@ export function TechJobModalContent() {
 
   const openCloseOut = useCallback(() => {
     if (!jobId) return;
-    pushModal(MODAL.CLOSE_OUT, { jobId });
-  }, [jobId, pushModal]);
+    // Pass the invoice id whenever this surface already knows it, so the sheet matches on a
+    // DURABLE id rather than re-deriving the job link — the same belt-and-braces the visit-fee
+    // path uses. The link itself is now durable (invoicing.list carries sourceJobId), so this is
+    // no longer load-bearing; it costs one property and removes the whole class of failure.
+    pushModal(MODAL.CLOSE_OUT, invoice ? { jobId, invoiceId: invoice.id } : { jobId });
+  }, [jobId, invoice, pushModal]);
 
   const openInvoiceModal = useCallback(
     (invoiceId: string) => pushModal(MODAL.INVOICE, { invoiceId }),
@@ -261,7 +265,7 @@ export function TechJobModalContent() {
       // case specifically so this resume path exists). Reuse the same row.
       invoiceId = existingFeeInvoice.id;
     } else {
-      const inv = addInvoice({
+      const { invoice: inv } = addInvoice({
         jobId: null, // manual path — never claims this job's one invoice slot
         leadId: job.leadId,
         cust: custName,
@@ -462,6 +466,8 @@ export function TechJobModalContent() {
           onChargeOnFile={chargeOnFile}
           onSendToOffice={sendToOffice}
           onReopen={onReopen}
+          // Reopen writes a VISIT status; with no placed visit there is nothing for it to move.
+          canReopen={Boolean(curVisit)}
         />
       ) : null}
 
@@ -487,14 +493,11 @@ export function TechJobModalContent() {
                 ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site`
                 : "Completed"}
             </span>
-            {/* Reopen writes visit status (ownerOrOffice) — office only. */}
-            {isOffice && (
-              <button
-                className="btn sm ghost"
-                onClick={() => {
-                  if (curVisit) onVisitStatus(curVisit.id, "scheduled");
-                }}
-              >
+            {/* Reopen writes VISIT status (ownerOrOffice) — office only, and only when there is
+                a placed visit to move. A job completed straight from My Day has none, and this
+                button took the tap and did nothing. */}
+            {isOffice && curVisit && (
+              <button className="btn sm ghost" onClick={() => onVisitStatus(curVisit.id, "scheduled")}>
                 ↩ Reopen
               </button>
             )}
