@@ -3,27 +3,25 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>Elas</title>
+    <title>Mallet</title>
     <style>
       /* Mallet palette, copied from mallet-app/app/prototype.css. System font only —
-         there is no network here, so a webfont would render as nothing. */
+         there is no network here, so a webfont would render as nothing.
+
+         Light-only on purpose, and it must stay that way: the launch storyboard, the
+         splash imageset, capacitor.config ios.backgroundColor and MalletViewController's
+         `paper` are all the literal #FCFBF7 with no dark variant, because Mallet itself is
+         light-only. A prefers-color-scheme: dark override here would be the one dark
+         surface in the shell, so a phone in dark mode would launch cream and then flip to
+         near-black the moment this screen replaced the splash. */
       :root {
+        color-scheme: light;
         --bg: #fcfbf7;
         --ink: #15110b;
         --ink-2: #585d66;
         --line: #eae4d7;
         --pri-bg: #1a1510;
         --pri-fg: #ffffff;
-      }
-      @media (prefers-color-scheme: dark) {
-        :root {
-          --bg: #13110c;
-          --ink: #f3f4f6;
-          --ink-2: #a0a5ae;
-          --line: #332e25;
-          --pri-bg: #f4f5f7;
-          --pri-fg: #111317;
-        }
       }
       * {
         box-sizing: border-box;
@@ -83,7 +81,7 @@
   <body>
     <main>
       <h1>No connection</h1>
-      <p>Elas needs a network connection to load. Check your signal and try again.</p>
+      <p>Mallet needs a network connection to load. Check your signal and try again.</p>
       <a href="https://app.trymallet.com">Try again</a>
     </main>
   </body>

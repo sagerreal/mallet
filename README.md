@@ -29,7 +29,10 @@ document-start, which is scoped to the **webview, not the origin**. So
 
 Two honest limits: Capacitor's own types mark `server.url` *"not intended for use in
 production"*, and App Store review §4.2 rejects pure webview wrappers. Neither matters for a
-device demo; both matter the day this stops being one.
+device demo; both matter the day this stops being one. The §4.2 answer is the native RoomPlan
+scan below — spelled out, in reviewer-reply words, in
+[docs/app-store-submission.md](docs/app-store-submission.md), along with the archive/upload
+commands and every submission-facing setting.
 
 ### Setup
 
@@ -69,7 +72,13 @@ In Xcode: **Signing & Capabilities → Team**, then run on a device.
 - `Info.plist` — portrait only. Capacitor reads orientation from Info.plist and **ignores**
   `app/manifest.ts`; the template allows landscape and the CSS is phone-portrait-first.
 - `Info.plist` — `NSCameraUsageDescription`, added ahead of the RoomPlan work. RoomPlan
-  hard-crashes without it.
+  hard-crashes without it. Three more usage strings (microphone, speech recognition, photo
+  library) and `ITSAppUsesNonExemptEncryption` were added for submission; the audit of what is
+  and isn't reachable — and therefore what must and must not be declared — is in
+  [docs/app-store-submission.md](docs/app-store-submission.md).
+- `TARGETED_DEVICE_FAMILY` — iPhone only (`"1"`, was the template's `"1,2"`). iPad support
+  obliges iPad screenshots and an untested iPad layout in review. Reversible; see the
+  submission doc.
 - `LaunchScreen.storyboard` — background was `systemBackgroundColor`, which renders **black**
   on a phone in dark mode. Now literal `#FCFBF7`. Mallet is light-only (`color-scheme:light`;
   dark is an explicit `[data-theme]` opt-in), so this is correct in every case.
