@@ -27,6 +27,9 @@ import {
 } from "@/lib/store/app-store";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
+import { CardCheckoutStep } from "./close-out-card-step";
+import { dtoInvoiceToStore, type InvoiceDTO } from "@/lib/store/dto-mapper";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import type {
   Invoice,
   InvoiceLine,
@@ -476,36 +479,19 @@ function DueCard({ invoice }: { invoice: Invoice }) {
 }
 
 // ===========================================================================
-//  PAY BLOCK — the on-site Tap-to-Pay sheet (prototype coPayBlock / coPay)
-//  Local pay state machine: method | tap | record | done.
+//  PAY BLOCK — the on-site payment sheet (prototype coPayBlock / coPay)
+//  Local pay state machine: method | card | record | done. The card step is a
+//  REAL Stripe Checkout (QR + link, poll to paid) — see close-out-card-step.tsx.
 // ===========================================================================
 
-// Contactless ring icon (prototype ICON_CONTACTLESS, 5547).
-const ICON_CONTACTLESS = (
-  <svg
-    width="44"
-    height="44"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2.1"
-    strokeLinecap="round"
-  >
-    <path d="M8.6 16.5a6 6 0 000-9M12 19a10 10 0 000-14M15.4 21a14 14 0 000-18" />
-  </svg>
-);
-
 type PayMethod = "card" | "cash" | "check" | "ach";
-type PayStep = "method" | "tap" | "record" | "done";
+type PayStep = "method" | "card" | "record" | "done";
 
 interface PayState {
   step: PayStep;
   method?: PayMethod;
   amt: number;
-  save: boolean;
   onFile?: boolean;
-  last4?: string;
-  saved?: boolean;
 }
 
 interface PayBlockProps {
@@ -515,8 +501,11 @@ interface PayBlockProps {
     amt: number;
     method: PayMethod;
     onFile: boolean;
-    save: boolean;
   }) => void;
+  /** The store's sendInvoice — the card step must SEND a draft before minting. */
+  sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  /** The card step's poll saw paid/partial — the parent adopts the fresh DTO. */
+  onCardPaid: (dto: InvoiceDTO) => void;
   onFinish: () => void;
   onCancel: () => void;
 }
@@ -527,10 +516,18 @@ function clampAmt(amt: number, due: number): number {
   return a;
 }
 
-function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProps) {
+function PayBlock({
+  invoice,
+  lead,
+  onApprove,
+  sendInvoice,
+  onCardPaid,
+  onFinish,
+  onCancel,
+}: PayBlockProps) {
   const due = invDue(invoice);
   const card = custCard(lead);
-  const [p, setP] = useState<PayState>({ step: "method", amt: due, save: !card });
+  const [p, setP] = useState<PayState>({ step: "method", amt: due });
   const [chk, setChk] = useState("");
 
   const amtIn = (
@@ -556,60 +553,34 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
   // ---- charge card on file → record immediately, jump to done (coPay 'onfile') ---
   function chargeOnFile() {
     const amt = clampAmt(p.amt, due);
-    onApprove({ amt, method: "card", onFile: true, save: false });
-    setP({ step: "done", method: "card", amt, last4: card?.last4 ?? "4242", onFile: true, save: false });
+    onApprove({ amt, method: "card", onFile: true });
+    setP({ step: "done", method: "card", amt, onFile: true });
   }
 
-  // ---- approve tap / recorded payment (coPay 'approve') ----------------------
+  // ---- record a payment taken outside the app (coPay 'approve') --------------
   function approve() {
     const amt = clampAmt(p.amt, due);
-    const method = p.method ?? "card";
-    const saveCard = method === "card" && !!p.save && !!lead && !lead.card;
-    onApprove({ amt, method, onFile: false, save: saveCard });
-    setP({ step: "done", method, amt, last4: "4242", saved: saveCard, save: p.save });
+    const method = p.method ?? "cash";
+    onApprove({ amt, method, onFile: false });
+    setP({ step: "done", method, amt });
   }
 
-  // step: tap ----------------------------------------------------------------
-  if (p.step === "tap") {
+  // step: card — a REAL Stripe Checkout as a QR (the simulated tap is gone) ----
+  if (p.step === "card") {
     return (
-      <div className="cotap">
-        <div className="cotap-amt fig">{fmt$(p.amt || due)}</div>
-        <div className="cotap-ring">{ICON_CONTACTLESS}</div>
-        <div className="cotap-msg">
-          Hold the customer&rsquo;s card or phone
-          <br />
-          to the back of your device
-        </div>
-        <div className="cotap-sub">Tap to Pay · powered by Stripe</div>
-        {!card ? (
-          <label
-            style={{
-              display: "flex",
-              gap: "var(--space-2)",
-              alignItems: "center",
-              justifyContent: "center",
-              marginTop: "var(--space-3)",
-              fontSize: "var(--type-base)",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={!!p.save}
-              onChange={() => setP((s) => ({ ...s, save: !s.save }))}
-            />{" "}
-            Save card on file — charge the balance &amp; next visit in one tap
-          </label>
-        ) : null}
-        <div style={{ display: "flex", gap: "var(--space-2)", justifyContent: "center", marginTop: "var(--space-4)" }}>
-          <button className="btn" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn primary" onClick={approve}>
-            Simulate tap →
-          </button>
-        </div>
-      </div>
+      <CardCheckoutStep
+        invoice={invoice}
+        amount={due}
+        sendInvoice={sendInvoice}
+        onPaid={(dto) => {
+          // The webhook already recorded the money; adopt the fresh DTO (no
+          // recordPayment double-write) and land on the existing done step.
+          onCardPaid(dto);
+          setP({ step: "done", method: "card", amt: due });
+        }}
+        onRecordInstead={() => setP({ step: "record", method: "cash", amt: due })}
+        onCancel={onCancel}
+      />
     );
   }
 
@@ -653,7 +624,7 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
     const detail = p.onFile
       ? `${card ? card.brand + " ···· " + card.last4 : "Card"} on file`
       : p.method === "card"
-      ? `Visa ···· ${p.last4 || "4242"} · Tap to Pay`
+      ? "Card · Stripe checkout"
       : p.method === "ach"
       ? "Bank transfer"
       : p.method === "check"
@@ -667,7 +638,6 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
         <div className="cotap-sub">
           {detail}
           {nowDue > 0 ? ` · ${fmt$(nowDue)} still due` : " · paid in full"}
-          {p.saved ? " · card saved on file ✓" : ""}
         </div>
         <div
           style={{
@@ -715,10 +685,10 @@ function PayBlock({ invoice, lead, onApprove, onFinish, onCancel }: PayBlockProp
         ) : null}
         <button
           className={`btn ${card ? "" : "primary"} copay-tap`}
-          onClick={() => setP((s) => ({ ...s, step: "tap", method: "card" }))}
+          onClick={() => setP((s) => ({ ...s, step: "card", method: "card" }))}
         >
-          <b>Tap to Pay</b>
-          <span>card or phone · contactless</span>
+          <b>Card</b>
+          <span>scan to pay · Stripe checkout</span>
         </button>
         <button
           className="btn"
@@ -887,6 +857,7 @@ export function CloseOutModalContent() {
   const pricebook = useAppStore((s) => s.services);
 
   const addInvoice = useAppStore((s) => s.addInvoice);
+  const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const setInvoiceLines = useAppStore((s) => s.setInvoiceLines);
   const updateJob = useAppStore((s) => s.updateJob);
   const setJobLines = useAppStore((s) => s.setJobLines);
@@ -1000,17 +971,15 @@ export function CloseOutModalContent() {
     setInvoiceLines(invoice.id, [...(invoice.lines ?? []), ...newLines]);
   }
 
-  // ---- take a payment (coPay approve/onfile) --------------------------------
+  // ---- record a payment taken outside the app (coPay approve/onfile) --------
   function approvePayment({
     amt,
     method,
     onFile,
-    save,
   }: {
     amt: number;
     method: PayMethod;
     onFile: boolean;
-    save: boolean;
   }) {
     if (!invoice) return;
     recordPayment(invoice.id, { amt, when: "Just now", method, onFile });
@@ -1018,6 +987,16 @@ export function CloseOutModalContent() {
     // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
     // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
     if (invoice.status === "draft") sendInvoice(invoice.id);
+  }
+
+  // ---- card checkout paid (the card step's poll saw paid/partial) ------------
+  // The Stripe webhook already RECORDED the payment server-side; adopting the
+  // fresh DTO (local id kept stable, mirroring the slice's reconcile convention)
+  // flips DueCard/status immediately — no recordPayment double-write.
+  function cardPaid(dto: InvoiceDTO) {
+    if (!invoice) return;
+    invalidateLists("invoices", "jobs");
+    adoptInvoice({ ...dtoInvoiceToStore(dto, invoice), id: invoice.id });
   }
 
   // ---- send to office (sendForInvoicing) ------------------------------------
@@ -1097,7 +1076,7 @@ export function CloseOutModalContent() {
       {/* Due summary card — the money side. */}
       <DueCard invoice={invoice} />
 
-      {/* Pay block — its steps carry their own buttons (Simulate tap, Record,
+      {/* Pay block — its steps carry their own buttons (the card checkout, Record,
           Done), so while it is open it renders in-flow and the foot is skipped. */}
       {payOpen ? (
         <div style={{ marginTop: "var(--space-3)" }}>
@@ -1105,6 +1084,8 @@ export function CloseOutModalContent() {
             invoice={invoice}
             lead={lead}
             onApprove={approvePayment}
+            sendInvoice={sendInvoice}
+            onCardPaid={cardPaid}
             onFinish={() => {
               setPayOpen(false);
               close();
