@@ -909,15 +909,28 @@ export function CloseOutModalContent() {
 
   const lead = leads.find((l) => l.id === job?.leadId);
 
+  // The visit-fee flow (tech-job-modal.tsx's collectVisitFee) already raised a LEAD-tied
+  // manual invoice before pushing this modal, and passes its id — that invoice's jobId is NOT
+  // reliable (the server never stamps sourceJobId on a manual invoice, so the async draft/send
+  // reconcile wipes any local jobId hint back to null). Matching by id when provided is the
+  // durable way to find it regardless of that flap.
+  const invoiceIdParam = activeModal?.params?.invoiceId as string | undefined;
+
   // ---- ensureInvoiceForJob (prototype) — find the job's invoice, else create
   //      one from the job. Creation runs in an effect (never mutate the store
   //      during render); a ref guards against a duplicate before the new invoice
   //      shows up in `invoices`. Until it exists we render nothing (one frame). --
-  const invoice = job ? invoices.find((i) => i.jobId === job.id) : undefined;
+  const invoice = job
+    ? invoices.find((i) => (invoiceIdParam ? i.id === invoiceIdParam : i.jobId === job.id))
+    : undefined;
   const creatingRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!job || invoice) return;
+    // The visit-fee flow already raised (or is still raising) this job's invoice — never race
+    // it with createFromJob, which would CONFLICT outright on a genuinely unpriced estimate
+    // and, even when it wouldn't, would mint a SECOND invoice fighting the lead-tied one.
+    if (invoiceIdParam) return;
     if (creatingRef.current === job.id) return;
     creatingRef.current = job.id;
     addInvoice({
@@ -934,7 +947,7 @@ export function CloseOutModalContent() {
       age: 0,
       archived: false,
     });
-  }, [job, invoice, lead, addInvoice]);
+  }, [job, invoice, lead, addInvoice, invoiceIdParam]);
 
   // The org's real visit fee for BillAsk's "+ Service / diagnostic fee" preset — read outside
   // the store (this modal's only entry, the tech job modal, lives in the field shell, which

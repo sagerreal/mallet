@@ -39,9 +39,11 @@ const mockOpenModal = vi.fn();
 const mockUpdateJob = vi.fn();
 const mockSetVisitStatus = vi.fn();
 const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
-const mockSetJobLines = vi.fn(() => Promise.resolve({ ok: true }));
 const mockAddInvoice = vi.fn(() => ({ id: "inv-fee-1", num: "INV-900" }));
-const mockSendInvoice = vi.fn();
+const mockUpdateInvoice = vi.fn();
+const mockSendInvoice = vi.fn(
+  (): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
+);
 
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
@@ -63,8 +65,8 @@ vi.mock("@/lib/store/app-store", () => ({
       overrideVerifyItem: noop,
       uncheckVerifyItem: noop,
       addJobPhoto: noop,
-      setJobLines: mockSetJobLines,
       addInvoice: mockAddInvoice,
+      updateInvoice: mockUpdateInvoice,
       sendInvoice: mockSendInvoice,
       // Quote tab (estimating part 3) selectors.
       services: [],
@@ -146,8 +148,8 @@ beforeEach(() => {
   mockUpdateJob.mockReset();
   mockUpdateJob.mockResolvedValue({ ok: true });
   mockSetVisitStatus.mockReset();
-  mockSetJobLines.mockClear();
   mockAddInvoice.mockClear();
+  mockUpdateInvoice.mockClear();
   mockSendInvoice.mockClear();
 });
 
@@ -621,9 +623,12 @@ describe("TechJobModalContent — done estimate is a scope handoff, never billin
 });
 
 // ---------------------------------------------------------------------------
-// Task 5: a declined estimate visit can collect the org's real visit fee. The fee is read
-// outside the store (the field shell never hydrates settings — mocked via
-// use-org-service-fee above) and the button never blocks the quiet scope handoff.
+// Task 5 (rebuilt after review): a declined estimate visit can collect the org's real visit
+// fee, raised as a LEAD-tied MANUAL invoice — never job-tied (invoices.source_job_id carries a
+// partial unique index, one active invoice per job; a job-tied fee invoice would permanently
+// claim that slot). The fee is read outside the store (the field shell never hydrates
+// settings — mocked via use-org-service-fee above) and the button never blocks the quiet
+// scope handoff. job.lines is never touched by this flow.
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — collecting the visit fee on a declined estimate", () => {
@@ -655,14 +660,50 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
   });
 
-  it("owner: hides the fee button once a fee invoice already exists for this job", () => {
+  it("owner: hides the fee button once a fee invoice already exists for this lead", () => {
     mockRole = "owner";
     mockJobs = [doneEstimate()];
     mockInvoices = [
-      { id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "", title: "x", lines: [], total: 89, depPaid: 0, payments: [], status: "sent", age: 0, archived: false } as unknown as Invoice,
+      {
+        id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [], total: 89, depPaid: 0, payments: [],
+        status: "sent", age: 0, archived: false,
+      } as unknown as Invoice,
     ];
     render(<TechJobModalContent />);
     expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
+  });
+
+  // The durable shape: after a reload, the invoices hydrator reconstructs the record from the
+  // server DTO, which never carries sourceJobId for a manual invoice — jobId reads back null.
+  // The guard must still hold on title + leadId alone.
+  it("owner: hides the fee button from hydrator-shaped state (jobId null, title + leadId present)", () => {
+    mockRole = "owner";
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [{ d: "Visit fee — service call", q: 1, r: 89 }],
+        total: 89, depPaid: 0, payments: [], status: "sent", age: 3, archived: false,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
+  });
+
+  it("owner: does NOT hide the button for a void/archived fee invoice on this lead", () => {
+    mockRole = "owner";
+    mockOrgFee = 89;
+    mockJobs = [doneEstimate()];
+    mockInvoices = [
+      {
+        id: "inv-1", num: "INV-1", jobId: null, leadId: "lead-1", cust: "Dana", phone: "",
+        title: "Visit fee — service call", lines: [], total: 89, depPaid: 0, payments: [],
+        status: "void", age: 3, archived: true,
+      } as unknown as Invoice,
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
   });
 
   it("owner: hides the fee button when the org fee is 0/unset", () => {
@@ -673,7 +714,7 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     expect(screen.queryByText(/Collect the visit fee/)).toBeNull();
   });
 
-  it("owner: tapping the fee button prices the job, raises + sends the invoice, and opens close-out", async () => {
+  it("owner: tapping the fee button raises + sends a LEAD-tied manual invoice, then opens close-out with its id", async () => {
     mockRole = "owner";
     mockOrgFee = 89;
     mockJobs = [doneEstimate()];
@@ -681,20 +722,14 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
 
     fireEvent.click(screen.getByText("Collect the visit fee — $89"));
 
-    // The fee lands on the job's OWN lines first — createFromJob refuses to bill a genuinely
-    // unpriced estimate outright, so the job must carry a priced line before an invoice can be
-    // raised from it (mirrors close-out's commitBill).
-    await vi.waitFor(() => {
-      expect(mockSetJobLines).toHaveBeenCalledWith("job-1", [
-        { d: "Visit fee — service call", q: 1, r: 89 },
-      ]);
-    });
-
+    // jobId: null keeps this OFF the fromJob/createFromJob path entirely — never claims the
+    // job's one invoice slot, never touches job.lines.
     await vi.waitFor(() => {
       expect(mockAddInvoice).toHaveBeenCalledWith(
         expect.objectContaining({
-          jobId: "job-1",
+          jobId: null,
           leadId: "lead-1",
+          title: "Visit fee — service call",
           lines: [{ d: "Visit fee — service call", q: 1, r: 89 }],
           total: 89,
           status: "draft",
@@ -702,30 +737,51 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
       );
     });
 
+    // Best-effort local jobId hint for same-session lookups (see close-out's invoiceId param
+    // below for the durable mechanism — this one gets wiped by the server reconcile).
+    await vi.waitFor(() => {
+      expect(mockUpdateInvoice).toHaveBeenCalledWith("inv-fee-1", { jobId: "job-1" });
+    });
+
     await vi.waitFor(() => {
       expect(mockSendInvoice).toHaveBeenCalledWith("inv-fee-1");
     });
 
+    // Never pushes CLOSE_OUT until the send resolved — the invoiceId is passed through so
+    // close-out doesn't have to rely on the (unreliable) local jobId hint.
     await vi.waitFor(() => {
-      expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1" });
+      expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-fee-1" });
     });
   });
 
-  it("owner: surfaces an error and does not send when setJobLines rejects", async () => {
+  it("owner: surfaces an error and never opens close-out when the send fails", async () => {
     mockRole = "owner";
     mockOrgFee = 89;
     mockJobs = [doneEstimate()];
-    mockSetJobLines.mockResolvedValueOnce({ ok: false });
+    mockSendInvoice.mockResolvedValueOnce({ ok: false, error: "network down" });
+    render(<TechJobModalContent />);
+
+    fireEvent.click(screen.getByText("Collect the visit fee — $89"));
+
+    expect(await screen.findByText("network down")).toBeTruthy();
+    expect(mockOpenModal).not.toHaveBeenCalledWith(
+      MODAL.CLOSE_OUT,
+      expect.objectContaining({ jobId: "job-1" }),
+    );
+  });
+
+  it("owner: falls back to functional copy when the send fails without a server message", async () => {
+    mockRole = "owner";
+    mockOrgFee = 89;
+    mockJobs = [doneEstimate()];
+    mockSendInvoice.mockResolvedValueOnce({ ok: false });
     render(<TechJobModalContent />);
 
     fireEvent.click(screen.getByText("Collect the visit fee — $89"));
 
     expect(
-      await screen.findByText("Couldn't collect the fee — check your connection and try again."),
+      await screen.findByText("Couldn't send the fee invoice — check your connection and try again."),
     ).toBeTruthy();
-    expect(mockAddInvoice).not.toHaveBeenCalled();
-    expect(mockSendInvoice).not.toHaveBeenCalled();
-    expect(mockOpenModal).not.toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1" });
   });
 });
 

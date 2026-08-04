@@ -109,7 +109,13 @@ export interface InvoicesSlice {
   updateInvoice: (id: string, patch: Partial<Invoice>) => void;
   setInvoiceLines: (id: string, lines: InvoiceLine[]) => void;
   recordPayment: (id: string, payment: Payment) => void;
-  sendInvoice: (id: string) => void;
+  /**
+   * Resolves { ok, error } once the send genuinely completes (never rejects) so a caller that
+   * must not proceed until the invoice is actually sent (e.g. opening a payment sheet on it)
+   * can await it. Existing fire-and-forget callers are unaffected — the resolved value is
+   * optional to consume. Mirrors setJobLines/setVisitNotes's Promise<{ok, error?}> convention.
+   */
+  sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
   archiveInvoice: (id: string) => void;
 }
 
@@ -339,17 +345,17 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       ),
     }));
 
-    if (!inv) return;
+    if (!inv) return Promise.resolve({ ok: false, error: "invoice not found" });
 
     if (inv.origin !== "db") {
       // "manual" path: must draft first, then send.
       // v1.invoicing.draft requires lines >= 1.
       if (!inv.lines.length || !inv.leadId) {
         // Can't draft without lines or leadId — stay store-local.
-        return;
+        return Promise.resolve({ ok: false, error: "an invoice needs at least one line" });
       }
 
-      trpcVanilla.v1.invoicing.draft
+      return trpcVanilla.v1.invoicing.draft
         .mutate({
           id: inv.id,
           leadId: inv.leadId,
@@ -376,26 +382,29 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
           const reconciled = dtoInvoiceToStore(sendDto, currentInv);
           set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+          return { ok: true };
         })
         .catch((err: unknown) => {
           if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
           reportWriteError("sendInvoice", err);
+          return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the invoice." };
         });
-      return;
     }
 
     // "db" path: send directly.
-    trpcVanilla.v1.invoicing.send
+    return trpcVanilla.v1.invoicing.send
       .mutate({ invoiceId: id })
       .then((dto) => {
         invalidateLists("invoices", "jobs");
         const currentInv = get().invoices.find((i) => i.id === id) ?? inv;
         const reconciled = dtoInvoiceToStore(dto, currentInv);
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+        return { ok: true };
       })
       .catch((err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
         reportWriteError("sendInvoice", err);
+        return { ok: false, error: err instanceof Error ? err.message : "Couldn't send the invoice." };
       });
   },
 

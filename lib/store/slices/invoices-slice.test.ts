@@ -22,6 +22,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const updateMetadataMutate = vi.fn();
 const patchLinesMutate = vi.fn();
 const voidMutate = vi.fn();
+const createFromJobMutate = vi.fn();
+const draftMutate = vi.fn();
+const sendMutate = vi.fn();
 
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: {
@@ -29,9 +32,9 @@ vi.mock("@/lib/trpc/vanilla", () => ({
       invoicing: {
         updateMetadata: { mutate: (...a: unknown[]) => updateMetadataMutate(...a) },
         patchLines: { mutate: (...a: unknown[]) => patchLinesMutate(...a) },
-        createFromJob: { mutate: vi.fn() },
-        draft: { mutate: vi.fn() },
-        send: { mutate: vi.fn() },
+        createFromJob: { mutate: (...a: unknown[]) => createFromJobMutate(...a) },
+        draft: { mutate: (...a: unknown[]) => draftMutate(...a) },
+        send: { mutate: (...a: unknown[]) => sendMutate(...a) },
         recordPayment: { mutate: vi.fn() },
         void: { mutate: (...a: unknown[]) => voidMutate(...a) },
       },
@@ -77,8 +80,13 @@ function makeSlice(): { readonly state: InvoicesSlice; seed: (i: Invoice[]) => v
 const dbDto = (over: Record<string, unknown> = {}) => ({
   id: "inv-1", num: "INV-800", sourceJobId: null, leadId: "lead-1", title: "Deck",
   status: "draft", total: { cents: 100_000, currency: "USD" },
+  // taxBps/tax: previously absent — harmless for tests that only assert the SYNCHRONOUS
+  // optimistic state, but sendInvoice's tests below await the full reconcile, which reads
+  // dto.tax.cents/dto.taxBps unconditionally (dto-mapper.ts:549-550) and threw without these.
+  taxBps: 0, tax: { cents: 0, currency: "USD" },
   depositPaid: { cents: 0, currency: "USD" }, amountPaid: { cents: 0, currency: "USD" },
   due: { cents: 100_000, currency: "USD" }, termsDays: 7, lines: [], payments: [],
+  followUpOn: false, followUpStage: 0,
   sentAt: null, dueAt: null, createdAt: new Date().toISOString(), ...over,
 });
 
@@ -236,5 +244,97 @@ describe("archiveInvoice persistence", () => {
     expect(s.state.invoices.find((i) => i.id === "inv-1")?.archived).toBe(true); // optimistic
     await Promise.resolve(); await Promise.resolve();
     expect(s.state.invoices.find((i) => i.id === "inv-1")?.archived).toBe(false); // reverted
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sendInvoice — the manual (lead-tied) path. Task 5's visit-fee invoice rides exactly this
+// path (addInvoice with jobId: null, then sendInvoice) SPECIFICALLY so it never touches
+// createFromJob — that use-case (a) refuses an unpriced estimate outright and (b) would claim
+// the job's one invoice slot via source_job_id's partial unique index. Both must never fire
+// here, for any manual invoice, regardless of whether it happens to be visit-fee shaped.
+// ---------------------------------------------------------------------------
+
+describe("sendInvoice — manual (lead-tied) invoice: exactly one server create, no createFromJob", () => {
+  beforeEach(() => {
+    draftMutate.mockReset();
+    sendMutate.mockReset();
+    createFromJobMutate.mockReset();
+  });
+
+  it("resolves ok:true, calls draft then send exactly once each, and NEVER calls createFromJob", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1",
+        origin: "manual",
+        jobId: null,
+        leadId: "lead-1",
+        title: "Visit fee — service call",
+        lines: [{ d: "Visit fee — service call", q: 1, r: 89 }],
+        total: 89,
+        status: "draft",
+      }),
+    ]);
+
+    const result = await s.state.sendInvoice("inv-1");
+
+    expect(result).toEqual({ ok: true });
+    expect(draftMutate).toHaveBeenCalledTimes(1); // exactly one server create
+    expect(sendMutate).toHaveBeenCalledTimes(1);
+    expect(createFromJobMutate).not.toHaveBeenCalled(); // never — this is the Critical it fixes
+
+    const draftCall = draftMutate.mock.calls[0]?.[0] as { leadId: string; title?: string; lines: unknown[] };
+    expect(draftCall.leadId).toBe("lead-1");
+    expect(draftCall.title).toBe("Visit fee — service call");
+    expect(draftCall.lines).toHaveLength(1);
+  });
+
+  it("resolves ok:false with the server's error when draft rejects, and never calls send or createFromJob", async () => {
+    draftMutate.mockRejectedValue(new Error("network down"));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1",
+        title: "Visit fee — service call", lines: [{ d: "x", q: 1, r: 89 }], total: 89, status: "draft",
+      }),
+    ]);
+
+    const result = await s.state.sendInvoice("inv-1");
+
+    expect(result.ok).toBe(false);
+    expect(result.error).toBe("network down");
+    expect(sendMutate).not.toHaveBeenCalled();
+    expect(createFromJobMutate).not.toHaveBeenCalled();
+    // Optimistic status flip rolled back — the invoice never silently reads "sent".
+    expect(s.state.invoices[0]?.status).toBe("draft");
+  });
+
+  it("resolves ok:false when send rejects after a successful draft", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    sendMutate.mockRejectedValue(new Error("send failed"));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1",
+        title: "Visit fee — service call", lines: [{ d: "x", q: 1, r: 89 }], total: 89, status: "draft",
+      }),
+    ]);
+
+    const result = await s.state.sendInvoice("inv-1");
+
+    expect(result.ok).toBe(false);
+    expect(createFromJobMutate).not.toHaveBeenCalled();
+  });
+
+  it("a db-origin invoice's send still resolves ok:true (signature change is additive)", async () => {
+    sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "db", status: "draft" })]);
+    const result = await s.state.sendInvoice("inv-1");
+    expect(result).toEqual({ ok: true });
+    expect(createFromJobMutate).not.toHaveBeenCalled();
   });
 });

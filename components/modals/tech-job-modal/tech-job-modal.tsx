@@ -39,6 +39,7 @@ import {
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
+import { VISIT_FEE_TITLE } from "@/features/invoices/visit-fee";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
@@ -115,12 +116,28 @@ export function TechJobModalContent() {
   const overrideVerifyItem = useAppStore((s) => s.overrideVerifyItem);
   const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
   const addJobPhoto = useAppStore((s) => s.addJobPhoto);
-  // Visit-fee collection (Task 5): setJobLines prices the job FIRST — createFromJob refuses
-  // to bill a genuinely unpriced estimate outright (see CreateInvoiceFromJobUseCase) — then
-  // addInvoice + sendInvoice raise and send the fee invoice. Mirrors close-out's commitBill.
-  const setJobLines = useAppStore((s) => s.setJobLines);
+  // Visit-fee collection (Task 5, rebuilt after review): the fee is a LEAD-tied MANUAL invoice
+  // (addInvoice with jobId: null + sendInvoice) — never job-tied. invoices.source_job_id
+  // carries a partial unique index (one active invoice per job); a job-tied fee invoice would
+  // permanently claim that slot, so a later quote-accept converting this same job could never
+  // raise its real bill (createFromJob's idempotent findBySourceJob would just hand back the
+  // $89 fee draft forever). job.lines is never touched by this flow.
   const addInvoice = useAppStore((s) => s.addInvoice);
+  const updateInvoice = useAppStore((s) => s.updateInvoice);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
+  // Durable re-collection guard: any non-archived invoice for THIS LEAD titled VISIT_FEE_TITLE.
+  // Title + leadId survive reload (both come through the invoices hydrator); jobId does not —
+  // the server never stamps sourceJobId on a manual invoice, so it's checked only when the
+  // local record still happens to carry it (see the local patch in collectVisitFee below).
+  const hasFeeInvoice = useAppStore((s) =>
+    s.invoices.some(
+      (i) =>
+        i.leadId === leadId &&
+        i.title === VISIT_FEE_TITLE &&
+        !i.archived &&
+        (i.jobId == null || i.jobId === jobId),
+    ),
+  );
 
   // Derived values computed after all hooks (never inside selectors to avoid
   // creating new object references on every store write).
@@ -193,30 +210,26 @@ export function TechJobModalContent() {
     if (curVisit) onVisitStatus(curVisit.id, "scheduled");
   }, [curVisit, onVisitStatus]);
 
-  // Collect the org's visit fee on a declined estimate visit (Task 5). The fee becomes a real
-  // priced line on THIS job first — that's what lets createFromJob raise an invoice from it at
-  // all (an unpriced estimate is refused outright) — then the invoice is raised + sent, and the
-  // close-out sheet takes over collection (DueCard/PayBlock already handle a sent invoice).
+  // Collect the org's visit fee on a declined estimate visit (Task 5, rebuilt after review).
+  // Raised as a LEAD-tied MANUAL invoice — addInvoice with jobId: null keeps it off the
+  // fromJob/createFromJob path entirely (that path is also refused outright for a genuinely
+  // unpriced estimate — see CreateInvoiceFromJobUseCase — and, worse, claims the job's one
+  // invoice slot via source_job_id's partial unique index). job.lines is never touched. Does
+  // NOT open the close-out sheet until the send has genuinely completed — a failed send must
+  // never leave the tech staring at a dead/empty payment sheet.
   const collectVisitFee = useCallback(async () => {
     if (!job || !jobId || feeBusy) return;
     const fee = orgServiceFee ?? 0;
     if (fee <= 0) return; // no $0 fee collection — mirrors the button's own render guard
     setFeeError(null);
     setFeeBusy(true);
-    const feeLine = { d: "Visit fee — service call", q: 1, r: fee };
-    const { ok } = await setJobLines(jobId, [...(job.lines ?? []), feeLine]);
-    if (!ok) {
-      setFeeError("Couldn't collect the fee — check your connection and try again.");
-      setFeeBusy(false);
-      return;
-    }
     const inv = addInvoice({
-      jobId,
+      jobId: null, // manual path — never claims this job's one invoice slot
       leadId: job.leadId,
       cust: custName,
       phone: job.phone || lead?.phone || "",
-      title: job.title,
-      lines: [feeLine],
+      title: VISIT_FEE_TITLE,
+      lines: [{ d: VISIT_FEE_TITLE, q: 1, r: fee }],
       total: fee,
       depPaid: 0,
       payments: [],
@@ -224,10 +237,19 @@ export function TechJobModalContent() {
       age: 0,
       archived: false,
     });
-    sendInvoice(inv.id);
+    // Best-effort local hint for the guard above and for close-out's invoice lookup during
+    // THIS session — the send below's server reconcile will overwrite it back to null (the
+    // domain never sets sourceJobId on a manual invoice), so it is never the durable signal;
+    // the invoiceId passed to CLOSE_OUT below is what close-out actually relies on.
+    updateInvoice(inv.id, { jobId });
+    const { ok, error } = await sendInvoice(inv.id);
     setFeeBusy(false);
-    pushModal(MODAL.CLOSE_OUT, { jobId });
-  }, [job, jobId, lead, custName, orgServiceFee, feeBusy, setJobLines, addInvoice, sendInvoice, pushModal]);
+    if (!ok) {
+      setFeeError(error || "Couldn't send the fee invoice — check your connection and try again.");
+      return;
+    }
+    pushModal(MODAL.CLOSE_OUT, { jobId, invoiceId: inv.id });
+  }, [job, jobId, lead, custName, orgServiceFee, feeBusy, addInvoice, updateInvoice, sendInvoice, pushModal]);
 
   const navigate = useCallback(() => {
     // maps deep-link — open the address in the device's maps app.
@@ -367,11 +389,11 @@ export function TechJobModalContent() {
         <ScopeHandoffBlock
           scoped={hasScope}
           onOpenQuoteTab={() => setTab("quote")}
-          // Office-only: billing writes (setJobLines/createFromJob/send) are ownerOrOffice
+          // Office-only: billing writes (addInvoice's manual draft/send) are ownerOrOffice
           // server-side, so a tech would only get FORBIDDEN — feeAmount 0 hides the button for
           // them, the same guard that hides it while the fee is unset/loading.
           feeAmount={isOffice ? (orgServiceFee ?? 0) : 0}
-          hasFeeInvoice={Boolean(invoice)}
+          hasFeeInvoice={hasFeeInvoice}
           onCollectFee={collectVisitFee}
           feeError={feeError}
         />
