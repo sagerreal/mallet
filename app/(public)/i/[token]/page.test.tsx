@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
 
 const getPublicInvoiceMock = vi.fn();
@@ -228,5 +229,35 @@ describe("PublicInvoicePage — a document of record, not a pay page", () => {
     await renderPage();
     expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
     expect(screen.queryByText(/Service Aug/)).toBeNull();
+  });
+});
+
+describe("PublicInvoicePage — keepable, not just payable", () => {
+  it("offers Print or save as PDF, and it actually prints", async () => {
+    // No dead buttons: the browser's own dialog is where "Save as PDF" lives, so this one call
+    // covers both verbs. Owen's ask was that the document be keepable.
+    const print = vi.fn();
+    vi.stubGlobal("print", print);
+    getPublicInvoiceMock.mockResolvedValue(view());
+    await renderPage();
+
+    const button = screen.getByRole("button", { name: "Print or save as PDF" });
+    await userEvent.click(button);
+    expect(print).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("marks the control itself and our own footer as .noprint", async () => {
+    // The printed page must be the document alone. The rules that act on these live in
+    // app/prototype.css under @media print, which jsdom does not apply — so what is asserted
+    // here is the WIRING: that the two things which must not print carry the class that hides
+    // them, and that the document body does not.
+    getPublicInvoiceMock.mockResolvedValue(view());
+    await renderPage();
+
+    const button = screen.getByRole("button", { name: "Print or save as PDF" });
+    expect(button.parentElement?.className).toContain("noprint");
+    expect(screen.getByText("Powered by Mallet").className).toContain("noprint");
+    expect(screen.getByText("Labor").closest(".noprint")).toBeNull();
   });
 });

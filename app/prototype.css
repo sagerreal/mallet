@@ -1427,6 +1427,14 @@
   .colchk{display:inline-flex;align-items:center;gap:var(--space-2);border:1.5px solid var(--line);border-radius:var(--radius-xl);padding:var(--space-1) var(--space-3);font-size:var(--type-sm);font-weight:600;color:var(--ink-2);cursor:pointer;background:var(--card)}
   .colchk input{accent-color:var(--green-600)}
   .pbpanel{position:relative;display:flex;flex-wrap:wrap;gap:var(--space-2);background:var(--green-50);border:1px solid color-mix(in srgb,var(--accent) 28%,var(--line));border-radius:var(--radius);padding:var(--space-3);margin-top:var(--space-3)}
+  /* ---------- public invoice document (/i/<token>) ----------
+     The page shell and the card that holds the customer's copy of a bill. These are CLASSES and
+     not inline styles for one reason: `@media print` below has to reach them, and an inline style
+     wins against any stylesheet rule short of !important — which stylelint's token allow-list
+     refuses for border-radius. Values are the ones the page carried inline (16px == --radius-lg). */
+  .invpage{min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:0 0 var(--space-10)}
+  .invcard{width:100%;max-width:520px;background:var(--card);border:1px solid var(--line);border-radius:0 0 var(--radius-lg) var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)}
+
   /* ---------- customer quote page ---------- */
   .custmodal{max-width:470px;padding:0;overflow:hidden}
   .custhead{background:var(--green-900);color:#fff;padding:var(--space-6) var(--space-6) var(--space-5);display:flex;align-items:center;gap:var(--space-3)}
@@ -2603,3 +2611,42 @@
   .tracer-edge-key{display:inline-flex;align-items:center;gap:var(--space-1);font-size:var(--type-sm);color:var(--ink-2);white-space:nowrap}
   .tracer-edge-key .swatch{display:inline-block;width:var(--space-4);height:4px;border-radius:var(--radius-2xs);flex:none;box-shadow:inset 0 0 0 1px var(--line)} /* hairline so the white EAVE swatch reads on the light bar */
   .tracer-bar .tracer-edge-key .fig{font-size:var(--type-sm);color:var(--ink)}
+
+  /* ============================================================
+     PRINT — the customer's invoice, on paper.
+
+     Owen's ask was that the document be keepable, not just payable, so /i/<token> carries a
+     "Print or save as PDF" control. What comes out of it has to be the DOCUMENT and nothing
+     else: no button a customer can press on paper, no "Powered by Mallet", no page chrome, and
+     above all no URL in a running header — that URL contains the invoice's 256-bit bearer token,
+     and a bill pinned to a fridge or filed with an insurer would be handing it out.
+
+     `@page { margin: 0 }` is the whole mechanism for that last point: with no page margin there
+     is nowhere for the browser to draw its own URL/date/page-number header, so Chrome and Safari
+     omit them. The paper inset comes from .invcard's own padding instead. (The print dialog's
+     "Headers and footers" checkbox is still the reader's to tick — no stylesheet can take that
+     away; this makes OFF the default they see.)
+
+     Colour resolves to ink on paper across the whole card. The branded header is white text on a
+     near-black fill on screen, and browsers drop backgrounds when printing — left alone it would
+     print the shop's own name white-on-white. ============================================================ */
+  @media print{
+    @page{margin:0}
+    html,body{background:#fff;color:#000}
+    /* Everything that is an ACTION or our own branding, not the bill. */
+    .noprint{display:none}
+    .invpage{display:block;min-height:0;background:#fff;padding:0}
+    /* var(--space-10) is the page margin @page gave up so the browser could not write a header
+       into it. Rounding, border and shadow are screen affordances for a card that floats on a
+       background; on paper there is no background to float on. */
+    .invcard{max-width:none;border:0;border-radius:0;box-shadow:none;background:#fff;padding:var(--space-10)}
+    .invcard *{color:#000;background:#fff;box-shadow:none}
+    /* The three rules that carry meaning have to survive losing their fills: the header's
+       separation from the body, the monogram's shape, and the status pill's boundary. */
+    .invcard .custhead{border-bottom:1px solid #000}
+    .invcard .custlogo{border:1px solid #000}
+    .invcard .pill{border:1px solid #000}
+    .invcard .custline{border-bottom-color:#999}
+    /* The banner and the canceled note are bordered boxes once their fill is gone. */
+    .invcard .deltabanner,.invcard .reqcard{border:1px solid #000}
+  }
