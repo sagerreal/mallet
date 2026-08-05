@@ -100,6 +100,26 @@ export const fieldTogglesDTO = z.object({
   canText: z.boolean(),
 });
 
+/**
+ * WHO billed the customer — the identity block every invoice document prints, `anyRole`.
+ *
+ * Same bar as `fieldTogglesDTO` and the same reason for existing: `settingsDTO` is owner/office
+ * only, so the technician's close-out — which IS the customer's copy of the bill, handed over at
+ * the door — had no address, no phone and no licence on it. Every field here is already printed on
+ * the invoice that same customer receives by link, so a technician learning them discloses nothing.
+ *
+ * Anything added here becomes readable by every technician in the org. Keep it to facts that
+ * appear on a customer document — never prices, credentials, or office configuration.
+ */
+export const businessIdentityDTO = z.object({
+  name: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  site: z.string().nullable(),
+  license: z.string().nullable(),
+});
+
 // --- Org config DTO --------------------------------------------------------
 
 export const orgSettingsDTO = z.object({

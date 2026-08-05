@@ -12,6 +12,7 @@ import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository"
 import { OrgSettings } from "../domain/org-settings";
 import { GetSettingsUseCase } from "../app/get-settings";
 import { GetFieldTogglesUseCase } from "../app/get-field-toggles";
+import { GetBusinessIdentityUseCase } from "../app/get-business-identity";
 import { UpdateConfigUseCase } from "../app/update-config";
 import { UpdateBrandUseCase } from "../app/update-brand";
 import { UpdateBusinessUseCase } from "../app/update-business";
@@ -24,6 +25,7 @@ import {
   settingsDTO,
   orgSettingsDTO,
   fieldTogglesDTO,
+  businessIdentityDTO,
   pricebookItemDTO,
   laborRateDTO,
   jobTermDTO,
@@ -140,6 +142,24 @@ export const createSettingsRouter = () =>
           isSmsA2pActive(ctx.tx, ctx.principal.orgId),
         ]);
         return { ...orThrow(toggles), canText };
+      }),
+
+    /**
+     * WHO billed the customer — `anyRole`, six fields wide, all of them already printed on the
+     * customer's own copy of the bill.
+     *
+     * `get` above is ownerOrOffice, so the field layout mounts its hydrator behind `!isTech` and a
+     * technician's store never held the shop's address, phone, email, website or licence. The
+     * close-out document the technician turns around at the door renders the SAME
+     * <InvoiceDocument> as `/i/<token>`, so without this read the customer's two copies of one
+     * bill disagreed about who had billed them. See businessIdentityDTO for what may go in here.
+     */
+    businessIdentity: anyRole
+      .output(businessIdentityDTO)
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new GetBusinessIdentityUseCase(repo).exec(ctx.principal.orgId);
+        return orThrow(result);
       }),
 
     // Patch org config scalars and/or the booking jsonb blob.

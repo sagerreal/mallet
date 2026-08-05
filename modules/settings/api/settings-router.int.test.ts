@@ -311,6 +311,61 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     });
   });
 
+  // ── v1.settings.businessIdentity ──────────────────────────────────────────
+
+  /**
+   * WHO billed the customer, readable by a TECH. It exists for the same structural reason
+   * fieldToggles does — `get` is ownerOrOffice and the field layout cannot mount its hydrator for
+   * a technician — but the consequence was on a CUSTOMER's document: the close-out sheet a
+   * technician turns around at the door renders the same <InvoiceDocument> as `/i/<token>`, and
+   * without this it had no address, no phone and no licence on it.
+   */
+  it("a TECH can read businessIdentity, and it tracks what the office typed in Settings", async () => {
+    const owner = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+
+    await owner.v1.settings.updateBusiness({
+      address: "200 Ray St, Pleasanton, CA 94566",
+      phone: "(925) 555-0100",
+      email: "billing@ridgeline.test",
+      license: "C36-1029384",
+    });
+
+    const identity = await tech.v1.settings.businessIdentity();
+    expect(identity.address).toBe("200 Ray St, Pleasanton, CA 94566");
+    expect(identity.phone).toBe("(925) 555-0100");
+    expect(identity.email).toBe("billing@ridgeline.test");
+    expect(identity.license).toBe("C36-1029384");
+    // orgs.name — the value a technician's store cannot get any other way (BrandHydrator is
+    // office-only), and the placeholder it would otherwise print to a customer is "My Business".
+    expect(identity.name).toMatch(/^SettingsApi A /);
+  });
+
+  it("businessIdentity leaks NOTHING else — the payload is exactly six keys", async () => {
+    const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+    const identity = await tech.v1.settings.businessIdentity();
+    // The output zod schema strips unknown keys, so this asserts the schema, not the mapper.
+    // Anything added to it becomes readable by every technician in the org.
+    expect(Object.keys(identity).sort()).toEqual([
+      "address",
+      "email",
+      "license",
+      "name",
+      "phone",
+      "site",
+    ]);
+  });
+
+  it("businessIdentity is org-scoped — org B never sees org A's address", async () => {
+    await appRouter.createCaller(ctxFor(orgAId, "owner")).v1.settings.updateBusiness({
+      address: "200 Ray St, Pleasanton, CA 94566",
+    });
+    const techB = appRouter.createCaller(ctxFor(orgBId, "tech"));
+    const identity = await techB.v1.settings.businessIdentity();
+    expect(identity.address).toBeNull();
+    expect(identity.name).toMatch(/^SettingsApi B /);
+  });
+
   // ── the trade boundary ────────────────────────────────────────────────────
 
   /**
