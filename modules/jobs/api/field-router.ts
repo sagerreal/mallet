@@ -25,6 +25,7 @@ import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech } from "./money-redaction";
+import { byAgenda } from "./my-day-order";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 
 /**
@@ -213,15 +214,9 @@ export const createFieldRouter = () =>
         page: toPage({ limit: 100, cursor: null }),
         filter: { ...mine, openOrCompletedBetween: { from: input.dayStart, to: input.dayEnd } },
       });
-      const rank = (s: string) => (s === "in_progress" ? 0 : s === "scheduled" ? 1 : 2);
-      const byStart = (a: (typeof page.items)[number], b: (typeof page.items)[number]) => {
-        const byRank = rank(a.props.status) - rank(b.props.status);
-        if (byRank !== 0) return byRank;
-        const av = a.props.scheduledStart ? a.props.scheduledStart.getTime() : Infinity;
-        const bv = b.props.scheduledStart ? b.props.scheduledStart.getTime() : Infinity;
-        return av - bv;
-      };
-      const ordered = [...page.items].sort(byStart);
+      // Earliest live VISIT first — see my-day-order.ts. This used to sort on
+      // jobs.scheduled_start, a dead column, so the day came back in random-UUID order.
+      const ordered = [...page.items].sort(byAgenda);
       // Load execution data (checklist answers, add-ons, photos) for the whole page in one
       // batched read (4 IN-clause queries) — toJobSummaryDTO without it returns empty arrays.
       const executionByJob = await repo.listExecutionForJobs(ordered.map((j) => j.props.id));

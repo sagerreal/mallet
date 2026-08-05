@@ -63,12 +63,21 @@ vi.mock("@/features/field/day-clock", () => ({ DayClock: () => <div /> }));
 
 import MyDayPage from "./page";
 
+const visit = (over: Record<string, unknown> = {}) => ({
+  id: "visit-1",
+  status: "pending",
+  scheduledDate: null,
+  scheduledStart: null,
+  ...over,
+});
+
 const job = (over: Record<string, unknown> = {}) => ({
   id: "job-1",
   num: "JOB-1011",
   title: "random job",
   status: "scheduled",
   scheduledStart: null,
+  visits: [],
   ...over,
 });
 
@@ -172,5 +181,55 @@ describe("My day — a failed load is not a free afternoon", () => {
 
     expect(screen.getByText(/No jobs assigned to you today/i)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+// The time on the card came from `job.scheduledStart` — the DEAD jobs column no live path writes
+// — so every row in the agenda printed "—". The real time is on the VISIT, which is where
+// scheduling has always put it, and it is a wall-clock string: formatting it must not go anywhere
+// near a Date, or a phone in a different zone renders someone else's morning.
+describe("My day — the time on the card", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+  });
+
+  const withVisits = (visits: unknown[]) => {
+    queryState = {
+      data: { items: [job({ visits })], customers: [] },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+    };
+  };
+
+  it("shows the earliest live visit's start time, not the dead job column", () => {
+    withVisits([
+      visit({ id: "v2", scheduledDate: "2026-08-04", scheduledStart: "15:00" }),
+      visit({ id: "v1", scheduledDate: "2026-08-04", scheduledStart: "08:30" }),
+    ]);
+    render(<MyDayPage />);
+    expect(screen.getByText("8:30a")).toBeTruthy();
+  });
+
+  it("reads an afternoon time as PM without touching a timezone", () => {
+    withVisits([visit({ scheduledDate: "2026-08-04", scheduledStart: "15:00" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("3p")).toBeTruthy();
+  });
+
+  it("skips a canceled visit", () => {
+    withVisits([
+      visit({ id: "v1", scheduledDate: "2026-08-04", scheduledStart: "07:00", status: "canceled" }),
+      visit({ id: "v2", scheduledDate: "2026-08-04", scheduledStart: "11:15", status: "pending" }),
+    ]);
+    render(<MyDayPage />);
+    expect(screen.getByText("11:15a")).toBeTruthy();
+  });
+
+  it("says nothing rather than guessing when the job has no dated visit", () => {
+    withVisits([visit({ scheduledStart: "09:00" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("—")).toBeTruthy();
   });
 });

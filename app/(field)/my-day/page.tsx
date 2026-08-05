@@ -28,14 +28,43 @@ type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
 // ---- helpers ---------------------------------------------------------------
 
-function timeLabel(iso: string | null): string {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  const hr = d.getHours();
-  const mn = d.getMinutes();
+/**
+ * "08:30" → "8:30a". A WALL-CLOCK string, formatted as text.
+ *
+ * No Date anywhere in here on purpose. A visit's start time is what the crew reads on the board;
+ * parsing it into a Date would stamp it with the device's own zone, so the same job would show a
+ * different hour on a phone that crossed a state line.
+ */
+function timeLabel(hhmm: string | null): string {
+  if (!hhmm) return "—";
+  const [h, m] = hhmm.split(":");
+  const hr = Number(h);
+  const mn = Number(m);
+  if (!Number.isFinite(hr) || !Number.isFinite(mn)) return "—";
   const period = hr < 12 ? "a" : "p";
   const display = hr % 12 === 0 ? 12 : hr % 12;
   return mn > 0 ? `${display}:${String(mn).padStart(2, "0")}${period}` : `${display}${period}`;
+}
+
+/**
+ * When this stop happens: the earliest LIVE visit's start.
+ *
+ * It used to read `job.scheduledStart` — the jobs table's own column, which no live path writes
+ * (see modules/jobs/infra/job-sorts.ts). Every card in the agenda therefore printed "—". The
+ * server orders the day by exactly this key, so the column and the order now agree.
+ */
+function agendaTime(job: JobSummary): string {
+  let earliestAt: string | null = null;
+  let earliestStart: string | null = null;
+  for (const v of job.visits) {
+    if (v.status === "canceled" || !v.scheduledDate) continue;
+    const at = `${v.scheduledDate}T${v.scheduledStart ?? "00:00"}`;
+    if (earliestAt === null || at < earliestAt) {
+      earliestAt = at;
+      earliestStart = v.scheduledStart;
+    }
+  }
+  return timeLabel(earliestStart);
 }
 
 function statusLabel(status: string): { l: string; c: string; bg: string } {
@@ -89,7 +118,7 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
     // Card tap opens the tech job view (checklist, found work). The action
     // buttons stopPropagation below so Start/Complete don't also open it.
     <div className="md-stop" style={{ cursor: "pointer" }} onClick={() => onOpen(job.id)}>
-      <div className="md-time">{timeLabel(job.scheduledStart)}</div>
+      <div className="md-time">{agendaTime(job)}</div>
       <div className="md-body">
         <div className="md-line1">
           {/* Focusable open control — keyboard access without the row being a button

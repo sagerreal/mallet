@@ -162,8 +162,11 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     expect(started.status).toBe("in_progress");
   });
 
-  it("myDay returns scheduled jobs sorted by scheduledStart asc (not by insert order)", async () => {
-    // Seed a fresh tech so the ordering test is isolated from the jobs created in beforeAll.
+  it("myDay is ordered by the earliest live VISIT, not by insert order", async () => {
+    // Rewritten: this used to seed `jobs.scheduled_start` directly, a column no production path
+    // writes. It passed while proving nothing a real job would exercise — every live job has a
+    // null there, so the comparator was "equal" for every pair and the day came back in
+    // random-UUID order. Scheduling goes through VISITS; the test now seeds what it asserts.
     const [orderTech] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role)
       values (${orgId}, ${randomUUID()}, 'ordertech@field.test', 'tech')
@@ -171,32 +174,48 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     `;
     const orderTechId = orderTech!.id;
 
-    // T+2h job inserted FIRST (would come first if sorted by insert order / created_at).
-    const tPlus2 = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    // T+1h job inserted SECOND.
-    const tPlus1 = new Date(Date.now() + 1 * 60 * 60 * 1000).toISOString();
-
     const [jobLater] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, scheduled_start)
-      values (${orgId}, ${leadId}, 'JOB-ORDER-LATER', 'scheduled', 0, ${orderTechId}, ${tPlus2})
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-LATER', 'scheduled', 0, ${orderTechId})
       returning id
     `;
     const [jobEarlier] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, scheduled_start)
-      values (${orgId}, ${leadId}, 'JOB-ORDER-EARLIER', 'scheduled', 0, ${orderTechId}, ${tPlus1})
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-EARLIER', 'scheduled', 0, ${orderTechId})
       returning id
+    `;
+    // Unplaced: assigned, never given a day. It must still be RETURNED — hiding it is how work
+    // goes missing — just not at the head of the route.
+    const [jobUnplaced] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-UNPLACED', 'scheduled', 0, ${orderTechId})
+      returning id
+    `;
+    // The 3pm visit is inserted FIRST, so insert order and created_at both disagree with the clock.
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobLater!.id}, 'pending', 1, current_date, '15:00')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobEarlier!.id}, 'pending', 1, current_date, '08:30')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position)
+      values (${orgId}, ${jobUnplaced!.id}, 'pending', 1)
     `;
 
     try {
       const caller = appRouter.createCaller(ctxFor(orderTechId, orgId, "tech"));
       const result = await caller.v1.field.myDay(TODAY);
 
-      expect(result.items).toHaveLength(2);
-      // Earlier scheduledStart (T+1h, inserted second) must come before later (T+2h, inserted first).
-      expect(result.items[0]!.id).toBe(jobEarlier!.id);
-      expect(result.items[1]!.id).toBe(jobLater!.id);
+      expect(result.items.map((i) => i.id)).toEqual([
+        jobEarlier!.id,
+        jobLater!.id,
+        jobUnplaced!.id,
+      ]);
     } finally {
-      await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id})`;
+      await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id}, ${jobUnplaced!.id})`;
       await admin`delete from users where id = ${orderTechId}`;
     }
   });
