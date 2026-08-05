@@ -32,7 +32,7 @@ export interface FieldProps {
   label: string;
   /**
    * Secondary text rendered inside the label after the name — "(optional)",
-   * "(for a PDF copy)". Taken as a node rather than a string so a call site can
+   * "(for the emailed invoice link)". Taken as a node rather than a string so a call site can
    * hand over its existing `<span className="muted" style={…}>` verbatim; the
    * hint spans in this app carry per-site `textTransform`/`letterSpacing` resets
    * and canonicalising them here would move pixels.

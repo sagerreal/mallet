@@ -429,7 +429,10 @@ function EditBlock({
                   className="muted"
                   style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
                 >
-                  (for a PDF copy)
+                  {/* Not "(for a PDF copy)". No PDF is generated anywhere in this app and the
+                      email transport is hard-typed with no attachments — what actually goes out
+                      is a link to the invoice's own /i/<token> page. */}
+                  (for the emailed invoice link)
                 </span>
               }
             >
