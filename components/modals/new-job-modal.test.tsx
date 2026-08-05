@@ -20,7 +20,9 @@ const openModalMock = vi.fn();
 const pushModalMock = vi.fn();
 const routerPush = vi.fn();
 const adoptLead = vi.fn();
-const vanillaSearch = vi.fn(async () => ({ items: [], nextCursor: null }));
+// Rest-typed so the mock below can forward the real call's arguments to it. Declared with no
+// parameters, the spread at the call site is a TS2556 and the whole file fails `tsc --noEmit`.
+const vanillaSearch = vi.fn(async (..._args: unknown[]) => ({ items: [], nextCursor: null }));
 let closeMock = vi.fn();
 
 // The customer picker's server search — settled and empty for these tests, which exercise the

@@ -25,14 +25,18 @@ export type ServiceLane = "estimate" | "flat";
 
 export type LegacyServiceLane = ServiceLane | "repair";
 
+// The return type names `feeApplies` explicitly rather than inheriting it through Omit<T>. This
+// function both SETS the flag (repair → estimate) and CLEARS it (flat), so on an argument that
+// carried no such property the result still does — and `Omit<T, "lane">` alone dropped it, making
+// every read of `out.feeApplies` a TS2339 at the call site.
 export function normalizeBookingService<T extends { lane: LegacyServiceLane; feeApplies?: boolean }>(
   svc: T,
-): Omit<T, "lane"> & { lane: ServiceLane } {
+): Omit<T, "lane" | "feeApplies"> & { lane: ServiceLane; feeApplies?: boolean } {
   if (svc.lane === "repair") return { ...svc, lane: "estimate", feeApplies: true };
   // The flag only means something on the estimate lane; a flat service carrying it is a dormant
   // misread for any reader that forgets to gate on lane first, so it is stripped here.
   if (svc.lane === "flat" && svc.feeApplies) return { ...svc, lane: "flat", feeApplies: undefined };
-  return svc as Omit<T, "lane"> & { lane: ServiceLane };
+  return svc as Omit<T, "lane" | "feeApplies"> & { lane: ServiceLane; feeApplies?: boolean };
 }
 
 export interface BookingService {
