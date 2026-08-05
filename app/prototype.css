@@ -1450,6 +1450,9 @@
   .custlogo{width:46px;height:46px;border-radius:var(--radius);background:var(--card);color:var(--green-900);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:var(--type-lg)}
   .custbody{padding:var(--space-5) var(--space-6) var(--space-6)}
   .custline{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
+  /* "No tax" marker on a document line. Quiet: it qualifies the line it sits in, it is not a
+     status the customer has to act on — and it only renders when the document charges tax. */
+  .custline-notax{margin-left:var(--space-2);color:var(--ink-3);font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
   .photo-thumb{width:100%;height:84px;border-radius:var(--radius-md);background:linear-gradient(120deg,#475569,#1e293b);display:flex;align-items:center;justify-content:center;color:#cbd5e1;font-size:var(--type-sm);gap:var(--space-2);margin:var(--space-2) 0 var(--space-1)}
   .addonrow{display:flex;align-items:center;gap:var(--space-3);border:1.5px dashed color-mix(in srgb,var(--accent) 35%,var(--line));background:var(--green-50);border-radius:var(--radius-md);padding:var(--space-3) var(--space-3);margin-top:var(--space-3);cursor:pointer;font-size:var(--type-base)}
   .addonrow input{width:17px;height:17px;accent-color:var(--accent)}

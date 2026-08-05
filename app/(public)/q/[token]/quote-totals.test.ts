@@ -23,7 +23,12 @@ import {
   type EstimateProps,
   type QuoteTier,
 } from "@/modules/quoting/domain/estimate";
-import { computeQuoteTotals, lineAmountCents, sumLineAmountsCents } from "./quote-totals";
+import {
+  computeQuoteTotals,
+  lineAmountCents,
+  sumLineAmountsCents,
+  sumTaxableLineAmountsCents,
+} from "./quote-totals";
 
 // ---------------------------------------------------------------------------
 // Domain builders
@@ -35,6 +40,8 @@ interface LineSpec {
   readonly quantity: number;
   readonly rateCents: number;
   readonly isOptional: boolean;
+  /** Omitted = taxable, exactly as the domain and the column read an absent value. */
+  readonly taxable?: boolean;
   readonly tier?: QuoteTier;
 }
 
@@ -47,6 +54,7 @@ const makeLine = (spec: LineSpec, position: number): EstimateLine => {
     cost: zeroMoney,
     isOptional: spec.isOptional,
     needsPhoto: false,
+    taxable: spec.taxable ?? true,
     position,
     tier: spec.tier ?? null,
     materialId: null,
@@ -287,5 +295,121 @@ describe("per-tier totals — parity with the domain's totalsForTier (odd cents)
       ...PRICING,
     });
     expectParity(totals, twin);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-line taxability: the SECOND filter
+// ---------------------------------------------------------------------------
+
+describe("sumTaxableLineAmountsCents", () => {
+  it("counts a line with no taxable key — absent reads as taxable", () => {
+    expect(sumTaxableLineAmountsCents([{ quantity: 1.5, rateCents: 999 }])).toBe(1_499);
+  });
+
+  it("skips only the lines explicitly marked non-taxable", () => {
+    expect(
+      sumTaxableLineAmountsCents([
+        { quantity: 1.5, rateCents: 999, taxable: true },
+        { quantity: 2.5, rateCents: 333, taxable: false },
+      ]),
+    ).toBe(1_499);
+    expect(sumTaxableLineAmountsCents([])).toBe(0);
+  });
+});
+
+describe("computeQuoteTotals — mixed taxability, parity with the domain", () => {
+  const TAXED: LineSpec = {
+    id: "00000000-0000-0000-0000-0000000000f1",
+    description: "Repair labor",
+    quantity: 3,
+    rateCents: 3_333, // 9_999
+    isOptional: false,
+    taxable: true,
+  };
+  const UNTAXED: LineSpec = {
+    id: "00000000-0000-0000-0000-0000000000f2",
+    description: "Permit fee",
+    quantity: 1.5,
+    rateCents: 999, // 1_499
+    isOptional: false,
+    taxable: false,
+  };
+  const UNTAXED_OPT: LineSpec = { ...UNTAXED, id: "00000000-0000-0000-0000-0000000000f3", isOptional: true };
+
+  it("keeps a non-taxable fixed line in the subtotal and out of the tax", () => {
+    const domain = makeEstimate([TAXED, UNTAXED], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      fixedTaxableCents: domain.taxableBase(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expectParity(totals, domain);
+    expect(totals.subtotalCents).toBe(11_498); // both lines
+    expect(totals.discountCents).toBe(1_150); // round(1149.8) — on the WHOLE subtotal
+    // Tax on the discounted taxable half only: 9999 − round(999.9) = 8999 → round(742.4175).
+    expect(totals.taxCents).toBe(742);
+    expect(totals.totalCents).toBe(11_090); // 10348 net + 742 tax
+  });
+
+  it("a toggled-on NON-taxable add-on raises the total and not the tax", () => {
+    const base = makeEstimate([TAXED, UNTAXED_OPT], PRICING);
+    const twin = makeEstimate([TAXED, { ...UNTAXED_OPT, isOptional: false }], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: base.subtotal(),
+      fixedTaxableCents: base.taxableBase(),
+      selectedOptionalLines: [
+        { quantity: UNTAXED_OPT.quantity, rateCents: UNTAXED_OPT.rateCents, taxable: false },
+      ],
+      ...PRICING,
+    });
+    expectParity(totals, twin);
+    // Same tax as the fixed-only baseline; the add-on moved the subtotal and the total.
+    expect(totals.taxCents).toBe(742);
+    expect(totals.subtotalCents).toBe(11_498);
+  });
+
+  it("a toggled-on TAXABLE add-on raises both", () => {
+    const base = makeEstimate([TAXED, OPT_A], PRICING);
+    const twin = makeEstimate([TAXED, { ...OPT_A, isOptional: false }], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: base.subtotal(),
+      fixedTaxableCents: base.taxableBase(),
+      selectedOptionalLines: [
+        { quantity: OPT_A.quantity, rateCents: OPT_A.rateCents, taxable: true },
+      ],
+      ...PRICING,
+    });
+    expectParity(totals, twin);
+    expect(totals.taxCents).toBe(854);
+  });
+
+  it("no taxable line anywhere → zero tax, full total", () => {
+    const domain = makeEstimate([UNTAXED], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      fixedTaxableCents: domain.taxableBase(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expectParity(totals, domain);
+    expect(totals.taxCents).toBe(0);
+  });
+
+  it("omitting fixedTaxableCents reads every fixed line as taxable (the pre-taxability caller)", () => {
+    const domain = makeEstimate([FIXED, OPT_A, OPT_B], PRICING);
+    const withOut = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    const withIn = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      fixedTaxableCents: domain.taxableBase(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expect(withOut).toEqual(withIn);
   });
 });

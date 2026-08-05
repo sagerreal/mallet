@@ -78,6 +78,7 @@ const lineToJson = (l: Estimate["props"]["lines"][number]) => {
     quantity: lp.quantity,
     rate: moneyJson(lp.rate),
     isOptional: lp.isOptional,
+    taxable: lp.taxable,
     position: lp.position,
     tier: lp.tier,
   };
