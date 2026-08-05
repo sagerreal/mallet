@@ -287,18 +287,22 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
 
     await owner.v1.settings.updateConfig({ measurementEstimating: true });
-    await expect(tech.v1.settings.fieldToggles()).resolves.toEqual({ measurementEstimating: true });
+    await expect(tech.v1.settings.fieldToggles()).resolves.toMatchObject({
+      measurementEstimating: true,
+    });
 
     await owner.v1.settings.updateConfig({ measurementEstimating: false });
-    await expect(tech.v1.settings.fieldToggles()).resolves.toEqual({ measurementEstimating: false });
+    await expect(tech.v1.settings.fieldToggles()).resolves.toMatchObject({
+      measurementEstimating: false,
+    });
   });
 
-  it("fieldToggles leaks NOTHING else — the payload is exactly one key", async () => {
+  it("fieldToggles leaks NOTHING else — the payload is exactly two keys", async () => {
     const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     const toggles = await tech.v1.settings.fieldToggles();
     // The output zod schema strips unknown keys, so this asserts the schema, not the mapper.
     // Anything added to it becomes readable by every technician in the org.
-    expect(Object.keys(toggles)).toEqual(["measurementEstimating"]);
+    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating"]);
   });
 
   it("fieldToggles is org-scoped — org B never sees org A's flag", async () => {
@@ -306,7 +310,7 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       measurementEstimating: true,
     });
     const techB = appRouter.createCaller(ctxFor(orgBId, "tech"));
-    await expect(techB.v1.settings.fieldToggles()).resolves.toEqual({
+    await expect(techB.v1.settings.fieldToggles()).resolves.toMatchObject({
       measurementEstimating: false,
     });
   });
