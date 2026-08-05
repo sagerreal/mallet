@@ -569,6 +569,40 @@ suite("v1.fieldInvoicing — a tech collects on their own job (live RLS)", () =>
     }
   });
 
+  it("carries the document facts a customer is handed at the door", async () => {
+    // The close-out sheet a technician turns around renders the SAME <InvoiceDocument> as the
+    // customer's own /i/<token> page. Without these two it was a different document: no service
+    // address, no service date. Neither is new information to the person being handed it.
+    const leadId = await (async () => {
+      const [l] = await admin<{ id: string }[]>`
+        insert into leads (org_id, name, address)
+        values (${orgAId}, 'Doorstep Addressed', '18 Aspen Ct, Dublin, CA 94568')
+        returning id`;
+      return l!.id;
+    })();
+    const jobId = await seedJob(techAId, "complete", { totalCents: 42_000, leadId });
+    const serviceAt = new Date("2026-08-03T16:20:00.000Z");
+    await admin`
+      insert into job_visits (org_id, job_id, status, assignee_user_id, completed_at, position)
+      values (${orgAId}, ${jobId}, 'complete', ${techAId}, ${serviceAt}, 0)`;
+
+    const tech = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+    const invoice = await tech.v1.fieldInvoicing.createFromJob({ jobId });
+    expect(invoice.customerName).toBe("Doorstep Addressed");
+    expect(invoice.serviceAddress).toBe("18 Aspen Ct, Dublin, CA 94568");
+    expect(invoice.serviceAt).toBe(serviceAt.toISOString());
+  });
+
+  it("states NO service date when no visit has completed — never the invoice date", async () => {
+    // A customer may keep this. A date that is not the service date under a "Service" label is a
+    // false statement on a document someone else may rely on.
+    const jobId = await seedJob(techAId, "complete", { totalCents: 9_000 });
+    const tech = appRouter.createCaller(ctxFor(techAId, orgAId, "tech"));
+    const invoice = await tech.v1.fieldInvoicing.createFromJob({ jobId });
+    expect(invoice.serviceAt).toBeNull();
+    expect(invoice.createdAt).toEqual(expect.any(String));
+  });
+
   it("the OFFICE procedures are unchanged — a tech is still refused by every one", async () => {
     // The regression fence around the whole design. If any of these starts passing, the sibling
     // router was quietly turned into a role widening.

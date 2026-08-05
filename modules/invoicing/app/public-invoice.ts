@@ -4,6 +4,7 @@ import { ownerDb } from "@mallet/shared/db/owner-client";
 import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { asInvoiceId, asOrgId, isOk, type OrgId } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { DrizzleSettingsRepository, GetBusinessIdentityUseCase } from "@mallet/settings";
@@ -49,6 +50,49 @@ export async function resolveInvoiceOrgByToken(
   return { invoiceId: row.id, orgId: asOrgId(row.orgId), orgName: row.orgName };
 }
 
+/** An identity block that prints nothing — what an unfilled shop, or an unreadable one, states. */
+const NO_BUSINESS: PublicInvoiceContext["business"] = {
+  address: null,
+  phone: null,
+  email: null,
+  site: null,
+  license: null,
+};
+
+/**
+ * The shop's identity, through the settings use-case — not a second query against org_settings, so
+ * these five facts cannot mean one thing here and another in Settings.
+ *
+ * IT CANNOT TAKE THE BILL DOWN WITH IT, and that is why this is not a bare `await`. The customer
+ * needs their lines, their balance and their Pay button; the letterhead is the part of the page
+ * they can do without. Two failure modes are absorbed here and only here:
+ *
+ *   • the use-case returning an error Result, and
+ *   • `toOrgSettings` THROWING on an org_settings row that fails domain validation — a real path,
+ *     since the mapper turns a corrupt row into an exception by design. Before this read existed
+ *     the public page never built the settings aggregate at all (the Connect check is a focused
+ *     column read), so one bad row would newly have 500'd a customer's invoice.
+ *
+ * NOT A SILENT FAILURE: it logs with the org id, and the office's own Settings page still surfaces
+ * the same corruption loudly, which is where a shop can act on it.
+ */
+async function readBusiness(tx: TenantTx, orgId: OrgId): Promise<PublicInvoiceContext["business"]> {
+  try {
+    const result = await new GetBusinessIdentityUseCase(
+      new DrizzleSettingsRepository(tx, orgId),
+    ).exec(orgId);
+    if (!isOk(result)) {
+      logger.warn({ orgId, kind: result.error.kind }, "publicInvoice.identity.unavailable");
+      return NO_BUSINESS;
+    }
+    const { address, phone, email, site, license } = result.value;
+    return { address, phone, email, site, license };
+  } catch (err) {
+    logger.error({ orgId, err: String(err) }, "publicInvoice.identity.failed");
+    return NO_BUSINESS;
+  }
+}
+
 /**
  * The facts a document of record states, gathered for ONE invoice inside its own org's tx.
  *
@@ -67,30 +111,17 @@ async function loadDocumentContext(
   invoice: Invoice,
 ): Promise<PublicInvoiceContext> {
   const jobId = invoice.props.sourceJobId;
-  const [target, identity, leads, serviceAt] = await Promise.all([
+  const [target, business, leads, serviceAt] = await Promise.all([
     // Whether the Pay button can exist at all: the shop finished Stripe Connect onboarding AND
     // can take charges. Read via the same seam the office checkout uses.
     new DrizzleConnectTargetReader(tx, orgId).read(),
-    // The shop's identity, through the SETTINGS use-case — not a second query against
-    // org_settings, so the four columns cannot mean one thing here and another in Settings.
-    new GetBusinessIdentityUseCase(new DrizzleSettingsRepository(tx, orgId)).exec(orgId),
+    readBusiness(tx, orgId),
     new DrizzleLeadRepository(tx, orgId).findByIds([invoice.props.leadId]),
     // No source job means no service date. Omitted, never faked from the invoice date.
     jobId ? new DrizzleServiceDateReader(tx, orgId).forJob(jobId) : Promise.resolve(null),
   ]);
 
   const lead = leads[0];
-  // A settings read that failed must not take the whole bill down with it — the customer still
-  // needs their lines and their balance. The identity block simply does not render.
-  const business = isOk(identity)
-    ? {
-        address: identity.value.address,
-        phone: identity.value.phone,
-        email: identity.value.email,
-        site: identity.value.site,
-        license: identity.value.license,
-      }
-    : { address: null, phone: null, email: null, site: null, license: null };
 
   return {
     orgName,
