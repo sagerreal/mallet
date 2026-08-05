@@ -583,9 +583,12 @@ describe("TechJobModalContent — counted rows", () => {
     expect(screen.getByText("Gate code 4411")).toBeTruthy();
   });
 
+  // Whitespace-tolerant: the count, its qualifier and the caret are three flex items separated by
+  // a CSS gap (.tjf-v), and jsdom loads no stylesheet — so the run-together name here is a test
+  // artefact, not what a screen reader gets. The words and their order are the contract.
   it("counts the found work, and names how many are still awaiting the customer's OK", () => {
     render(<TechJobModalContent />);
-    expect(screen.getByRole("button", { name: /^Found work 1 · 1 awaiting OK/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Found work\s*1\s*·\s*1 awaiting OK/ })).toBeTruthy();
   });
 });
 

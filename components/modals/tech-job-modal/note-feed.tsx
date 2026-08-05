@@ -14,7 +14,7 @@ import { memo, useState } from "react";
 import type { Job } from "@/lib/store/types";
 import { todayISO } from "@/lib/clock";
 import { AO_INPUT } from "./helpers";
-import { CountedSection } from "./counted-section";
+import { SheetRow } from "@/components/modals/sheet-row";
 
 interface NoteEntry {
   key: string;
@@ -116,7 +116,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
   return (
     // The count was already computed and simply never shown — the header was a bare "Notes", so
     // the only way to learn whether the office had left anything was to read past it.
-    <CountedSection label="Job notes" count={entries.length}>
+    <SheetRow variant="section" label="Job notes" value={entries.length} expandable>
       {entries.length > 0 ? (
         <div className="nfeed">
           {entries.map((n) => (
@@ -166,7 +166,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
           )}
         </>
       )}
-    </CountedSection>
+    </SheetRow>
   );
 }
 export const NoteFeed = memo(NoteFeedFn, noteFeedPropsEqual);

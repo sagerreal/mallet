@@ -12,7 +12,7 @@ import { memo, useState } from "react";
 import type { Addon, Job } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { AO_INPUT } from "./helpers";
-import { CountedSection } from "./counted-section";
+import { SheetRow } from "@/components/modals/sheet-row";
 
 interface AddonStatusPillProps {
   status: Addon["status"];
@@ -81,10 +81,12 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
   }
 
   return (
-    <CountedSection
+    <SheetRow
+      variant="section"
       label="Found work"
-      count={addons.length}
-      hint={awaiting ? `${awaiting} awaiting OK` : undefined}
+      value={addons.length}
+      after={awaiting ? <span>· {awaiting} awaiting OK</span> : undefined}
+      expandable
     >
       {addons.map((a) => (
         <div key={a.id} className="stage-row">
@@ -139,7 +141,7 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
           </button>
         </div>
       )}
-    </CountedSection>
+    </SheetRow>
   );
 }
 export const FoundWorkSec = memo(FoundWorkSecFn, foundWorkPropsEqual);
