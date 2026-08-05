@@ -199,10 +199,22 @@ export default async function PublicInvoicePage({
 
           {/* THE document — the same component the office preview and the technician's
               close-out render, so the customer's copy cannot drift from the shop's.
-              Meta line: status pill · Net terms once sent · PO when the customer issued one.
-              The invoice NUMBER is omitted here — the branded header above already states it. */}
+              Meta line: status pill · invoice date · service date · Net terms once sent · PO when
+              the customer issued one.
+              The invoice NUMBER is omitted here — the branded header above already states it, and
+              so is the shop's NAME for the same reason: `business` carries the contact block only. */}
           <InvoiceDocument
             statusPill={<span className={`pill ${pill.tone}`}>{pill.label}</span>}
+            business={view.business}
+            dates={{
+              invoicedAt: view.invoicedAt.toISOString(),
+              // Omitted when there is no completed visit to state. NEVER the invoice date under a
+              // "Service" label — see InvoiceDocumentDates.
+              serviceAt: view.serviceAt?.toISOString() ?? null,
+              // `termsFace` already carries "Net 30 · due Sep 2"; a second Due segment would
+              // print the same date twice.
+            }}
+            parties={{ customerName: view.customerName, serviceAddress: view.serviceAddress }}
             termsFace={line}
             title={view.title}
             lines={view.lines.map((l) => ({

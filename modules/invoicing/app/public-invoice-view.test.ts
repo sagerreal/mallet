@@ -22,7 +22,11 @@ import { Payment, type PaymentMethod } from "../domain/payment";
 import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
 import type { ConnectTargetReader } from "../domain/connect-target-reader";
-import { toPublicInvoiceView, createCheckoutWithDeps } from "./public-invoice-view";
+import {
+  toPublicInvoiceView,
+  createCheckoutWithDeps,
+  type PublicInvoiceContext,
+} from "./public-invoice-view";
 
 const ORG: OrgId = asOrgId("22222222-2222-4222-8222-222222222222");
 const LEAD: LeadId = asLeadId("33333333-3333-4333-8333-333333333333");
@@ -87,9 +91,24 @@ const invoice = (overrides: Partial<Parameters<typeof Invoice.create>[0]> = {}):
   return r.value;
 };
 
+/** A shop that has filled nothing in and a lead with no address — the barest honest context. */
+const BARE_CONTEXT: PublicInvoiceContext = {
+  orgName: "Org",
+  chargesEnabled: true,
+  business: { address: null, phone: null, email: null, site: null, license: null },
+  customerName: null,
+  serviceAddress: null,
+  serviceAt: null,
+};
+
+const ctx = (overrides: Partial<PublicInvoiceContext> = {}): PublicInvoiceContext => ({
+  ...BARE_CONTEXT,
+  ...overrides,
+});
+
 describe("toPublicInvoiceView", () => {
   it("maps every money figure in integer cents and derives the clamped balance", () => {
-    const view = toPublicInvoiceView(invoice(), "Ridgeline Plumbing", true);
+    const view = toPublicInvoiceView(invoice(), ctx({ orgName: "Ridgeline Plumbing" }));
 
     expect(view.num).toBe("INV-1042");
     expect(view.title).toBe("Water heater swap");
@@ -115,7 +134,7 @@ describe("toPublicInvoiceView", () => {
 
   it("clamps an overpaid balance to zero and passes charges-disabled through", () => {
     const paid = invoice({ status: "paid", amountPaid: money(15_000) });
-    const view = toPublicInvoiceView(paid, "Ridgeline Plumbing", false);
+    const view = toPublicInvoiceView(paid, ctx({ orgName: "Ridgeline Plumbing", chargesEnabled: false }));
     expect(view.balanceDueCents).toBe(0);
     expect(view.chargesEnabled).toBe(false);
     expect(view.status).toBe("paid");
@@ -123,7 +142,7 @@ describe("toPublicInvoiceView", () => {
 
   it("orders lines by position regardless of input order", () => {
     const shuffled = invoice({ lines: [line("Second", 1, 200, 1), line("First", 1, 100, 0)] });
-    const view = toPublicInvoiceView(shuffled, "Org", true);
+    const view = toPublicInvoiceView(shuffled, ctx());
     expect(view.lines.map((l) => l.description)).toEqual(["First", "Second"]);
   });
 
@@ -132,8 +151,7 @@ describe("toPublicInvoiceView", () => {
     // not state when the money arrived, how much of it, or by what means.
     const view = toPublicInvoiceView(
       invoice({ payments: [payment(6_000, "cash", "2026-06-03T10:00:00Z")] }),
-      "Org",
-      true,
+      ctx(),
     );
     expect(view.payments).toEqual([
       { amountCents: 6_000, method: "cash", receivedAt: new Date("2026-06-03T10:00:00Z") },
@@ -148,8 +166,7 @@ describe("toPublicInvoiceView", () => {
           payment(1_000, "check", "2026-06-02T10:00:00Z"),
         ],
       }),
-      "Org",
-      true,
+      ctx(),
     );
     expect(view.payments.map((p) => p.amountCents)).toEqual([1_000, 2_000]);
   });
@@ -157,14 +174,76 @@ describe("toPublicInvoiceView", () => {
   it("projects NO reconciliation data — the acting user and the ledger keys stay in the shop", () => {
     const view = toPublicInvoiceView(
       invoice({ payments: [payment(6_000, "cash", "2026-06-03T10:00:00Z")] }),
-      "Org",
-      true,
+      ctx(),
     );
     expect(Object.keys(view.payments[0] ?? {}).sort()).toEqual(["amountCents", "method", "receivedAt"]);
   });
 
   it("has an empty payments list when nothing has been collected", () => {
-    expect(toPublicInvoiceView(invoice(), "Org", true).payments).toEqual([]);
+    expect(toPublicInvoiceView(invoice(), ctx()).payments).toEqual([]);
+  });
+
+  // ── document of record: who billed, who was billed, where and when ────────────────────────
+
+  it("carries the identity block, the parties and both dates", () => {
+    const view = toPublicInvoiceView(
+      invoice(),
+      ctx({
+        business: {
+          address: "200 Ray St, Pleasanton, CA 94566",
+          phone: "(925) 555-0100",
+          email: "billing@ridgeline.test",
+          site: "ridgelineplumbing.com",
+          license: "C36-1029384",
+        },
+        customerName: "Dana Whitfield",
+        serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+        serviceAt: new Date("2026-05-29T16:20:00Z"),
+      }),
+    );
+
+    expect(view.business.license).toBe("C36-1029384");
+    expect(view.business.phone).toBe("(925) 555-0100");
+    expect(view.customerName).toBe("Dana Whitfield");
+    expect(view.serviceAddress).toBe("18 Aspen Ct, Dublin, CA 94568");
+    // The bill's own creation stamp, straight off the record.
+    expect(view.invoicedAt).toEqual(new Date("2026-06-01T00:00:00Z"));
+    expect(view.serviceAt).toEqual(new Date("2026-05-29T16:20:00Z"));
+  });
+
+  it("states an UNKNOWN service date as null — never the invoice date wearing a Service label", () => {
+    // The whole reason serviceAt is separate. A customer may hand this page to an insurer or a
+    // warranty desk; a bill with no completed visit says nothing rather than something untrue.
+    const view = toPublicInvoiceView(invoice(), ctx({ serviceAt: null }));
+    expect(view.serviceAt).toBeNull();
+    expect(view.invoicedAt).toEqual(new Date("2026-06-01T00:00:00Z"));
+  });
+
+  it("passes an unfilled shop and an addressless lead through as nulls, not blanks", () => {
+    // Blank strings would render as empty labels on the customer's page — the documented failure
+    // mode <InvoiceDocument> exists to avoid. Null is what "not set" has to look like.
+    const view = toPublicInvoiceView(invoice(), ctx());
+    expect(view.business).toEqual({
+      address: null,
+      phone: null,
+      email: null,
+      site: null,
+      license: null,
+    });
+    expect(view.customerName).toBeNull();
+    expect(view.serviceAddress).toBeNull();
+  });
+
+  it("never projects the shop's NAME into the business block — the branded header prints it", () => {
+    const view = toPublicInvoiceView(invoice(), ctx({ orgName: "Ridgeline Plumbing" }));
+    expect(Object.keys(view.business).sort()).toEqual([
+      "address",
+      "email",
+      "license",
+      "phone",
+      "site",
+    ]);
+    expect(view.orgName).toBe("Ridgeline Plumbing");
   });
 });
 
