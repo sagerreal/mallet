@@ -26,6 +26,34 @@ export function svcMeta(key: string): SvcMeta {
   return SVC_META[key] ?? SVC_META.service!;
 }
 
+/**
+ * The lane keys the store uses when a job carries no trade label of its own.
+ *
+ * `jobs.svc` is free text — the SHOP's own words for the work ("Water heater repair"), up to 60
+ * characters, and the constraint is the only thing policing it. But `dtoJobToStoreJob` fills a
+ * null column with the literal string `"service"`, and the board's three lane keys are stored in
+ * the same column on older rows. Printing any of them at a technician standing on a doorstep
+ * would name the lane instead of the work.
+ */
+const LANE_KEYS = new Set(["service", "install", "estimate"]);
+
+/**
+ * What the technician is here to DO — the line under the customer's name.
+ *
+ * Order of preference: the shop's own trade label (`job.svc`), then the job title when it says
+ * something the heading does not, and only then the generic lane word. This is the first place in
+ * this modal that has ever rendered `job.svc` at all: the header showed `svcMeta().word`, which
+ * can only ever be "Job" or "Estimate", so a voice-booked "Water heater repair" arrived, was
+ * stored, and was never shown to the person driving to it.
+ */
+export function tradeLabel(j: Job, custName: string): string {
+  const svc = (j.svc ?? "").trim();
+  if (svc && !LANE_KEYS.has(svc.toLowerCase())) return svc;
+  const title = (j.title ?? "").trim();
+  if (title && title !== custName) return title;
+  return svcMeta(jobMode(j)).word;
+}
+
 export function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
@@ -122,6 +150,17 @@ export function startTimeStr(start: number): string {
   let h12 = hr % 12;
   if (!h12) h12 = 12;
   return `${h12}:${String(mn).padStart(2, "0")} ${hr < 12 ? "AM" : "PM"}`;
+}
+
+/**
+ * "Today, 3:00 PM" — WHEN this stop is, for the header line beside the trade label.
+ *
+ * Null when there is no placed visit: the header must not invent a time for a job the office has
+ * not slotted yet. The caller drops the separator with it rather than printing a trailing "· ".
+ */
+export function visitWhenLabel(v: Visit | undefined): string | null {
+  if (!v || v.date == null || v.start == null) return null;
+  return `${colLabel(v.date)}, ${startTimeStr(v.start)}`;
 }
 
 /** The current visit the timer tracks (prototype curV, 4586). */

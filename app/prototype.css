@@ -465,6 +465,13 @@
   .otab.on{color:var(--ink);font-weight:700}
   .otab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1.5px;height:2.5px;border-radius:var(--radius-2xs);background:var(--ink)}
   .otab .oct{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3);background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-2)}
+  /* SHEET tabs (the tech job sheet's Job · Quote): the two halves of one decision, so they split
+     the width evenly and centre their labels instead of huddling at the left edge. A pair of
+     small left-aligned words does not read as a choice at arm's length in a van, and half a
+     sheet's width is a target a gloved thumb cannot miss. The underline runs the full half. */
+  .tj-tabs{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .tj-tabs .otab{justify-content:center;min-height:44px;font-size:var(--type-md)}
+  .tj-tabs .otab.on::after{left:0;right:0;height:3px}
   .odot{width:8px;height:8px;border-radius:50%;background:var(--green-700);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--green-700) 22%,transparent);animation:odotbreathe 2.6s ease-in-out infinite;flex:0 0 auto}
   .odot.off{background:var(--ink-3);box-shadow:none;animation:none}
   @keyframes odotbreathe{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--green-700) 10%,transparent)}}
@@ -1833,7 +1840,11 @@
   .msg.us .msg-failed{text-align:right;margin-left:auto}
   .clock-elapsed{display:block;margin-top:var(--space-1);font-size:var(--type-lg);font-weight:700;color:var(--green-700);font-variant-numeric:tabular-nums}
   .jaddr svg{flex:0 0 auto;color:var(--ink-2)}
-  .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:700;color:var(--ink-3);white-space:nowrap}
+  /* Navigate is the loudest thing on the address row and it is AMBER — the app's one "live
+     action" accent. It was --ink-3, the same grey as disabled meta text, so the row's whole
+     point read as a caption. (iOS blue is the obvious alternative and is not available: Mallet
+     has no blue anywhere.) */
+  .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:800;color:var(--amber);white-space:nowrap}
   /* "Add a line" action tiles (Build the price) — a clean 2×2 of tappable cards: icon + title + subtitle */
   .addgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-3)}
   .addtile{display:block;width:100%;text-align:left;border:1.5px solid var(--line);border-radius:var(--radius-lg);padding:var(--space-4) var(--space-4);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer;transition:border-color .12s,background .12s,box-shadow .15s,transform .08s}

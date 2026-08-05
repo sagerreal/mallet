@@ -38,6 +38,7 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import { useCanText } from "@/features/messaging/use-can-text";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { VISIT_FEE_TITLE } from "@/features/invoices/visit-fee";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
@@ -88,6 +89,10 @@ export function TechJobModalContent() {
   // view. Taking payment is NOT one of them any more; see canTakePayment below.
   const me = useMe();
   const isOffice = me.data?.role === "owner" || me.data?.role === "office";
+
+  // May the SHOP text at all (A2P 10DLC campaign active)? A capability, asked of every role —
+  // see the Call/Text row below for why this replaced the old isOffice gate.
+  const canText = useCanText();
 
   // Extract jobId before all store subscriptions so by-id selectors below can
   // capture it in their closure. useActiveModal is already narrow (scalar).
@@ -320,24 +325,33 @@ export function TechJobModalContent() {
 
   return (
     <>
-      {/* 1. Sticky sheet header — customer name + service word + title. NO status pill. */}
-      <TechHeader job={job} custName={custName} />
+      {/* 1. Sticky sheet header — customer name over "<trade> · <when>". NO status pill. */}
+      <TechHeader job={job} custName={custName} visit={scopeVisit} />
 
-      {/* 1b. Tabs — Job · Quote (underline tab bar, same grammar as the Office page).
-          Surface-based, not role-based: owner-operators quote on site too. */}
-      <div className="otabs" role="tablist" aria-label="Job view">
+      {/* 1b. Tabs — Job · Quote. TWO EQUAL HALVES of the sheet's width, centred, with the active
+          one carrying a heavy underline: at arm's length in a van, a pair of small left-aligned
+          words does not read as a choice. Surface-based, not role-based — owner-operators quote
+          on site too. Each half is a real tab with a matching tabpanel; the panels were missing,
+          so the tablist named controls that pointed at nothing. */}
+      <div className="otabs tj-tabs" role="tablist" aria-label="Job view">
         <button
+          id="tj-tab-job"
           className={tab === "job" ? "otab on" : "otab"}
           role="tab"
+          type="button"
           aria-selected={tab === "job"}
+          aria-controls="tj-panel-job"
           onClick={() => setTab("job")}
         >
           Job
         </button>
         <button
+          id="tj-tab-quote"
           className={tab === "quote" ? "otab on" : "otab"}
           role="tab"
+          type="button"
           aria-selected={tab === "quote"}
+          aria-controls="tj-panel-quote"
           onClick={() => setTab("quote")}
         >
           Quote
@@ -347,44 +361,17 @@ export function TechJobModalContent() {
       {onQuoteTab ? (
         /* The Quote tab owns its whole body AND its sticky foot (the builder's
            "Present to customer →" is the sheet's one primary while it shows). */
-        <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+        <div role="tabpanel" id="tj-panel-quote" aria-labelledby="tj-tab-quote">
+          <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+        </div>
       ) : (
-        <>
-      {/* 2. Call / Text — the quiet peer-action row. CALL is for everyone: a technician ringing
-          the customer on their way is the ordinary field case, and going through Mallet is what
-          keeps their personal mobile off the customer's phone. myDay now carries the customers
-          behind a tech's own jobs, so the lead is in the store on this surface too. TEXT stays
-          office-only — outbound SMS is gated on the org's 10DLC registration, a separate question
-          from voice. Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no
-          number is on file. They disable only with NO linked customer (nobody to call). */}
-      <div className="sheet-secrow">
-        <button
-          className="sheet-sec"
-          disabled={!lead}
-          title={!lead ? "No linked customer" : undefined}
-          onClick={() => {
-            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
-          }}
-        >
-          Call
-        </button>
-        {isOffice && (
-          <button
-            className="sheet-sec"
-            disabled={!lead}
-            title={!lead ? "No linked customer" : undefined}
-            onClick={() => {
-              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
-            }}
-          >
-            Text
-          </button>
-        )}
-      </div>
-
-      {/* 3. Address — tappable Navigate row, or the muted no-address line. */}
+        <div role="tabpanel" id="tj-panel-job" aria-labelledby="tj-tab-job">
+      {/* 2. Address — the tappable Navigate row, or the muted no-address line. It leads the body:
+          the first thing a technician does with this sheet is get to it. Navigate carries the
+          AMBER accent (see .jaddr .nav) — the app's one "live action" colour; there is no blue
+          anywhere in Mallet. */}
       {addr ? (
-        <button className="jaddr" onClick={navigate}>
+        <button type="button" className="jaddr" onClick={navigate}>
           <svg
             viewBox="0 0 24 24"
             width="17"
@@ -394,6 +381,7 @@ export function TechJobModalContent() {
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
             <circle cx="12" cy="10" r="3" />
@@ -406,6 +394,44 @@ export function TechJobModalContent() {
           No address on this job yet.
         </div>
       )}
+
+      {/* 3. Call / Text — the quiet peer-action row, side by side beneath the address.
+          CALL is for everyone: a technician ringing the customer on their way is the ordinary
+          field case, and going through Mallet keeps their personal mobile off the customer's
+          phone. TEXT is gated on CAPABILITY, not on role — `canText` is the org's A2P 10DLC
+          campaign being active (see features/messaging/use-can-text.ts). It used to be gated on
+          `isOffice`, which answered a different question: a shop that has not finished carrier
+          registration cannot text whoever is holding the phone, and a shop that HAS finished it
+          has no reason to withhold the thread from the man standing at the door. When the org
+          cannot text, no button is drawn at all — a control that is certain to be refused is a
+          dead control. Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no
+          number is on file. They disable only with NO linked customer (nobody to call). */}
+      <div className="sheet-secrow">
+        <button
+          type="button"
+          className="sheet-sec"
+          disabled={!lead}
+          title={!lead ? "No linked customer" : undefined}
+          onClick={() => {
+            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+          }}
+        >
+          Call
+        </button>
+        {canText && (
+          <button
+            type="button"
+            className="sheet-sec"
+            disabled={!lead}
+            title={!lead ? "No linked customer" : undefined}
+            onClick={() => {
+              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
+            }}
+          >
+            Text
+          </button>
+        )}
+      </div>
 
       {/* 4. The close-out HERO. A done, UNPRICED ESTIMATE gets the scope handoff for every
           role — there is no bill on a scoping visit, so no billing branch may render. The
@@ -535,7 +561,7 @@ export function TechJobModalContent() {
           {footPri.label}
         </button>
       </div>
-        </>
+        </div>
       )}
     </>
   );

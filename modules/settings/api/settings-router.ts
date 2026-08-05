@@ -2,6 +2,7 @@ import { normalizeBookingService } from "../domain/org-settings";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { CensusGeocoder } from "@mallet/frontdesk";
+import { isSmsA2pActive } from "@mallet/a2p";
 import { loadConfig } from "@mallet/shared/config";
 import { withTenant } from "@mallet/shared/db/tx";
 import { router, anyRole, ownerOrOffice, ownerOrOfficeNoTx } from "@/trpc/init";
@@ -113,7 +114,7 @@ export const createSettingsRouter = () =>
       }),
 
     /**
-     * The field surface's capability flags — `anyRole`, one boolean wide.
+     * The field surface's capability flags — `anyRole`, two booleans wide.
      *
      * `get` above is ownerOrOffice and always will be. But the tech Quote tab's "Scan a room" row
      * is gated on the org's measurementEstimating flag, and the field layout can only mount the
@@ -121,12 +122,22 @@ export const createSettingsRouter = () =>
      * its placeholder forever and the field scanner never rendered on the one surface built for
      * it. This is the narrow read that fixes it without widening the office payload by a single
      * field. See fieldTogglesDTO for what may and may not go in here.
+     *
+     * `canText` is COMPOSED here rather than read by the settings use-case: "may this org send
+     * SMS" is the a2p module's fact, and `isSmsA2pActive` is the one definition of it that the
+     * notification router, the voice front desk and the AI write-tools all already share. The
+     * transport layer is the right seam to join two modules at; the settings domain stays
+     * ignorant of carrier registration.
      */
     fieldToggles: anyRole
       .output(fieldTogglesDTO)
       .query(async ({ ctx }) => {
         const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
-        return orThrow(await new GetFieldTogglesUseCase(repo).exec(ctx.principal.orgId));
+        const [toggles, canText] = await Promise.all([
+          new GetFieldTogglesUseCase(repo).exec(ctx.principal.orgId),
+          isSmsA2pActive(ctx.tx, ctx.principal.orgId),
+        ]);
+        return { ...orThrow(toggles), canText };
       }),
 
     // Patch org config scalars and/or the booking jsonb blob.

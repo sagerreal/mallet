@@ -14,9 +14,13 @@ import { defaultBooking } from "./default-booking";
  * and the tech Quote tab's "Scan a room" row, the one surface the field scanner is actually FOR,
  * could never render for the role it was built for.
  *
- * So: one narrow read, `anyRole`, returning ONE boolean. It is a capability flag about the
- * SHOP's trade — the same fact a tech learns by looking at the van — and it carries no prices,
- * no customer data, no credentials and no office configuration.
+ * So: one narrow read, `anyRole`, returning capability booleans. They are facts about the SHOP —
+ * the same facts a tech learns by looking at the van — and they carry no prices, no customer
+ * data, no credentials and no office configuration.
+ *
+ * `canText` is NOT read here: it lives in the a2p module (`isSmsA2pActive`), and the router
+ * composes the two so "may this org send SMS" keeps exactly ONE definition. See the
+ * `fieldToggles` procedure in settings-router.ts.
  */
 export interface FieldToggles {
   readonly measurementEstimating: boolean;

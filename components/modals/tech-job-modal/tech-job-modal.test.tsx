@@ -33,6 +33,10 @@ let mockRole: "owner" | "office" | "tech" | undefined = "owner";
 // office layout) — the tech job modal reads the org's visit fee via useOrgServiceFee instead.
 // Mocked directly here (see use-org-service-fee.test.ts for the hook's own fetch/fallback tests).
 let mockOrgFee: number | null = 89;
+// May the SHOP text (A2P 10DLC campaign active)? The Text button is gated on this CAPABILITY for
+// every role — not on isOffice, which answered a different question. The hook behind it reads
+// v1.settings.fieldToggles; mocked here so this suite stays store-only (see use-can-text.ts).
+let mockCanText = true;
 
 const noop = vi.fn();
 const mockOpenModal = vi.fn();
@@ -115,6 +119,10 @@ vi.mock("@/features/settings/use-org-service-fee", () => ({
   useOrgServiceFee: () => mockOrgFee,
 }));
 
+vi.mock("@/features/messaging/use-can-text", () => ({
+  useCanText: () => mockCanText,
+}));
+
 // Deterministic date stamp for the notes composer ("[Jul 13] …").
 vi.mock("@/lib/clock", () => ({
   todayISO: () => "2026-07-13",
@@ -165,6 +173,7 @@ beforeEach(() => {
   mockSeesPrice = true;
   mockRole = "owner";
   mockOrgFee = 89;
+  mockCanText = true;
   mockOpenModal.mockClear();
   mockUpdateJob.mockReset();
   mockUpdateJob.mockResolvedValue({ ok: true });
@@ -247,11 +256,29 @@ describe("TechJobModalContent — tech", () => {
   });
 
   // Call is for everyone: ringing the customer on the way is the ordinary field case, and going
-  // through Mallet is what keeps the tech's personal mobile off the customer's phone. Text stays
-  // office-only — outbound SMS is gated on the org's 10DLC registration, a separate question.
-  it("shows Call and hides Text", () => {
+  // through Mallet is what keeps the tech's personal mobile off the customer's phone.
+  //
+  // Text is gated on CAPABILITY, not on role. It was `isOffice`-only, which answered the wrong
+  // question: whether the shop may send an SMS is decided by its A2P 10DLC campaign, and that
+  // answer is the same whoever is holding the phone. A technician in a registered shop gets the
+  // thread; nobody in an unregistered one does.
+  it("shows Call, and Text too — a registered shop can text from the field", () => {
     render(<TechJobModalContent />);
     expect(screen.queryByText("Call")).not.toBeNull();
+    expect(screen.queryByText("Text")).not.toBeNull();
+  });
+
+  it("draws NO Text button when the org cannot text — a dead control is worse than none", () => {
+    mockCanText = false;
+    render(<TechJobModalContent />);
+    expect(screen.queryByText("Call")).not.toBeNull();
+    expect(screen.queryByText("Text")).toBeNull();
+  });
+
+  it("withholds Text from the OFFICE too when the campaign isn't active", () => {
+    mockRole = "owner";
+    mockCanText = false;
+    render(<TechJobModalContent />);
     expect(screen.queryByText("Text")).toBeNull();
   });
 
@@ -400,6 +427,37 @@ describe("TechJobModalContent — tech", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
     expect(screen.queryByText("Found work / add-ons")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The header: the customer, then what the work is and when it was due.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — header", () => {
+  it("leads with the customer and names the TRADE beneath, from job.svc", () => {
+    mockJobs = [makeJob({ svc: "Water heater repair", visits: [{ id: "v1", date: "2026-07-13", techId: "tech-1", start: 15, dur: 2, status: "scheduled" }] })];
+    render(<TechJobModalContent />);
+    expect(screen.getByRole("heading", { name: "Dana Alvarez" })).toBeTruthy();
+    expect(screen.getByText("Water heater repair")).toBeTruthy();
+    // todayISO is mocked to 2026-07-13, so this visit is today.
+    expect(screen.getByText("Today, 3:00 PM")).toBeTruthy();
+  });
+
+  // The store's mapper fills a null svc column with the literal "service" and older rows carry
+  // the board's lane keys in it. Printing either would name the lane, not the work.
+  it("falls back to the job title rather than printing the lane key", () => {
+    mockJobs = [makeJob({ svc: "service", title: "Fix water heater" })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Fix water heater")).toBeTruthy();
+    expect(screen.queryByText("service")).toBeNull();
+  });
+
+  it("prints no time at all for a job with no placed visit — it must not invent one", () => {
+    mockJobs = [makeJob({ svc: "Water heater repair", visits: [] })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Water heater repair")).toBeTruthy();
+    expect(screen.queryByText(/Today,/)).toBeNull();
   });
 });
 
@@ -567,6 +625,20 @@ describe("TechJobModalContent — tabs", () => {
     // office-only PricingSec entry is gone.
     expect(screen.queryByText("Price it on site →")).toBeNull();
     expect(screen.queryByText("Pricing")).toBeNull();
+  });
+
+  // The tablist named two controls and neither pointed at anything: there was no tabpanel in the
+  // file at all. A screen-reader user tabbed off "Quote" straight into the sheet body with no
+  // announcement that the body was what the tab controlled.
+  it("each tab controls a real, matching tabpanel", () => {
+    render(<TechJobModalContent />);
+    const jobTab = screen.getByRole("tab", { name: "Job" });
+    const panel = screen.getByRole("tabpanel");
+    expect(jobTab.getAttribute("aria-controls")).toBe(panel.id);
+    expect(panel.getAttribute("aria-labelledby")).toBe(jobTab.id);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    const quotePanel = screen.getByRole("tabpanel");
+    expect(screen.getByRole("tab", { name: "Quote" }).getAttribute("aria-controls")).toBe(quotePanel.id);
   });
 
   it("owner: the Quote tab opens with Scope + the embedded builder", () => {
