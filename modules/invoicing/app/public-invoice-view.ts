@@ -1,6 +1,7 @@
 import type { OrgId, InvoiceId } from "@mallet/shared/types";
 import { isOk } from "@mallet/shared/types";
 import type { Invoice, InvoiceStatus } from "../domain/invoice";
+import type { PaymentMethod } from "../domain/payment";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
 import type { ConnectTargetReader } from "../domain/connect-target-reader";
@@ -16,12 +17,31 @@ export interface PublicInvoiceLine {
   readonly rateCents: number;
 }
 
+/**
+ * One settled payment, as the customer's own copy states it.
+ *
+ * The aggregate `amountPaidCents` alone cannot make this page a RECEIPT — a document that says
+ * "Paid −$185.00" but not when, how much, or by what means is a statement, not proof of payment.
+ * The rows were always in the payments ledger; they simply were not projected.
+ *
+ * Deliberately NARROW: the amount, the method and the date only. `recordedByUserId` (which
+ * technician took the cash), the idempotency key and the Stripe id are the shop's reconciliation
+ * data and have no business on an unauthenticated page.
+ */
+export interface PublicInvoicePayment {
+  readonly amountCents: number;
+  readonly method: PaymentMethod;
+  readonly receivedAt: Date;
+}
+
 // The redacted shape the unauthenticated customer page renders: display lines WITHOUT cost,
 // money in integer cents, plus the two flags the Pay button needs.
 export interface PublicInvoiceView {
   readonly num: string;
   readonly title: string | null;
   readonly lines: readonly PublicInvoiceLine[];
+  /** Settled payments, OLDEST FIRST — a receipt reads in the order the money arrived. */
+  readonly payments: readonly PublicInvoicePayment[];
   readonly totalCents: number;
   readonly taxCents: number;
   readonly depositPaidCents: number;
@@ -50,6 +70,13 @@ export const toPublicInvoiceView = (
         description: line.props.description,
         quantity: line.props.quantity,
         rateCents: line.props.rate,
+      })),
+    payments: [...p.payments]
+      .sort((a, b) => a.props.receivedAt.getTime() - b.props.receivedAt.getTime())
+      .map((payment) => ({
+        amountCents: payment.props.amount,
+        method: payment.props.method,
+        receivedAt: payment.props.receivedAt,
       })),
     totalCents: p.total,
     taxCents: p.tax,

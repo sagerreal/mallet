@@ -20,8 +20,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicInvoice } from "@/modules/invoicing/app/public-invoice";
 import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
-import { formatMoney } from "@/lib/format";
 import { termsLine } from "@/features/invoices/terms-line";
+import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { PayInvoiceButton } from "./PayInvoiceButton";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
@@ -56,22 +56,6 @@ const STATUS_PILL: Record<PublicInvoiceView["status"], { label: string; tone: st
   paid: { label: "Paid", tone: "green" },
   void: { label: "Canceled", tone: "gray" },
 };
-
-// ---- totals row ---------------------------------------------------------------
-
-function TotalRow({ label, cents, negative, strong }: { label: string; cents: number; negative?: boolean; strong?: boolean }) {
-  return (
-    <div
-      className="custline"
-      style={strong ? { borderBottom: "none", fontWeight: 800, fontSize: "var(--type-md)" } : { borderBottom: "none" }}
-    >
-      <span className={strong ? undefined : "muted"}>{label}</span>
-      <b style={strong ? undefined : { fontWeight: 600 }}>
-        {negative ? `−${formatMoney(cents)}` : formatMoney(cents)}
-      </b>
-    </div>
-  );
-}
 
 // ---- page ----------------------------------------------------------------------
 
@@ -140,7 +124,6 @@ export default async function PublicInvoicePage({
   const isPaid = view.status === "paid";
   const isVoid = view.status === "void";
   const pill = STATUS_PILL[view.status];
-  const subtotalCents = view.totalCents - view.taxCents; // total is tax-INCLUSIVE
   const dueAtIso = view.dueAt?.toISOString() ?? null;
   // Net terms + due date + PO — ONE source of truth shared with the office sheet and the
   // customer preview modal (features/invoices/terms-line.ts). Net/due are suppressed once
@@ -214,58 +197,32 @@ export default async function PublicInvoicePage({
             </div>
           )}
 
-          {/* Meta line: status pill · Net terms once sent · PO when the customer issued one */}
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              flexWrap: "wrap",
-              gap: "var(--space-2)",
-              marginBottom: "var(--space-3)",
-            }}
-          >
-            <span className={`pill ${pill.tone}`}>{pill.label}</span>
-            {line && (
-              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-                {line}
-              </span>
-            )}
-          </div>
-
-          {view.title && (
-            <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
-              {view.title}
-            </p>
-          )}
-
-          {/* Line items */}
-          {view.lines.map((line, i) => (
-            <div className="custline" key={i}>
-              <span>
-                {line.description}
-                {line.quantity !== 1 ? ` × ${line.quantity}` : ""}
-              </span>
-              <b>{formatMoney(Math.round(line.quantity * line.rateCents))}</b>
-            </div>
-          ))}
-
-          {/* Totals — the balance math the domain computed, never re-derived here */}
-          <div style={{ marginTop: "var(--space-3)" }}>
-            {view.taxCents > 0 && (
-              <>
-                <TotalRow label="Subtotal" cents={subtotalCents} />
-                <TotalRow label="Tax" cents={view.taxCents} />
-              </>
-            )}
-            <TotalRow label="Total" cents={view.totalCents} />
-            {view.depositPaidCents > 0 && (
-              <TotalRow label="Deposit credit" cents={view.depositPaidCents} negative />
-            )}
-            {view.amountPaidCents > 0 && (
-              <TotalRow label="Paid" cents={view.amountPaidCents} negative />
-            )}
-            {!isVoid && <TotalRow label="Balance due" cents={view.balanceDueCents} strong />}
-          </div>
+          {/* THE document — the same component the office preview and the technician's
+              close-out render, so the customer's copy cannot drift from the shop's.
+              Meta line: status pill · Net terms once sent · PO when the customer issued one.
+              The invoice NUMBER is omitted here — the branded header above already states it. */}
+          <InvoiceDocument
+            statusPill={<span className={`pill ${pill.tone}`}>{pill.label}</span>}
+            termsFace={line}
+            title={view.title}
+            lines={view.lines.map((l) => ({
+              description: l.description,
+              quantity: l.quantity,
+              amountCents: Math.round(l.quantity * l.rateCents),
+            }))}
+            totalCents={view.totalCents}
+            taxCents={view.taxCents}
+            depositPaidCents={view.depositPaidCents}
+            amountPaidCents={view.amountPaidCents}
+            // A canceled invoice owes nothing, so it states no balance at all.
+            balanceDueCents={isVoid ? null : view.balanceDueCents}
+            // What makes this keepable: the date, amount and method of every payment received.
+            payments={view.payments.map((p) => ({
+              amountCents: p.amountCents,
+              method: p.method,
+              receivedAt: p.receivedAt.toISOString(),
+            }))}
+          />
 
           {/* THE action — only when it can actually run */}
           {payable && <PayInvoiceButton token={token} balanceDueCents={view.balanceDueCents} />}
