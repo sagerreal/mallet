@@ -169,6 +169,21 @@ export interface OrgSettingsProps {
   readonly brandLogoUrl: string | null;
   /** 1-3 character monogram initials. Nullable. */
   readonly brandInitials: string | null;
+  // --- Business identity (printed on customer documents) ---
+  // What a customer needs to know WHO billed them, act on it, and keep it. Deliberately NOT
+  // the fields they resemble: bizAddress is not serviceOriginAddress (a routing origin, often
+  // a yard) and bizPhone is not orgs.twilioNumber (telephony config, not the number on a bill).
+  // Business NAME is brandName/orgs.name and website is brandSite — neither is duplicated.
+  // All free text with NO format validation: a licence number's shape varies by state and a
+  // wrong regex would reject a valid licence. Trimmed, blank → null (see create).
+  /** Street address printed on customer documents. Nullable. */
+  readonly bizAddress: string | null;
+  /** The number a customer should call. Nullable. */
+  readonly bizPhone: string | null;
+  /** The address a customer should email about a bill. Nullable. */
+  readonly bizEmail: string | null;
+  /** Contractor/trade licence exactly as the shop writes it. Nullable. */
+  readonly licenseNumber: string | null;
   // --- Stripe Connect (Express) onboarding state (PR1) ---
   /** The shop's Stripe connected account id (acct_...). Null until onboarding begins. */
   readonly stripeConnectedAccountId: string | null;
@@ -191,6 +206,19 @@ const clampMinutes = (n: number): number =>
 
 const clampHour = (n: number): number =>
   Math.min(HOUR_MAX, Math.max(HOUR_MIN, Math.round(Number.isFinite(n) ? n : 0)));
+
+/**
+ * Free-text optional field → trimmed value, or null when there is nothing left.
+ *
+ * ONE representation for "not set". Without it a cleared input arrives as "" and a whitespace
+ * paste as "  ", and every consumer downstream has to remember that both mean absent — which is
+ * how a document ends up printing a label above an empty line. Documents omit a null row; they
+ * cannot omit a row holding a space.
+ */
+const blankToNull = (v: string | null): string | null => {
+  const trimmed = (v ?? "").trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
 
 // One day's [open, close] is valid iff it is the closed sentinel (0/0) or a forward range
 // (open < close). Hours are clamped to [0, 24] first so the check matches what would be stored.
@@ -329,6 +357,12 @@ export class OrgSettings {
         hoursSunOpen: clampHour(props.hoursSunOpen),
         hoursSunClose: clampHour(props.hoursSunClose),
         areaRadiusMi: Math.max(0, Math.round(props.areaRadiusMi)),
+        // Business identity: trimmed, and blank normalised to null so "not set" has exactly one
+        // representation on every read path (DB row, patch, fixture) — see blankToNull.
+        bizAddress: blankToNull(props.bizAddress),
+        bizPhone: blankToNull(props.bizPhone),
+        bizEmail: blankToNull(props.bizEmail),
+        licenseNumber: blankToNull(props.licenseNumber),
         // Legacy 'repair' lanes normalise here — the one boundary every read and write passes
         // through, so stored blobs and stale clients both come out as estimate + feeApplies.
         booking: { ...props.booking, services: props.booking.services.map(normalizeBookingService) },
@@ -436,6 +470,35 @@ export class OrgSettings {
       brandColor: fields.color !== undefined ? fields.color : this.p.brandColor,
       brandLogoUrl: fields.logoUrl !== undefined ? fields.logoUrl : this.p.brandLogoUrl,
       brandInitials: fields.initials !== undefined ? fields.initials : this.p.brandInitials,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Patch the business-identity subset — what gets PRINTED on a customer's invoice.
+   *
+   * Same contract as patchBrand: undefined = keep current, explicit null clears the field.
+   * All four are free text with NO format validation. A contractor licence number's shape
+   * varies by state (and by licence class within a state), a phone may legitimately carry an
+   * extension, and an address is an address — a regex here would reject valid values and leave
+   * a shop unable to put its own licence on its own bill. create() trims and normalises blank
+   * to null; nothing else is enforced.
+   */
+  patchBusiness(
+    fields: {
+      address?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      license?: string | null;
+    },
+    now: Date,
+  ): Result<OrgSettings, ValidationError> {
+    return OrgSettings.create({
+      ...this.p,
+      bizAddress: fields.address !== undefined ? fields.address : this.p.bizAddress,
+      bizPhone: fields.phone !== undefined ? fields.phone : this.p.bizPhone,
+      bizEmail: fields.email !== undefined ? fields.email : this.p.bizEmail,
+      licenseNumber: fields.license !== undefined ? fields.license : this.p.licenseNumber,
       updatedAt: now,
     });
   }

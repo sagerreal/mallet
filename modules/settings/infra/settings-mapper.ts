@@ -64,6 +64,12 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     brandColor: row.brandColor ?? null,
     brandLogoUrl: row.brandLogoUrl ?? null,
     brandInitials: row.brandInitials ?? null,
+    // Business identity printed on customer documents. All nullable — an org that has never
+    // filled them in reads back four nulls and every document omits the rows it has no value for.
+    bizAddress: row.bizAddress ?? null,
+    bizPhone: row.bizPhone ?? null,
+    bizEmail: row.bizEmail ?? null,
+    licenseNumber: row.licenseNumber ?? null,
     // Stripe Connect (Express) onboarding state (PR1).
     stripeConnectedAccountId: row.stripeConnectedAccountId ?? null,
     stripeChargesEnabled: row.stripeChargesEnabled,

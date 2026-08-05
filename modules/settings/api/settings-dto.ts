@@ -157,6 +157,23 @@ export const brandDTO = z.object({
   initials: z.string().nullable(),
 });
 
+// --- Business identity DTO -------------------------------------------------
+
+/**
+ * What a customer document prints about the shop, returned on every settingsDTO response.
+ *
+ * A sibling of brandDTO rather than part of it: brand is how the shop LOOKS (colour, monogram,
+ * tagline), this is who it legally IS and how to reach it. Every field is nullable — a shop that
+ * has not filled these in sends documents without those rows, never with an empty label.
+ * Business name and website are NOT here; they are brandDTO.name and brandDTO.site.
+ */
+export const businessDTO = z.object({
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  license: z.string().nullable(),
+});
+
 // --- Collection item DTOs --------------------------------------------------
 
 export const pricebookItemDTO = z.object({
@@ -208,6 +225,7 @@ export const settingsSnapshotDTO = z.object({
 
 export const settingsDTO = settingsSnapshotDTO.extend({
   brand: brandDTO,
+  business: businessDTO,
 });
 
 // --- Input schemas (named exports, mirroring output DTOs above) ------------
@@ -279,6 +297,23 @@ export const updateBrandInput = z.object({
   initials: z.string().max(3).nullable().optional(),
 });
 
+/**
+ * updateBusiness input: all fields optional — the caller sends only what changed, and an
+ * explicit null clears a field.
+ *
+ * Length caps ONLY. No email regex, no phone parse, no licence pattern: these are printed on a
+ * document exactly as the shop writes them, and every format rule here is a way to reject a
+ * valid value. A licence number's shape varies by state and by licence class; a phone may carry
+ * an extension; an "email for billing questions" may be a shared alias the shop knows works.
+ * The domain trims and normalises blank to null — that is the whole of the normalisation.
+ */
+export const updateBusinessInput = z.object({
+  address: z.string().max(500).nullable().optional(),
+  phone: z.string().max(64).nullable().optional(),
+  email: z.string().max(320).nullable().optional(),
+  license: z.string().max(120).nullable().optional(),
+});
+
 // --- Mappers (domain → wire) -----------------------------------------------
 
 export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO> => {
@@ -346,7 +381,8 @@ export const toSnapshotDTO = (s: SettingsSnapshot): z.infer<typeof settingsSnaps
 
 /**
  * Maps a SettingsSnapshot (config aggregate + collections) to the full settingsDTO wire shape.
- * Brand fields are sourced from the OrgSettings aggregate's props; brandName mirrors orgs.name
+ * Brand fields (how the shop looks) and business fields (who it is and how to reach it) are both
+ * sourced from the OrgSettings aggregate's props; brandName mirrors orgs.name
  * (the Drizzle repo joins orgs.name into the aggregate at read time).
  * Authoritative mapper for updateBrand — returns brand + config scalars + all four collections
  * so the client reconciles everything from a single response.
@@ -362,6 +398,12 @@ export const toSettingsDTO = (s: SettingsSnapshot): z.infer<typeof settingsDTO> 
       color: p.brandColor,
       logoUrl: p.brandLogoUrl,
       initials: p.brandInitials,
+    },
+    business: {
+      address: p.bizAddress,
+      phone: p.bizPhone,
+      email: p.bizEmail,
+      license: p.licenseNumber,
     },
   };
 };

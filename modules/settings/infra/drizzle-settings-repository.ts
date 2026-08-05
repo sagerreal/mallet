@@ -138,6 +138,13 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         brandColor: p.brandColor,
         brandLogoUrl: p.brandLogoUrl,
         brandInitials: p.brandInitials,
+        // Business identity printed on customer documents (address/phone/email/licence).
+        // Written here rather than on a second update so a business edit and a brand edit
+        // cannot land in different transactions and half-apply.
+        bizAddress: p.bizAddress,
+        bizPhone: p.bizPhone,
+        bizEmail: p.bizEmail,
+        licenseNumber: p.licenseNumber,
         // Stripe Connect (Express) onboarding state (PR1).
         stripeConnectedAccountId: p.stripeConnectedAccountId,
         stripeChargesEnabled: p.stripeChargesEnabled,

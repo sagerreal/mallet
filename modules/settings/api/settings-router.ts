@@ -14,6 +14,7 @@ import { GetSettingsUseCase } from "../app/get-settings";
 import { GetFieldTogglesUseCase } from "../app/get-field-toggles";
 import { UpdateConfigUseCase } from "../app/update-config";
 import { UpdateBrandUseCase } from "../app/update-brand";
+import { UpdateBusinessUseCase } from "../app/update-business";
 import { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "../app/connect-onboarding";
 import { CreatePricebookUseCase, UpdatePricebookUseCase, RemovePricebookUseCase } from "../app/pricebook";
 import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase } from "../app/labor-rates";
@@ -43,6 +44,7 @@ import {
   termUpdateInput,
   sourceCreateInput,
   updateBrandInput,
+  updateBusinessInput,
   connectStatusDTO,
   beginOnboardingResultDTO,
 } from "./settings-dto";
@@ -191,6 +193,29 @@ export const createSettingsRouter = () =>
         orThrow(result);
         // Re-fetch the full snapshot so the response includes all four collections —
         // avoids partial responses and keeps the client store reconciliation simple.
+        const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
+        return toSettingsDTO(orThrow(snapshot));
+      }),
+
+    // Patch the business identity printed on customer documents (address / phone / email /
+    // licence → org_settings). Returns the full settingsDTO for the same reason updateBrand
+    // does: one response the client reconciles everything from.
+    // Org is always sourced from ctx.principal.orgId; the client MUST NOT pass orgId.
+    updateBusiness: ownerOrOffice
+      .input(updateBusinessInput)
+      .output(settingsDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new UpdateBusinessUseCase(repo, ctx.deps.clock).exec(
+          {
+            address: input.address,
+            phone: input.phone,
+            email: input.email,
+            license: input.license,
+          },
+          ctx.principal.orgId,
+        );
+        orThrow(result);
         const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
         return toSettingsDTO(orThrow(snapshot));
       }),
