@@ -23,6 +23,15 @@ import type { Context } from "@/trpc/init";
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
+// myDay takes the caller's own local day as absolute instants (there is no org timezone column).
+const TODAY = (() => {
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  return { dayStart, dayEnd };
+})();
+
 const admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
 const createdOrgIds: string[] = [];
 
@@ -249,7 +258,7 @@ suite("v1.calls (live RLS)", () => {
     const [other] = await admin<{ id: string }[]>`
       insert into leads (org_id, name, phone_e164) values (${shop.orgId}, 'Not Theirs', '+19415550999') returning id`;
 
-    const day = await appRouter.createCaller(ctxFor(shop.orgId, techId, "tech")).v1.field.myDay();
+    const day = await appRouter.createCaller(ctxFor(shop.orgId, techId, "tech")).v1.field.myDay(TODAY);
 
     expect(day.customers.map((c) => c.id)).toEqual([shop.leadId]);
     expect(day.customers[0]!.phone).toBe("+19415550134");

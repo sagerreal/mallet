@@ -69,6 +69,7 @@ export const useActiveModal = () => useAppStore((s) => s.activeModal);
 export const useOpenModal = () => useAppStore((s) => s.openModal);
 export const useA2pStatus = () => useAppStore((s) => s.a2pStatus);
 export const useCloseModal = () => useAppStore((s) => s.closeModal);
+export const useDismissModals = () => useAppStore((s) => s.dismissModals);
 export const usePushModal = () => useAppStore((s) => s.pushModal);
 export const useLeads = () => useAppStore((s) => s.leads);
 export const useCompanies = () => useAppStore((s) => s.companies);

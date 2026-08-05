@@ -24,6 +24,7 @@ import {
   useAppStore,
   useActiveModal,
   useCloseModal,
+  useDismissModals,
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
@@ -1018,6 +1019,7 @@ function CloseOutNotice({ title, subtitle, heading, message, onRetry }: CloseOut
 export function CloseOutModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
+  const dismissModals = useDismissModals();
 
   // WHO IS HOLDING THIS SHEET. Until this change the close-out had zero role checks and was
   // protected only by being unreachable — the tech job modal never opened it for a technician.
@@ -1069,6 +1071,22 @@ export function CloseOutModalContent() {
   // reconcile wipes any local jobId hint back to null). Matching by id when provided is the
   // durable way to find it regardless of that flap.
   const invoiceIdParam = activeModal?.params?.invoiceId as string | undefined;
+
+  /**
+   * WHERE DONE LANDS.
+   *
+   * This sheet is a drill-in from two different places, and finishing it means two different
+   * things. Opened from a field job (tech-job-modal declares `from: "field-job"`), it is the LAST
+   * step of a visit — the next thing that person does is the next stop, so Done dismisses the
+   * whole stack to My day. Opened from anywhere else (an office drill from Money → invoice, say),
+   * it is one level of a deeper flow and Done pops back to its parent, as before.
+   *
+   * Branch on the opener's declared intent, NOT on role and NOT on stack depth: an owner-operator
+   * collecting at the customer's door is `owner` and still belongs on My day, and the visit-fee
+   * path pushes an extra level so the depth is not fixed.
+   */
+  const fromField = activeModal?.params?.from === "field-job";
+  const finish = fromField ? dismissModals : close;
 
   // ---- ensureInvoiceForJob (prototype) — find the job's invoice, else create
   //      one from the job. Creation runs in an effect (never mutate the store
@@ -1331,7 +1349,7 @@ export function CloseOutModalContent() {
   function sendToOffice() {
     if (!job) return;
     updateJob(job.id, { invRequested: true });
-    close();
+    finish();
   }
 
   return (
@@ -1431,7 +1449,7 @@ export function CloseOutModalContent() {
             onCardPaid={adoptPaidInvoice}
             onFinish={() => {
               setPayOpen(false);
-              close();
+              finish();
             }}
             onCancel={() => setPayOpen(false)}
           />
@@ -1476,7 +1494,7 @@ export function CloseOutModalContent() {
           ) : (
             /* Nothing owed and no office writes to offer — the bill is settled or unpriced, and
                either way the technician is done here. Never a dead hand-off button. */
-            <button className="sheet-pri" onClick={close}>
+            <button className="sheet-pri" onClick={finish}>
               Done
             </button>
           )}

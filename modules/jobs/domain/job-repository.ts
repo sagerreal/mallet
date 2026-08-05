@@ -84,6 +84,22 @@ export interface JobFilter {
   /** Narrow to one customer's jobs. Combined with assignedUserId it answers "is this person on a
    *  job for this customer" — the question the field surface's reach is defined by. */
   readonly leadId?: LeadId;
+  /**
+   * Still open, OR finished inside this window — what a technician's agenda means.
+   *
+   * My day used to be two hard status equalities (scheduled + in_progress), so the moment a job
+   * was completed it left the list. Owen, testing: "jobs are disappearing after I finish them, the
+   * jobs for the day should still be showing but with done status". A day's work you can no longer
+   * see is a day you cannot check.
+   *
+   * ABSOLUTE INSTANTS, supplied by the caller — never a `completed_at::date = today` cast. There
+   * is no org timezone column, so the database's idea of "today" is UTC: at 5pm Pacific it is
+   * already tomorrow in UTC and the whole afternoon's finished work would vanish.
+   *
+   * Half-open [from, to). Optional and additive: `v1.jobs.list` (the office list) never sets it and
+   * is unaffected.
+   */
+  readonly openOrCompletedBetween?: { readonly from: Date; readonly to: Date };
 }
 
 /** The four execution child collections of one job. */

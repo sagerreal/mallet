@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
@@ -401,6 +401,17 @@ export class DrizzleJobRepository implements JobRepository {
             .from(leads)
             .where(and(eq(leads.orgId, jobs.orgId), eq(leads.id, jobs.leadId), ilike(leads.name, like))),
         ),
+      );
+      if (cond) conds.push(cond);
+    }
+    if (filter?.openOrCompletedBetween) {
+      // Open work, plus work FINISHED inside the caller's own day — the field agenda's shape.
+      // Half-open [from, to) so a job completed at exactly midnight belongs to one day only.
+      // `canceled` is never included: a called-off job is not something you did today.
+      const { from, to } = filter.openOrCompletedBetween;
+      const cond = or(
+        inArray(jobs.status, ["scheduled", "in_progress"]),
+        and(eq(jobs.status, "complete"), gte(jobs.completedAt, from), lt(jobs.completedAt, to)),
       );
       if (cond) conds.push(cond);
     }

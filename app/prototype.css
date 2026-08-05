@@ -1954,11 +1954,26 @@
   .sched-vn{width:21px;height:21px;border-radius:50%;background:var(--green-100);color:var(--ink-2);font-size:var(--type-xs);font-weight:800;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0}
   .sched-vrow .vx{margin-left:auto;color:var(--ink-3);padding:var(--space-1) var(--space-2)}
   /* DAY = dispatch board: one ROW per crew member, the day's hours running left→right (scales to many techs via vertical scroll). */
-  .gv-scroll{position:relative;border:1px solid var(--line);border-radius:var(--radius);overflow-x:auto;background:var(--card)}
+  /* The board is a SCROLLPORT, capped. It used to grow to whatever height the crew list needed,
+     which is why Owen asked "how am I supposed to drag the boxes to the ones that are cut off" —
+     the third crew row sat below the fold with no scrollbar of its own, so reaching it meant
+     scrolling the PAGE, which moved the tray card out from under the cursor mid-drag.
+     Capping it also fires `.gv-head{position:sticky;top:0}` for the first time: with no height
+     limit this element's scrollTop was permanently 0, so the hour ruler has never actually stuck.
+     Same reasoning as `.tray-grid`'s 44vh below. */
+  .gv-scroll{position:relative;border:1px solid var(--line);border-radius:var(--radius);overflow:auto;max-height:62vh;background:var(--card)}
   .gv-row{display:flex;align-items:stretch;border-bottom:1px solid var(--line-2)}
   .gv-row:last-child{border-bottom:none}
-  .gv-head{position:sticky;top:0;z-index:2}
-  .gv-name{flex:0 0 148px;width:148px;padding:var(--space-2) var(--space-3);display:flex;align-items:center;gap:var(--space-2);border-right:1px solid var(--line);background:var(--card)}
+  /* Above the crew column (4) and the on-block "+" (3): now that the header genuinely sticks, a
+     body row's sticky name would otherwise slide over the hour ruler on the way past. */
+  .gv-head{position:sticky;top:0;z-index:5}
+  /* The crew column stays put while the hours pan — on DESKTOP too, not just on a phone. The hours
+     run off the right edge of any normal window, and panning to 4pm used to take the names with
+     it, leaving unlabelled lanes.
+     z-index 4, not 3: `.gv-addv` is 3 inside `.gv-lane`, which is position:relative with z-index
+     auto and so creates NO stacking context — at equal z-index the lane's "+" buttons paint over
+     the crew column. The phone rule this was lifted from has that latent bug. */
+  .gv-name{position:sticky;left:0;z-index:4;flex:0 0 148px;width:148px;padding:var(--space-2) var(--space-3);display:flex;align-items:center;gap:var(--space-2);border-right:1px solid var(--line);background:var(--card)}
   /* toolbar above the board: Day/Week segmented + the Prev·Today·Next cluster. Two
      atomic groups so the phone media query below can stack them WHOLE — without this,
      the individual buttons wrap ragged (Next orphaned on its own line). */
@@ -2075,6 +2090,13 @@
      show everything at once to be honest about how much there is.
      The phone rule below replaces this with a horizontal snap-scroller. */
   .tray-grid{max-height:44vh;overflow-y:auto;overscroll-behavior:contain}
+  /* While a visit is ARMED or being DRAGGED, the tray steps back to a single scrolling row.
+     Those 44vh are the largest single claim on the space directly under the cursor, and the card
+     being placed is already in hand. Nothing is hidden — the row scrolls sideways, the same shape
+     the phone rule below uses. `--tray-card-min` is set inline from schedule-constants so the card
+     width has one definition. */
+  .tray-grid.compact{max-height:none;overflow-y:hidden;overscroll-behavior:contain}
+  .tray-grid.compact > *{flex:0 0 var(--tray-card-min)}
 
   /* ---- phone layout ---- */
 @media (max-width:760px){
@@ -2169,9 +2191,9 @@
     .sched-toolbar{flex-direction:column;align-items:flex-start;gap:var(--space-2)}
     .sched-toolbar-gap{display:none}
     .sched-nav{width:100%;overflow-x:auto}
-    /* Crew×hours board: the CREW name column stays put while the hour lanes pan,
-       and a soft right-edge fade hints there's more to scroll. */
-    .gv-name{position:sticky;left:0;z-index:3}
+    /* Crew×hours board: the sticky crew column and the height cap are now the DESKTOP defaults
+       (see the base rules) — a phone keeps the momentum scrolling and the right-edge fade that
+       hints there's more to pan. */
     .gv-scroll{-webkit-overflow-scrolling:touch}
     .gv-scroll::after{content:"";position:absolute;top:0;right:0;bottom:0;width:28px;pointer-events:none;background:linear-gradient(to right,transparent,var(--card))}
     html,body{overflow-x:hidden;max-width:100%}
@@ -2322,6 +2344,9 @@
        the next card sits ~48px into view — IS the scroll affordance; no dots/arrows. */
     .tray-grid{display:flex !important;overflow-x:auto;scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-bottom:var(--space-2)}
     .tray-grid > *{flex:0 0 calc(100% - 48px);scroll-snap-align:start}
+    /* The desktop compact rule is more specific, so it would otherwise shrink the phone's
+       peek-width cards mid-drag. A phone tray is already one scrolling row. */
+    .tray-grid.compact > *{flex:0 0 calc(100% - 48px)}
     .tray-grid > :only-child{flex-basis:100%}
     /* Auth pages: hide brand panel, show mobile logo */
     .auth-brand{display:none}

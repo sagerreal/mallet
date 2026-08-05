@@ -16,6 +16,16 @@ import type { PhotoStorageGateway } from "../domain/photo-storage-gateway";
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
+// The caller's own local day, as absolute instants — what every myDay call now carries. The
+// window is the client's because there is no org timezone column; see the input's own comment.
+const dayWindow = (d: Date): { dayStart: Date; dayEnd: Date } => {
+  const dayStart = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dayEnd = new Date(dayStart);
+  dayEnd.setDate(dayEnd.getDate() + 1);
+  return { dayStart, dayEnd };
+};
+const TODAY = dayWindow(new Date());
+
 const stubAuth = {
   authenticate: async () => {
     throw new Error("authProvider should not be called in createCaller tests");
@@ -117,12 +127,12 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
   it("myDay returns only MY active jobs", async () => {
     const callerA = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
-    const resultA = await callerA.v1.field.myDay();
+    const resultA = await callerA.v1.field.myDay(TODAY);
     expect(resultA.items).toHaveLength(1);
     expect(resultA.items[0]!.id).toBe(jobAId);
 
     const callerB = appRouter.createCaller(ctxFor(techBId, orgId, "tech"));
-    const resultB = await callerB.v1.field.myDay();
+    const resultB = await callerB.v1.field.myDay(TODAY);
     expect(resultB.items).toHaveLength(1);
     expect(resultB.items[0]!.id).toBe(jobBId);
   });
@@ -152,8 +162,11 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     expect(started.status).toBe("in_progress");
   });
 
-  it("myDay returns scheduled jobs sorted by scheduledStart asc (not by insert order)", async () => {
-    // Seed a fresh tech so the ordering test is isolated from the jobs created in beforeAll.
+  it("myDay is ordered by the earliest live VISIT, not by insert order", async () => {
+    // Rewritten: this used to seed `jobs.scheduled_start` directly, a column no production path
+    // writes. It passed while proving nothing a real job would exercise — every live job has a
+    // null there, so the comparator was "equal" for every pair and the day came back in
+    // random-UUID order. Scheduling goes through VISITS; the test now seeds what it asserts.
     const [orderTech] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role)
       values (${orgId}, ${randomUUID()}, 'ordertech@field.test', 'tech')
@@ -161,32 +174,48 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     `;
     const orderTechId = orderTech!.id;
 
-    // T+2h job inserted FIRST (would come first if sorted by insert order / created_at).
-    const tPlus2 = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
-    // T+1h job inserted SECOND.
-    const tPlus1 = new Date(Date.now() + 1 * 60 * 60 * 1000).toISOString();
-
     const [jobLater] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, scheduled_start)
-      values (${orgId}, ${leadId}, 'JOB-ORDER-LATER', 'scheduled', 0, ${orderTechId}, ${tPlus2})
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-LATER', 'scheduled', 0, ${orderTechId})
       returning id
     `;
     const [jobEarlier] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, scheduled_start)
-      values (${orgId}, ${leadId}, 'JOB-ORDER-EARLIER', 'scheduled', 0, ${orderTechId}, ${tPlus1})
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-EARLIER', 'scheduled', 0, ${orderTechId})
       returning id
+    `;
+    // Unplaced: assigned, never given a day. It must still be RETURNED — hiding it is how work
+    // goes missing — just not at the head of the route.
+    const [jobUnplaced] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-ORDER-UNPLACED', 'scheduled', 0, ${orderTechId})
+      returning id
+    `;
+    // The 3pm visit is inserted FIRST, so insert order and created_at both disagree with the clock.
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobLater!.id}, 'pending', 1, current_date, '15:00')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobEarlier!.id}, 'pending', 1, current_date, '08:30')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position)
+      values (${orgId}, ${jobUnplaced!.id}, 'pending', 1)
     `;
 
     try {
       const caller = appRouter.createCaller(ctxFor(orderTechId, orgId, "tech"));
-      const result = await caller.v1.field.myDay();
+      const result = await caller.v1.field.myDay(TODAY);
 
-      expect(result.items).toHaveLength(2);
-      // Earlier scheduledStart (T+1h, inserted second) must come before later (T+2h, inserted first).
-      expect(result.items[0]!.id).toBe(jobEarlier!.id);
-      expect(result.items[1]!.id).toBe(jobLater!.id);
+      expect(result.items.map((i) => i.id)).toEqual([
+        jobEarlier!.id,
+        jobLater!.id,
+        jobUnplaced!.id,
+      ]);
     } finally {
-      await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id})`;
+      await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id}, ${jobUnplaced!.id})`;
       await admin`delete from users where id = ${orderTechId}`;
     }
   });
@@ -217,7 +246,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
       // Survives a re-read through the tech's own surface — myDay must carry the
       // checklist AND the saved answers (execution data), not just job headers.
-      const day = await caller.v1.field.myDay();
+      const day = await caller.v1.field.myDay(TODAY);
       const mine = day.items.find((i) => i.id === jobId);
       expect(mine?.checklist?.items[0]?.id).toBe("i1");
       expect(mine?.verifyAnswers).toEqual([{ itemId: "i1", state: "pass", via: "manual", reason: null }]);
@@ -297,7 +326,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     `;
     try {
       const caller = appRouter.createCaller(ctxFor(visitTechId, orgId, "tech"));
-      const day = await caller.v1.field.myDay();
+      const day = await caller.v1.field.myDay(TODAY);
       expect(day.items.map((i) => i.id)).toContain(jobId);
 
       const started = await caller.v1.field.start({ jobId });
@@ -339,7 +368,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     `;
     try {
       const caller = appRouter.createCaller(ctxFor(canceledTechId, orgId, "tech"));
-      const day = await caller.v1.field.myDay();
+      const day = await caller.v1.field.myDay(TODAY);
       expect(day.items.map((i) => i.id)).not.toContain(jobId);
     } finally {
       await admin`delete from jobs where id = ${jobId}`;
@@ -413,7 +442,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
     it("tech myDay ALWAYS strips cost; rate stays while techSeesPrice is on (default)", async () => {
       const caller = appRouter.createCaller(ctxFor(redactTechId, orgId, "tech"));
-      const day = await caller.v1.field.myDay();
+      const day = await caller.v1.field.myDay(TODAY);
       const mine = day.items.find((i) => i.id === pricedJobId);
       expect(mine?.lines[0]?.rate?.cents).toBe(25000);
       expect(mine?.lines[0]?.cost).toBeNull();
@@ -430,7 +459,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
         on conflict (org_id) do update set tech_sees_price = false
       `;
       const techCaller = appRouter.createCaller(ctxFor(redactTechId, orgId, "tech"));
-      const day = await techCaller.v1.field.myDay();
+      const day = await techCaller.v1.field.myDay(TODAY);
       const mine = day.items.find((i) => i.id === pricedJobId);
       expect(mine?.lines[0]?.rate).toBeNull();
       expect(mine?.lines[0]?.cost).toBeNull();
@@ -462,7 +491,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
         on conflict (org_id) do update set tech_sees_price = false
       `;
       const techCaller = appRouter.createCaller(ctxFor(redactTechId, orgId, "tech"));
-      const techDay = await techCaller.v1.field.myDay();
+      const techDay = await techCaller.v1.field.myDay(TODAY);
       const techMine = techDay.items.find((i) => i.id === pricedJobId);
       expect(techMine?.total).toBeNull();
 
@@ -1349,6 +1378,126 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
       await admin`delete from jobs where id = ${j!.id}`;
       await admin`delete from leads where id = ${archivedLead!.id}`;
+    });
+  });
+
+  // =========================================================================
+  // A DAY YOU FINISHED IS STILL A DAY.
+  //
+  // Owen, testing: "jobs are disappearing after I finish them, the jobs for the day should still
+  // be showing but with done status maybe". myDay was two hard status equalities — scheduled and
+  // in_progress — so a job left the agenda the instant it was completed, and the technician had no
+  // way to check what he had done, or that his last tap had landed at all.
+  //
+  // The window is the CLIENT'S day, sent as absolute instants. The case that actually catches a
+  // regression is the second one: 6pm Pacific is already tomorrow in UTC, so any server-side
+  // `completed_at::date = current_date` empties the list every afternoon.
+  // =========================================================================
+  describe("myDay — work finished today stays on the agenda", () => {
+    let windowTechId = "";
+
+    const seedWindowJob = async (
+      num: string,
+      status: string,
+      completedAt: Date | null,
+    ): Promise<string> => {
+      const [row] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, completed_at)
+        values (${orgId}, ${leadId}, ${num}, ${status}, 0, ${windowTechId}, ${completedAt})
+        returning id
+      `;
+      return row!.id;
+    };
+
+    beforeAll(async () => {
+      const [t] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgId}, ${randomUUID()}, 'windowtech@field.test', 'tech')
+        returning id
+      `;
+      windowTechId = t!.id;
+    });
+
+    afterAll(async () => {
+      if (windowTechId) await admin`delete from users where id = ${windowTechId}`;
+    });
+
+    it("keeps a job finished today, drops one finished yesterday, and never shows a canceled one", async () => {
+      const now = new Date();
+      const finishedToday = await seedWindowJob("JOB-WIN-TODAY", "complete", now);
+      const finishedYesterday = await seedWindowJob(
+        "JOB-WIN-YDAY",
+        "complete",
+        new Date(now.getTime() - 30 * 60 * 60 * 1000),
+      );
+      // Canceled is never "what I did today", whenever it happened.
+      const canceled = await seedWindowJob("JOB-WIN-CANC", "canceled", null);
+      const stillOpen = await seedWindowJob("JOB-WIN-OPEN", "scheduled", null);
+
+      try {
+        const day = await appRouter
+          .createCaller(ctxFor(windowTechId, orgId, "tech"))
+          .v1.field.myDay(TODAY);
+        const ids = day.items.map((i) => i.id);
+
+        expect(ids).toContain(finishedToday);
+        expect(ids).toContain(stillOpen);
+        expect(ids).not.toContain(finishedYesterday);
+        expect(ids).not.toContain(canceled);
+
+        // …and it carries the status the card renders as "Done", not a silently dropped row.
+        expect(day.items.find((i) => i.id === finishedToday)!.status).toBe("complete");
+      } finally {
+        await admin`delete from jobs where id in (${finishedToday}, ${finishedYesterday}, ${canceled}, ${stillOpen})`;
+      }
+    });
+
+    it("a job finished at 6pm Pacific — already tomorrow in UTC — is still on today's list", async () => {
+      // THE regression case. 2026-03-10T01:30:00Z is 2026-03-09 5:30pm Pacific: a
+      // `completed_at::date = current_date` comparison in UTC puts this job on the 10th and the
+      // technician's whole afternoon disappears. Absolute instants from the client get it right
+      // without an org timezone column, which does not exist.
+      const pacificDayStart = new Date("2026-03-09T08:00:00Z"); // local midnight, UTC-8
+      const pacificDayEnd = new Date("2026-03-10T08:00:00Z");
+      const completedAt = new Date("2026-03-10T01:30:00Z");
+
+      const evening = await seedWindowJob("JOB-WIN-PM", "complete", completedAt);
+      try {
+        const day = await appRouter
+          .createCaller(ctxFor(windowTechId, orgId, "tech"))
+          .v1.field.myDay({ dayStart: pacificDayStart, dayEnd: pacificDayEnd });
+
+        expect(day.items.map((i) => i.id)).toContain(evening);
+      } finally {
+        await admin`delete from jobs where id = ${evening}`;
+      }
+    });
+
+    it("refuses a window that runs backwards, and one longer than a day", async () => {
+      const caller = appRouter.createCaller(ctxFor(windowTechId, orgId, "tech"));
+      const start = new Date("2026-03-09T08:00:00Z");
+
+      await expect(
+        caller.v1.field.myDay({ dayStart: start, dayEnd: new Date("2026-03-08T08:00:00Z") }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+
+      await expect(
+        caller.v1.field.myDay({ dayStart: start, dayEnd: new Date("2026-04-09T08:00:00Z") }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    // The office list shares listConds. The new filter member is optional and additive, and
+    // v1.jobs.list never sets it — a completed job stays in the office's book forever, which is
+    // also why Owen never hit the vanishing-job bug at the desk.
+    it("the office list is untouched: a job finished last year is still in the book", async () => {
+      const ancient = await seedWindowJob("JOB-WIN-OLD", "complete", new Date("2025-01-05T12:00:00Z"));
+      try {
+        const office = appRouter.createCaller(ctxFor(ownerUserId, orgId, "owner"));
+        const list = await office.v1.jobs.list({ limit: 50 });
+        expect(list.items.map((i) => i.id)).toContain(ancient);
+      } finally {
+        await admin`delete from jobs where id = ${ancient}`;
+      }
     });
   });
 });

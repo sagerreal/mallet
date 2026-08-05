@@ -36,6 +36,7 @@ import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
 import { myHoursListInput, MY_HOURS_STALE_MS } from "./my-hours-input";
+import { useMyDayInput } from "./my-day-input";
 import { INBOX_POLL_MS } from "./inbox-query-options";
 
 type MyDayItem = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
@@ -68,7 +69,10 @@ export function FieldJobsHydrator() {
   // that a dispatcher changes from a different device, so returning to the app is exactly the
   // moment a reassignment is most likely to be waiting. The office hydrators keep focus refetch
   // off — their surfaces are refreshed by the store's own invalidations on the same device.
-  const { data, isError, error } = api.v1.field.myDay.useQuery(undefined, {
+  // The SAME builder the page uses — the keys cannot drift, so the page's refetch after a
+  // start/complete re-runs this sync instead of warming a second, unread cache entry.
+  const dayInput = useMyDayInput();
+  const { data, isError, error } = api.v1.field.myDay.useQuery(dayInput, {
     staleTime: HYDRATOR_STALE_MS,
     refetchOnWindowFocus: true,
   });

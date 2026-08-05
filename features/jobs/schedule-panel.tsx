@@ -13,6 +13,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo, type DragEvent as ReactDragEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { useScheduleWindow } from "./use-schedule-window";
@@ -31,7 +32,6 @@ import {
   jobMode,
   techById,
   boardItemsFor,
-  jobsUnscheduled,
   dayLoad,
   type Held,
 } from "./jobs-helpers";
@@ -64,6 +64,16 @@ function addDaysLocal(iso: string, n: number): string {
   return d.toISOString().slice(0, 10);
 }
 
+/**
+ * The one sentence that says you do not have to drag.
+ *
+ * Dragging is the only affordance the board advertises, and it is the one that fails: the crew
+ * rows run off the bottom and the hours off the right edge, so the target is frequently not on
+ * screen at the moment you pick the card up. Tap-then-tap has none of that problem. It existed
+ * already; it was just written on the branch almost nobody sees.
+ */
+const PLACE_HINT = "Tap a visit, then a crew & time — or drag it";
+
 // First-run empty-state copy. Shown when a brand-new shop opens Schedule with nothing to place
 // (no jobs and no estimate visits). Rendered via a full early return that never touches the board.
 const FIRST_RUN = {
@@ -78,6 +88,8 @@ const FIRST_RUN = {
 
 export function SchedulePanel() {
   const openModal = useOpenModal();
+  const router = useRouter();
+  const placeParam = useSearchParams().get("place");
   const jobs = useAppStore((s) => s.jobs);
   const adoptJob = useAppStore((s) => s.adoptJob);
   const needsSlotQ = api.v1.jobs.list.useQuery(
@@ -497,6 +509,40 @@ export function SchedulePanel() {
   const loadFailed = shouldShowLoadFailed(gate);
   const loading = isFirstLoad(gate);
 
+  // Armed or dragging: the tray steps out of the board's way. See the .tray-grid.compact rule.
+  const trayCompact = Boolean(placing || drag);
+
+  /**
+   * `?place=<jobId>` — a job that was just created and needs a slot.
+   *
+   * The New-job form has no date picker, so every job it makes arrives with UNPLACED visits and
+   * the board is its actual next step. It navigates here with the id rather than reaching into
+   * this component's state.
+   *
+   * ARM ONLY, from the STORE, and never `addVisit`. `addVisit` is fire-and-forget in the create
+   * path, so a board mounting straight after a create can see a tray DTO whose `visits` is still
+   * empty; once that first createVisit settles, the slice's in-flight dedupe guard no longer
+   * applies and arming through `armJob` would mint a SECOND visit on a job that already has one.
+   * So: no-op until the store's copy of the job actually shows an unplaced visit, then arm it and
+   * drop the param. `jobs` is in the deps precisely so the retry happens when the store catches up.
+   *
+   * The ref makes the arm HAPPEN ONCE per id. The retry above is a real loop — it re-runs on every
+   * store change until the visit lands — and without the latch, re-arming after the dispatcher has
+   * moved on would drag their selection back to a job they already placed.
+   */
+  const armedParamRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!placeParam || armedParamRef.current === placeParam) return;
+    const target = jobs.find((j) => j.id === placeParam);
+    if (!target) return;
+    const unplaced = (target.visits ?? []).find((v) => !isVisitPlaced(v));
+    if (!unplaced) return;
+    armedParamRef.current = placeParam;
+    setPlacing({ kind: "job", ownerId: target.id, visitId: unplaced.id });
+    // replace, not push: the arm has been consumed, and Back should not re-fire it.
+    router.replace("/jobs?tab=schedule");
+  }, [placeParam, jobs, router]);
+
   if (loadFailed) {
     return <LoadFailed noun="schedule" onRetry={shown.refetch} retrying={shown.isRefetching} />;
   }
@@ -542,7 +588,22 @@ export function SchedulePanel() {
               })()}
             </span>
           </b>
-          <div className="tray-grid" style={{ marginTop: "var(--space-3)", display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
+          {/* While something is armed or in the hand, the tray gives the board back the ~44vh it
+              normally holds — the card being placed is already in hand, and the space directly
+              under the cursor is the scarce thing. It becomes one horizontally scrolling row, so
+              nothing is hidden. */}
+          <div
+            className={`tray-grid${trayCompact ? " compact" : ""}`}
+            style={{
+              marginTop: "var(--space-3)",
+              gap: "var(--space-2)",
+              // One definition of the card width, shared with the CSS compact rule.
+              ["--tray-card-min" as string]: `${TRAY_CARD_MIN_WIDTH_PX}px`,
+              ...(trayCompact
+                ? { display: "flex", overflowX: "auto" as const }
+                : { display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))` }),
+            }}
+          >
             {trayCards.map((card) => {
               const name = custName(card.j, leads);
               const title = card.j.title;
@@ -584,7 +645,7 @@ export function SchedulePanel() {
                       </span>
                     </div>
                     <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-2)" }}>
-                      Tap a visit, then a crew &amp; time — or drag it
+                      {PLACE_HINT}
                     </div>
                     <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                       {unplacedList.map((v) => (
@@ -641,11 +702,19 @@ export function SchedulePanel() {
                   </button>
                   <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
                   <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
                     <span style={{ fontSize: "var(--type-xs)", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                       {m.lbl}
                     </span>
                     <span className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>{hmLabel(hrs)}</span>
+                  </div>
+                  {/* The two-step, on the card people actually have. This sentence used to exist
+                      only inside the multi-visit branch; the single-visit card — the common case —
+                      had a `title` tooltip, which never fires on a touch screen. So the only
+                      discoverable way to place work was to drag it, onto rows that are off the
+                      bottom of the board. */}
+                  <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-2)" }}>
+                    {PLACE_HINT}
                   </div>
                   <div style={{ display: "flex", gap: "var(--space-2)" }}>
                     <button
@@ -653,7 +722,9 @@ export function SchedulePanel() {
                       style={{ flex: 1, justifyContent: "center" }}
                       onClick={(e) => { e.stopPropagation(); onSchedule(); }}
                     >
-                      {armed ? "Cancel" : "Schedule"}
+                      {/* "Schedule" reads as "do it now"; the button only ARMS the visit, and the
+                          next tap is the one that places it. Name the two-step. */}
+                      {armed ? "Cancel" : "Place on board"}
                     </button>
                   </div>
                 </div>
@@ -675,6 +746,26 @@ export function SchedulePanel() {
         </div>
       )}
 
+      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "var(--space-2xs) 0 var(--space-2)" }}>
+        On the board
+      </div>
+      <div className="sched-toolbar" style={{ marginBottom: "var(--space-2)" }}>
+        {toggle}
+        <span className="sched-toolbar-gap" />
+        {nav}
+      </div>
+
+      {/* Called as plain functions ON PURPOSE (not <DayView/>): DayView/WeekView are
+          re-declared on every render, so mounting them as JSX components changes the
+          element type identity each render and React REMOUNTS the whole grid — the
+          setDrag re-render inside a block's dragstart then destroyed the drag-source
+          DOM node and Chrome aborted the drag (placed blocks could never be dropped).
+          Plain calls keep the grid in SchedulePanel's own element tree so re-renders
+          reconcile in place. These functions MUST stay hook-free while they are
+          called conditionally like this. */}
+      {/* Anchored to the BOARD, not to the tray: this strip is an instruction about where to tap
+          next, and it used to sit above the tray — the thing you are being told to look away from
+          — with the toolbar between it and the board. In flow and flush, no portal. */}
       {placing && (
         <div
           style={{
@@ -712,23 +803,6 @@ export function SchedulePanel() {
         </div>
       )}
 
-      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "var(--space-2xs) 0 var(--space-2)" }}>
-        On the board
-      </div>
-      <div className="sched-toolbar" style={{ marginBottom: "var(--space-2)" }}>
-        {toggle}
-        <span className="sched-toolbar-gap" />
-        {nav}
-      </div>
-
-      {/* Called as plain functions ON PURPOSE (not <DayView/>): DayView/WeekView are
-          re-declared on every render, so mounting them as JSX components changes the
-          element type identity each render and React REMOUNTS the whole grid — the
-          setDrag re-render inside a block's dragstart then destroyed the drag-source
-          DOM node and Chrome aborted the drag (placed blocks could never be dropped).
-          Plain calls keep the grid in SchedulePanel's own element tree so re-renders
-          reconcile in place. These functions MUST stay hook-free while they are
-          called conditionally like this. */}
       {day ? DayView() : WeekView()}
     </>
   );

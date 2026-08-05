@@ -899,6 +899,8 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
       expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, {
         jobId: "job-1",
         invoiceId: "inv-fee-server",
+        // Declares WHERE this close-out was opened from, so its Done lands on My day.
+        from: "field-job",
       });
     });
   });
@@ -1103,7 +1105,11 @@ describe("opening close-out from the done hero", () => {
 
     fireEvent.click(screen.getByText(/Take payment/));
 
-    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", invoiceId: "inv-7" });
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, {
+      jobId: "job-1",
+      invoiceId: "inv-7",
+      from: "field-job",
+    });
   });
 
   it("passes the job alone when no invoice exists yet — the sheet raises one", () => {
@@ -1113,6 +1119,9 @@ describe("opening close-out from the done hero", () => {
 
     fireEvent.click(screen.getByText(/Take payment/));
 
-    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1" });
+    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, {
+      jobId: "job-1",
+      from: "field-job",
+    });
   });
 });

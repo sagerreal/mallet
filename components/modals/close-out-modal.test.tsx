@@ -54,9 +54,13 @@ const mockSendInvoice = vi.fn<(id: string) => Promise<{ ok: boolean; error?: str
   Promise.resolve({ ok: true }),
 );
 
+const mockClose = vi.fn();
+const mockDismissModals = vi.fn();
+
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "close-out", params: mockActiveParams }),
-  useCloseModal: () => noop,
+  useCloseModal: () => mockClose,
+  useDismissModals: () => mockDismissModals,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
     selector({
       jobs: mockJobs,
@@ -877,5 +881,64 @@ describe("CloseOutModalContent — the office keeps its own gates (regression fe
     expect(screen.getByText("What was done")).toBeTruthy();
     expect(screen.getByText("No price on this job yet — what did it run?")).toBeTruthy();
     expect(screen.getByText(/Log & send to office/)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WHERE DONE LANDS.
+//
+// Owen, testing: "after I took the payment it brought me back [to the job sheet], it should bring
+// me [to My day]". The close-out is pushed as a drill-in, so its finish popped to the tech job
+// sheet — a record of the job he had just finished, with nothing left to do on it. A TERMINAL step
+// has to leave the stack, and it decides that from the OPENER'S DECLARED INTENT (`from`), never
+// from role: an owner-operator collecting at the customer's door is `owner` and still belongs on
+// My day. The office drill (Money → invoice → …) keeps popping to its parent.
+// ---------------------------------------------------------------------------
+
+describe("CloseOutModalContent — where Done lands", () => {
+  beforeEach(() => {
+    mockLeads = [feeLead];
+    mockClose.mockClear();
+    mockDismissModals.mockClear();
+  });
+
+  it("Done from a field job dismisses the whole stack — the tech lands on My day", () => {
+    mockRole = "tech";
+    mockActiveParams = { jobId: "job-1", from: "field-job" };
+    mockJobs = [{ ...cardJob, lines: [] } as Job];
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
+    render(<CloseOutModalContent />);
+
+    fireEvent.click(screen.getByText("Done"));
+
+    expect(mockDismissModals).toHaveBeenCalledTimes(1);
+    expect(mockClose).not.toHaveBeenCalled();
+  });
+
+  it("an owner-operator collecting at the door lands on My day too — role is not the signal", () => {
+    mockRole = "owner";
+    mockActiveParams = { jobId: "job-1", from: "field-job" };
+    mockJobs = [{ ...cardJob, lines: [] } as Job];
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
+    render(<CloseOutModalContent />);
+
+    // Nothing due + office role → the hand-off IS the wrap-up confirm.
+    fireEvent.click(screen.getByText(/Log & send to office/));
+
+    expect(mockDismissModals).toHaveBeenCalledTimes(1);
+    expect(mockClose).not.toHaveBeenCalled();
+  });
+
+  it("an office drill with no declared opener still pops to its parent", () => {
+    mockRole = "owner";
+    mockActiveParams = { jobId: "job-1" };
+    mockJobs = [{ ...cardJob, lines: [] } as Job];
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
+    render(<CloseOutModalContent />);
+
+    fireEvent.click(screen.getByText(/Log & send to office/));
+
+    expect(mockClose).toHaveBeenCalledTimes(1);
+    expect(mockDismissModals).not.toHaveBeenCalled();
   });
 });
