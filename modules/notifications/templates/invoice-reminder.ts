@@ -34,3 +34,19 @@ export const composeInvoiceSent = (target: ReminderTarget, payUrl: string | null
   payUrl
     ? `Invoice ${target.num} for ${usd(target.balanceCents)} is ready. View & pay: ${payUrl}`
     : `Invoice ${target.num} for ${usd(target.balanceCents)} is ready. Reply or call to pay. Thank you.`;
+
+/**
+ * The settled twin — sent once nothing is owed, so it must not ask for money.
+ *
+ * The link is the SAME /i/<token> page. In its paid state that page states the date, amount and
+ * method of every payment received, which is what makes it a receipt worth keeping rather than a
+ * dead pay link. Without a resolvable link there is nothing to keep, so the copy says only what
+ * is true and stops.
+ *
+ * No amount in the sentence: the balance is zero, and naming the total here would read as a
+ * fresh charge on a message whose whole point is that the bill is closed.
+ */
+export const composePaymentReceipt = (target: ReminderTarget, payUrl: string | null): string =>
+  payUrl
+    ? `Invoice ${target.num} is paid in full — thank you. Your itemized receipt: ${payUrl}`
+    : `Invoice ${target.num} is paid in full — thank you.`;

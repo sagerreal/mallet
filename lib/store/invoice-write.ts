@@ -108,6 +108,28 @@ export function persistRecordPayment(
     : trpcVanilla.v1.invoicing.recordPayment.mutate(args).then((dto) => dtoInvoiceToStore(dto, prior));
 }
 
+/**
+ * Send the customer their copy of the bill — or their RECEIPT, once nothing is owed.
+ *
+ * ONE server path for office and field alike, and so no `surface` argument — the same shape as
+ * `raiseVisitFee` below and for the same reason: `v1.fieldInvoicing.sendDocument` is `anyRole` and
+ * job-authorized, so there is no office variant to pick between.
+ *
+ * **`invoiceId` IS THE WHOLE INPUT, and that is the point.** No recipient, no channel, no message.
+ * The server reads the destination off the customer's own row, picks SMS or email from what is on
+ * file (and whether the shop's 10DLC campaign is active), and chooses the copy from the invoice's
+ * own balance. A field surface that could name a destination would be a way to mail a customer's
+ * bill somewhere else, and a field surface that could choose the copy could send "paid in full" on
+ * an unpaid bill.
+ *
+ * Returns the channel it actually used, so the close-out can say "check your texts" and mean it.
+ * A refusal (nothing configured, no contact on file, provider rejection) THROWS — the caller must
+ * surface it, never show a silent "Sent".
+ */
+export function sendInvoiceDocument(invoiceId: string): Promise<{ channel: "sms" | "email" }> {
+  return trpcVanilla.v1.fieldInvoicing.sendDocument.mutate({ invoiceId });
+}
+
 /** Mint the Stripe checkout the customer scans. Charges the FULL balance on both surfaces. */
 export function mintCheckoutSession(
   surface: InvoiceWriteSurface,
