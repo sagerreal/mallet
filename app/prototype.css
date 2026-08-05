@@ -1896,6 +1896,11 @@
      point read as a caption. (iOS blue is the obvious alternative and is not available: Mallet
      has no blue anywhere.) */
   .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:800;color:var(--amber);white-space:nowrap}
+  /* A TWO-LINE label inside a .jaddr row — title over a quieter sub-line, the same stacked
+     shape .addtile-t/.addtile-s already uses. The row is still ONE tap target: the sub-line
+     explains the action, it never adds a second one. */
+  .jaddr-t{flex:1;min-width:0;line-height:1.25}
+  .jaddr-s{display:block;margin-top:var(--space-2xs);font-size:var(--type-sm);font-weight:500;color:var(--ink-3)}
   /* "Add a line" action tiles (Build the price) — a clean 2×2 of tappable cards: icon + title + subtitle */
   .addgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-3)}
   .addtile{display:block;width:100%;text-align:left;border:1.5px solid var(--line);border-radius:var(--radius-lg);padding:var(--space-4) var(--space-4);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer;transition:border-color .12s,background .12s,box-shadow .15s,transform .08s}
@@ -1906,6 +1911,14 @@
   .addtile-t{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);font-size:var(--type-md);font-weight:700;line-height:1.15;color:var(--ink)}
   .addtile-s{font-size:var(--type-sm);color:var(--ink-3);margin-top:var(--space-1)}
   .addtile .arr{color:var(--ink-3);font-weight:700;font-size:var(--type-md)}
+  /* "Give the customer choices?" — the good/better/best opt-in, sitting under "+ Add a line"
+     and above the sheet's primary. It reads as ONE bordered row (title + sub-line left,
+     "Set up →" right) rather than a caption with two loose chips floating under it. The two
+     options are unchanged; they expand IN FLOW beneath the row (house rule: no floating UI)
+     and stay OUTSIDE the head button, so a button never nests inside a button. */
+  .tqchoice{margin-top:var(--space-4)}
+  .tqchoice .jaddr{margin:0}
+  .tqchoice-b{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}
   /* New-job "Visits" — each visit a clean row with an hours stepper (− value +), created unplaced */
   .njvisit{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border:1.5px solid var(--line);border-radius:var(--radius);margin-bottom:var(--space-2);background:var(--card)}
   .njvisit-t{flex:1;font-size:var(--type-md);font-weight:700;color:var(--ink)}

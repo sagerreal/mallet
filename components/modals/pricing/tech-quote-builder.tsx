@@ -32,7 +32,7 @@
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { SignaturePad } from "@/components/shared/signature-pad";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
 import { useAppStore } from "@/lib/store/app-store";
@@ -102,6 +102,64 @@ function ModeHead({
       <div className="sheet-meta">
         <span>Price the repair · {custName}</span>
       </div>
+    </div>
+  );
+}
+
+interface ChoicesRowProps {
+  /** The cheaper tier is not yet opted into — offer it. */
+  showGood: boolean;
+  /** The premium tier is not yet opted into — offer it. */
+  showBest: boolean;
+  onAddGood: () => void;
+  onAddBest: () => void;
+}
+
+/**
+ * The good/better/best opt-in, drawn as ONE bordered row: the question and what it
+ * buys on the left, "Set up →" on the right. It was a muted caption with two ghost
+ * chips loose underneath it, which read as a stray fragment of the price block rather
+ * than as a control.
+ *
+ * The AFFORDANCE is unchanged — the same two independent opt-ins, the same handlers,
+ * the same place in the flow (under "+ Add a line", above the sticky primary). They
+ * are one tap further in, expanded IN FLOW under the row (no floating UI) and rendered
+ * OUTSIDE the head button so a button never nests inside a button — the same shape the
+ * tech clock's expander uses.
+ */
+function ChoicesRow({ showGood, showBest, onAddGood, onAddBest }: ChoicesRowProps) {
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
+
+  return (
+    <div className="tqchoice">
+      <button
+        type="button"
+        className="jaddr"
+        aria-expanded={open}
+        aria-controls={open ? bodyId : undefined}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="jaddr-t">
+          Give the customer choices?
+          <span className="jaddr-s">Add cheaper or premium options</span>
+        </span>
+        <span className="nav">Set up →</span>
+      </button>
+      {open ? (
+        <div className="tqchoice-b" id={bodyId}>
+          {showGood ? (
+            <button className="chip ghost" onClick={onAddGood}>
+              + Add a cheaper option
+            </button>
+          ) : null}
+          {showBest ? (
+            <button className="chip ghost" onClick={onAddBest}>
+              + Add a premium option
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -563,26 +621,12 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
 
       {/* "Give the customer choices?" — once anything is priced and not all opted */}
       {anyPriced && (showGoodOpt || showBestOpt) ? (
-        // Label above, buttons below. One flat wrapping row put the label and the first button on
-        // line one and orphaned the second at the container's left edge, which read as a layout
-        // fault rather than a pair of equal choices.
-        <div style={{ marginTop: "var(--space-4)" }}>
-          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-            Give the customer choices?
-          </span>
-          <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-2)" }}>
-            {showGoodOpt ? (
-              <button className="chip ghost" onClick={() => toggleTier("good")}>
-                + Add a cheaper option
-              </button>
-            ) : null}
-            {showBestOpt ? (
-              <button className="chip ghost" onClick={() => toggleTier("best")}>
-                + Add a premium option
-              </button>
-            ) : null}
-          </div>
-        </div>
+        <ChoicesRow
+          showGood={showGoodOpt}
+          showBest={showBestOpt}
+          onAddGood={() => toggleTier("good")}
+          onAddBest={() => toggleTier("best")}
+        />
       ) : null}
 
       {/* Sticky foot — ONE filled primary docked where the thumb is: present to

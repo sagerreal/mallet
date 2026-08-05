@@ -122,6 +122,66 @@ describe("QuoteTab — normal job", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The good/better/best opt-in. It is ONE bordered row under "+ Add a line" — the
+// question and what it buys on the left, "Set up →" on the right — instead of a
+// muted caption with two loose chips under it. The two opt-ins themselves are
+// unchanged; they expand IN FLOW under the row (no floating UI).
+// ---------------------------------------------------------------------------
+
+describe("QuoteTab — the customer-choices row", () => {
+  const pricedJob = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
+
+  it("is absent until something is priced — there is nothing to offer options on", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    expect(screen.queryByText("Give the customer choices?")).toBeNull();
+  });
+
+  it("reads as one row: question, what it buys, and a single 'Set up →' action", () => {
+    const job = pricedJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    expect(screen.getByText("Give the customer choices?")).toBeTruthy();
+    expect(screen.getByText("Add cheaper or premium options")).toBeTruthy();
+    expect(screen.getByText("Set up →")).toBeTruthy();
+    // At rest the options are behind the row, not loose under the price block.
+    expect(screen.queryByText("+ Add a cheaper option")).toBeNull();
+    expect(screen.queryByText("+ Add a premium option")).toBeNull();
+  });
+
+  it("'Set up' expands BOTH opt-ins in flow, and says so to a screen reader", () => {
+    const job = pricedJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    const head = screen.getByText("Give the customer choices?").closest("button")!;
+    expect(head.getAttribute("aria-expanded")).toBe("false");
+
+    fireEvent.click(head);
+    expect(head.getAttribute("aria-expanded")).toBe("true");
+    const body = document.getElementById(head.getAttribute("aria-controls")!);
+    expect(body).toBeTruthy();
+    expect(screen.getByText("+ Add a cheaper option")).toBeTruthy();
+    expect(screen.getByText("+ Add a premium option")).toBeTruthy();
+  });
+
+  it("the opt-ins still do what they did — a tier is added and the row drops it", () => {
+    const job = pricedJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} />);
+    fireEvent.click(screen.getByText("Give the customer choices?"));
+    fireEvent.click(screen.getByText("+ Add a premium option"));
+
+    // Opting in turns the builder multi-tier and lands the editor on the new tier.
+    expect(screen.getByText("Present options →")).toBeTruthy();
+    expect(screen.getByText("Best total")).toBeTruthy();
+    // …and the taken option is no longer on offer, while the other still is.
+    expect(screen.queryByText("+ Add a premium option")).toBeNull();
+    expect(screen.getByText("+ Add a cheaper option")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Scope save
 // ---------------------------------------------------------------------------
 
