@@ -11,10 +11,20 @@
  *
  * Sheet grammar (PR #253): the brand banner IS the sticky .sheet-head (it keeps
  * its .custhead branding — the later rule wins padding/background, sheet-head
- * supplies stickiness and the edge bleed), and "Pay $X" is THE .sheet-pri, docked
- * in a sticky .sheet-foot. Method chips and the editable amount stay quiet in the
- * body; pay state lives at the modal level so the foot can fire it. A settled
- * invoice has no terminal action, so it renders no foot.
+ * supplies stickiness and the edge bleed). Method chips and the editable amount
+ * stay quiet in the body so the render stays faithful to what the customer
+ * sees, but this modal is READ-ONLY — it never calls recordPayment. There is no
+ * .sheet-foot: a preview has no terminal action to dock, so none is rendered.
+ *
+ * FIXED (the scout's HIGH finding): this used to fire recordPayment(invoice.id,
+ * …) from a button labelled "Pay $X". Its one caller — invoice-modal.tsx's
+ * "Preview as customer" — opens it for a LOOK, not a transaction, so an office
+ * user tapping that button under a screen announcing itself as a preview was
+ * recording a real ledger payment with no Stripe charge and no cash in hand.
+ * The transacting path is removed, not hidden: a `.banner` says plainly that
+ * this is a preview, and points back at the real Charge a card / Record a
+ * payment actions that already exist on the invoice modal this was opened
+ * from.
  *
  * ModalHost provides the outer shell + close affordance, so the `.custhead` is
  * rendered faithfully but WITHOUT a duplicate ✕ (the prototype's custCloseBtn()).
@@ -51,12 +61,6 @@ function custCard(invoice: Invoice, leads: Lead[]): Lead["card"] | null {
 // ---- payment method (prototype state.custSel.method: 'card' | 'ach') --------
 
 type CustMethod = "card" | "ach";
-
-/** clamp — the entered amount is min(max(amt,1),due) (prototype custPayNow). */
-function clampAmt(entered: number, due: number): number {
-  const base = Number.isFinite(entered) && entered > 0 ? entered : due;
-  return Math.min(Math.max(base, 1), due);
-}
 
 // ===========================================================================
 //  BRANDED HEADER (prototype renderCustInv §.custhead) — now the sticky
@@ -252,7 +256,6 @@ export function CustInvoiceModalContent() {
   const leads = useAppStore((s) => s.leads);
   const jobs = useAppStore((s) => s.jobs);
   const brand = useAppStore((s) => s.brand);
-  const recordPayment = useAppStore((s) => s.recordPayment);
   const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const updateLead = useAppStore((s) => s.updateLead);
 
@@ -311,20 +314,20 @@ export function CustInvoiceModalContent() {
   // helper the office sheet and the public pay page use).
   const face = termsLine({ termsDays: invoice.termsDays, dueAt: invoice.dueAt, poNumber: invoice.poNumber });
 
-  // custPayNow (5656): record the payment, then optionally vault the card.
-  // The store update re-renders this view; when due hits 0 the settled state shows.
-  function pay() {
-    if (!invoice) return;
-    recordPayment(invoice.id, { amt: clampAmt(amt, due), when: "Just now", method });
-    // No card is recorded on file. This used to write a hardcoded Visa •••• 4242 onto the
-    // customer — fabricated payment data, shown back to the shop as though a real card were
-    // stored. Saving a card is Stripe Connect's job; until it exists, record nothing.
-  }
-
   return (
     <>
       <CustHead brand={brand} />
       <div className="custbody">
+        {/* Preview banner — this surface is a LOOK at what the customer sees, never a place to
+            take money. Its one caller (invoice-modal.tsx's "Preview as customer") already has
+            the real Charge a card / Record a payment actions; this modal must not duplicate
+            them with a control that actually transacts. See the FIXED note at the top of this
+            file for the bug this replaced. */}
+        <div className="banner">
+          Preview only — this is what {brand.name} sends the customer. It doesn&rsquo;t take real
+          payments. To charge a card or record one, use the invoice this preview was opened from.
+        </div>
+
         {/* intro + invoice number */}
         <p style={{ fontSize: "var(--type-base)", lineHeight: 1.55, marginBottom: "var(--space-2)" }}>
           Thanks for having us out
@@ -377,15 +380,9 @@ export function CustInvoiceModalContent() {
         </p>
       </div>
 
-      {/* THE primary — the one terminal action, docked where the thumb is. A
-          settled invoice has no terminal action, so it gets no foot. */}
-      {due > 0 && (
-        <div className="sheet-foot">
-          <button className="sheet-pri" onClick={pay}>
-            Pay {fmt$(due)}
-          </button>
-        </div>
-      )}
+      {/* No .sheet-foot: this preview has no terminal action to dock. The customer's own pay
+          link (not this modal) takes the real payment; the office's real Charge a card /
+          Record a payment actions live on the invoice modal this was opened from. */}
     </>
   );
 }
