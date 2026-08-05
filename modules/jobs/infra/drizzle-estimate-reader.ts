@@ -34,6 +34,7 @@ export class DrizzleEstimateReader implements EstimateReader {
         quantity: line.props.quantity,
         rateCents: line.props.rate,
         costCents: line.props.cost,
+        taxable: line.props.taxable,
         position: line.props.position,
       })),
     };

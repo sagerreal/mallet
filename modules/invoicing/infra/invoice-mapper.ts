@@ -16,6 +16,7 @@ const toLine = (row: InvoiceLineRow): InvoiceLine => {
     quantity: row.quantity,
     rate: money(row.rateCents),
     cost: money(row.costCents),
+    taxable: row.taxable,
     position: row.position,
   });
   if (!r.ok) throw new Error(`corrupt invoice_line ${row.id}: ${r.error.message}`);
@@ -66,6 +67,8 @@ export const toDomain = (
     total: money(row.totalCents),
     taxBps: row.taxBps,
     tax: money(row.taxCents),
+    discBps: row.discBps,
+    discount: money(row.discountCents),
     depositPaid: money(row.depositPaidCents),
     amountPaid: money(row.amountPaidCents),
     payments,

@@ -201,6 +201,7 @@ const jobLine = (over: Partial<JobLineSummary> = {}): JobLineSummary => ({
   quantity: 1,
   rateCents: 9_900,
   costCents: 0,
+  taxable: true,
   position: 0,
   ...over,
 });
@@ -457,6 +458,63 @@ describe("CreateInvoiceFromJobUseCase", () => {
     expect(result.value.props.total).toBe(21_750);
     expect(result.value.props.discount).toBe(0);
     expect(result.value.props.discBps).toBe(0);
+  });
+
+  it("charges tax on the taxable lines only, and still bills the non-taxable one in full", async () => {
+    const mixed: JobSummary = {
+      ...completeJob(),
+      totalCents: 0,
+      taxCents: 0,
+      taxBps: 825,
+      lines: [
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaab1", rateCents: 100_00, taxable: true, position: 0 }),
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaab2", rateCents: 40_00, taxable: false, position: 1 }),
+      ],
+    };
+    const result = await useCase(new FakeJobReader(mixed)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    // 8.25% of $100, not of $140.
+    expect(result.value.props.tax).toBe(825);
+    expect(result.value.props.total).toBe(148_25);
+    // Both lines are on the bill at their full rates; taxability is not "don't charge for it".
+    expect(result.value.props.lines.map((l) => l.amount())).toEqual([100_00, 40_00]);
+    expect(result.value.props.lines.map((l) => l.props.taxable)).toEqual([true, false]);
+  });
+
+  it("takes the discount off the taxable base at the bill's own rate", async () => {
+    const mixed: JobSummary = {
+      ...completeJob(),
+      totalCents: 0,
+      taxCents: 0,
+      taxBps: 1_000,
+      discBps: 1_000,
+      lines: [
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaac1", rateCents: 100_00, taxable: true, position: 0 }),
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaac2", rateCents: 100_00, taxable: false, position: 1 }),
+      ],
+    };
+    const result = await useCase(new FakeJobReader(mixed)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.discount).toBe(20_00); // 10% of the whole $200
+    expect(result.value.props.tax).toBe(9_00); // 10% of the DISCOUNTED taxable $90
+    expect(result.value.props.total).toBe(189_00);
+  });
+
+  it("bills a wholly non-taxable job with no tax at all", async () => {
+    const untaxed: JobSummary = {
+      ...completeJob(),
+      totalCents: 0,
+      taxCents: 0,
+      taxBps: 825,
+      lines: [jobLine({ rateCents: 60_00, taxable: false })],
+    };
+    const result = await useCase(new FakeJobReader(untaxed)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.tax).toBe(0);
+    expect(result.value.props.total).toBe(60_00);
   });
 
   it("credits the source estimate's paid deposit onto the invoice", async () => {

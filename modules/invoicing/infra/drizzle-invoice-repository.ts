@@ -63,6 +63,12 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
       totalCents: p.total,
       taxBps: p.taxBps,
       taxCents: p.tax,
+      // The discount the bill was built with. Recorded so the DOCUMENT can itemise it: the lines
+      // print at their full rates, so a total under their sum with no discount row reads as an
+      // arithmetic error. The columns landed in migration 0142; nothing wrote them until now, so
+      // a reloaded invoice lost the split the use case had computed.
+      discBps: p.discBps,
+      discountCents: p.discount,
       depositPaidCents: p.depositPaid,
       amountPaidCents: p.amountPaid,
       termsDays: p.termsDays,
@@ -375,6 +381,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
         quantity: lp.quantity,
         rateCents: lp.rate,
         costCents: lp.cost,
+        taxable: lp.taxable,
         position: lp.position,
         updatedAt,
         deletedAt: null as Date | null,
@@ -391,6 +398,7 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
           quantity: sql`excluded.quantity`,
           rateCents: sql`excluded.rate_cents`,
           costCents: sql`excluded.cost_cents`,
+          taxable: sql`excluded.taxable`,
           position: sql`excluded.position`,
           updatedAt: sql`excluded.updated_at`,
           deletedAt: sql`excluded.deleted_at`,

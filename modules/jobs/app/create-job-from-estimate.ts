@@ -232,6 +232,7 @@ export class CreateJobFromEstimateUseCase {
         quantity: l.quantity,
         rateCents: l.rateCents,
         costCents: l.costCents,
+        taxable: l.taxable,
         position: l.position || i + 1,
       });
       if (!isOk(line)) return line;

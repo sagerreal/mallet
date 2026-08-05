@@ -15,6 +15,7 @@ export const lineToDomain = (row: JobLineRow): JobLine => {
     quantity: row.quantity,
     rateCents: row.rateCents,
     costCents: row.costCents,
+    taxable: row.taxable,
     position: row.position,
   });
   if (!r.ok) throw new Error(`corrupt job_line ${row.id}: ${r.error.message}`);

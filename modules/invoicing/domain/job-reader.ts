@@ -11,6 +11,9 @@ export interface JobLineSummary {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Does this line take sales tax. The bill copies it onto the invoice line and charges the
+   *  job's taxBps on the taxable lines only. */
+  readonly taxable: boolean;
   readonly position: number;
 }
 

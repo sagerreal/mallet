@@ -68,10 +68,23 @@ export class CreateInvoiceFromJobUseCase {
     // The chain is discount → net → tax → total, each step rounded to whole cents, mirroring
     // Estimate.totalsFrom (modules/quoting/domain/estimate.ts) exactly. Same order, same rounding,
     // so an invoice rebuilt from lines lands on the number the customer accepted.
+    //
+    // TAX IS CHARGED ON THE TAXABLE LINES ONLY — a SECOND, DIFFERENT filter from the subtotal.
+    // A non-taxable line is still billed at its full rate and still in the total; it simply is
+    // not in the base. The discount comes off that base at the same rate it comes off the bill,
+    // so on an all-taxable job the base IS the subtotal and every figure is what it was before
+    // taxability existed. Same order, same rounding, same result.
     const subtotal = lines.reduce((sum, line) => sum + line.amount(), 0);
+    const taxableBase = lines.reduce(
+      (sum, line) => (line.props.taxable ? sum + line.amount() : sum),
+      0,
+    );
     const discountFromLines = money(Math.round((subtotal * job.discBps) / BPS_DENOMINATOR));
     const netFromLines = money(subtotal - discountFromLines);
-    const taxFromLines = money(Math.round((netFromLines * job.taxBps) / BPS_DENOMINATOR));
+    const taxableDiscount = money(Math.round((taxableBase * job.discBps) / BPS_DENOMINATOR));
+    const taxFromLines = money(
+      Math.round(((taxableBase - taxableDiscount) * job.taxBps) / BPS_DENOMINATOR),
+    );
     const totals =
       lines.length > 0
         ? {
@@ -159,6 +172,9 @@ export class CreateInvoiceFromJobUseCase {
         quantity: source.quantity,
         rate: money(source.rateCents),
         cost: money(source.costCents),
+        // Taxability rides the copy like the rate does — the bill must charge tax on exactly
+        // what the quote did.
+        taxable: source.taxable,
         position: source.position,
       });
       if (!isOk(line)) return line;
