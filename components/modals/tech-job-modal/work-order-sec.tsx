@@ -67,7 +67,10 @@ export function workOrderPropsEqual(a: WorkOrderSecProps, b: WorkOrderSecProps):
     a.seesPrice === b.seesPrice &&
     a.job.lines === b.job.lines &&
     a.job.photos === b.job.photos &&
-    a.job.title === b.job.title &&
+    // job.title is deliberately NOT compared: this section stopped rendering it when the heading
+    // and the sheet header were found to be saying the same thing three inches apart. A stale
+    // field in a hand-written comparator is this directory's standing trap — it re-renders on a
+    // change nothing here can show.
     a.job.special === b.job.special &&
     a.job.prep === b.job.prep
   );
@@ -93,25 +96,23 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
           {showMoney ? `${items} · ${fmt$(total)}` : items}
         </span>
       </div>
-      <div style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{job.title}</div>
-
+      {/* NO job title and NO "Scope — what was sold" subhead. The section head already says WORK
+          ORDER and the sheet header already says which job this is; both were repeating what was
+          two inches above them. The ✓ per line went with them — every line in a work order was
+          sold, so a tick on all of them marks nothing. What is left is the list and its money. */}
       {scope.length ? (
         <>
-          <div className="muted" style={{ ...SCOPE_HEAD, margin: "var(--space-3) 0 var(--space-1)" }}>
-            Scope — what was sold
-          </div>
           {scope.map((x, i) => (
             <div key={i} style={LINE_ROW}>
-              <span style={{ color: "var(--green-700)" }}>✓</span>
               <span style={{ flex: 1 }}>
                 {x.d}
                 {(x.q ?? 1) > 1 ? <span className="muted"> × {x.q}</span> : null}
               </span>
-              {/* x.r === null = server-redacted (techSeesPrice off) — show nothing, never $0. */}
+              {/* x.r === null = server-redacted (techSeesPrice off) — show nothing, never $0.
+                  The amount is the line's other half, not an aside: same size as the description
+                  and weighted, so the column reads as a column. */}
               {showMoney && x.r != null && (
-                <span className="muted fig" style={{ fontSize: "var(--type-sm)" }}>
-                  {fmt$((x.q ?? 1) * x.r)}
-                </span>
+                <span className="fig" style={{ fontWeight: 700 }}>{fmt$((x.q ?? 1) * x.r)}</span>
               )}
             </div>
           ))}

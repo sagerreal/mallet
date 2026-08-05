@@ -37,7 +37,9 @@ export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: Visits
   return (
     <div className="fsec">
       <div className="fsec-h">
-        <span>Your visit{placed.length > 1 ? "s" : ""}</span>
+        {/* "Visit", not "Your visit" — the office reads this sheet too, and on a two-visit job the
+            second row is somebody else's stop. The heading names the thing, not its owner. */}
+        <span>Visit{placed.length > 1 ? "s" : ""}</span>
         {done && <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>}
       </div>
       {done ? (
@@ -51,8 +53,12 @@ export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: Visits
               gap: "var(--space-2)",
             }}
           >
+            {/* The DATE only. The booked length ("~1h 30m on site") was noise here: on a finished
+                visit the stepper above already carries the real stamps, and a BOOKED duration
+                sitting under them reads as a measurement of what happened when it is nothing of
+                the kind. */}
             <span className="muted" style={{ fontSize: "var(--type-base)" }}>
-              {curVisit ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site` : "Completed"}
+              {curVisit ? colLabel(curVisit.date) : "Completed"}
             </span>
             {/* Office only, and only when there IS a placed visit to move. A job completed
                 straight from My Day has none, and this button took the tap and did nothing. */}

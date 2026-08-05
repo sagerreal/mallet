@@ -69,8 +69,14 @@ describe("workOrderPropsEqual", () => {
   it("SKIPS on a verify-only change (the checklist tap)", () => {
     expect(workOrderPropsEqual(props, { ...props, job: verifyTapped(baseJob) })).toBe(true);
   });
-  it.each(["lines", "photos", "title", "special", "prep"])("re-renders when job.%s changes", (f) => {
-    expect(workOrderPropsEqual(props, { ...props, job: withField(baseJob, f, f === "title" ? "X" : []) })).toBe(false);
+  it.each(["lines", "photos", "special", "prep"])("re-renders when job.%s changes", (f) => {
+    expect(workOrderPropsEqual(props, { ...props, job: withField(baseJob, f, []) })).toBe(false);
+  });
+  // The section stopped rendering the title — the sheet header two inches above already says
+  // which job this is. A comparator that still watched it would re-render on a change nothing
+  // here can show, which is this directory's standing trap.
+  it("SKIPS a title change, because it no longer renders one", () => {
+    expect(workOrderPropsEqual(props, { ...props, job: withField(baseJob, "title", "X") })).toBe(true);
   });
   it("re-renders when seesPrice flips", () => {
     expect(workOrderPropsEqual(props, { ...props, seesPrice: false })).toBe(false);

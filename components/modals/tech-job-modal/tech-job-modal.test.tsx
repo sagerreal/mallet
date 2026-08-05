@@ -680,7 +680,21 @@ describe("TechJobModalContent — the job screen offers no timer", () => {
   it("leads with the address and the visit row instead", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText("12 Oak St")).toBeTruthy();
-    expect(screen.getByText("Your visit")).toBeTruthy();
+    // "Visit", not "Your visit" — the office reads this sheet too.
+    expect(screen.getByText("Visit")).toBeTruthy();
+  });
+
+  // The approved design puts the status readout directly under the contact row: a technician
+  // opening this sheet answers "where am I in this job" before "what did we sell". Asserted on
+  // DOM order, because the two sections rendered in the wrong sequence is invisible to a test
+  // that only checks both exist.
+  it("puts the visit ABOVE the work order", () => {
+    // Needs a described line, or the work order does not render at all and the assertion is vacuous.
+    mockJobs = [makeJob({ lines: [{ d: "Swap heater", q: 1, r: 900 }] })];
+    render(<TechJobModalContent />);
+    const visit = screen.getByText("Visit");
+    const work = screen.getByText("Work order");
+    expect(visit.compareDocumentPosition(work) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 });
 
