@@ -95,19 +95,26 @@ interface JobCardProps {
 function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) {
   const s = statusLabel(job.status);
 
+  // stopPropagation belongs on the CONTROL, never on the .md-acts wrapper around it. The wrapper is
+  // a full-width flex row, so stopping the click there made every pixel BESIDE the button — most of
+  // the bottom of the card, and the part a thumb lands on first — eat the tap and do nothing. The
+  // row still tinted and compressed under the finger (.md-stop:active), so it read as the app
+  // ignoring you rather than as dead space. Only the button itself may keep the row from opening.
   const acts =
     job.status === "scheduled" ? (
       <button
+        type="button"
         className="btn sm primary"
-        onClick={() => onStart(job.id)}
+        onClick={(e) => { e.stopPropagation(); onStart(job.id); }}
         disabled={isPending}
       >
         Start job
       </button>
     ) : job.status === "in_progress" ? (
       <button
+        type="button"
         className="btn sm"
-        onClick={() => onComplete(job.id)}
+        onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
         disabled={isPending}
       >
         ✓ Complete
@@ -115,9 +122,13 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
     ) : null;
 
   return (
-    // Card tap opens the tech job view (checklist, found work). The action
-    // buttons stopPropagation below so Start/Complete don't also open it.
-    <div className="md-stop" style={{ cursor: "pointer" }} onClick={() => onOpen(job.id)}>
+    // The WHOLE row opens the tech job view (checklist, found work) — the time, the title, the job
+    // number, the blank space beside the status pill and the blank space beside the action button.
+    // The house .rowopen pattern (app/prototype.css): the container takes the MOUSE handler and no
+    // role/tabIndex, so the action buttons it contains are not nested inside a role=button (WCAG
+    // nested-interactive), while the focusable title button below carries the keyboard path.
+    // cursor:pointer, :hover and :active all live on .md-stop already — don't re-declare them here.
+    <div className="md-stop" onClick={() => onOpen(job.id)}>
       <div className="md-time">{agendaTime(job)}</div>
       <div className="md-body">
         <div className="md-line1">
@@ -139,11 +150,7 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
           #{job.num}
           {job.notes ? ` · ${job.notes}` : ""}
         </div>
-        {acts ? (
-          <div className="md-acts" onClick={(e) => e.stopPropagation()}>
-            {acts}
-          </div>
-        ) : null}
+        {acts ? <div className="md-acts">{acts}</div> : null}
       </div>
     </div>
   );

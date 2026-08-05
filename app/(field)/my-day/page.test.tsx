@@ -58,10 +58,13 @@ vi.mock("@/lib/store/write-error", () => ({
   reportWriteError: (a: string) => errors.push(a),
 }));
 
-vi.mock("@/lib/store/app-store", () => ({ useOpenModal: () => vi.fn() }));
+// One stable spy, not a fresh vi.fn() per render — the row-tap tests below assert on it.
+const openModal = vi.fn();
+vi.mock("@/lib/store/app-store", () => ({ useOpenModal: () => openModal }));
 vi.mock("@/features/field/day-clock", () => ({ DayClock: () => <div /> }));
 
 import MyDayPage from "./page";
+import { MODAL } from "@/lib/store/modal-ids";
 
 const visit = (over: Record<string, unknown> = {}) => ({
   id: "visit-1",
@@ -231,5 +234,79 @@ describe("My day — the time on the card", () => {
     withVisits([visit({ scheduledStart: "09:00" })]);
     render(<MyDayPage />);
     expect(screen.getByText("—")).toBeTruthy();
+  });
+});
+
+// Owen, testing: "when I click on the job on this page sometimes it doesn't enter the modal ...
+// perhaps I am not clicking the right spot."
+//
+// He wasn't. The row carried the open handler, but the .md-acts wrapper around Start job /
+// ✓ Complete called stopPropagation on EVERY click inside it. That wrapper is a full-width flex
+// row — on a phone a ~46px band across the whole bottom of the card — so the entire strip beside
+// the button was dead. Worse, .md-stop:active still tinted and compressed the row under the
+// finger, so the card visibly acknowledged the press and then did nothing.
+//
+// "Sometimes" is the tell: the strip only exists while a job is scheduled or in progress. A job
+// finished today (which PR #380 now keeps on the list) has no action button, so those rows always
+// worked — which is exactly what makes it feel random rather than broken.
+describe("My day — the whole row opens the job, not just the words", () => {
+  const rowAt = (over: Record<string, unknown> = {}) => ({
+    data: {
+      items: [job({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30" })], ...over })],
+      customers: [],
+    },
+    isLoading: false,
+    isFetching: false,
+  });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+    queryState = rowAt();
+  });
+
+  it("opens from the time, which is not a word anyone typed", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByText("8:30a"));
+    expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
+  });
+
+  it("opens from the job-number line under the title", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByText(/JOB-1011/));
+    expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
+  });
+
+  // THE REGRESSION. This is the band that swallowed the tap.
+  it("opens from the empty strip beside the action button", () => {
+    const { container } = render(<MyDayPage />);
+    const acts = container.querySelector(".md-acts");
+    expect(acts).not.toBeNull();
+    // Clicking the WRAPPER, not the button inside it — the pixels a thumb lands on.
+    fireEvent.click(acts!);
+    expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
+  });
+
+  // The keyboard path: a real, named button, so the row is reachable by tab and opens on Enter.
+  it("keeps the title a focusable button that opens the job exactly once", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Open random job" }));
+    expect(openModal).toHaveBeenCalledTimes(1);
+    expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
+  });
+
+  it("starts the job without also opening it when Start job is pressed", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Start job" }));
+    expect(startMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("completes the job without also opening it when ✓ Complete is pressed", () => {
+    queryState = rowAt({ status: "in_progress" });
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
+    expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+    expect(openModal).not.toHaveBeenCalled();
   });
 });
