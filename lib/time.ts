@@ -9,6 +9,9 @@
 
 export const MINUTES_PER_HOUR = 60;
 
+/** Milliseconds in a minute — for the "how long since" figures derived from two Date stamps. */
+export const MS_PER_MINUTE = 60_000;
+
 /** Decimal hours → compact label: 8 → "8a", 13.5 → "1:30p". */
 export function timeLabelShort(h: number): string {
   const hour = Math.floor(h);

@@ -3,8 +3,15 @@
  * Today's clock, as segments — pure. No React, no network, no `new Date()` read from inside.
  *
  * Built on the tested read-only helpers in my-hours-derive.ts (KIND_LABELS, clockLabel,
- * entryHours, paidHours, sortByStart) rather than a second set: My hours and this panel are two
+ * entryHours, isPaidKind, sortByStart) rather than a second set: My hours and this panel are two
  * views of the same rows and must not be able to disagree about what an hour is.
+ *
+ * `isPaidKind` and NOT `paidHours`, deliberately and for one reason only: paidHours measures a row
+ * with `entryHours`, which returns 0 while the row is still running, and this panel exists to
+ * count the stretch the technician is standing in (see 1 below). So the LENGTH is measured here
+ * and the POLICY — which kinds are unpaid — is imported. Hand-rolling the `kind === "break"` test
+ * instead would state the policy twice, and the day the shop gains a second unpaid kind the two
+ * surfaces would quietly disagree about what the man is owed.
  *
  * THREE THINGS THE ROWS DO NOT GIVE YOU FOR FREE:
  *
@@ -23,12 +30,11 @@ import {
   KIND_LABELS,
   clockLabel,
   entryHours,
+  isPaidKind,
   sortByStart,
   type MyHoursEntry,
 } from "./my-hours-derive";
-import { MINUTES_PER_HOUR } from "@/lib/time";
-
-const MS_PER_MINUTE = 60_000;
+import { MINUTES_PER_HOUR, MS_PER_MINUTE } from "@/lib/time";
 
 export interface DaySegment {
   readonly id: string;
@@ -110,8 +116,8 @@ export function daySummary(
   let workedHours = 0;
   let breakHours = 0;
   for (const s of segments) {
-    if (s.kind === "break") breakHours += s.hours;
-    else workedHours += s.hours;
+    if (isPaidKind(s.kind)) workedHours += s.hours;
+    else breakHours += s.hours;
   }
 
   return {

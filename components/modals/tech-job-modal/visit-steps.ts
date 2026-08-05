@@ -21,6 +21,7 @@
  */
 
 import { timeLabelShort, MINUTES_PER_HOUR } from "@/lib/time";
+import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import type { Visit } from "@/lib/store/types";
 
 /**
@@ -54,9 +55,9 @@ const LABELS = {
  * arrival tap correctly shows two skipped nodes rather than two filled ones.
  */
 function cursor(status: string): number {
-  if (status === "scheduled") return 0;
-  if (status === "enroute") return 1;
-  if (status === "onsite") return 2;
+  if (status === STORE_VISIT_STATUS.SCHEDULED) return 0;
+  if (status === STORE_VISIT_STATUS.ENROUTE) return 1;
+  if (status === STORE_VISIT_STATUS.ONSITE) return 2;
   return 3; // done (or anything unrecognised — treat as finished, not as scheduled)
 }
 
