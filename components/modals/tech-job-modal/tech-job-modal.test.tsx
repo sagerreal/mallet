@@ -431,6 +431,47 @@ describe("TechJobModalContent — tech", () => {
 });
 
 // ---------------------------------------------------------------------------
+// The visit stepper — a readout of what was recorded, never a control.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — visit stepper", () => {
+  it("names the three steps and marks the current one for a screen reader", () => {
+    render(<TechJobModalContent />);
+    const list = screen.getByRole("list", { name: "Visit progress" });
+    const nodes = screen.getAllByRole("listitem");
+    expect(list).toBeTruthy();
+    expect(nodes.map((n) => n.textContent)).toEqual([
+      "Scheduled, current step",
+      "On the way, not yet",
+      "On site, not yet",
+    ]);
+    expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
+  });
+
+  // The nodes are deliberately not buttons: three ~30px targets is the worst tap geometry for a
+  // gloved thumb, and the server refuses every backwards transition, so tappable nodes would look
+  // live and refuse. The foot primary is the one big target.
+  it("draws no tappable node — the stepper reads, the foot advances", () => {
+    render(<TechJobModalContent />);
+    for (const name of ["Scheduled", "On the way", "On site"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+  });
+
+  // THE RULE: skipped stays skipped. No backfilled arrival, in the record or on the glass.
+  it("shows a finished-without-taps visit as SKIPPED, with no invented times", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getAllByText("skipped")).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The header: the customer, then what the work is and when it was due.
 // ---------------------------------------------------------------------------
 

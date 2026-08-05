@@ -15,9 +15,10 @@
  */
 
 import { haptics } from "@/lib/haptics";
-import { useEffect, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { api } from "@/lib/trpc/client";
 import { todayISO } from "@/lib/clock";
+import { useTickingNow } from "@/lib/use-ticking-now";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -56,23 +57,6 @@ function ClockCard({ children }: { children: ReactNode }) {
  * predicted entry would need a fabricated row id — and a fake id in the cache is the sort of thing
  * that eventually gets sent somewhere.
  */
-/**
- * A clock that advances, for the running total.
- *
- * The total is recomputed from the segment's own start rather than counted up, so a slept phone,
- * a backgrounded tab and a reload all land on the same number. Every 15s rather than every second:
- * the figure is shown to the minute, and this keeps the boundary tight without a per-second
- * re-render of a card that is on screen all day.
- */
-function useTickingNow(): Date {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 15_000);
-    return () => clearInterval(id);
-  }, []);
-  return now;
-}
-
 function useClockTap() {
   const utils = api.useUtils();
   const [predicted, setPredicted] = useState<DayClockView | null>(null);

@@ -1825,6 +1825,23 @@
   .tjf .tjcaret{display:inline-block;transition:transform .15s ease;font-size:var(--type-xs);color:var(--ink-3)}
   .tjf.open .tjcaret{transform:rotate(90deg)}
   .tjf-h:hover{color:var(--ink-2)}
+  /* Visit stepper (tech job sheet) — Scheduled → On the way → On site as a READOUT, never a
+     control (see components/modals/tech-job-modal/visit-steps.ts). The connector is drawn on the
+     node rather than between nodes so the three thirds stay equal at any width. */
+  .vstep{display:flex;align-items:flex-start;list-style:none;margin:0 0 var(--space-4);padding:0}
+  .vstep-n{flex:1;text-align:center;position:relative;min-width:0}
+  .vstep-n::before{content:"";position:absolute;top:6px;left:-50%;width:100%;height:2px;background:var(--line)}
+  .vstep-n:first-child::before{display:none}
+  .vstep-n.reached::before,.vstep-n.current::before{background:var(--ink)}
+  .vstep-dot{display:block;width:13px;height:13px;border-radius:50%;border:2px solid var(--line);background:var(--card);margin:0 auto var(--space-2);position:relative;z-index:1;box-sizing:border-box}
+  .vstep-n.reached .vstep-dot{background:var(--ink);border-color:var(--ink)}
+  /* The current node is RINGED, not filled — "you are here", not "this is finished". */
+  .vstep-n.current .vstep-dot{border-color:var(--ink);box-shadow:0 0 0 3px var(--amber-bg)}
+  .vstep-lab{display:block;font-size:var(--type-sm);font-weight:700;color:var(--ink-3);line-height:1.2}
+  .vstep-n.reached .vstep-lab,.vstep-n.current .vstep-lab{color:var(--ink)}
+  /* The "when" line under the stepper — the one big figure in this section. */
+  .vwhen b{display:block;font-size:var(--type-lg);font-weight:800;letter-spacing:-.01em}
+  .vwhen span{display:block;font-size:var(--type-sm);color:var(--ink-2)}
   /* the job address IS the navigate action — a prominent tappable row, never a faint grey line */
   .jaddr{display:flex;align-items:center;gap:var(--space-3);width:100%;text-align:left;border:1.5px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);background:var(--card);color:var(--ink);font-family:inherit;font-size:var(--type-md);font-weight:600;cursor:pointer;margin:var(--space-3) 0 var(--space-1);transition:border-color .12s,background .12s}
   .jaddr:hover{border-color:var(--ink-3);background:var(--green-50)}

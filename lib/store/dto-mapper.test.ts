@@ -657,6 +657,46 @@ describe("toStoreVisit enroute derivation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// toStoreVisit — the step STAMPS. The mapper used to drop all three even though the DTO has
+// carried them since the columns landed, so the client could say which state a visit was in but
+// never when it got there, and the job sheet's stepper had no times to print.
+// ---------------------------------------------------------------------------
+
+describe("toStoreVisit step stamps", () => {
+  const STARTED_AT = "2026-07-15T09:02:00.000Z";
+  const COMPLETED_AT = "2026-07-15T10:44:00.000Z";
+
+  it("carries enrouteAt / startedAt / completedAt through verbatim", () => {
+    const v = toStoreVisit({
+      ...visitDTO,
+      status: "complete",
+      enrouteAt: ENROUTE_AT,
+      startedAt: STARTED_AT,
+      completedAt: COMPLETED_AT,
+    } as never);
+    expect(v.enrouteAt).toBe(ENROUTE_AT);
+    expect(v.startedAt).toBe(STARTED_AT);
+    expect(v.completedAt).toBe(COMPLETED_AT);
+  });
+
+  // NULL IS THE ANSWER, not a gap to fill. A visit completed without the intermediate taps has
+  // no arrival on record and the stepper must be able to say so.
+  it("keeps a null stamp null — the mapper never backfills an arrival nobody tapped", () => {
+    const v = toStoreVisit({ ...visitDTO, status: "complete" } as never);
+    expect(v.enrouteAt).toBeNull();
+    expect(v.startedAt).toBeNull();
+    expect(v.completedAt).toBeNull();
+  });
+
+  it("normalises an absent field to null rather than undefined", () => {
+    const { startedAt: _a, completedAt: _b, ...partial } = visitDTO;
+    const v = toStoreVisit({ ...partial, status: "pending" } as never);
+    expect(v.startedAt).toBeNull();
+    expect(v.completedAt).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // mapExecution — server-redacted money (tech field surface)
 // ---------------------------------------------------------------------------
 

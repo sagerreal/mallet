@@ -61,6 +61,7 @@ import {
 } from "./helpers";
 import { TechHeader } from "./tech-header";
 import { VisitRow } from "./visit-row";
+import { VisitStepper } from "./visit-stepper";
 import { WorkOrderSec } from "./work-order-sec";
 import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
@@ -486,6 +487,11 @@ export function TechJobModalContent() {
           )}
         </div>
         {done ? (
+          <>
+          {/* The stepper stays on a FINISHED visit — this is the moment it matters most. Which
+              steps were recorded and which were skipped is the record of the visit, and it is
+              what gets read back weeks later when a customer argues about an arrival time. */}
+          {curVisit ? <VisitStepper visit={curVisit} /> : null}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
             <span className="muted" style={{ fontSize: "var(--type-base)" }}>
               {curVisit
@@ -501,6 +507,7 @@ export function TechJobModalContent() {
               </button>
             )}
           </div>
+          </>
         ) : placed.length ? (
           placed.map((v) => (
             <VisitRow

@@ -1,19 +1,26 @@
 /**
  * components/modals/tech-job-modal/visit-row.tsx
- * Your visit(s) row (prototype tvRow, 4568-4585) — ARRIVE label + big
- * "colLabel · H:MM AM" + ON SITE label + "~hmLabel", then full-width step
- * buttons. On-my-way / Arrived are optional; Done is never gated.
+ * Your visit — the three-node progress stepper, then the one figure that matters right now
+ * (when you are due, or how long you have been on site), then the step buttons.
+ *
+ * The stepper REPLACED a pair of "ARRIVE / ON SITE" columns that printed the plan twice and the
+ * state not at all: which state a visit was in could only be inferred from which button happened
+ * to be showing. It is a readout — see visit-steps.ts for why the nodes are not tappable and why
+ * a skipped step stays visibly skipped.
  *
  * The step buttons are the technician's, and they are also how his hours get recorded — each tap
- * moves his clock (travel → on site → back to shop). Only ↩ Reopen is withheld: it is a
- * correction to a visit that already ended, made days later, against hours he may already have
- * been paid for.
+ * moves his clock (travel → on site → back to shop). On-my-way / Arrived are optional; Done is
+ * never gated. Only ↩ Reopen is withheld: it is a correction to a visit that already ended, made
+ * days later, against hours he may already have been paid for.
  */
 
 "use client";
 
 import type { Visit } from "@/lib/store/types";
+import { useTickingNow } from "@/lib/use-ticking-now";
 import { colLabel, hmLabel, startTimeStr } from "./helpers";
+import { VisitStepper } from "./visit-stepper";
+import { stampLabel } from "./visit-steps";
 
 interface VisitRowProps {
   visit: Visit;
@@ -32,10 +39,44 @@ interface VisitRowProps {
   onStatus: (status: string) => void;
 }
 
+const MS_PER_MINUTE = 60_000;
+const MINUTES_PER_HOUR = 60;
+
+/**
+ * The one big figure beneath the stepper.
+ *
+ * Before arrival it is the appointment — when you are due, and how long the office booked it for.
+ * Once you are on site it becomes how long you have BEEN there, because that is the number a
+ * technician is actually watching, with the booked length demoted to context beside it.
+ */
+function WhenLine({ visit, now }: { visit: Visit; now: Date }) {
+  if (visit.status === "onsite" && visit.startedAt) {
+    const ms = now.getTime() - new Date(visit.startedAt).getTime();
+    const onSite =
+      Number.isNaN(ms) || ms < 0 ? null : hmLabel(Math.floor(ms / MS_PER_MINUTE) / MINUTES_PER_HOUR);
+    return (
+      <div className="vwhen">
+        {/* Genuinely live — masked out of the visual baseline, which would otherwise fail on
+            every run as the figure grows. See dynamicRegions in e2e/helpers/ui.ts. */}
+        <b data-dynamic>
+          {onSite ? `On site ${onSite}` : `On site since ${stampLabel(visit.startedAt)}`}
+        </b>
+        <span>~{hmLabel(visit.dur)} booked</span>
+      </div>
+    );
+  }
+  return (
+    <div className="vwhen">
+      <b>
+        {colLabel(visit.date ?? "")} · {startTimeStr(visit.start ?? 0)}
+      </b>
+      <span>about {hmLabel(visit.dur)} on site</span>
+    </div>
+  );
+}
+
 export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRowProps) {
-  // guarded: only PLACED visits reach here, so date/start are non-null.
-  const date = visit.date ?? "";
-  const start = visit.start ?? 0;
+  const now = useTickingNow();
   const stepP = !quoted;
 
   // On my way → / Arrived → (scheduled → enroute → onsite). Empty once on site, and empty on
@@ -43,6 +84,7 @@ export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRo
   const step = !canAct ? null :
     visit.status === "scheduled" ? (
       <button
+        type="button"
         className={`btn ${stepP ? "primary" : "ghost"}`}
         style={{ flex: 1 }}
         onClick={() => onStatus("enroute")}
@@ -51,6 +93,7 @@ export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRo
       </button>
     ) : visit.status === "enroute" ? (
       <button
+        type="button"
         className={`btn ${stepP ? "primary" : "ghost"}`}
         style={{ flex: 1 }}
         onClick={() => onStatus("onsite")}
@@ -64,12 +107,13 @@ export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRo
   const doneB = !canAct ? null :
     visit.status === "done" ? (
       canReopen ? (
-        <button className="btn ghost" style={{ flex: 1 }} onClick={() => onStatus("scheduled")}>
+        <button type="button" className="btn ghost" style={{ flex: 1 }} onClick={() => onStatus("scheduled")}>
           ↩ Reopen
         </button>
       ) : null
     ) : (
       <button
+        type="button"
         className={`btn ${visit.status === "onsite" || quoted ? "primary" : "ghost"}`}
         style={{ flex: 1 }}
         onClick={() => onStatus("done")}
@@ -80,52 +124,10 @@ export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRo
 
   return (
     <div style={{ marginBottom: "var(--space-2xs)" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: "var(--space-3)",
-          marginBottom: "var(--space-3)",
-        }}
-      >
-        <div>
-          <div
-            style={{
-              fontSize: "var(--type-xs)",
-              fontWeight: 700,
-              letterSpacing: ".05em",
-              textTransform: "uppercase",
-              color: "var(--ink-3)",
-              marginBottom: "var(--space-2xs)",
-            }}
-          >
-            Arrive
-          </div>
-          <div style={{ fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
-            {colLabel(date)} · {startTimeStr(start)}
-          </div>
-        </div>
-        <div style={{ textAlign: "right" }}>
-          <div
-            style={{
-              fontSize: "var(--type-xs)",
-              fontWeight: 700,
-              letterSpacing: ".05em",
-              textTransform: "uppercase",
-              color: "var(--ink-3)",
-              marginBottom: "var(--space-2xs)",
-            }}
-          >
-            On site
-          </div>
-          <div style={{ fontSize: "var(--type-lg)", fontWeight: 800, letterSpacing: "-.01em" }}>
-            ~{hmLabel(visit.dur)}
-          </div>
-        </div>
-      </div>
+      <VisitStepper visit={visit} />
+      <WhenLine visit={visit} now={now} />
       {(step || doneB) && (
-        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
           {step}
           {doneB}
         </div>

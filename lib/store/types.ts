@@ -34,6 +34,22 @@ export interface Visit {
   status: string;
   /** Clock stamp when the crew marked on site ("9:04") — powers the live dot. */
   onsiteAt?: string;
+  /**
+   * WHEN each step was actually tapped — ISO timestamps, straight off the visit row.
+   *
+   * These are the visit's own stamps (`job_visits.enroute_at / started_at / completed_at`), not
+   * the plan: `startedAt` IS the arrival, and there is no `arrived_at` column. The DTO has
+   * carried all three since the column landed; `toStoreVisit` simply dropped them, so the client
+   * could say WHICH state a visit was in but never WHEN it got there.
+   *
+   * NULL IS LOAD-BEARING. A visit finished without anyone tapping On my way / Arrived keeps
+   * nulls here — the server does not backfill them, and neither may the UI. A stepper that
+   * printed an arrival nobody recorded would be a fabrication in a record that can end up in an
+   * argument with a customer. Absent means skipped; it does not mean unknown.
+   */
+  enrouteAt?: string | null;
+  startedAt?: string | null;
+  completedAt?: string | null;
   scopeNotes?: string;
   photos?: string[];
 }
