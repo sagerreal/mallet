@@ -93,8 +93,24 @@ function ClockCard({ children }: { children: ReactNode }) {
  *
  * Disabled until `me` resolves, for the reason My hours is: an unscoped first fetch would serve
  * an owner-operator the whole org's rows and quietly total somebody else's day into theirs.
+ *
+ * THE READ'S FAILURE IS RETURNED, NOT SWALLOWED. `daySummary` can only be built from rows, so a
+ * refused fetch and a day with no punches both leave it null — and rendered the same they are
+ * byte-identical: no total, no expander, nothing. On the one screen whose job is telling a man he
+ * is being paid, "we could not ask" must not read as "you have not worked". The caller draws the
+ * failure and a retry; see DayClock below.
  */
-function useDaySummary(jobs: readonly DayClockJob[], now: Date): DaySummary | null {
+interface DayRead {
+  /** Today, once the rows are in. Null while loading, on failure, and on a day with no punches. */
+  readonly day: DaySummary | null;
+  /** The read was refused. The panel and the total are unknown, not empty. */
+  readonly failed: boolean;
+  /** A retry is in flight. */
+  readonly retrying: boolean;
+  readonly retry: () => void;
+}
+
+function useDaySummary(jobs: readonly DayClockJob[], now: Date): DayRead {
   const me = useMe();
   const myUserId = me.data?.userId;
   const list = api.v1.timesheets.list.useQuery(
@@ -113,10 +129,15 @@ function useDaySummary(jobs: readonly DayClockJob[], now: Date): DaySummary | nu
   );
 
   const items = list.data?.items;
-  return useMemo(
+  const day = useMemo(
     () => (items ? daySummary(items, todayISO(), now, jobLabel) : null),
     [items, now, jobLabel],
   );
+
+  const refetch = list.refetch;
+  const retry = useCallback(() => void refetch(), [refetch]);
+
+  return { day, failed: list.isError, retrying: list.isFetching, retry };
 }
 
 /**
@@ -254,7 +275,7 @@ export function DayClock({ jobs = [] }: DayClockProps) {
     staleTime: OPEN_STALE_MS,
     refetchOnWindowFocus: false,
   });
-  const day = useDaySummary(jobs, now);
+  const { day, failed: dayFailed, retrying: dayRetrying, retry: retryDay } = useDaySummary(jobs, now);
   const { predicted, tap: handleTap } = useClockTap();
 
   // A failed load is not "off the clock". Showing the Start day button on a connection error
@@ -327,9 +348,17 @@ export function DayClock({ jobs = [] }: DayClockProps) {
           ))}
         </div>
       </div>
-      {/* IN FLOW, inside the same Card, pushing the agenda down — never a popover. Same shape as
-          the My hours row editor (features/field/my-hours-entries.tsx). */}
-      {dayOpen && day ? <DaySegments day={day} /> : null}
+      {/* The hours could not be read. Said out loud, with a retry, rather than left to render as
+          a day with no punches — the same words My hours uses for the same refusal
+          (app/(field)/my-hours/page.tsx), and the same shape as the `open` failure above. The
+          state sentence stays: it comes from `open`, which answered. */}
+      {dayFailed ? (
+        <LoadFailed noun="hours" onRetry={retryDay} retrying={dayRetrying} />
+      ) : /* IN FLOW, inside the same Card, pushing the agenda down — never a popover. Same shape
+             as the My hours row editor (features/field/my-hours-entries.tsx). */
+      dayOpen && day ? (
+        <DaySegments day={day} />
+      ) : null}
     </ClockCard>
   );
 }

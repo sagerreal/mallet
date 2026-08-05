@@ -23,8 +23,14 @@ let openQuery: {
   refetch: () => void;
 };
 // The DAY, from v1.timesheets.list — the same query My hours reads, and the reason the card can
-// still show the day's total after End day has closed the running row.
-let listQuery: { data?: { items: unknown[] } };
+// still show the day's total after End day has closed the running row. Its FAILURE state is part
+// of the mock because it is part of the contract: a refused read must not render as an empty day.
+let listQuery: {
+  data?: { items: unknown[] };
+  isError: boolean;
+  isFetching: boolean;
+  refetch: () => void;
+};
 let lastTap: { args: TapArgs; callbacks: TapCallbacks } | null = null;
 
 const mutate = vi.fn((args: TapArgs, callbacks: TapCallbacks) => {
@@ -92,6 +98,11 @@ function loaded(open: unknown) {
   return { data: { open }, isError: false, isFetched: true, isFetching: false, refetch: vi.fn() };
 }
 
+/** A settled `v1.timesheets.list` read — the day's rows, and no refusal. */
+function dayRows(items: unknown[]) {
+  return { data: { items }, isError: false, isFetching: false, refetch: vi.fn() };
+}
+
 /** One timesheet row as v1.timesheets.list returns it. */
 function row(over: Record<string, unknown> = {}) {
   return { ...serverEntry(), endTime: "08:30", running: false, ...over };
@@ -117,7 +128,7 @@ beforeEach(() => {
   openQuery = loaded(null);
   // No rows by default: the head then carries no total and offers no expander, which is the
   // honest state before the first punch of the day.
-  listQuery = { data: { items: [] } };
+  listQuery = dayRows([]);
   lastTap = null;
   mutate.mockClear();
   setOpenData.mockClear();
@@ -156,7 +167,7 @@ describe("DayClock — the three states", () => {
   // which resets on every break and every job start — at 4pm after a normal day it read 0:50.
   it("shows the DAY's worked total, and advances it as the clock runs", () => {
     openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "08:45" }));
-    listQuery = { data: { items: morning() } };
+    listQuery = dayRows(morning());
     render(<DayClock />);
     // shop 0:48 + the running job 0:20. The unpaid break is not in it.
     expect(screen.getByText("1:08")).toBeTruthy();
@@ -167,7 +178,7 @@ describe("DayClock — the three states", () => {
   });
 
   it("keeps the day total out of the visual baseline", () => {
-    listQuery = { data: { items: morning() } };
+    listQuery = dayRows(morning());
     const { container } = render(<DayClock />);
     expect(container.querySelector(".clock-elapsed")?.hasAttribute("data-dynamic")).toBe(true);
   });
@@ -316,7 +327,7 @@ const JOBS = [{ id: "job-1", num: "JOB-2541", title: "Water heater repair", cust
 describe("DayClock — today's hours, expanded in place", () => {
   beforeEach(() => {
     openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "08:45" }));
-    listQuery = { data: { items: morning() } };
+    listQuery = dayRows(morning());
   });
 
   const openPanel = () => fireEvent.click(screen.getByRole("button", { expanded: false }));
@@ -389,18 +400,75 @@ describe("DayClock — today's hours, expanded in place", () => {
   // revert to "Off the clock / Start day" and know nothing about the day it just finished.
   it("still shows the finished day after End day, when nothing is running", () => {
     openQuery = loaded(null);
-    listQuery = {
-      data: {
-        items: [
-          row({ id: "a", kind: "shop", startTime: "07:42", endTime: "08:30" }),
-          row({ id: "b", kind: "break", startTime: "08:30", endTime: "08:45" }),
-        ],
-      },
-    };
+    listQuery = dayRows([
+      row({ id: "a", kind: "shop", startTime: "07:42", endTime: "08:30" }),
+      row({ id: "b", kind: "break", startTime: "08:30", endTime: "08:45" }),
+    ]);
     render(<DayClock jobs={JOBS} />);
     expect(screen.getByText("Off the clock")).toBeTruthy();
     openPanel();
     expect(screen.getByText("Worked today")).toBeTruthy();
     expect(screen.getAllByText("0:48").length).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The hours read FAILED. The reason this panel exists is that `open` alone forgets the day the
+// moment End day closes it — so a refused `list` read puts the card back in exactly the state the
+// feature was built to prevent, and does it silently.
+// ---------------------------------------------------------------------------
+
+/** A refused `v1.timesheets.list` read. */
+function dayFailed(refetch: () => void) {
+  return { data: undefined, isError: true, isFetching: false, refetch };
+}
+
+describe("DayClock — a refused hours read", () => {
+  it("says the hours could not be read, instead of rendering a day with no punches", () => {
+    openQuery = loaded(serverEntry());
+    listQuery = dayFailed(vi.fn());
+    render(<DayClock />);
+
+    expect(screen.getByRole("alert").textContent).toContain("Couldn't load your hours.");
+  });
+
+  // The state sentence comes from `open`, which answered. Only the day is unknown.
+  it("keeps the state sentence and the day's actions", () => {
+    openQuery = loaded(serverEntry());
+    listQuery = dayFailed(vi.fn());
+    render(<DayClock />);
+
+    expect(screen.getByText("On the clock")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "End day" })).toBeTruthy();
+  });
+
+  it("offers a retry that refetches the day", () => {
+    const refetch = vi.fn();
+    openQuery = loaded(serverEntry());
+    listQuery = dayFailed(refetch);
+    render(<DayClock />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(refetch).toHaveBeenCalled();
+  });
+
+  it("names the retry as in flight while it runs", () => {
+    openQuery = loaded(serverEntry());
+    listQuery = { data: undefined, isError: true, isFetching: true, refetch: vi.fn() };
+    render(<DayClock />);
+
+    expect(screen.getByRole("button", { name: "Retrying…" })).toBeTruthy();
+  });
+
+  // The tell that this is NOT the empty-day render: an empty day draws neither, and drew nothing
+  // else either — which is the whole finding.
+  it("draws no total and no expander, because neither is known", () => {
+    openQuery = loaded(serverEntry());
+    listQuery = dayFailed(vi.fn());
+    const { container } = render(<DayClock />);
+
+    expect(container.querySelector(".clock-elapsed")).toBeNull();
+    expect(container.querySelector(".clock-open")).toBeNull();
+    expect(container.querySelector(".clock-day")).toBeNull();
   });
 });
