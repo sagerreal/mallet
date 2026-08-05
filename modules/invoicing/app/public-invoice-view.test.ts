@@ -127,8 +127,8 @@ describe("toPublicInvoiceView", () => {
     expect(view.balanceDueCents).toBe(9_345);
 
     expect(view.lines).toEqual([
-      { description: "Labor", quantity: 2, rateCents: 4_500 },
-      { description: "Parts", quantity: 1, rateCents: 3_345 },
+      { description: "Labor", quantity: 2, rateCents: 4_500, taxable: true },
+      { description: "Parts", quantity: 1, rateCents: 3_345, taxable: true },
     ]);
   });
 

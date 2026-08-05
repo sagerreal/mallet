@@ -42,7 +42,13 @@ describe("invoiceDocumentView", () => {
 
   it("extends each line by its quantity", () => {
     const view = invoiceDocumentView(inv());
-    expect(view.lines[1]).toEqual({ description: "Shut-off valve", quantity: 2, amountCents: 4_000 });
+    expect(view.lines[1]).toEqual({
+      description: "Shut-off valve",
+      quantity: 2,
+      amountCents: 4_000,
+      // Absent `notax` on the store line is a taxable line.
+      taxable: true,
+    });
   });
 
   it("takes the total off the record, never a re-sum of the lines", () => {

@@ -146,6 +146,71 @@ describe("InvoiceDocument", () => {
 // ── The document-of-record blocks ────────────────────────────────────────────
 // Every one is optional, and the rule they all share is: NEVER print a label with no value.
 
+describe("InvoiceDocument discount row", () => {
+  it("states the discount, and a subtotal that matches the sum of the printed lines", () => {
+    // Lines print at full rates ($185.00). 10% off, then 8.25% tax on the net:
+    //   185.00 − 18.50 = 166.50; 166.50 + 13.74 = 180.24.
+    render(
+      <InvoiceDocument
+        {...doc({
+          totalCents: 180_24,
+          taxCents: 13_74,
+          discountCents: 18_50,
+          balanceDueCents: 180_24,
+        })}
+      />,
+    );
+    // total − tax + discount = the sum of the lines the customer can add up themselves.
+    expect(screen.getByText("Subtotal")).toBeTruthy();
+    expect(screen.getAllByText("$185.00").length).toBe(1);
+    expect(screen.getByText("Discount")).toBeTruthy();
+    expect(screen.getByText("−$18.50")).toBeTruthy();
+    expect(screen.getByText("Tax")).toBeTruthy();
+  });
+
+  it("prints a subtotal for a discounted bill even when no tax was charged", () => {
+    render(
+      <InvoiceDocument
+        {...doc({ totalCents: 166_50, taxCents: 0, discountCents: 18_50, balanceDueCents: 166_50 })}
+      />,
+    );
+    expect(screen.getByText("Subtotal")).toBeTruthy();
+    expect(screen.getByText("Discount")).toBeTruthy();
+    expect(screen.queryByText("Tax")).toBeNull();
+  });
+
+  it("prints no discount row on an undiscounted bill", () => {
+    render(<InvoiceDocument {...doc()} />);
+    expect(screen.queryByText("Discount")).toBeNull();
+  });
+});
+
+describe("InvoiceDocument non-taxable lines", () => {
+  const mixed = (over: Partial<InvoiceDocumentProps> = {}) =>
+    doc({
+      lines: [
+        { description: "Water heater — 50 gal", quantity: 1, amountCents: 145_00, taxable: true },
+        { description: "Permit fee", quantity: 1, amountCents: 40_00, taxable: false },
+      ],
+      ...over,
+    });
+
+  it("marks the untaxed line on a bill that charges tax", () => {
+    render(<InvoiceDocument {...mixed({ totalCents: 196_96, taxCents: 11_96, balanceDueCents: 196_96 })} />);
+    expect(screen.getByText("No tax")).toBeTruthy();
+  });
+
+  it("says nothing about tax on a bill that charges none — all of it is untaxed", () => {
+    render(<InvoiceDocument {...mixed()} />);
+    expect(screen.queryByText("No tax")).toBeNull();
+  });
+
+  it("leaves a taxable line unmarked", () => {
+    render(<InvoiceDocument {...doc({ totalCents: 200_00, taxCents: 15_00, balanceDueCents: 200_00 })} />);
+    expect(screen.queryByText("No tax")).toBeNull();
+  });
+});
+
 describe("InvoiceDocument business block", () => {
   it("prints who billed the customer, with the licence prefixed", () => {
     render(

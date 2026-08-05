@@ -49,6 +49,8 @@ export interface InvoiceDocumentView {
   readonly lines: readonly InvoiceDocumentLine[];
   readonly totalCents: number;
   readonly taxCents: number;
+  /** What came off the line sum before tax. The document prints a Discount row for it. */
+  readonly discountCents: number;
   readonly depositPaidCents: number;
   readonly amountPaidCents: number;
   readonly balanceDueCents: number | null;
@@ -102,11 +104,16 @@ export function invoiceDocumentView(
       description: line.d,
       quantity: line.q ?? 1,
       amountCents: toCents((line.q ?? 1) * (line.r ?? 0)),
+      // Absent `notax` is a taxable line — the store states only the exception.
+      taxable: !line.notax,
     })),
     // Tax-INCLUSIVE, straight off the record — never a re-sum of `lines`. An invoice raised from
     // a quote carries the agreed total with no lines at all.
     totalCents: toCents(invoice.total),
     taxCents: toCents(invoice.tax),
+    // Straight off the record like the tax — the amount that came off, not a re-derivation from
+    // a percentage the document does not print.
+    discountCents: toCents(invoice.disc),
     depositPaidCents: toCents(invoice.depPaid),
     amountPaidCents: toCents(invPaid(invoice)),
     // A canceled bill owes nothing, so it states no balance at all (see InvoiceDocumentProps).

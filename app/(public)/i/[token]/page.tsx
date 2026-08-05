@@ -208,9 +208,11 @@ export default async function PublicInvoicePage({
               description: l.description,
               quantity: l.quantity,
               amountCents: Math.round(l.quantity * l.rateCents),
+              taxable: l.taxable,
             }))}
             totalCents={view.totalCents}
             taxCents={view.taxCents}
+            discountCents={view.discountCents}
             depositPaidCents={view.depositPaidCents}
             amountPaidCents={view.amountPaidCents}
             // A canceled invoice owes nothing, so it states no balance at all.

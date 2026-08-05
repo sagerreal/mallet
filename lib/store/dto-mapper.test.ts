@@ -106,6 +106,8 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     total: makeMoneyDTO(12000),        // $120.00 — TAX-INCLUSIVE
     taxBps: 875,                       // 8.75%
     tax: makeMoneyDTO(965),            // the part of the $120 that is tax
+    discBps: 0,
+    discount: makeMoneyDTO(0),
     depositPaid: makeMoneyDTO(3000),   // $30.00
     amountPaid: makeMoneyDTO(3000),
     due: makeMoneyDTO(9000),
@@ -117,6 +119,7 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
         quantity: 1,
         rate: makeMoneyDTO(12000),   // $120.00
         cost: makeMoneyDTO(5000),    // $50.00
+        taxable: true,
         position: 0,
       },
     ],
@@ -345,6 +348,7 @@ describe("dtoInvoiceToStore", () => {
         quantity: 1,
         rate: makeMoneyDTO(1000),
         cost: makeMoneyDTO(0),
+        taxable: true,
         position: 0,
       }],
     });
@@ -823,12 +827,13 @@ function makeFieldInvoiceDTO(overrides: Partial<FieldInvoiceDTO> = {}): FieldInv
     status: "sent",
     total: makeMoneyDTO(84_000),      // $840.00
     tax: makeMoneyDTO(0),
+    discount: makeMoneyDTO(0),
     depositPaid: makeMoneyDTO(0),
     amountPaid: makeMoneyDTO(0),
     due: makeMoneyDTO(84_000),
     termsDays: 0,
     lines: [
-      { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(84_000), position: 0 },
+      { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(84_000), taxable: true, position: 0 },
     ],
     payments: [],
     sentAt: "2026-08-01T09:00:00.000Z",
@@ -917,8 +922,8 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   const hidden = () =>
     makeFieldInvoiceDTO({
       lines: [
-        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: null, position: 0 },
-        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, position: 1 },
+        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: null, taxable: true, position: 0 },
+        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, taxable: true, position: 1 },
       ],
     });
 
@@ -939,8 +944,8 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   it("drops the WHOLE breakdown when even one rate is hidden — never a partial bill", () => {
     const dto = makeFieldInvoiceDTO({
       lines: [
-        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(80_000), position: 0 },
-        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, position: 1 },
+        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(80_000), taxable: true, position: 0 },
+        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, taxable: true, position: 1 },
       ],
     });
     expect(dtoFieldInvoiceToStore(dto).lines).toEqual([]);
@@ -950,7 +955,7 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   it("keeps a genuine $0 line — {cents: 0} is not the redaction signal", () => {
     const dto = makeFieldInvoiceDTO({
       lines: [
-        { id: "linv-1", description: "Warranty callback", quantity: 1, rate: makeMoneyDTO(0), position: 0 },
+        { id: "linv-1", description: "Warranty callback", quantity: 1, rate: makeMoneyDTO(0), taxable: true, position: 0 },
       ],
     });
     expect(dtoFieldInvoiceToStore(dto).lines).toEqual([{ d: "Warranty callback", q: 1, r: 0 }]);

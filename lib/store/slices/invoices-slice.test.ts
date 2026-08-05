@@ -98,6 +98,7 @@ const dbDto = (over: Record<string, unknown> = {}) => ({
   // optimistic state, but sendInvoice's tests below await the full reconcile, which reads
   // dto.tax.cents/dto.taxBps unconditionally (dto-mapper.ts:549-550) and threw without these.
   taxBps: 0, tax: { cents: 0, currency: "USD" },
+  discBps: 0, discount: { cents: 0, currency: "USD" },
   depositPaid: { cents: 0, currency: "USD" }, amountPaid: { cents: 0, currency: "USD" },
   due: { cents: 100_000, currency: "USD" }, termsDays: 7, lines: [], payments: [],
   followUpOn: false, followUpStage: 0,
@@ -797,6 +798,7 @@ const fieldDto = (over: Record<string, unknown> = {}) => ({
   id: "inv-1", num: "INV-800", sourceJobId: "job-9", scopeJobId: null, leadId: "lead-1",
   customerName: "Ada", title: "Deck", status: "sent",
   total: { cents: 100_000, currency: "USD" }, tax: { cents: 0, currency: "USD" },
+  discount: { cents: 0, currency: "USD" },
   depositPaid: { cents: 0, currency: "USD" }, amountPaid: { cents: 0, currency: "USD" },
   due: { cents: 100_000, currency: "USD" }, termsDays: 7, lines: [], payments: [],
   sentAt: null, dueAt: null, createdAt: new Date().toISOString(), ...over,

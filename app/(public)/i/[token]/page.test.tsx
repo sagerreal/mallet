@@ -30,10 +30,11 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
   return {
     num: "INV-810",
     title: "Deck rebuild",
-    lines: [{ description: "Labor", quantity: 1, rateCents: 100_00 }],
+    lines: [{ description: "Labor", quantity: 1, rateCents: 100_00, taxable: true }],
     payments: [],
     totalCents: 100_00,
     taxCents: 0,
+    discountCents: 0,
     depositPaidCents: 0,
     amountPaidCents: 0,
     balanceDueCents: 100_00,

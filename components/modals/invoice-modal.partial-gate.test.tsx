@@ -108,6 +108,8 @@ describe("InvoiceModalContent — the partial-row gate", () => {
         total: { cents: 68500, currency: "USD" },
         due: { cents: 68500, currency: "USD" },
         tax: { cents: 0, currency: "USD" },
+        discBps: 0,
+        discount: { cents: 0, currency: "USD" },
         depositPaid: { cents: 0, currency: "USD" },
         payments: [],
         lines: [{ description: "Hydro-jetting", quantity: 1, rate: { cents: 68500, currency: "USD" }, cost: { cents: 0, currency: "USD" } }],

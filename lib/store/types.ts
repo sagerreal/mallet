@@ -447,6 +447,9 @@ export interface InvoiceLine {
   q: number;
   r: number;
   c?: number;
+  /** This line is NOT taxable. The exception, absent on an ordinary line — same convention as
+   *  the estimate line's `notax`. */
+  notax?: boolean;
 }
 
 export interface Payment {
@@ -483,6 +486,13 @@ export interface Invoice {
    * with no lines at all, so a line-derived tax renders $0.00 under a four-figure total.
    */
   tax?: number;
+  /**
+   * What came off the line sum before tax, in dollars, as recorded when the invoice was raised.
+   *
+   * The document prints the lines at their full rates, so without this a total below their sum
+   * has nothing explaining it. 0 on an undiscounted bill.
+   */
+  disc?: number;
   depPaid: number;
   payments: Payment[];
   /**

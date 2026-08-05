@@ -19,6 +19,9 @@ const fieldLineDTO = z.object({
   description: z.string(),
   quantity: z.number(),
   rate: moneyDTO.nullable(),
+  /** Does this line take sales tax. Not a price, so it rides even when rates are hidden — the
+   *  close-out document marks it exactly as the customer's own copy does. */
+  taxable: z.boolean(),
   position: z.number().int(),
 });
 
@@ -72,6 +75,9 @@ export const fieldInvoiceDTO = z.object({
   /** Tax-INCLUSIVE — `tax` says how much of it is tax, it is not added on top. */
   total: moneyDTO,
   tax: moneyDTO,
+  /** What came off the line sum before tax. The close-out sheet renders the SAME document as
+   *  the customer's page, so it has to be able to state the discount too. */
+  discount: moneyDTO,
   depositPaid: moneyDTO,
   amountPaid: moneyDTO,
   due: moneyDTO,
@@ -127,6 +133,7 @@ export const toFieldInvoiceDTO = (
     status: p.status,
     total: money$(p.total),
     tax: money$(p.tax),
+    discount: money$(p.discount),
     depositPaid: money$(p.depositPaid),
     amountPaid: money$(p.amountPaid),
     due: money$(invoice.due()),
@@ -137,6 +144,7 @@ export const toFieldInvoiceDTO = (
       quantity: line.props.quantity,
       // Null, never 0: the client must be able to tell "hidden from you" from "free".
       rate: seesPrice ? money$(line.props.rate) : null,
+      taxable: line.props.taxable,
       position: line.props.position,
     })),
     payments: p.payments.map((pay) => ({

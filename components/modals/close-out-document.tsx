@@ -162,6 +162,7 @@ export function CloseOutDocument({ invoice }: CloseOutDocumentProps) {
             lines={doc.lines}
             totalCents={doc.totalCents}
             taxCents={doc.taxCents}
+            discountCents={doc.discountCents}
             depositPaidCents={doc.depositPaidCents}
             amountPaidCents={doc.amountPaidCents}
             balanceDueCents={doc.balanceDueCents}

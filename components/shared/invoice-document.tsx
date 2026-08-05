@@ -47,6 +47,14 @@ export interface InvoiceDocumentLine {
   readonly quantity: number;
   /** The EXTENDED amount in integer cents (quantity × rate), computed by the caller. */
   readonly amountCents: number;
+  /**
+   * Does this line take sales tax. Absent reads as TRUE, the same default the column carries.
+   *
+   * Marked on the document the way Jobber marks it: a quiet tag on the line itself, and only on
+   * a bill that charges tax — on a bill with no tax at all, saying which lines are untaxed
+   * explains nothing.
+   */
+  readonly taxable?: boolean;
 }
 
 export interface InvoiceDocumentPayment {
@@ -140,6 +148,16 @@ export interface InvoiceDocumentProps {
   /** TAX-INCLUSIVE. `taxCents` says how much of it is tax, it is not added on top. */
   readonly totalCents: number;
   readonly taxCents: number;
+  /**
+   * The discount taken off the line sum before tax, in integer cents. 0 (or absent) prints no
+   * discount row.
+   *
+   * It has to be stated. The lines print at their FULL rates, so a total ten percent under their
+   * sum with nothing explaining the gap reads as an arithmetic mistake — and a customer who
+   * thinks the arithmetic is wrong disputes the bill instead of paying it. Stating it is also
+   * the only way they can see they got the discount they were promised.
+   */
+  readonly discountCents?: number;
   readonly depositPaidCents: number;
   readonly amountPaidCents: number;
   /**
@@ -302,7 +320,13 @@ function TotalRow({ label, cents, negative, strong }: TotalRowProps) {
   );
 }
 
-function DocumentLines({ lines }: { lines: readonly InvoiceDocumentLine[] }) {
+function DocumentLines({
+  lines,
+  showTaxMarks,
+}: {
+  lines: readonly InvoiceDocumentLine[];
+  showTaxMarks: boolean;
+}) {
   return (
     <>
       {lines.map((line, i) => (
@@ -310,6 +334,9 @@ function DocumentLines({ lines }: { lines: readonly InvoiceDocumentLine[] }) {
           <span>
             {line.description}
             {line.quantity !== 1 ? ` × ${line.quantity}` : ""}
+            {showTaxMarks && line.taxable === false && (
+              <span className="custline-notax">No tax</span>
+            )}
           </span>
           <b>{formatMoney(line.amountCents)}</b>
         </div>
@@ -349,15 +376,20 @@ export function InvoiceDocument({
   lines,
   totalCents,
   taxCents,
+  discountCents = 0,
   depositPaidCents,
   amountPaidCents,
   balanceDueCents,
   payments = [],
 }: InvoiceDocumentProps) {
-  // Total is tax-INCLUSIVE, so the subtotal is what is left once the recorded tax comes out —
-  // never a re-sum of the lines (an invoice raised from a quote carries the agreed total with no
-  // lines at all, and a line-derived subtotal would print $0.00 under a four-figure bill).
-  const subtotalCents = totalCents - taxCents;
+  // Total is tax-INCLUSIVE, so the subtotal is what is left once the recorded tax comes out and
+  // the discount goes back on — never a re-sum of the lines (an invoice raised from a quote
+  // carries the agreed total with no lines at all, and a line-derived subtotal would print
+  // $0.00 under a four-figure bill). Reversing the chain the domain ran forward
+  // (subtotal → discount → net → tax → total) lands back on the sum the lines print.
+  const subtotalCents = totalCents - taxCents + discountCents;
+  // A bill that charges no tax says nothing about which lines are untaxed — all of them are.
+  const showTaxMarks = taxCents > 0;
   const meta = metaStrip(num, termsFace, dates, poNumber);
 
   return (
@@ -391,16 +423,15 @@ export function InvoiceDocument({
         </p>
       )}
 
-      <DocumentLines lines={lines} />
+      <DocumentLines lines={lines} showTaxMarks={showTaxMarks} />
 
       {/* Totals — the balance math the domain computed, never re-derived here. */}
       <div style={{ marginTop: "var(--space-3)" }}>
-        {taxCents > 0 && (
-          <>
-            <TotalRow label="Subtotal" cents={subtotalCents} />
-            <TotalRow label="Tax" cents={taxCents} />
-          </>
+        {(taxCents > 0 || discountCents > 0) && (
+          <TotalRow label="Subtotal" cents={subtotalCents} />
         )}
+        {discountCents > 0 && <TotalRow label="Discount" cents={discountCents} negative />}
+        {taxCents > 0 && <TotalRow label="Tax" cents={taxCents} />}
         <TotalRow label="Total" cents={totalCents} />
         {depositPaidCents > 0 && <TotalRow label="Deposit credit" cents={depositPaidCents} negative />}
         {amountPaidCents > 0 && <TotalRow label="Paid" cents={amountPaidCents} negative />}

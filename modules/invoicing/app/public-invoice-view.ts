@@ -15,6 +15,9 @@ export interface PublicInvoiceLine {
   readonly description: string;
   readonly quantity: number;
   readonly rateCents: number;
+  /** Does this line take sales tax — marked on the document so the customer can see which
+   *  line the rate was not charged on. */
+  readonly taxable: boolean;
 }
 
 /**
@@ -81,6 +84,9 @@ export interface PublicInvoiceView {
   readonly payments: readonly PublicInvoicePayment[];
   readonly totalCents: number;
   readonly taxCents: number;
+  /** What came off the line sum before tax. The lines print at full rates, so the document
+   *  must state it or the total reads as an arithmetic error. */
+  readonly discountCents: number;
   readonly depositPaidCents: number;
   readonly amountPaidCents: number;
   readonly balanceDueCents: number;
@@ -119,6 +125,7 @@ export const toPublicInvoiceView = (
         description: line.props.description,
         quantity: line.props.quantity,
         rateCents: line.props.rate,
+        taxable: line.props.taxable,
       })),
     payments: [...p.payments]
       .sort((a, b) => a.props.receivedAt.getTime() - b.props.receivedAt.getTime())
@@ -129,6 +136,7 @@ export const toPublicInvoiceView = (
       })),
     totalCents: p.total,
     taxCents: p.tax,
+    discountCents: p.discount,
     depositPaidCents: p.depositPaid,
     amountPaidCents: p.amountPaid,
     // The domain's due() — total − deposit − paid, clamped ≥ 0 — never recomputed by a page.

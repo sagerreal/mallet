@@ -448,7 +448,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
       opt: l.isOptional || undefined,
       photo: l.needsPhoto || undefined,
-      notax: l.taxable ? undefined : true,     // absent = taxable (the default)
+      // Only the EXCEPTION is written — an ordinary taxable line carries no key at all.
+      ...(l.taxable ? {} : { notax: true as const }),
       tier: l.tier ?? undefined,                              // GBB tier tag (null → absent)
     })),
     pricing: {
@@ -615,8 +616,9 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     // The modal has always drawn a Tax row from `pricing`; until now nothing populated it for an
     // invoice, so the row rendered off client-only state. `disc` stays 0 because an invoice carries
     // no discount of its own — the estimate's discount is already inside the total it snapshotted.
-    pricing: { disc: 0, tax: dto.taxBps / 100 },   // basis points → percent (875 bps = 8.75%)
+    pricing: { disc: dto.discBps / 100, tax: dto.taxBps / 100 },  // bps → percent (875 = 8.75%)
     tax: dto.tax.cents / 100,                     // cents → dollars, the recorded amount
+    disc: dto.discount.cents / 100,               // cents → dollars, what came off before tax
     depPaid: dto.depositPaid.cents / 100,      // cents → dollars
     payments: dto.payments.map((p) => ({
       amt: p.amount.cents / 100,               // cents → dollars
@@ -629,6 +631,7 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
       q: l.quantity,
       r: l.rate.cents / 100,                                  // cents → dollars
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
+      ...(l.taxable ? {} : { notax: true as const }),         // only the exception is written
     })),
     // Days since the invoice was raised. Was hard-coded to 0, which made the ledger's age column
     // read "0d" for every row and — while overdue was defined as an age threshold — made the
@@ -695,6 +698,7 @@ export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice)
     status: dto.status,
     total,
     tax: dto.tax.cents / 100,
+    disc: dto.discount.cents / 100,
     depPaid: dto.depositPaid.cents / 100,
     paidTotal: dto.amountPaid.cents / 100,
     due,
@@ -706,7 +710,12 @@ export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice)
     termsDays: dto.termsDays,
     lines: pricesHidden
       ? []
-      : dto.lines.map((l) => ({ d: l.description, q: l.quantity, r: (l.rate?.cents ?? 0) / 100 })),
+      : dto.lines.map((l) => ({
+          d: l.description,
+          q: l.quantity,
+          r: (l.rate?.cents ?? 0) / 100,
+          ...(l.taxable ? {} : { notax: true as const }),
+        })),
     age: daysSince(dto.createdAt),
     createdAt: dto.createdAt,
     dueAt: dto.dueAt,

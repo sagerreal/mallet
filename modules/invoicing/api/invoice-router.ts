@@ -40,6 +40,9 @@ const lineDTO = z.object({
   quantity: z.number(),
   rate: moneyDTO,
   cost: moneyDTO,
+  /** Does this line take sales tax. What the DOCUMENT marks; the bill's stored `tax` is still
+   *  the authority for what was charged. */
+  taxable: z.boolean(),
   position: z.number().int(),
 });
 const paymentDTO = z.object({
@@ -107,6 +110,11 @@ const invoiceDTO = z.object({
   total: moneyDTO,
   taxBps: z.number().int().min(0),
   tax: moneyDTO,
+  /** The discount taken off the line sum before tax — the rate agreed and the amount it came to.
+   *  The document states it: the lines print at full rates, so a total under their sum with no
+   *  discount row reads as an arithmetic error. */
+  discBps: z.number().int().min(0),
+  discount: moneyDTO,
   depositPaid: moneyDTO,
   amountPaid: moneyDTO,
   due: moneyDTO,
@@ -330,6 +338,8 @@ const toInvoiceDTO = (invoice: Invoice) => {
     total: money$(p.total),
     taxBps: p.taxBps,
     tax: money$(p.tax),
+    discBps: p.discBps,
+    discount: money$(p.discount),
     depositPaid: money$(p.depositPaid),
     amountPaid: money$(p.amountPaid),
     due: money$(invoice.due()),
@@ -340,6 +350,7 @@ const toInvoiceDTO = (invoice: Invoice) => {
       quantity: line.props.quantity,
       rate: money$(line.props.rate),
       cost: money$(line.props.cost),
+      taxable: line.props.taxable,
       position: line.props.position,
     })),
     payments: p.payments.map((pay) => ({

@@ -92,6 +92,10 @@ describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
         "createdAt",
         "customerName",
         "depositPaid",
+        // The discount AMOUNT (not the rate — taxBps' sibling discBps stays office-only). The
+        // close-out sheet renders the same <InvoiceDocument> as the customer's copy, and a total
+        // below the sum of its lines with nothing explaining it reads as an arithmetic error.
+        "discount",
         "due",
         "dueAt",
         "id",
@@ -134,7 +138,7 @@ describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
       const dto = toFieldInvoiceDTO(invoice(), PARTY, seesPrice);
       for (const line of dto.lines) {
         expect(Object.keys(line).sort()).toEqual(
-          ["description", "id", "position", "quantity", "rate"].sort(),
+          ["description", "id", "position", "quantity", "rate", "taxable"].sort(),
         );
       }
     }
