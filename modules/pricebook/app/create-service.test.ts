@@ -265,7 +265,8 @@ describe("CreateServiceUseCase", () => {
       expect(result.value.props.code).toBeNull();
       expect(result.value.props.description).toBeNull();
       expect(result.value.props.laborHours).toBeNull();
-      expect(result.value.props.taxable).toBe(false);
+      // TRUE by default, matching the column — an unanswered item is one the shop charges tax on.
+      expect(result.value.props.taxable).toBe(true);
       expect(result.value.props.warrantyText).toBeNull();
       expect(result.value.props.imageUrl).toBeNull();
       expect(result.value.props.isAddon).toBe(false);
