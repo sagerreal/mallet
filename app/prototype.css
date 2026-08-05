@@ -1869,9 +1869,10 @@
   .clock-elapsed{display:block;margin-top:var(--space-1);font-size:var(--type-lg);font-weight:700;color:var(--green-700);font-variant-numeric:tabular-nums}
   /* The state sentence + the day total ARE the expander. The clock's own buttons stay outside it
      so a button never nests inside a button (WCAG nested-interactive). */
-  .clock-open{display:block;width:100%;min-height:44px;border:none;background:none;padding:0;margin:0;font-family:inherit;font-size:inherit;color:inherit;text-align:left;cursor:pointer}
+  .clock-open{display:flex;align-items:center;gap:var(--space-2);width:100%;min-height:44px;border:none;background:none;padding:0;margin:0;font-family:inherit;font-size:inherit;color:inherit;text-align:left;cursor:pointer}
+  .clock-open-t{min-width:0}
   .clock-open:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
-  .clock-caret{display:inline-block;margin-left:var(--space-2);font-size:var(--type-base);color:var(--ink-3);transition:transform .15s ease}
+  .clock-caret{flex:0 0 auto;font-size:var(--type-md);color:var(--ink-3);transition:transform .15s ease}
   .clock-open[aria-expanded="true"] .clock-caret{transform:rotate(90deg)}
   /* Today's segments, expanded IN FLOW inside the same card — the agenda below simply moves down.
      No popover: house rule. */

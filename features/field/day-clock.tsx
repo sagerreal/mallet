@@ -303,7 +303,9 @@ export function DayClock({ jobs = [] }: DayClockProps) {
               aria-expanded={dayOpen}
               onClick={() => setDayOpen((v) => !v)}
             >
-              {stateSentence}
+              {/* The sentence stacks (state / since / total); the caret sits beside the stack, not
+                  under it — .clock-elapsed is display:block, so an inline sibling would wrap. */}
+              <span className="clock-open-t">{stateSentence}</span>
               <span className="clock-caret" aria-hidden="true">
                 ›
               </span>
