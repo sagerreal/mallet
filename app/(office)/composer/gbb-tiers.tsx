@@ -137,6 +137,7 @@ export function GbbTiers({
               onRemoveLine={(i) => removeLine(tier, i)}
               onAddLine={() => addLine(tier)}
               materialize={materialize}
+              taxed={(state.pricing.tax ?? 0) > 0}
             />
           </div>
         );

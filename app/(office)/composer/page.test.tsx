@@ -60,6 +60,8 @@ vi.mock("@/lib/trpc/client", () => ({
         archive: { useMutation: () => ({ mutate: vi.fn() }) },
         rules: { create: { useMutation: () => ({ mutate: vi.fn() }) } },
       },
+      // The shop's default sales-tax rate — no rate on file in these tests, so nothing seeds.
+      settings: { get: { useQuery: () => ({ data: undefined }) } },
       messaging: { send: { useMutation: () => ({ mutateAsync: vi.fn() }) } },
       notifications: { send: { useMutation: () => ({ mutateAsync: vi.fn() }) } },
       customers: { create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) } },

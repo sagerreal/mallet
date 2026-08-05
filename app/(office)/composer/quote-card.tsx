@@ -183,7 +183,12 @@ export function QuoteCard({
     // rate = the hourly rate. "4 hrs × $150" lands exactly as the trade says it.
     const q = svc.measuredBy === "hour" ? (svc.laborHours ?? 1) || 1 : 1;
     onUpdate({
-      lines: [...state.lines, { d: svc.name, q, r: svc.unitPrice, c: svc.cost }],
+      lines: [
+        ...state.lines,
+        // Taxability is seeded from the book entry and stays editable on the line — the model
+        // Housecall Pro and Jobber both use. Only the exception is recorded.
+        { d: svc.name, q, r: svc.unitPrice, c: svc.cost, ...(svc.taxable ? {} : { notax: true }) },
+      ],
     });
   }
 
@@ -191,7 +196,17 @@ export function QuoteCard({
   // CURRENT sell/cost and carry the materialId as provenance — never a live link.
   function addPbMaterial(m: Material) {
     onUpdate({
-      lines: [...state.lines, { d: m.name, q: 1, r: m.unitPrice, c: m.unitCost, materialId: m.id }],
+      lines: [
+        ...state.lines,
+        {
+          d: m.name,
+          q: 1,
+          r: m.unitPrice,
+          c: m.unitCost,
+          materialId: m.id,
+          ...(m.taxable ? {} : { notax: true }),
+        },
+      ],
     });
   }
 
@@ -341,6 +356,7 @@ export function QuoteCard({
             onRemoveLine={removeLine}
               onAddLine={addLine}
             materialize={materialize}
+            taxed={(state.pricing.tax ?? 0) > 0}
             provenanceFor={(d) => lineProvenance(d, services)}
             footerTools={
               <>

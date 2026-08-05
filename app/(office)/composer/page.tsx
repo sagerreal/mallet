@@ -169,6 +169,23 @@ export default function ComposerPage() {
   // seeds lead/title/pricing/lines — tiered quotes restore their tiers. The
   // ORIGINAL stays live until the revision sends; then it's archived (below), so
   // abandoning the composer changes nothing.
+  // ---- the shop's default sales-tax rate ------------------------------------
+  // One rate per document, defaulted from Settings — the model both incumbents use, and the
+  // consumer the org-level rate was built for. Seeded ONCE onto a fresh quote and never onto a
+  // revision (a revision restores the rate the quote was sent with) or over a rate the office has
+  // already set by hand. A shop with no rate on file gets 0 and nothing changes.
+  const orgSettingsQuery = api.v1.settings.get.useQuery(undefined, { refetchOnWindowFocus: false });
+  const seededOrgTax = useRef(false);
+  const orgTaxBps = orgSettingsQuery.data?.config.taxBps ?? 0;
+  const revising = searchParams.get("revise") != null;
+  useEffect(() => {
+    if (seededOrgTax.current || revising || !orgSettingsQuery.data || orgTaxBps <= 0) return;
+    seededOrgTax.current = true;
+    setCs((prev) =>
+      prev.pricing.tax > 0 ? prev : { ...prev, pricing: { ...prev.pricing, tax: orgTaxBps / 100 } },
+    );
+  }, [orgSettingsQuery.data, orgTaxBps, revising]);
+
   const reviseId = searchParams.get("revise");
   const reviseQuery = api.v1.quoting.get.useQuery(
     { estimateId: reviseId ?? "" },
@@ -199,6 +216,7 @@ export default function ComposerPage() {
           cCents: l.cost.cents,
           opt: l.isOptional,
           photo: l.needsPhoto,
+          taxable: l.taxable,
           tier: l.tier ?? null,
         })),
       }),
