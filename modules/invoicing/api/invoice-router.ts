@@ -185,6 +185,9 @@ const lineInput = z.object({
   quantity: z.number().nonnegative(),
   rateCents: z.number().int().nonnegative(),
   costCents: z.number().int().nonnegative().optional(),
+  /** Omitted reads as TRUE — the column default. Sent back on an edit so the office does not
+   *  re-tax a line it had marked non-taxable just by saving the bill again. */
+  taxable: z.boolean().optional(),
 });
 const draftInput = z.object({
   // Client-authored id — preserved so the store's optimistic id matches the persisted row.
@@ -415,6 +418,7 @@ export const createInvoiceRouter = () =>
             quantity: l.quantity,
             rateCents: l.rateCents,
             costCents: l.costCents ?? 0,
+            taxable: l.taxable,
           })),
         });
         return toInvoiceDTOWithAuth(orThrow(result), ctx.tx, ctx.principal.orgId);
@@ -549,6 +553,7 @@ export const createInvoiceRouter = () =>
                 quantity: l.quantity,
                 rateCents: l.rateCents,
                 costCents: l.costCents ?? 0,
+                taxable: l.taxable,
               })),
             }),
           ),

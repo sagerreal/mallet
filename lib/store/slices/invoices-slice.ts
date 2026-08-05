@@ -448,6 +448,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           quantity: l.q ?? 1,
           rateCents: Math.round((l.r ?? 0) * 100), // dollars → cents
           costCents: Math.round((l.c ?? 0) * 100), // dollars → cents; 0 when absent
+          taxable: !l.notax,                       // absent notax = taxable; carried, not reset
         })),
       })
       .then((dto) => {
@@ -581,6 +582,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
             quantity:    l.q ?? 1,
             rateCents:   Math.round((l.r ?? 0) * 100),   // dollars → cents
             costCents:   Math.round((l.c ?? 0) * 100),   // dollars → cents; 0 when absent
+            taxable:     !l.notax,                       // absent notax = taxable
           })),
         })
         .then(

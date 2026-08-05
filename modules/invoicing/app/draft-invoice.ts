@@ -10,6 +10,9 @@ export interface InvoiceLineInput {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Omitted reads as TRUE (InvoiceLine.create's default). Carried through a line EDIT so
+   *  re-saving a bill does not silently re-tax a line the shop had excluded. */
+  readonly taxable?: boolean;
 }
 
 export interface DraftInvoiceCommand {
@@ -57,6 +60,7 @@ export class DraftInvoiceUseCase {
         quantity: input.quantity,
         rate: money(input.rateCents),
         cost: money(input.costCents),
+        taxable: input.taxable,
         position: i,
       });
       if (!isOk(line)) return line;

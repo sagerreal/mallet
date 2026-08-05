@@ -37,6 +37,7 @@ export class PatchInvoiceLinesUseCase {
         quantity: input.quantity,
         rate: money(input.rateCents),
         cost: money(input.costCents),
+        taxable: input.taxable,
         position: i,
       });
       if (!isOk(line)) return line;
