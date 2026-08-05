@@ -194,8 +194,15 @@ function DeclineBlock({ onDecline }: { onDecline: (reason: string) => void }) {
 //  SHARED LINE RENDERING (prototype renderCust)
 // ===========================================================================
 
-/** Fixed (non-opt) line rows — `.custline` (prototype §e.lines.filter(!opt)). */
-function CustLines({ lines }: { lines: EstimateLine[] }) {
+/**
+ * Fixed (non-opt) line rows — `.custline` (prototype §e.lines.filter(!opt)).
+ *
+ * `taxed` marks the lines the rate is NOT charged on, exactly as the customer's own quote page
+ * marks them (app/(public)/q/[token]/LineRow.tsx). The office preview and the real page must not
+ * disagree about what the customer is looking at. Off on a quote with no rate: nothing is taxed,
+ * so naming the untaxed lines explains nothing.
+ */
+function CustLines({ lines, taxed }: { lines: EstimateLine[]; taxed: boolean }) {
   return (
     <>
       {lines
@@ -205,6 +212,7 @@ function CustLines({ lines }: { lines: EstimateLine[] }) {
             <span>
               {x.d}
               {x.q !== 1 ? ` × ${x.q}` : ""}
+              {taxed && x.notax && <span className="custline-notax">No tax</span>}
             </span>
             <b>{fmt$(x.q * x.r)}</b>
           </div>
@@ -333,7 +341,7 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
       </p>
 
       {/* fixed line rows */}
-      <CustLines lines={estimate.lines} />
+      <CustLines lines={estimate.lines} taxed={(pricing.tax ?? 0) > 0} />
 
       {/* optional add-ons the customer can toggle on */}
       <CustAddons lines={estimate.lines} selected={selected} onToggle={toggle} />
@@ -465,7 +473,7 @@ function TieredPath({ estimate, brand, rec, tiers, onApprove, onDecline }: Tiere
       )}
 
       {/* the selected tier's fixed lines + its optional add-ons */}
-      <CustLines lines={selTier.lines} />
+      <CustLines lines={selTier.lines} taxed={(pricing.tax ?? 0) > 0} />
       <CustAddons lines={selTier.lines} selected={selected} onToggle={toggle} />
 
       {/* totals for the selected tier (+ toggled add-ons) */}
