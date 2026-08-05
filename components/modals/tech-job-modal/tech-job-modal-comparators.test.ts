@@ -120,7 +120,6 @@ describe("doneBlockPropsEqual", () => {
     onOpenCloseOut: noop,
     onOpenInvoice: noop as never,
     onChargeOnFile: noop,
-    onSendToOffice: noop,
   };
   it("SKIPS on a verify-only change", () => {
     expect(doneBlockPropsEqual(props as never, { ...props, job: verifyTapped(baseJob) } as never)).toBe(true);

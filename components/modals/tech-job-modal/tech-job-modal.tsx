@@ -455,8 +455,9 @@ export function TechJobModalContent() {
           // customer's pay-link token). Omitted for the field, so the receipt link isn't drawn.
           onOpenInvoice={isOffice ? openInvoiceModal : undefined}
           onChargeOnFile={chargeOnFile}
-          onSendToOffice={sendToOffice}
-          canSendToOffice={isOffice}
+          // No hand-off prop: on a job with money owed the card offers taking the money and
+          // nothing else. `sendToOffice` still reaches the foot below, which carries it as the
+          // primary on a genuinely unpriced job — the one state with nothing to collect.
           canSetBill={isOffice}
         />
       ) : null}
