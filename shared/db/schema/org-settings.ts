@@ -90,6 +90,23 @@ export const orgSettings = pgTable(
     brandColor: text("brand_color"),
     brandLogoUrl: text("brand_logo_url"),
     brandInitials: text("brand_initials"),
+    // ── Business identity (printed on customer documents) ────────────────────
+    // What a customer needs to see to know WHO billed them, act on it, and keep it.
+    // Deliberately separate from the fields that look like them:
+    //   • bizAddress is NOT serviceOriginAddress — that one is a routing origin (often a yard)
+    //     and editing an invoice must never move where drive time is measured from.
+    //   • bizPhone is NOT orgs.twilioNumber — a shop with no provisioned line still has a phone,
+    //     and the number on a document should not change when telephony is reconfigured.
+    // Business NAME is orgs.name and website is brandSite; neither is duplicated here.
+    // All nullable: the lazily-created default org_settings row must stay valid without them,
+    // and every consumer omits the row it has no value for rather than printing a blank label.
+    bizAddress: text("biz_address"),
+    bizPhone: text("biz_phone"),
+    bizEmail: text("biz_email"),
+    // Contractor/trade licence as the shop writes it. Texas 22 TAC 367.10 requires it on a
+    // plumbing invoice; California B&P 7030.5 covers contracts and advertising but NOT invoices.
+    // Treated as commercial convention, never as a legal guarantee — free text, no validation.
+    licenseNumber: text("license_number"),
     // ── Stripe Connect (Express) — PR1 onboarding foundation ──────────────────
     // The connected account id (acct_...) is null until onboarding begins. Status booleans mirror
     // the Stripe Account object and default false; onboardedAt stamps the first time charges go live.
