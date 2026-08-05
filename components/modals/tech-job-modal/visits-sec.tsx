@@ -1,0 +1,81 @@
+/**
+ * components/modals/tech-job-modal/visits-sec.tsx
+ * "Your visit(s)" — the sheet's record of where this job has got to.
+ *
+ * One file per section is this directory's convention (work-order-sec, found-work-sec,
+ * checklist-sec, note-feed); this was the one section still inlined in the modal's own render.
+ *
+ * Two shapes:
+ *   - OPEN job: one VisitRow per PLACED visit. Both rows show on a two-visit job, because "my
+ *     stop is the second one today" is useful context; only the office gets a control on either.
+ *   - DONE job: the stepper on the visit that ran, the date and booked length beside it, and the
+ *     office's ↩ Reopen. THE STEPPER STAYS ON A FINISHED VISIT — this is the moment it matters
+ *     most. Which steps were recorded and which were skipped IS the record of the visit, and it
+ *     is what gets read back weeks later when a customer argues about an arrival time.
+ */
+
+"use client";
+
+import type { Visit } from "@/lib/store/types";
+import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
+import { colLabel, hmLabel } from "./helpers";
+import { VisitRow } from "./visit-row";
+import { VisitStepper } from "./visit-stepper";
+
+interface VisitsSecProps {
+  /** The job's PLACED visits — the tech never sees an unplaced "Invalid Date" row. */
+  placed: readonly Visit[];
+  /** The job's current visit, if it has one. */
+  curVisit: Visit | undefined;
+  done: boolean;
+  /** Owner/office. ↩ Reopen writes a VISIT status, which has no field endpoint. */
+  isOffice: boolean;
+  onStatus: (visitId: string, status: string) => void;
+}
+
+export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: VisitsSecProps) {
+  return (
+    <div className="fsec">
+      <div className="fsec-h">
+        <span>Your visit{placed.length > 1 ? "s" : ""}</span>
+        {done && <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>}
+      </div>
+      {done ? (
+        <>
+          {curVisit ? <VisitStepper visit={curVisit} /> : null}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "var(--space-2)",
+            }}
+          >
+            <span className="muted" style={{ fontSize: "var(--type-base)" }}>
+              {curVisit ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site` : "Completed"}
+            </span>
+            {/* Office only, and only when there IS a placed visit to move. A job completed
+                straight from My Day has none, and this button took the tap and did nothing. */}
+            {isOffice && curVisit && (
+              <button
+                type="button"
+                className="btn sm ghost"
+                onClick={() => onStatus(curVisit.id, STORE_VISIT_STATUS.SCHEDULED)}
+              >
+                ↩ Reopen
+              </button>
+            )}
+          </div>
+        </>
+      ) : placed.length ? (
+        placed.map((v) => (
+          <VisitRow key={v.id} visit={v} canReopen={isOffice} onStatus={(status) => onStatus(v.id, status)} />
+        ))
+      ) : (
+        <div className="empty-att" style={{ marginBottom: "0" }}>
+          Not scheduled yet — the office will set the time.
+        </div>
+      )}
+    </div>
+  );
+}

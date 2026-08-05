@@ -46,25 +46,15 @@ import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { isJobAssignedTo } from "@/lib/store/job-assignment";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
-import { fmt$ } from "@/lib/format";
-import {
-  colLabel,
-  currentVisit,
-  custNameOf,
-  hmLabel,
-  invDue,
-  isUnpricedEstimate,
-  jobTotal,
-  vPlaced,
-} from "./helpers";
+import { currentVisit, custNameOf, invDue, isUnpricedEstimate, vPlaced } from "./helpers";
 import { TechHeader } from "./tech-header";
-import { VisitRow } from "./visit-row";
-import { VisitStepper } from "./visit-stepper";
+import { VisitsSec } from "./visits-sec";
 import { WorkOrderSec } from "./work-order-sec";
 import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
-import { DoneBlock, ScopeHandoffBlock, doneFootAction } from "./done-block";
+import { DoneBlock, ScopeHandoffBlock } from "./done-block";
+import { footActions } from "./tech-job-foot";
 import { QuoteTab } from "./quote-tab";
 
 /** The modal's two tabs. Hours are NOT a tab here on purpose — the clock lives on
@@ -308,47 +298,18 @@ export function TechJobModalContent() {
    */
   const actVisit = !done ? (myVisit ?? (isOffice ? curVisit : undefined)) : undefined;
 
-  // --- The foot (sheet grammar: ONE loud primary) ----------------------------
-  //
-  // On an OPEN job the primary IS the next step — "Start driving →" / "I've arrived →" /
-  // "Finish job →" — one ~52px full-width target where the thumb already rests. It used to be a
-  // plain "Done" that only dismissed the sheet, while the actual workflow lived in a pair of
-  // half-width buttons somewhere up the page; on a tall sheet those sit past one-handed reach
-  // exactly when the record is fullest.
-  //
-  // FINISH IS ALWAYS ONE TAP. Where the primary is not yet Finish, a quiet "Finish job →" sits
-  // beneath it. On-my-way and Arrived are optional and always have been (the server allows
-  // pending → complete deliberately), so the sheet must never make a man in a customer's kitchen
-  // tap "on the way" before he can close the job he has just finished. No confirmation dialog:
-  // finishing is reversible by the office, and a modal on top of a modal in a truck is worse.
-  //
-  // On a DONE job the foot carries the close-out branch's terminal action instead, exactly as
-  // before. An unpriced estimate never gets a billing foot — its close-out is the handoff.
-  const footKind =
-    done && canTakePayment && !scoping ? doneFootAction(job, lead, invoice, isOffice) : null;
-  const footDue = invoice ? invDue(invoice) : jobTotal(job);
-  const footCard = lead?.card;
-  const finishStep = actVisit
-    ? { label: "Finish job →", run: () => onVisitStatus(actVisit.id, "done") }
-    : null;
-  const nextStep =
-    actVisit && actVisit.status === "scheduled"
-      ? { label: "Start driving →", run: () => onVisitStatus(actVisit.id, "enroute") }
-      : actVisit && actVisit.status === "enroute"
-        ? { label: "I've arrived →", run: () => onVisitStatus(actVisit.id, "onsite") }
-        : finishStep;
-  const footPri =
-    footKind === "charge" && footCard
-      ? { label: `Charge ${fmt$(footDue)} to ${footCard.brand} ···· ${footCard.last4}`, run: chargeOnFile }
-      : footKind === "collect"
-        ? { label: "Take payment →", run: openCloseOut }
-        : footKind === "sendoffice"
-          ? { label: "Send to the office to bill", run: sendToOffice }
-          : // An open job with an actionable visit advances; anything else keeps the plain Done,
-            // so the sheet is never dismissable only via the tiny shell ✕.
-            (nextStep ?? { label: "Done", run: close });
-  // Only when the primary is something OTHER than finishing.
-  const footQuiet = finishStep && nextStep !== finishStep ? finishStep : null;
+  // The foot — sheet grammar: ONE loud primary, and a quiet Finish under it whenever the primary
+  // is something else. The branch is a pure view model; see tech-job-foot.ts for the four rules.
+  const { primary: footPri, quiet: footQuiet } = footActions(
+    { job, lead, invoice, isOffice, canTakePayment, scoping, done, actVisit },
+    {
+      setVisitStatus: onVisitStatus,
+      chargeOnFile,
+      openCloseOut,
+      sendToOffice,
+      dismiss: close,
+    },
+  );
 
   const onQuoteTab = tab === "quote";
 
@@ -397,8 +358,9 @@ export function TechJobModalContent() {
         <div role="tabpanel" id="tj-panel-job" aria-labelledby="tj-tab-job">
       {/* 2. Address — the tappable Navigate row, or the muted no-address line. It leads the body:
           the first thing a technician does with this sheet is get to it. Navigate carries the
-          AMBER accent (see .jaddr .nav) — the app's one "live action" colour; there is no blue
-          anywhere in Mallet. */}
+          AMBER accent (see .jaddr .nav) — the app's accent colour, which also carries pending and
+          due-now (.pill.amber, .tdue.now, the awaiting-OK pill on this very sheet). There is no
+          blue anywhere in Mallet. */}
       {addr ? (
         <button type="button" className="jaddr" onClick={navigate}>
           <svg
@@ -510,56 +472,13 @@ export function TechJobModalContent() {
       ) : null}
 
       {/* 5. Your visit(s). */}
-      <div className="fsec">
-        <div className="fsec-h">
-          <span>Your visit{placed.length > 1 ? "s" : ""}</span>
-          {done && (
-            <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>
-          )}
-        </div>
-        {done ? (
-          <>
-          {/* The stepper stays on a FINISHED visit — this is the moment it matters most. Which
-              steps were recorded and which were skipped is the record of the visit, and it is
-              what gets read back weeks later when a customer argues about an arrival time. */}
-          {curVisit ? <VisitStepper visit={curVisit} /> : null}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
-            <span className="muted" style={{ fontSize: "var(--type-base)" }}>
-              {curVisit
-                ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site`
-                : "Completed"}
-            </span>
-            {/* Reopen writes VISIT status (ownerOrOffice) — office only, and only when there is
-                a placed visit to move. A job completed straight from My Day has none, and this
-                button took the tap and did nothing. */}
-            {isOffice && curVisit && (
-              <button className="btn sm ghost" onClick={() => onVisitStatus(curVisit.id, "scheduled")}>
-                ↩ Reopen
-              </button>
-            )}
-          </div>
-          </>
-        ) : placed.length ? (
-          placed.map((v) => (
-            <VisitRow
-              key={v.id}
-              visit={v}
-              canReopen={isOffice}
-              // A tech may only move THEIR OWN visit. A two-visit job shows both rows (they are
-              // useful context — "my stop is the second one today"), but the step buttons appear
-              // only on the row assigned to the viewer. Without this a tech tapping the wrong row
-              // would move a colleague's visit and write time against it; the server refuses that
-              // now, so the alternative is an unexplained error on a button that looked live.
-              canAct={isOffice || v.techId === me.data?.userId}
-              onStatus={(status) => onVisitStatus(v.id, status)}
-            />
-          ))
-        ) : (
-          <div className="empty-att" style={{ marginBottom: "0" }}>
-            Not scheduled yet — the office will set the time.
-          </div>
-        )}
-      </div>
+      <VisitsSec
+        placed={placed}
+        curVisit={curVisit}
+        done={done}
+        isOffice={isOffice}
+        onStatus={onVisitStatus}
+      />
 
       {/* 6. Pricing lives in the Quote tab — the one pricing home on this surface for
           every role. The old office-only PricingSec entry (a second door to the same
