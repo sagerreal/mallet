@@ -22,6 +22,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { BrandingCard } from "./branding-card";
 import { BusinessIdentityCard } from "./business-identity-card";
+import { SalesTaxCard } from "./sales-tax-card";
 import { CallbackNumberCard } from "./callback-number-card";
 import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
 import { WebsiteFormCard } from "./website-form-card";
@@ -63,6 +64,9 @@ function SecWorkspace() {
           shop LOOKS on a document, this is who it IS — and the two are edited together the once,
           when a shop sets itself up. */}
       <BusinessIdentityCard />
+      {/* Next to Business details: both are facts the customer sees on a document, and both
+          are set once when a shop is stood up. */}
+      <SalesTaxCard />
       <A2pRegistrationCard />
       <TimezoneCard />
     </>
