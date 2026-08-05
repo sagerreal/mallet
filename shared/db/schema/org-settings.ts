@@ -24,6 +24,17 @@ export const orgSettings = pgTable(
       .references(() => orgs.id, { onDelete: "cascade" }),
     trade: text("trade").notNull().default("plumbing"),
     markupBps: integer("markup_bps").notNull().default(3500),
+    /**
+     * The shop's default sales-tax rate in basis points (825 = 8.25%).
+     *
+     * ONE rate per shop, seeded onto each new quote and overridable on that quote — Jobber's
+     * global-with-override model, and the reason 830 of 832 live invoices carry 0%: the only place
+     * tax could be authored was a per-quote number input that started empty every time.
+     *
+     * Defaults to 0 because a wrong rate is worse than none: it would put a number on a customer's
+     * bill that the shop never agreed to and owes to nobody. A shop sets it once in Settings.
+     */
+    taxBps: integer("tax_bps").notNull().default(0),
     visitScopeMinutes: integer("visit_scope_minutes").notNull().default(30),
     visitRepairMinutes: integer("visit_repair_minutes").notNull().default(90),
     visitInstallMinutes: integer("visit_install_minutes").notNull().default(240),

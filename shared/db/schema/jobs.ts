@@ -61,6 +61,16 @@ export const jobs = pgTable(
     // it was tax rather than adding to it — nothing downstream re-derives a total from them.
     taxBps: integer("tax_bps").notNull().default(0),
     taxCents: integer("tax_cents").notNull().default(0),
+    /**
+     * The discount rate agreed on the quote this job was sold from, carried forward.
+     *
+     * Not decoration. `total_cents` is discount-APPLIED and tax-inclusive, but the job's LINES are
+     * neither — they are the pre-tax, pre-discount scope. The invoice prefers the lines (the
+     * snapshot goes stale the moment a tech re-prices on site), so without the rate here the bill
+     * re-summed the lines and charged the customer the undiscounted figure. Carried, never
+     * re-derived: the discount is a term of the sale, not a property of the line set.
+     */
+    discBps: integer("disc_bps").notNull().default(0),
     notes: text("notes"),
     // The address the crew drives to, when it differs from the customer's on file — a property
     // manager's own address is not the unit being serviced. Both this and `phone` were accepted by
@@ -173,6 +183,7 @@ export const jobs = pgTable(
     check("jobs_total_check", sql`${t.totalCents} >= 0`),
     check("jobs_tax_bps_check", sql`${t.taxBps} >= 0`),
     check("jobs_tax_cents_check", sql`${t.taxCents} >= 0`),
+    check("jobs_disc_bps_check", sql`${t.discBps} between 0 and 10000`),
     check(
       "jobs_window_check",
       sql`${t.scheduledEnd} is null or ${t.scheduledStart} is null or ${t.scheduledEnd} >= ${t.scheduledStart}`,

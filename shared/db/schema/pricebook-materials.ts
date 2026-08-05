@@ -30,7 +30,10 @@ export const pricebookMaterials = pgTable(
     pricingMode: text("pricing_mode").notNull().default("rule"),
     unitOfMeasure: text("unit_of_measure").notNull().default("each"),
     markupBps: integer("markup_bps"), // null → use org default markup
-    taxable: boolean("taxable").notNull().default(false),
+    // Default flipped false → true alongside pricebook_items.taxable (migration 0142) — parts are
+    // the MOST reliably taxable thing a trade shop sells, and the old default meant a shop with a
+    // rate set still billed $0 tax on materials. See pricebook-items.ts for the full reasoning.
+    taxable: boolean("taxable").notNull().default(true),
     vendor: text("vendor"), // one free-text field — no vendor entity (YAGNI)
     active: boolean("active").notNull().default(true),
     position: integer("position").notNull().default(0),

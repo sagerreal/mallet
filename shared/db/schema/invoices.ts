@@ -62,6 +62,16 @@ export const invoices = pgTable(
     // QuickBooks can be told the split and the document can itemise it.
     taxBps: integer("tax_bps").notNull().default(0),
     taxCents: integer("tax_cents").notNull().default(0),
+    /**
+     * The discount taken off the line sum before tax — rate and amount, mirroring the tax pair.
+     *
+     * Recorded so the DOCUMENT can itemise it. The lines print at their full rates, so a bill whose
+     * total is 10% under their sum with no discount row on it reads as an arithmetic error, and the
+     * customer is right to query it. `total_cents` is already discount-applied; these describe how
+     * it got there rather than changing it.
+     */
+    discBps: integer("disc_bps").notNull().default(0),
+    discountCents: integer("discount_cents").notNull().default(0),
     depositPaidCents: integer("deposit_paid_cents").notNull().default(0),
     amountPaidCents: integer("amount_paid_cents").notNull().default(0),
     termsDays: integer("terms_days").notNull().default(7),
@@ -145,6 +155,8 @@ export const invoices = pgTable(
     // Tax is a PART of the total, so it can never exceed it. This is the constraint that catches a
     // caller who mistakes `total_cents` for a pre-tax subtotal.
     check("invoices_tax_cents_check", sql`${t.taxCents} >= 0 and ${t.taxCents} <= ${t.totalCents}`),
+    check("invoices_disc_bps_check", sql`${t.discBps} between 0 and 10000`),
+    check("invoices_discount_cents_check", sql`${t.discountCents} >= 0`),
     check(
       "invoices_deposit_check",
       sql`${t.depositPaidCents} >= 0 and ${t.depositPaidCents} <= ${t.totalCents}`,
@@ -166,6 +178,10 @@ export const invoiceLines = pgTable(
     quantity: numeric("quantity", { precision: 12, scale: 2, mode: "number" }).notNull(),
     rateCents: integer("rate_cents").notNull().default(0),
     costCents: integer("cost_cents").notNull().default(0),
+    /** Does this line take sales tax — copied from the job line it was billed from. The bill's
+     *  stored `tax_cents` is still the authority for what was charged; this is what the DOCUMENT
+     *  marks as non-taxable, the way Jobber does. DEFAULT TRUE, matching the 828 existing rows. */
+    taxable: boolean("taxable").notNull().default(true),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
