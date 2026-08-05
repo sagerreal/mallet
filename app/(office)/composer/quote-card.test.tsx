@@ -73,6 +73,32 @@ describe("QuoteCard — the empty composer", () => {
   });
 });
 
+describe("QuoteCard — the per-line No-tax chip", () => {
+  const priced = { d: "Water heater", q: 1, r: 1_450 };
+
+  it("is absent on a quote with no tax rate — there is nothing for it to decide", () => {
+    renderCard({ lines: [priced], pricing: { disc: 0, dep: 0, tax: 0 } });
+    expect(screen.queryByRole("button", { name: /No tax/ })).toBeNull();
+  });
+
+  it("appears once the quote charges tax, off by default", () => {
+    renderCard({ lines: [priced], pricing: { disc: 0, dep: 0, tax: 8.25 } });
+    const chip = screen.getByRole("button", { name: "No tax" });
+    expect(chip.getAttribute("aria-pressed")).toBe("false");
+  });
+
+  it("marks the line non-taxable when clicked, and states it when already set", () => {
+    const { onUpdate } = renderCard({ lines: [priced], pricing: { disc: 0, dep: 0, tax: 8.25 } });
+    fireEvent.click(screen.getByRole("button", { name: "No tax" }));
+    const next = onUpdate.mock.calls[0]![0] as Partial<ComposerState>;
+    expect(next.lines?.[0]?.notax).toBe(true);
+
+    renderCard({ lines: [{ ...priced, notax: true }], pricing: { disc: 0, dep: 0, tax: 8.25 } });
+    const on = screen.getByRole("button", { name: "✓ No tax" });
+    expect(on.getAttribute("aria-pressed")).toBe("true");
+  });
+});
+
 describe("QuoteCard — an empty pricebook points somewhere real", () => {
   it("links to the Office pricebook tab, not to Settings", () => {
     // The pricebook lives on /dashboard?tab=pricebook. The old copy said "Settings → Pricebook",
