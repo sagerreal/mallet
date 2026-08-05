@@ -27,6 +27,9 @@ export interface ComposerLine {
   c?: number;
   opt?: boolean;
   photo?: boolean;
+  /** This line is NOT taxable. Seeded from the pricebook item/material; the exception, not the
+   *  default — see the same key on the store's EstimateLine. */
+  notax?: boolean;
   /** Provenance: set when the line came from a pricebook MATERIAL (sellable part/equipment).
    * Values are snapshots — this id rides to the server for costing, never live repricing. */
   materialId?: string;

@@ -565,6 +565,7 @@ export default function ComposerPage() {
         costCents: Math.round((l.c ?? 0) * 100),
         isOptional: l.opt ?? false,
         needsPhoto: l.photo ?? false,
+        taxable: !l.notax,
         tier: l.tier,
         materialId: l.materialId ?? null,
       })),

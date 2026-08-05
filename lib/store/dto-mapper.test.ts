@@ -48,6 +48,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         cost: makeMoneyDTO(3000),  // $30.00
         isOptional: false,
         needsPhoto: false,
+        taxable: true,
         position: 0,
         tier: null,
       },
@@ -59,6 +60,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         cost: makeMoneyDTO(0),     // $0 → should be omitted
         isOptional: true,
         needsPhoto: true,
+        taxable: false,
         position: 1,
         tier: null,
       },

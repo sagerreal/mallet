@@ -4,7 +4,7 @@
  *
  * SECURITY property under test: the function accepts only an ID SUBSET and builds
  * every committed line FROM THE STORED ESTIMATE (description/quantity/rate/cost/
- * needsPhoto preserved). Unknown ids and non-optional ids are rejected outright.
+ * needsPhoto/taxable preserved). Unknown ids and non-optional ids are rejected outright.
  */
 
 import { describe, it, expect } from "vitest";
@@ -116,9 +116,9 @@ describe("buildAcceptLinesFromSelection", () => {
     if (result.kind !== "lines") throw new Error("expected lines");
     expect(result.lines).toEqual([
       // Fixed line preserved verbatim (incl. cost + needsPhoto).
-      { description: "Labor", quantity: 3, rateCents: 3_333, costCents: 1_200, isOptional: false, needsPhoto: true },
+      { description: "Labor", quantity: 3, rateCents: 3_333, costCents: 1_200, isOptional: false, needsPhoto: true, taxable: true },
       // Selected optional line flipped to non-optional, stored content preserved.
-      { description: "Anode rod", quantity: 1.5, rateCents: 999, costCents: 450, isOptional: false, needsPhoto: false },
+      { description: "Anode rod", quantity: 1.5, rateCents: 999, costCents: 450, isOptional: false, needsPhoto: false, taxable: true },
       // OPT_B was not selected → dropped from the committed set.
     ]);
   });
@@ -211,7 +211,7 @@ describe("buildAcceptLinesForTier", () => {
     expect(result.kind).toBe("lines");
     if (result.kind !== "lines") throw new Error("expected lines");
     expect(result.lines).toEqual([
-      { description: "Repair section", quantity: 1, rateCents: 35_000, costCents: 100, isOptional: false, needsPhoto: false },
+      { description: "Repair section", quantity: 1, rateCents: 35_000, costCents: 100, isOptional: false, needsPhoto: false, taxable: true },
     ]);
   });
 
@@ -247,7 +247,7 @@ describe("buildAcceptLinesForTier", () => {
     expect(result.kind).toBe("lines");
     if (result.kind !== "lines") throw new Error("expected lines");
     expect(result.lines).toEqual([
-      { description: "Replace run", quantity: 1, rateCents: 90_000, costCents: 100, isOptional: false, needsPhoto: false },
+      { description: "Replace run", quantity: 1, rateCents: 90_000, costCents: 100, isOptional: false, needsPhoto: false, taxable: true },
     ]);
   });
 });

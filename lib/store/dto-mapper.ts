@@ -448,6 +448,7 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
       opt: l.isOptional || undefined,
       photo: l.needsPhoto || undefined,
+      notax: l.taxable ? undefined : true,     // absent = taxable (the default)
       tier: l.tier ?? undefined,                              // GBB tier tag (null → absent)
     })),
     pricing: {

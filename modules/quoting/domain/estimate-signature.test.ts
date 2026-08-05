@@ -23,6 +23,7 @@ let lineSeq = 0;
 const line = (overrides: Partial<EstimateLineProps> = {}): EstimateLine => {
   lineSeq += 1;
   const props: EstimateLineProps = {
+    taxable: true,
     id: asEstimateLineId(`00000000-0000-0000-0000-00000000000${lineSeq % 10}`),
     description: "Labor",
     quantity: 1,

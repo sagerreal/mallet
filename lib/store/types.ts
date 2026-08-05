@@ -128,6 +128,14 @@ export interface EstimateLine {
   r: number;
   photo?: boolean;
   opt?: boolean;
+  /**
+   * This line is NOT taxable — the shop's rate is not charged on it.
+   *
+   * Stated as the EXCEPTION, absent on an ordinary line, because taxable is the default
+   * everywhere else in the stack (`estimate_lines.taxable NOT NULL DEFAULT true`). A `taxable?:`
+   * key would read as false when omitted and silently drop lines out of the tax base.
+   */
+  notax?: boolean;
   c?: number;
   h?: number;
   /** GBB tier tag. Set on every line of a tiered estimate; absent on single quotes. */

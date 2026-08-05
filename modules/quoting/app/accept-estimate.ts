@@ -13,6 +13,9 @@ export interface AcceptLineInput {
   readonly costCents: number;
   readonly isOptional: boolean;
   readonly needsPhoto: boolean;
+  /** Carried from the STORED line the accept path rebuilt this from — never client-authored
+   *  (see select-optional-lines.ts). Omitted it reads as TRUE. */
+  readonly taxable?: boolean;
 }
 
 export interface AcceptEstimateCommand {
@@ -70,6 +73,7 @@ export class AcceptEstimateUseCase {
           cost: money(input.costCents),
           isOptional: input.isOptional,
           needsPhoto: input.needsPhoto,
+          taxable: input.taxable ?? true,
           position: i,
           // Committed accept-time lines are always resolved — never tier-tagged.
           tier: null,

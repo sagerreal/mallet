@@ -75,6 +75,15 @@ export interface EstimateLineProps {
   readonly cost: Money; // internal material/labor cost, integer cents
   readonly isOptional: boolean;
   readonly needsPhoto: boolean;
+  /**
+   * Does this line take sales tax. Seeded from the pricebook item/material it came from and
+   * overridable per line — the model Housecall Pro and Jobber both use.
+   *
+   * A SECOND, DIFFERENT filter from `isOptional`. A non-taxable line still counts toward the
+   * subtotal and the total; it just does not feed the tax base. Conflating the two would drop
+   * the line's price off the bill entirely.
+   */
+  readonly taxable: boolean;
   readonly position: number;
   // Good/Better/Best tag. Null on single-format estimates and on resolved (accepted) ones.
   readonly tier: QuoteTier | null;
@@ -83,12 +92,25 @@ export interface EstimateLineProps {
   readonly materialId: string | null;
 }
 
+/**
+ * What `EstimateLine.create` accepts. Identical to the props except `taxable` may be omitted,
+ * in which case it reads as TRUE.
+ *
+ * The default is the column's (`estimate_lines.taxable NOT NULL DEFAULT true`) and means the same
+ * thing: every line written before taxability existed was summed into a tax base with no
+ * exclusions, so `true` is what those rows already were. Defaulting to `false` would silently
+ * rebase every live quote to $0.00 tax.
+ */
+export type EstimateLineCreateProps = Omit<EstimateLineProps, "taxable"> & {
+  readonly taxable?: boolean;
+};
+
 // A single priced line on an estimate. Immutable value object; its extended amount is derived,
 // never stored, and rounded to whole cents so totals never accumulate float drift.
 export class EstimateLine {
   private constructor(private readonly p: EstimateLineProps) {}
 
-  static create(props: EstimateLineProps): Result<EstimateLine, ValidationError> {
+  static create(props: EstimateLineCreateProps): Result<EstimateLine, ValidationError> {
     const description = props.description.trim();
     if (description.length === 0) return err(validation("line description is required", "description"));
     if (props.quantity < 0) return err(validation("line quantity cannot be negative", "quantity"));
@@ -103,7 +125,7 @@ export class EstimateLine {
     if (props.tier !== null && !isQuoteTier(props.tier)) {
       return err(validation(`unknown line tier: ${props.tier}`, "tier"));
     }
-    return ok(new EstimateLine({ ...props, description }));
+    return ok(new EstimateLine({ ...props, description, taxable: props.taxable ?? true }));
   }
 
   // Extended amount = quantity × unit rate, rounded to whole cents.
@@ -301,45 +323,76 @@ export class Estimate {
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 
-  // THE rounding chain: discount on the subtotal, tax on the net, deposit on the total —
-  // each step rounded to whole cents. Every total (estimate-level or per-tier) runs through
-  // here so there is exactly one money implementation.
-  private totalsFrom(subtotal: Money): TierTotals {
+  /**
+   * The money the shop's rate is actually charged on: TAXABLE and NON-OPTIONAL lines.
+   *
+   * Two filters, not one. `isOptional` decides whether the line is on the bill at all;
+   * `taxable` decides whether the line feeds the tax. A non-taxable line is still sold, still
+   * in the subtotal, still in the total — it simply does not attract tax. Folding taxability
+   * into subtotalOf would delete the line's price from the customer's bill.
+   */
+  private static taxableBaseOf(lines: readonly EstimateLine[]): Money {
+    return lines
+      .filter((line) => !line.props.isOptional && line.props.taxable)
+      .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
+  }
+
+  // THE rounding chain: discount on the subtotal, tax on the discounted taxable base, deposit
+  // on the total — each step rounded to whole cents. Every total (estimate-level or per-tier)
+  // runs through here so there is exactly one money implementation.
+  private totalsFrom(subtotal: Money, taxableBase: Money): TierTotals {
     const discount = money(Math.round((subtotal * this.p.discBps) / BPS_DENOMINATOR));
     const net = money(subtotal - discount);
-    const tax = money(Math.round((net * this.p.taxBps) / BPS_DENOMINATOR));
+    // The discount comes off the taxable base at the same rate it comes off the bill. Charging
+    // tax on the undiscounted base would tax money the customer never paid; the two divide by
+    // the same denominator and round the same way, so on an all-taxable document
+    // taxableNet === net and the tax is bit-for-bit what it was before taxability existed.
+    const taxableDiscount = money(Math.round((taxableBase * this.p.discBps) / BPS_DENOMINATOR));
+    const taxableNet = money(taxableBase - taxableDiscount);
+    const tax = money(Math.round((taxableNet * this.p.taxBps) / BPS_DENOMINATOR));
     const total = money(net + tax);
     const depositDue = money(Math.round((total * this.p.depBps) / BPS_DENOMINATOR));
     return { subtotal, discount, net, tax, total, depositDue };
   }
 
+  // A line set's full derivation. The ONE place subtotal and taxable base are paired, so a
+  // caller can never hand the chain a base that belongs to different lines than the subtotal.
+  private totalsForLines(lines: readonly EstimateLine[]): TierTotals {
+    return this.totalsFrom(Estimate.subtotalOf(lines), Estimate.taxableBaseOf(lines));
+  }
+
   // One tier's full derivation through the shared chain (public quote picker, DTO tier totals).
   totalsForTier(tier: QuoteTier): TierTotals {
-    return this.totalsFrom(Estimate.subtotalOf(this.linesForTier(tier)));
+    return this.totalsForLines(this.linesForTier(tier));
   }
 
   subtotal(): Money {
     return Estimate.subtotalOf(this.effectiveLines());
   }
 
+  /** Σ(taxable, non-optional) — what taxBps is charged on, before the discount comes off it. */
+  taxableBase(): Money {
+    return Estimate.taxableBaseOf(this.effectiveLines());
+  }
+
   discountAmount(): Money {
-    return this.totalsFrom(this.subtotal()).discount;
+    return this.totalsForLines(this.effectiveLines()).discount;
   }
 
   netAfterDiscount(): Money {
-    return this.totalsFrom(this.subtotal()).net;
+    return this.totalsForLines(this.effectiveLines()).net;
   }
 
   taxAmount(): Money {
-    return this.totalsFrom(this.subtotal()).tax;
+    return this.totalsForLines(this.effectiveLines()).tax;
   }
 
   total(): Money {
-    return this.totalsFrom(this.subtotal()).total;
+    return this.totalsForLines(this.effectiveLines()).total;
   }
 
   depositDue(): Money {
-    return this.totalsFrom(this.subtotal()).depositDue;
+    return this.totalsForLines(this.effectiveLines()).depositDue;
   }
 
   // --- Lifecycle ---

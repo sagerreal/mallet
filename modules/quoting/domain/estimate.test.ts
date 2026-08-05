@@ -14,6 +14,7 @@ let lineSeq = 0;
 const line = (overrides: Partial<EstimateLineProps> = {}): EstimateLine => {
   lineSeq += 1;
   const props: EstimateLineProps = {
+    taxable: true,
     id: asEstimateLineId(`00000000-0000-0000-0000-00000000000${lineSeq % 10}`),
     description: "Labor",
     quantity: 1,
@@ -115,6 +116,94 @@ describe("Estimate money derivations", () => {
     expect(est.taxAmount()).toBe(7_425); // round(90000 * 825 / 10000)
     expect(est.total()).toBe(97_425);
     expect(est.depositDue()).toBe(19_485); // round(97425 * 2000 / 10000)
+  });
+});
+
+describe("Estimate tax base — taxable is a SECOND filter, not a second isOptional", () => {
+  it("keeps a non-taxable line in the subtotal and the total, and out of the tax", () => {
+    const est = estimate({
+      lines: [
+        line({ quantity: 1, rate: money(100_000), taxable: true }),
+        line({ quantity: 1, rate: money(40_000), taxable: false }),
+      ],
+      taxBps: 825,
+    });
+    expect(est.subtotal()).toBe(140_000); // the non-taxable line is still sold
+    expect(est.taxableBase()).toBe(100_000);
+    expect(est.taxAmount()).toBe(8_250); // round(100000 * 825 / 10000) — not 11_550
+    expect(est.total()).toBe(148_250); // subtotal + tax, the non-taxable line included
+  });
+
+  it("charges nothing when no line is taxable, and still bills the work", () => {
+    const est = estimate({
+      lines: [line({ quantity: 1, rate: money(60_000), taxable: false })],
+      taxBps: 825,
+    });
+    expect(est.subtotal()).toBe(60_000);
+    expect(est.taxableBase()).toBe(0);
+    expect(est.taxAmount()).toBe(0);
+    expect(est.total()).toBe(60_000);
+  });
+
+  it("is byte-identical to the pre-taxability chain when every line is taxable", () => {
+    const est = estimate({
+      lines: [line({ quantity: 1, rate: money(100_000), taxable: true })],
+      discBps: 1_000,
+      taxBps: 825,
+      depBps: 2_000,
+    });
+    // The exact numbers the "discount, then tax on the net" case above asserts.
+    expect(est.discountAmount()).toBe(10_000);
+    expect(est.netAfterDiscount()).toBe(90_000);
+    expect(est.taxAmount()).toBe(7_425);
+    expect(est.total()).toBe(97_425);
+    expect(est.depositDue()).toBe(19_485);
+  });
+
+  it("takes the discount off the taxable base at the same rate it comes off the bill", () => {
+    const est = estimate({
+      lines: [
+        line({ quantity: 1, rate: money(100_000), taxable: true }),
+        line({ quantity: 1, rate: money(100_000), taxable: false }),
+      ],
+      discBps: 1_000, // 10%
+      taxBps: 1_000, // 10%
+    });
+    expect(est.subtotal()).toBe(200_000);
+    expect(est.discountAmount()).toBe(20_000);
+    expect(est.netAfterDiscount()).toBe(180_000);
+    // Tax on the DISCOUNTED taxable half (90_000), not the full 100_000 and not the full net.
+    expect(est.taxAmount()).toBe(9_000);
+    expect(est.total()).toBe(189_000);
+  });
+
+  it("excludes an untaken optional line from the tax base even when it is taxable", () => {
+    const est = estimate({
+      lines: [
+        line({ quantity: 1, rate: money(100_000), taxable: true }),
+        line({ quantity: 1, rate: money(50_000), taxable: true, isOptional: true }),
+      ],
+      taxBps: 1_000,
+    });
+    expect(est.taxableBase()).toBe(100_000);
+    expect(est.taxAmount()).toBe(10_000);
+  });
+
+  it("scopes the tax base to the recommended tier on a tiered quote", () => {
+    const est = estimate({
+      recommendedTier: "better",
+      tierNames: { good: "Good", better: "Better", best: "Best" },
+      lines: [
+        line({ quantity: 1, rate: money(50_000), tier: "good", taxable: true }),
+        line({ quantity: 1, rate: money(80_000), tier: "better", taxable: true }),
+        line({ quantity: 1, rate: money(20_000), tier: "better", taxable: false }),
+        line({ quantity: 1, rate: money(90_000), tier: "best", taxable: true }),
+      ],
+      taxBps: 1_000,
+    });
+    expect(est.taxableBase()).toBe(80_000);
+    expect(est.totalsForTier("better").tax).toBe(8_000);
+    expect(est.totalsForTier("good").tax).toBe(5_000);
   });
 });
 
