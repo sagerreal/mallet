@@ -102,14 +102,28 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
   // ignoring you rather than as dead space. Only the button itself may keep the row from opening.
   const acts =
     job.status === "scheduled" ? (
-      <button
-        type="button"
-        className="btn sm primary"
-        onClick={(e) => { e.stopPropagation(); onStart(job.id); }}
-        disabled={isPending}
-      >
-        Start job
-      </button>
+      // BOTH, on a scheduled job. Start job is the expected next step and stays the primary; ✓
+      // Complete is beside it because the job sheet has always let a technician finish without
+      // starting, and the card refusing the same thing read as the app contradicting itself.
+      // v1.field.complete now starts the job first when it has to (see field-router.ts).
+      <>
+        <button
+          type="button"
+          className="btn sm primary"
+          onClick={(e) => { e.stopPropagation(); onStart(job.id); }}
+          disabled={isPending}
+        >
+          Start job
+        </button>
+        <button
+          type="button"
+          className="btn sm"
+          onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
+          disabled={isPending}
+        >
+          ✓ Complete
+        </button>
+      </>
     ) : job.status === "in_progress" ? (
       <button
         type="button"

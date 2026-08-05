@@ -24,16 +24,15 @@ import { stampLabel } from "./visit-steps";
 
 interface VisitRowProps {
   visit: Visit;
-  quoted: boolean;
   /** ↩ Reopen is an office correction (it can rewrite recorded hours) — owner/office only. */
   canReopen: boolean;
   /**
    * May the viewer MOVE this visit? True for office, and for the tech this visit is assigned to.
    *
    * A job with two visits shows both rows, because "my stop is the second one today" is useful
-   * context — but only the viewer's own row gets step buttons. The server refuses a tech acting on
-   * a colleague's visit, so rendering the buttons anyway would be a live-looking control that
-   * returns an unexplained error.
+   * context — but only the viewer's own row gets a control. The server refuses a tech acting on a
+   * colleague's visit, so rendering one anyway would be a live-looking button that returns an
+   * unexplained error.
    */
   canAct: boolean;
   onStatus: (status: string) => void;
@@ -75,63 +74,29 @@ function WhenLine({ visit, now }: { visit: Visit; now: Date }) {
   );
 }
 
-export function VisitRow({ visit, quoted, canReopen, canAct, onStatus }: VisitRowProps) {
+export function VisitRow({ visit, canReopen, canAct, onStatus }: VisitRowProps) {
   const now = useTickingNow();
-  const stepP = !quoted;
 
-  // On my way → / Arrived → (scheduled → enroute → onsite). Empty once on site, and empty on
-  // somebody else's visit.
-  const step = !canAct ? null :
-    visit.status === "scheduled" ? (
-      <button
-        type="button"
-        className={`btn ${stepP ? "primary" : "ghost"}`}
-        style={{ flex: 1 }}
-        onClick={() => onStatus("enroute")}
-      >
-        On my way →
-      </button>
-    ) : visit.status === "enroute" ? (
-      <button
-        type="button"
-        className={`btn ${stepP ? "primary" : "ghost"}`}
-        style={{ flex: 1 }}
-        onClick={() => onStatus("onsite")}
-      >
-        Arrived →
-      </button>
-    ) : null;
-
-  // ✓ Mark done / ↩ Reopen. A finished visit shows nothing at all to a technician rather than a
-  // button that would be refused — the row is a record at that point, not a control.
-  const doneB = !canAct ? null :
-    visit.status === "done" ? (
-      canReopen ? (
+  // ↩ Reopen is the ONLY control left on the row. On my way / Arrived / ✓ Mark done moved to the
+  // sticky foot, where the primary names the next step and a quiet Finish sits under it: two
+  // half-width buttons partway up a tall sheet sit past one-handed reach exactly when the sheet
+  // is fullest, and the foot's 52px full-width target is the one place a thumb always owns.
+  // Reopen stays here because it belongs to THIS row — it is an office correction to a visit that
+  // already ended, against hours somebody may already have been paid for.
+  const reopen =
+    canAct && canReopen && visit.status === "done" ? (
+      <div style={{ display: "flex", marginTop: "var(--space-3)" }}>
         <button type="button" className="btn ghost" style={{ flex: 1 }} onClick={() => onStatus("scheduled")}>
           ↩ Reopen
         </button>
-      ) : null
-    ) : (
-      <button
-        type="button"
-        className={`btn ${visit.status === "onsite" || quoted ? "primary" : "ghost"}`}
-        style={{ flex: 1 }}
-        onClick={() => onStatus("done")}
-      >
-        ✓ Mark done
-      </button>
-    );
+      </div>
+    ) : null;
 
   return (
     <div style={{ marginBottom: "var(--space-2xs)" }}>
       <VisitStepper visit={visit} />
       <WhenLine visit={visit} now={now} />
-      {(step || doneB) && (
-        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)" }}>
-          {step}
-          {doneB}
-        </div>
-      )}
+      {reopen}
     </div>
   );
 }

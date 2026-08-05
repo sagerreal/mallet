@@ -54,8 +54,6 @@ import {
   hmLabel,
   invDue,
   isUnpricedEstimate,
-  jobMode,
-  jobQuoted,
   jobTotal,
   vPlaced,
 } from "./helpers";
@@ -148,7 +146,6 @@ export function TechJobModalContent() {
   // creating new object references on every store write).
   const custName = job ? custNameOf(job, lead) : "";
   const addr = (job?.addr || lead?.address || "") as string;
-  const quoted = job ? jobQuoted(job) : false;
   const done = job?.status === "done";
   // The tech only sees PLACED visits — never "Invalid Date" rows in the field.
   const placed = (job?.visits ?? []).filter(vPlaced);
@@ -299,15 +296,47 @@ export function TechJobModalContent() {
   const scoping = scopingCandidate;
   const hasScope = placed.some((v) => Boolean(v.scopeNotes?.trim()));
 
-  // --- The ONE foot primary (sheet grammar) ----------------------------------
-  // Close-out states hand the DoneBlock branch's terminal action to the sticky
-  // foot; every other state gets a plain full-width Done so the field view is
-  // never dismissable only via the tiny shell ✕. All non-destructive. An
-  // unpriced estimate never gets a billing foot — its close-out is the handoff.
+  // The viewer's own visit (the one their scope belongs to), else the job's current
+  // visit — an owner-operator scoping their own walkthrough still lands somewhere.
+  const myVisit = placed.find((v) => v.techId === me.data?.userId);
+  const scopeVisit = myVisit ?? curVisit;
+
+  /**
+   * The visit this sheet's FOOT moves. Own visit first; an owner/office viewer may move the
+   * job's current one either way. A technician looking at a colleague's visit gets neither the
+   * step nor the finish — the server refuses both, so a live-looking button would just error.
+   */
+  const actVisit = !done ? (myVisit ?? (isOffice ? curVisit : undefined)) : undefined;
+
+  // --- The foot (sheet grammar: ONE loud primary) ----------------------------
+  //
+  // On an OPEN job the primary IS the next step — "Start driving →" / "I've arrived →" /
+  // "Finish job →" — one ~52px full-width target where the thumb already rests. It used to be a
+  // plain "Done" that only dismissed the sheet, while the actual workflow lived in a pair of
+  // half-width buttons somewhere up the page; on a tall sheet those sit past one-handed reach
+  // exactly when the record is fullest.
+  //
+  // FINISH IS ALWAYS ONE TAP. Where the primary is not yet Finish, a quiet "Finish job →" sits
+  // beneath it. On-my-way and Arrived are optional and always have been (the server allows
+  // pending → complete deliberately), so the sheet must never make a man in a customer's kitchen
+  // tap "on the way" before he can close the job he has just finished. No confirmation dialog:
+  // finishing is reversible by the office, and a modal on top of a modal in a truck is worse.
+  //
+  // On a DONE job the foot carries the close-out branch's terminal action instead, exactly as
+  // before. An unpriced estimate never gets a billing foot — its close-out is the handoff.
   const footKind =
     done && canTakePayment && !scoping ? doneFootAction(job, lead, invoice, isOffice) : null;
   const footDue = invoice ? invDue(invoice) : jobTotal(job);
   const footCard = lead?.card;
+  const finishStep = actVisit
+    ? { label: "Finish job →", run: () => onVisitStatus(actVisit.id, "done") }
+    : null;
+  const nextStep =
+    actVisit && actVisit.status === "scheduled"
+      ? { label: "Start driving →", run: () => onVisitStatus(actVisit.id, "enroute") }
+      : actVisit && actVisit.status === "enroute"
+        ? { label: "I've arrived →", run: () => onVisitStatus(actVisit.id, "onsite") }
+        : finishStep;
   const footPri =
     footKind === "charge" && footCard
       ? { label: `Charge ${fmt$(footDue)} to ${footCard.brand} ···· ${footCard.last4}`, run: chargeOnFile }
@@ -315,12 +344,11 @@ export function TechJobModalContent() {
         ? { label: "Take payment →", run: openCloseOut }
         : footKind === "sendoffice"
           ? { label: "Send to the office to bill", run: sendToOffice }
-          : { label: "Done", run: close };
-
-  // The viewer's own visit (the one their scope belongs to), else the job's current
-  // visit — an owner-operator scoping their own walkthrough still lands somewhere.
-  const myVisit = placed.find((v) => v.techId === me.data?.userId);
-  const scopeVisit = myVisit ?? curVisit;
+          : // An open job with an actionable visit advances; anything else keeps the plain Done,
+            // so the sheet is never dismissable only via the tiny shell ✕.
+            (nextStep ?? { label: "Done", run: close });
+  // Only when the primary is something OTHER than finishing.
+  const footQuiet = finishStep && nextStep !== finishStep ? finishStep : null;
 
   const onQuoteTab = tab === "quote";
 
@@ -516,7 +544,6 @@ export function TechJobModalContent() {
             <VisitRow
               key={v.id}
               visit={v}
-              quoted={quoted}
               canReopen={isOffice}
               // A tech may only move THEIR OWN visit. A two-visit job shows both rows (they are
               // useful context — "my stop is the second one today"), but the step buttons appear
@@ -567,9 +594,14 @@ export function TechJobModalContent() {
 
       {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
       <div className="sheet-foot">
-        <button className="sheet-pri" onClick={footPri.run}>
+        <button type="button" className="sheet-pri" onClick={footPri.run}>
           {footPri.label}
         </button>
+        {footQuiet ? (
+          <button type="button" className="sheet-quiet" onClick={footQuiet.run}>
+            {footQuiet.label}
+          </button>
+        ) : null}
       </div>
         </div>
       )}

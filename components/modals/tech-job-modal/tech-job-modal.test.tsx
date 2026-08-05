@@ -197,12 +197,12 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — owner/office", () => {
-  it("shows Call/Text, visit step buttons, and add-on controls", () => {
+  it("shows Call/Text, the advancing foot, and add-on controls", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText("Call")).toBeTruthy();
     expect(screen.getByText("Text")).toBeTruthy();
-    expect(screen.getByText("On my way →")).toBeTruthy();
-    expect(screen.getByText("✓ Mark done")).toBeTruthy();
+    expect(screen.getByText("Start driving →")).toBeTruthy();
+    expect(screen.getByText("Finish job →")).toBeTruthy();
     openSection("Found work");
     expect(screen.getByText(/Customer OK/)).toBeTruthy();
     expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
@@ -210,7 +210,7 @@ describe("TechJobModalContent — owner/office", () => {
 
   it("writes the office's taps through the OFFICE surface (no clock — she wasn't there)", () => {
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("On my way →"));
+    fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "office");
   });
 
@@ -296,9 +296,10 @@ describe("TechJobModalContent — tech", () => {
   });
 
   // A reviewer found this: the modal renders every PLACED visit, unfiltered by assignee, and the
-  // step buttons had been unhidden for techs wholesale. On a two-visit job the tech saw live
-  // controls on a colleague's row, and tapping them moved that visit and wrote time against it.
-  it("shows NO step buttons on a colleague's visit, only on the tech's own", () => {
+  // step buttons had been unhidden for techs wholesale. On a two-visit job the tech could move a
+  // colleague's visit and write time against it. The controls now live in the foot, which acts on
+  // exactly one visit — so the guard is that the foot picks the TECH'S OWN.
+  it("the foot moves the tech's OWN visit on a job they share with a colleague", () => {
     mockJobs = [
       makeJob({
         visits: [
@@ -308,19 +309,30 @@ describe("TechJobModalContent — tech", () => {
       }),
     ];
     render(<TechJobModalContent />);
-    // Both rows are visible (useful context), but exactly ONE carries the control.
-    expect(screen.getAllByText("On my way →")).toHaveLength(1);
+    // Both visits are on the sheet (useful context — "my stop is the second one today"), but
+    // there is exactly one foot and it moves v1, the tech's own.
+    expect(screen.getAllByRole("list", { name: "Visit progress" })).toHaveLength(2);
+    fireEvent.click(screen.getByText("Start driving →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
 
-  it("shows the step buttons — they are the tech's, and they are how his hours get recorded", () => {
+  // A visit that is not theirs and not the office's to move gets no foot step at all — the
+  // server refuses it, so the sheet falls back to a plain dismiss rather than an erroring button.
+  it("offers no step at all on a job assigned to somebody else", () => {
+    mockJobs = [
+      makeJob({
+        visits: [{ id: "v9", date: "2026-07-12", techId: "someone-else", start: 9, dur: 2, status: "scheduled" }],
+      }),
+    ];
     render(<TechJobModalContent />);
-    expect(screen.getByText("On my way →")).toBeTruthy();
-    expect(screen.getByText("✓ Mark done")).toBeTruthy();
+    expect(screen.queryByText("Start driving →")).toBeNull();
+    expect(screen.queryByText("Finish job →")).toBeNull();
+    expect(screen.getByText("Done")).toBeTruthy();
   });
 
   it("writes the tech's taps through the FIELD surface (the office API would refuse him)", () => {
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("On my way →"));
+    fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
 
@@ -442,6 +454,50 @@ describe("TechJobModalContent — tech", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
     expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The foot: the primary IS the next step, and Finish is always one tap away.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — the advancing foot", () => {
+  const withVisit = (status: string) =>
+    makeJob({ visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status }] });
+
+  it.each([
+    ["scheduled", "Start driving →", "enroute"],
+    ["enroute", "I've arrived →", "onsite"],
+    ["onsite", "Finish job →", "done"],
+  ])("from %s the primary reads %s and writes %s", (status, label, written) => {
+    mockJobs = [withVisit(status)];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText(label));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", written, "office");
+  });
+
+  // THE RULE. On my way and Arrived are optional — the server allows pending → complete
+  // deliberately — so a man in a customer's kitchen is never told to tap "on the way" first.
+  it.each(["scheduled", "enroute"])("offers a quiet Finish from %s — never more than one tap away", (status) => {
+    mockJobs = [withVisit(status)];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Finish job →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "done", "office");
+  });
+
+  it("shows Finish ONCE on site — the primary is already it, so there is no quiet twin", () => {
+    mockJobs = [withVisit("onsite")];
+    render(<TechJobModalContent />);
+    expect(screen.getAllByText("Finish job →")).toHaveLength(1);
+  });
+
+  // No confirmation dialog: finishing is reversible by the office, and a modal on top of a modal
+  // in a truck is worse than the mistake it guards against.
+  it("finishes on the first tap, with nothing to confirm", () => {
+    mockJobs = [withVisit("onsite")];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Finish job →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledTimes(1);
   });
 });
 

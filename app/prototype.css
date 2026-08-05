@@ -988,6 +988,13 @@
   .sheet-foot{position:sticky;bottom:calc(0px - var(--modal-pad-y) - var(--safe-b));background:var(--card);margin:var(--space-4) calc(0px - var(--modal-pad-x)) calc(0px - var(--modal-pad-y) - var(--safe-b));padding:var(--space-3) var(--modal-pad-x) calc(var(--space-3) + var(--safe-b));border-top:1px solid var(--line-2);z-index:3;border-radius:0 0 var(--radius-xl) var(--radius-xl)}
   .sheet-pri{display:flex;align-items:center;justify-content:center;gap:var(--space-2);width:100%;min-height:52px;border:none;border-radius:var(--radius);background:var(--pri-bg);color:var(--pri-fg);font-family:inherit;font-size:var(--type-md);font-weight:700;letter-spacing:.1px;cursor:pointer;box-shadow:0 2px 8px rgba(26,21,16,.22);transition:transform .1s,filter .12s}
   .sheet-pri:active{transform:translateY(1px) scale(.99);filter:brightness(.92)}
+  /* The escape hatch UNDER the primary, not beside it. Used where the sheet's next step is not
+     the step you may actually want (the tech job sheet's "Finish job" while the primary still
+     reads "Start driving"). Stacked rather than side-by-side so the primary keeps the full width
+     a gloved thumb needs; quiet enough that it never competes for the eye. */
+  .sheet-quiet{display:block;width:100%;min-height:44px;margin-top:var(--space-2);border:none;background:none;font-family:inherit;font-size:var(--type-base);font-weight:700;color:var(--ink-2);cursor:pointer;text-align:center}
+  .sheet-quiet:hover{color:var(--ink)}
+  .sheet-quiet:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   /* 48px: the ergonomics pass measured the first cut at 35pt — under the 44pt glove
      floor for what are the highest-frequency actions on a working lead. */
   .sheet-secrow{display:flex;gap:var(--space-2);margin-top:var(--space-3)}

@@ -132,6 +132,25 @@ describe("My day — the screen moves when you press", () => {
     expect(errors).toEqual(["field.complete"]);
     expect(refetch).toHaveBeenCalled();
   });
+
+  // THE ASYMMETRY. The job sheet's Done has always worked straight from scheduled; this card
+  // offered only "Start job" and the endpoint behind ✓ Complete refused a scheduled job outright.
+  // A technician who finished a call without tapping Start hit a wall on the card and none on the
+  // sheet, which reads as the app contradicting itself. v1.field.complete now starts it first.
+  it("lets a SCHEDULED job be completed without pressing Start first", () => {
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Start job" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+  });
+
+  it("still moves the card straight to done on that press", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    completeOpts.onMutate?.({ jobId: "job-1" });
+    const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { status: string }[] };
+    expect(patch({ items: [job()] }).items[0]!.status).toBe("complete");
+  });
 });
 
 describe("My day — a failed load is not a free afternoon", () => {
