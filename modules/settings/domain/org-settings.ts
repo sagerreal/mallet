@@ -96,6 +96,17 @@ export interface OrgSettingsProps {
   readonly trade: string;
   /** Markup percentage in basis points (non-negative; 10000 = 100%). */
   readonly markupBps: number;
+  /**
+   * The shop's DEFAULT sales-tax rate in basis points (825 = 8.25%).
+   *
+   * ONE rate for the shop, seeded onto each new quote and overridable on that quote — the
+   * Jobber/Housecall Pro model. Not a per-document fact: the document carries its own `taxBps`
+   * once it exists, and editing this never reaches back into a quote already sent.
+   *
+   * 0 means "not set", and it is the default because a wrong rate is worse than none — it would
+   * put money on a customer's bill that the shop never agreed to and owes to nobody.
+   */
+  readonly taxBps: number;
   /** Duration of a scoping visit (clamped to ≥ VISIT_FLOOR_MINUTES). */
   readonly visitScopeMinutes: number;
   /** Duration of a repair visit (clamped to ≥ VISIT_FLOOR_MINUTES). */
@@ -320,6 +331,11 @@ export class OrgSettings {
     if (props.markupBps < 0) {
       return err(validation("markup must be non-negative", "markupBps"));
     }
+    // Integer bps, not a float percent: 8.25% is 825, and a fractional bps would round differently
+    // in the domain's chain than in the client mirror that recomputes the same total live.
+    if (!Number.isInteger(props.taxBps) || props.taxBps < 0) {
+      return err(validation("sales tax rate must be a non-negative whole number of bps", "taxBps"));
+    }
     // A bad zone is worse than no zone: Intl silently falls back to UTC, which would put a
     // late-afternoon Pacific finish on tomorrow's timesheet with nothing to show it happened.
     // Validate here so the wrong value can never be stored in the first place.
@@ -387,6 +403,7 @@ export class OrgSettings {
       ...this.p,
       trade: fields.trade !== undefined ? fields.trade : this.p.trade,
       markupBps: fields.markupBps !== undefined ? fields.markupBps : this.p.markupBps,
+      taxBps: fields.taxBps !== undefined ? fields.taxBps : this.p.taxBps,
       visitScopeMinutes:
         fields.visitScopeMinutes !== undefined
           ? fields.visitScopeMinutes

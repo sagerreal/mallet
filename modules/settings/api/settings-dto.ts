@@ -125,6 +125,8 @@ export const businessIdentityDTO = z.object({
 export const orgSettingsDTO = z.object({
   trade: z.string(),
   markupBps: z.number().int(),
+  /** The shop's DEFAULT sales-tax rate in bps (825 = 8.25%). 0 = not set. */
+  taxBps: z.number().int(),
   visitScopeMinutes: z.number().int(),
   visitRepairMinutes: z.number().int(),
   visitInstallMinutes: z.number().int(),
@@ -341,6 +343,7 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
   return {
     trade: p.trade,
     markupBps: p.markupBps,
+    taxBps: p.taxBps,
     visitScopeMinutes: p.visitScopeMinutes,
     visitRepairMinutes: p.visitRepairMinutes,
     visitInstallMinutes: p.visitInstallMinutes,

@@ -6,6 +6,7 @@ const base = (): OrgSettingsProps => ({
   orgId: asOrgId("00000000-0000-0000-0000-000000000001"),
   trade: "plumbing",
   markupBps: 3500,
+  taxBps: 0,
   visitScopeMinutes: 30,
   visitRepairMinutes: 90,
   visitInstallMinutes: 240,

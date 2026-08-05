@@ -67,6 +67,11 @@ const updateConfigInput = z.object({
   // so an unknown zone is a BAD_REQUEST rather than a stored value nothing can interpret.
   timezone: z.string().min(1).max(64).optional(),
   markupBps: z.number().int().min(0).max(1_000_000).optional(),
+  // The shop's default sales-tax rate, in bps. Capped at 2500 (25%) — no US state, county and city
+  // combination reaches half of that, so a larger number is a typed "825" that lost its decimal
+  // point, and a rate that high on a five-figure quote is a customer the shop loses rather than a
+  // filing anyone owes.
+  taxBps: z.number().int().min(0).max(2500).optional(),
   visitScopeMinutes: z.number().int().min(0).max(1440).optional(),
   visitRepairMinutes: z.number().int().min(0).max(1440).optional(),
   visitInstallMinutes: z.number().int().min(0).max(1440).optional(),

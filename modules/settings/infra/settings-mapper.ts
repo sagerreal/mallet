@@ -20,6 +20,7 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     orgId: asOrgId(row.orgId),
     trade: row.trade,
     markupBps: row.markupBps,
+    taxBps: row.taxBps,
     visitScopeMinutes: row.visitScopeMinutes,
     visitRepairMinutes: row.visitRepairMinutes,
     visitInstallMinutes: row.visitInstallMinutes,

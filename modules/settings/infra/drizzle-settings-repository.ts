@@ -37,6 +37,11 @@ const toLaborRateKind = (kind: string): LaborRateKind => (kind === "flat_fee" ? 
 // whichever path asks.
 const DEFAULT_TIMEZONE = "America/Los_Angeles";
 
+// Mirrors org_settings.tax_bps's schema default, for the same reason DEFAULT_TIMEZONE is here: a
+// focused read that skips the lazy create has no row to read it from. 0 = the shop has not set a
+// rate, and a quote raised before it does must charge nothing rather than guess.
+const DEFAULT_TAX_BPS = 0;
+
 /**
  * Real persistence. Constructed with a tenant-scoped tx (withTenant already set
  * `app.current_org_id`), so RLS appends `org_id = current_org_id()` to every statement.
@@ -92,6 +97,7 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       .set({
         trade: p.trade,
         markupBps: p.markupBps,
+        taxBps: p.taxBps,
         visitScopeMinutes: p.visitScopeMinutes,
         visitRepairMinutes: p.visitRepairMinutes,
         visitInstallMinutes: p.visitInstallMinutes,
@@ -176,6 +182,17 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
       .limit(1);
     // No row yet (settings never opened) → the column's schema default: visible.
     return rows[0]?.techSeesPrice ?? true;
+  }
+
+  async getTaxBps(): Promise<number> {
+    const rows = await this.tx
+      .select({ taxBps: orgSettings.taxBps })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    // No row yet (settings never opened) → the column's schema default, 0. Same no-lazy-create
+    // rule as getTechSeesPrice/getTimezone: a read on the signing path must not write.
+    return rows[0]?.taxBps ?? DEFAULT_TAX_BPS;
   }
 
   async getTimezone(): Promise<string> {

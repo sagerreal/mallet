@@ -12,6 +12,7 @@ function seedSettings(over: Partial<OrgSettingsProps> = {}): OrgSettings {
     orgId: asOrgId(ORG),
     trade: "plumbing",
     markupBps: 3500,
+    taxBps: 0,
     visitScopeMinutes: 30,
     visitRepairMinutes: 90,
     visitInstallMinutes: 240,
