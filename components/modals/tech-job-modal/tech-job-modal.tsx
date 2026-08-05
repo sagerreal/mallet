@@ -461,7 +461,19 @@ export function TechJobModalContent() {
         />
       ) : null}
 
-      {/* Work order (5a) — ONE gate: is there anything to show?
+      {/* 5. The visit — WHERE THIS JOB HAS GOT TO, and it sits ABOVE the work order on purpose.
+          A technician opening this sheet is answering "am I on my way, am I here, am I finished"
+          before "what did we sell". The approved design puts the status readout directly under the
+          contact row for that reason; the work order is reference material beneath it. */}
+      <VisitsSec
+        placed={placed}
+        curVisit={curVisit}
+        done={done}
+        isOffice={isOffice}
+        onStatus={onVisitStatus}
+      />
+
+      {/* 5a. Work order — ONE gate: is there anything to show?
           It used to be gated three ways — `jobMode === "install"` AND not done AND at least one
           described line. `jobMode` reads "install" only for PRICED lines, so a plain service call
           never showed a work order at all: the technician arrived knowing the customer's name and
@@ -470,15 +482,6 @@ export function TechJobModalContent() {
       {(job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
         <WorkOrderSec job={job} seesPrice={seesPrice} />
       ) : null}
-
-      {/* 5. Your visit(s). */}
-      <VisitsSec
-        placed={placed}
-        curVisit={curVisit}
-        done={done}
-        isOffice={isOffice}
-        onStatus={onVisitStatus}
-      />
 
       {/* 6. Pricing lives in the Quote tab — the one pricing home on this surface for
           every role. The old office-only PricingSec entry (a second door to the same
