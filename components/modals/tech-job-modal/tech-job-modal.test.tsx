@@ -244,6 +244,25 @@ describe("TechJobModalContent — owner/office", () => {
     expect(screen.queryByText(/No price set/)).toBeNull();
   });
 
+  // The hero and the foot must say the SAME thing. They did not: the foot said
+  // "Take payment →" while the hero underneath it offered "Send to the office to bill" —
+  // a choice between two routes, one screen before the close-out that offers both.
+  it("a done job with money owed offers taking it, and no second route to the office", () => {
+    mockInvoices = [];
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "t", start: 9, dur: 2, status: "done" }],
+        lines: [{ d: "Diagnostic + repair", q: 1, r: 285 }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Take payment →")).toBeTruthy();
+    expect(screen.queryByText("Send to the office to bill")).toBeNull();
+    // Even for the office, whose write it is — the redundancy was never role-specific.
+    expect(screen.queryByText(/Send to the office/)).toBeNull();
+  });
+
   it("DoneBlock shows 'No price set' only when the job genuinely has no price", () => {
     mockInvoices = [];
     mockJobs = [
@@ -256,6 +275,9 @@ describe("TechJobModalContent — owner/office", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText(/No price set/)).toBeTruthy();
     expect(screen.queryByText(/Take payment/)).toBeNull();
+    // …and THIS is the branch the hand-off survives on, as the foot primary: there is no
+    // money to take, so the office bill is the only terminal action there is.
+    expect(screen.getByText("Send to the office to bill")).toBeTruthy();
   });
 });
 

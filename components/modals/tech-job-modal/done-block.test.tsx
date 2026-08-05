@@ -9,7 +9,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { DoneBlock, ScopeHandoffBlock, doneFootAction } from "./done-block";
-import type { Invoice, Job } from "@/lib/store/types";
+import type { Invoice, Job, Lead } from "@/lib/store/types";
 // The two REAL mappers the card's job comes through: the hydrator's list mapper (v1.jobs.list /
 // v1.field.myDay) and the mutation-reconcile mapper (every job-returning mutation).
 import { toStoreJob } from "@/features/jobs/jobs-hydrator";
@@ -194,7 +194,6 @@ const doneBlockProps = {
   onOpenCloseOut: vi.fn(),
   onOpenInvoice: vi.fn(),
   onChargeOnFile: vi.fn(),
-  onSendToOffice: vi.fn(),
 };
 
 describe("DoneBlock — the money card, and only the money card", () => {
@@ -231,18 +230,34 @@ const paidInvoice = {
 } as unknown as Invoice;
 
 describe("DoneBlock — the field capabilities", () => {
-  it("a technician gets no hand-off button (job.invRequested is an office write)", () => {
-    render(<DoneBlock {...doneBlockProps} canSendToOffice={false} canSetBill={false} />);
+  // NOBODY gets a hand-off button in the hero any more, technician or office. On a job with
+  // money owed the card offers taking the money and nothing else: the close-out one tap away
+  // already carries "Take payment — $x" AND "Log & send to office →" side by side, so the hero
+  // was asking for a choice one screen before the screen that offers both — and on this branch
+  // it contradicted its own foot, which says "Take payment →".
+  it("no hand-off button on a job with money owed — the close-out carries it", () => {
+    render(<DoneBlock {...doneBlockProps} canSetBill={false} />);
     expect(screen.getByText("✓ Job done")).toBeTruthy();
     expect(screen.getByText("$185")).toBeTruthy(); // the money is still fully theirs to read
     expect(screen.queryByText("Send to the office to bill")).toBeNull();
   });
 
+  it("the office gets no hand-off button either — the redundancy was not role-specific", () => {
+    render(<DoneBlock {...doneBlockProps} />);
+    expect(screen.queryByText("Send to the office to bill")).toBeNull();
+  });
+
+  it("with a card on file the one quiet peer is the OTHER way to get paid", () => {
+    const withCard = { name: "Dana", card: { brand: "Visa", last4: "4242" } } as unknown as Lead;
+    render(<DoneBlock {...doneBlockProps} lead={withCard} />);
+    // The foot carries the charge; this peer is the alternative payment route, not an exit.
+    expect(screen.getByText("Take payment another way →")).toBeTruthy();
+    expect(screen.queryByText("Send to the office to bill")).toBeNull();
+  });
+
   it("a technician gets no 'Set a bill' on an unpriced job — the builder has no field route", () => {
     const unpriced = { ...doneJob, lines: [] } as unknown as Job;
-    render(
-      <DoneBlock {...doneBlockProps} job={unpriced} canSendToOffice={false} canSetBill={false} />,
-    );
+    render(<DoneBlock {...doneBlockProps} job={unpriced} canSetBill={false} />);
     expect(screen.getByText("No price set — the office invoices it.")).toBeTruthy();
     expect(screen.queryByText("Set a bill & take payment →")).toBeNull();
   });
@@ -253,7 +268,6 @@ describe("DoneBlock — the field capabilities", () => {
         {...doneBlockProps}
         invoice={paidInvoice}
         onOpenInvoice={undefined}
-        canSendToOffice={false}
         canSetBill={false}
       />,
     );
@@ -276,14 +290,7 @@ describe("DoneBlock — the field capabilities", () => {
 
 describe("DoneBlock / doneFootAction — a redacted device is not a free job", () => {
   it("says prices are hidden and offers the bill, never 'No price set'", () => {
-    render(
-      <DoneBlock
-        {...doneBlockProps}
-        job={hiddenPriceJob}
-        canSendToOffice={false}
-        canSetBill={false}
-      />,
-    );
+    render(<DoneBlock {...doneBlockProps} job={hiddenPriceJob} canSetBill={false} />);
     expect(screen.queryByText("No price set — the office invoices it.")).toBeNull();
     expect(
       screen.getByText("Prices are hidden on your device — open the bill to see what’s due."),
@@ -330,7 +337,7 @@ describe("DoneBlock — the two wire shapes agree, so the card cannot flap", () 
   };
 
   const cardFor = (job: Job) =>
-    render(<DoneBlock {...doneBlockProps} job={job} canSendToOffice={false} canSetBill={false} />);
+    render(<DoneBlock {...doneBlockProps} job={job} canSetBill={false} />);
 
   it("the LIST row renders the price, never 'No price set'", () => {
     const job = listJob({

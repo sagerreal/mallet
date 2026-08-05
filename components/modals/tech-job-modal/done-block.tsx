@@ -11,6 +11,16 @@
  * the status line and the QUIET peers only. Reopen is NOT here: it writes a
  * VISIT status, so it lives once, in the "Your visit(s)" section beside the visit
  * it moves — the same single home the not-done VisitRow uses.
+ *
+ * WHERE THE OFFICE HAND-OFF LIVES. Not in this card, on any branch that owes money.
+ * "Send to the office to bill" used to sit inside the "✓ Job done · $185" hero, one
+ * screen before the close-out — which already offers "Take payment — $185" and
+ * "Log & send to office →" side by side. The hero was making the technician pick a
+ * route before showing him the screen that has both, and on the no-card branch it
+ * contradicted its own foot, which said "Take payment →". On a job with money owed the
+ * card now offers taking the money and nothing else; the hand-off is one tap away on the
+ * close-out. It remains the foot primary in the one state where there is no money to
+ * take — a genuinely unpriced job (doneFootAction's "sendoffice").
  */
 
 "use client";
@@ -32,14 +42,6 @@ export interface DoneBlockProps {
    */
   onOpenInvoice?: (invoiceId: string) => void;
   onChargeOnFile: () => void;
-  onSendToOffice: () => void;
-  /**
-   * May hand the job to the office to bill — `job.invRequested` rides `v1.jobs.update`, which is
-   * ownerOrOffice with no field sibling. False hides the hand-off buttons rather than leaving a
-   * technician a control whose tap FORBIDDENs and silently rolls back. Defaults true: the office
-   * is this card's original and still most common caller.
-   */
-  canSendToOffice?: boolean;
   /**
    * May price the bill on site — the close-out's BillAsk commits through `v1.jobs.setLines` and
    * `v1.invoicing.patchLines`, both ownerOrOffice and both bulk REPLACES, so neither was widened.
@@ -55,8 +57,6 @@ export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boole
     a.onOpenCloseOut === b.onOpenCloseOut &&
     a.onOpenInvoice === b.onOpenInvoice &&
     a.onChargeOnFile === b.onChargeOnFile &&
-    a.onSendToOffice === b.onSendToOffice &&
-    a.canSendToOffice === b.canSendToOffice &&
     a.canSetBill === b.canSetBill &&
     a.lead === b.lead &&
     a.invoice === b.invoice &&
@@ -162,8 +162,10 @@ export function ScopeHandoffBlock({
  * Null = the job is settled, already with the office, or has nothing this viewer
  * can do about it; the foot falls back to plain Done.
  *
- * `canSendToOffice` defaults true — the office is the original caller and every existing
- * behaviour of theirs is unchanged.
+ * `canSendToOffice` gates ONLY the "sendoffice" kind — the genuinely-unpriced job, where the
+ * hand-off is the sole terminal action because there is nothing to collect. It defaults true:
+ * the office is the original caller. Every branch that owes money returns charge/collect, so on
+ * a done job with a balance the foot and the card now say the same thing — take the money.
  */
 export function doneFootAction(
   job: Job,
@@ -192,8 +194,6 @@ function DoneBlockFn({
   invoice,
   onOpenCloseOut,
   onOpenInvoice,
-  onSendToOffice,
-  canSendToOffice = true,
   canSetBill = true,
 }: DoneBlockProps) {
   // a draft invoice may already exist (opened pay then backed out) — that must
@@ -236,7 +236,8 @@ function DoneBlockFn({
     );
   }
 
-  // Due + card on file — the CHARGE lives in the sheet foot; quiet peers here.
+  // Due + card on file — the CHARGE lives in the sheet foot; the one quiet peer here is the
+  // OTHER way to get paid, not another route out of getting paid.
   //
   // DEAD FOR A TECHNICIAN BY CONSTRUCTION, and deliberately so: the field customer DTO is
   // {id, name, phone} only (modules/jobs/api/field-router.ts — "a technician has no business
@@ -253,16 +254,15 @@ function DoneBlockFn({
         <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
           Take payment another way →
         </button>
-        {canSendToOffice ? (
-          <button className="tjpaid-btn2" onClick={onSendToOffice}>
-            Send to the office to bill
-          </button>
-        ) : null}
       </div>
     );
   }
 
-  // Due, no card — "Take payment" lives in the sheet foot; hand-off stays here.
+  // Due, no card — the hero is the STATUS LINE ONLY. "Take payment →" is the foot primary
+  // (doneFootAction returns "collect" for exactly this state), and the close-out it opens
+  // offers "Take payment — $x" and "Log & send to office →" side by side. A second peer here
+  // would either repeat the foot or, as it did, ask the technician to choose between paid-now
+  // and the office one screen BEFORE the screen that offers both.
   if (due > 0) {
     return (
       <div className="tjpaid">
@@ -270,11 +270,6 @@ function DoneBlockFn({
           <b>✓ Job done</b>
           <span className="tjpaid-amt fig">{fmt$(due)}</span>
         </div>
-        {canSendToOffice ? (
-          <button className="tjpaid-btn2" onClick={onSendToOffice}>
-            Send to the office to bill
-          </button>
-        ) : null}
       </div>
     );
   }
