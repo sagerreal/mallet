@@ -288,7 +288,7 @@ export const createFieldRouter = () =>
     complete: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
-      await assertOnJobIfTech(repo, jobId, ctx.principal);
+      const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
       // FINISHING A JOB NOBODY STARTED IS LEGAL IN THE FIELD.
       //
       // Two Dones existed and they disagreed. The job modal's "✓ Mark done" has always worked
@@ -307,7 +307,9 @@ export const createFieldRouter = () =>
       // announces as "that was under a minute"). Finishing without arriving records no job
       // minutes — the same honest outcome the visit path already produces, and the same one the
       // stepper reports by showing those steps as skipped.
-      const before = await repo.findById(jobId);
+      // assertOnJobIfTech already loaded and returned this job for a tech caller — that is what it
+      // returns it FOR. Only owner/office (for whom it returns null) still owe a read.
+      const before = techJob ?? (await repo.findById(jobId));
       if (before?.canStart()) {
         orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
       }
