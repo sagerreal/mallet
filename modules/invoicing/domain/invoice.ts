@@ -11,6 +11,13 @@ import { money, addMoney, zeroMoney, validation, ok, err } from "@mallet/shared/
 import type { Payment } from "./payment";
 import type { InvoiceLine } from "./invoice-line";
 
+/**
+ * Basis-point denominator: 10_000 bps = 100%. Lives here, in the domain, because both the discount
+ * bound below and create-invoice-from-job's tax arithmetic need it and a second private copy is how
+ * two call sites drift apart.
+ */
+export const BPS_DENOMINATOR = 10_000;
+
 export type InvoiceStatus = "draft" | "sent" | "partial" | "paid" | "void";
 
 export const INVOICE_STATUSES: readonly InvoiceStatus[] = [
@@ -60,6 +67,16 @@ export interface InvoiceProps {
    */
   readonly taxBps: number;
   readonly tax: Money;
+  /**
+   * The discount taken off the line sum before tax — the rate agreed on the quote and the amount
+   * it came to. Like the tax pair these DESCRIBE `total`, which is already net of them.
+   *
+   * They exist so the DOCUMENT can itemise the discount. The lines print at their full rates, so a
+   * bill totalling 10% under their sum with no discount row reads as an arithmetic mistake and the
+   * customer is right to query it.
+   */
+  readonly discBps: number;
+  readonly discount: Money;
   readonly depositPaid: Money; // already-collected deposit (e.g. from the accepted estimate)
   readonly amountPaid: Money; // denormalized running sum of the payments ledger
   readonly payments: readonly Payment[];
@@ -108,10 +125,14 @@ const PO_NUMBER_MAX_LEN = 64;
  */
 export type InvoiceCreateProps = Omit<
   InvoiceProps,
-  "taxBps" | "tax" | "poNumber" | "publicToken" | "scopeJobId"
+  "taxBps" | "tax" | "discBps" | "discount" | "poNumber" | "publicToken" | "scopeJobId"
 > & {
   readonly taxBps?: number;
   readonly tax?: Money;
+  /** Same contract as the tax pair: omitted means "no discount was computed for this bill",
+   *  which is what every hand-drafted invoice is. */
+  readonly discBps?: number;
+  readonly discount?: Money;
   // Both optional with a null default: most construction sites (drafts, job invoices) have
   // neither — the PO arrives from the customer later, the token is minted at send time.
   readonly poNumber?: string | null;
@@ -143,6 +164,14 @@ export class Invoice {
     if (tax < 0 || tax > props.total) {
       return err(validation("tax cannot exceed the invoice total", "tax"));
     }
+    const discBps = props.discBps ?? 0;
+    const discount = props.discount ?? zeroMoney;
+    if (!Number.isInteger(discBps) || discBps < 0 || discBps > BPS_DENOMINATOR) {
+      return err(validation("discount must be between 0 and 10000 bps", "discBps"));
+    }
+    // Unlike tax, the discount is NOT part of the total — it is what came off before it. So it is
+    // only bounded below; a 100% discount on a $500 job is a legitimate $500 off a $0 bill.
+    if (discount < 0) return err(validation("discount cannot be negative", "discount"));
     if (props.depositPaid < 0 || props.depositPaid > props.total) {
       return err(validation("deposit must be between 0 and the total", "depositPaid"));
     }
@@ -157,6 +186,8 @@ export class Invoice {
         num,
         taxBps,
         tax,
+        discBps,
+        discount,
         poNumber: props.poNumber ?? null,
         publicToken: props.publicToken ?? null,
         scopeJobId: props.scopeJobId ?? null,

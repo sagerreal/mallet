@@ -19,6 +19,7 @@ const baseRow = (): OrgSettingsRow => ({
   orgId: ORG_ID,
   trade: "plumbing",
   markupBps: 3500,
+  taxBps: 0,
   visitScopeMinutes: 30,
   visitRepairMinutes: 90,
   visitInstallMinutes: 240,

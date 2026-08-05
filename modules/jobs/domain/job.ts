@@ -257,6 +257,16 @@ export interface JobProps {
    */
   readonly taxBps: number;
   readonly tax: Money;
+  /**
+   * The discount rate agreed on the source quote, in bps. 0 on a job that was never discounted.
+   *
+   * Carried because `total` is discount-APPLIED while `lines` are pre-tax AND pre-discount, and
+   * invoicing rebuilds the bill from the lines whenever they exist (the total_cents snapshot goes
+   * stale on the on-site sign path). Without the rate, that rebuild charged the full undiscounted
+   * sum. Unlike the tax pair there is no companion amount: the amount depends on which lines are
+   * being billed, so it is derived at the point of use, never snapshotted.
+   */
+  readonly discBps: number;
   readonly notes: string | null;
   /** The address the crew drives to, when it differs from the customer's on file. */
   readonly addr: string | null;
@@ -293,13 +303,15 @@ export interface JobProps {
 // so pre-existing callers keep compiling. kind defaults to "work"; the rest default to null.
 export type JobCreateProps = Omit<
   JobProps,
-  | "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts" | "taxBps" | "tax"
+  | "kind" | "scope" | "callbackOf" | "callbackReason" | "requiredCerts" | "taxBps" | "tax" | "discBps"
   | "addr" | "phone" | "completion" | "invRequested"
 > & {
   // Optional so the many jobs created without a quote need not state "no tax" explicitly. Only
   // create-job-from-estimate has a split to pass, because only an estimate ever computed one.
   readonly taxBps?: number;
   readonly tax?: Money;
+  /** Same reasoning as the tax pair: only an estimate-born job ever had a discount to carry. */
+  readonly discBps?: number;
   readonly kind?: JobKind;
   readonly scope?: string | null;
   readonly callbackOf?: JobId | null;
@@ -331,8 +343,14 @@ export class Job {
     // being wrong — it simply was never computed.
     const taxBps = props.taxBps ?? 0;
     const tax = props.tax ?? zeroMoney;
+    const discBps = props.discBps ?? 0;
     if (!Number.isInteger(taxBps) || taxBps < 0) {
       return err(validation("tax bps cannot be negative", "taxBps"));
+    }
+    // Bounded ABOVE as well as below, unlike tax: a discount over 100% would invert the bill and
+    // hand the customer money. The DB carries the same check (jobs_disc_bps_check).
+    if (!Number.isInteger(discBps) || discBps < 0 || discBps > 10_000) {
+      return err(validation("discount must be between 0 and 10000 bps", "discBps"));
     }
     // Tax is a PART of the total, never an addition to it — the invariant the whole design rests
     // on. A caller treating `total` as a pre-tax subtotal fails here rather than in someone's books.
@@ -389,7 +407,7 @@ export class Job {
     const rawRequired = props.requiredCerts ?? null;
     const requiredCerts = rawRequired === null || rawRequired.length === 0 ? null : rawRequired;
     return ok(
-      new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts, taxBps, tax, addr, phone, completion, invRequested }),
+      new Job({ ...props, num, svc, scope, callbackOf, callbackReason, checklist, kind, requiredCerts, taxBps, tax, discBps, addr, phone, completion, invRequested }),
     );
   }
 

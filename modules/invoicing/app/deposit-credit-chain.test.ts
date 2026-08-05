@@ -65,6 +65,7 @@ const completedJob = (): JobSummary => ({
   lines: [],
   totalCents: 100_000,
   taxBps: 0,
+  discBps: 0,
   taxCents: 0,
 });
 

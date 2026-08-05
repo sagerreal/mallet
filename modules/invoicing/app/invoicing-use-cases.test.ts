@@ -192,6 +192,7 @@ const completeJob = (): JobSummary => ({
   // A real split — a use-case that dropped it would be caught, not pass on two zeroes.
   taxBps: 875,
   taxCents: 8_855,
+  discBps: 0,
 });
 
 const jobLine = (over: Partial<JobLineSummary> = {}): JobLineSummary => ({
@@ -399,6 +400,63 @@ describe("CreateInvoiceFromJobUseCase", () => {
     expect(result.value.props.total).toBe(21_750);
     expect(result.value.props.tax).toBe(1_750);
     expect(result.value.props.taxBps).toBe(875);
+  });
+
+  /**
+   * THE DISCOUNT BUG, in the shape it takes in live data.
+   *
+   * EST-1009 in the shared database: three lines summing $114.98, a 10% discount, 8.25% tax, and
+   * an accepted total of $112.02 stored on the job it produced.
+   *
+   *   114.98 − round(114.98 × 10%) = 114.98 − 11.50 = 103.48
+   *   103.48 + round(103.48 × 8.25%) = 103.48 + 8.54  = 112.02   ← what the customer agreed to
+   *
+   * The job's lines are pre-tax AND pre-discount, and the invoice bills from the lines because the
+   * total_cents snapshot is stale on the on-site sign path. Before this test, the derivation was
+   * `subtotal + tax(subtotal)` — it never saw discBps at all — and produced $124.47: the customer
+   * was billed $12.45 more than they signed for, on every discounted quote that produced a job
+   * with priced lines.
+   */
+  it("applies the quote's discount when billing from the job's lines", async () => {
+    const discounted: JobSummary = {
+      ...completeJob(),
+      // Stale on purpose: the sign path never syncs it, which is why lines are preferred at all.
+      totalCents: 0,
+      taxCents: 0,
+      taxBps: 825,
+      discBps: 1_000,
+      lines: [
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1", rateCents: 8_999, position: 0 }),
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa2", rateCents: 1_999, position: 1 }),
+        jobLine({ id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa3", rateCents: 500, position: 2 }),
+      ],
+    };
+    const result = await useCase(new FakeJobReader(discounted)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.total).toBe(11_202);
+    expect(result.value.props.discount).toBe(1_150);
+    expect(result.value.props.discBps).toBe(1_000);
+    expect(result.value.props.tax).toBe(854);
+    // The lines still print at their full rates — the discount is a row on the document, not a
+    // rewrite of what was quoted.
+    expect(result.value.props.lines.map((l) => l.amount())).toEqual([8_999, 1_999, 500]);
+  });
+
+  it("records no discount on an undiscounted job, leaving the derivation exactly as it was", async () => {
+    const plain: JobSummary = {
+      ...completeJob(),
+      totalCents: 0,
+      taxCents: 0,
+      taxBps: 875,
+      lines: [jobLine({ quantity: 2, rateCents: 10_000 })],
+    };
+    const result = await useCase(new FakeJobReader(plain)).exec({ orgId: ORG, jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.props.total).toBe(21_750);
+    expect(result.value.props.discount).toBe(0);
+    expect(result.value.props.discBps).toBe(0);
   });
 
   it("credits the source estimate's paid deposit onto the invoice", async () => {

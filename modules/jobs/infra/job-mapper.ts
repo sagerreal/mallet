@@ -64,6 +64,7 @@ export const toDomain = (row: JobRow, visitRows: readonly JobVisitRow[] = []): J
     cancelReason: row.cancelReason,
     total: money(row.totalCents),
     taxBps: row.taxBps,
+    discBps: row.discBps,
     tax: money(row.taxCents),
     notes: row.notes,
     addr: row.addr ?? null,

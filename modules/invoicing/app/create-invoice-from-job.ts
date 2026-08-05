@@ -1,14 +1,13 @@
 import type { OrgId, JobId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
 import { asInvoiceId, money, zeroMoney, notFound, conflict, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
-import { Invoice } from "../domain/invoice";
+import { Invoice, BPS_DENOMINATOR } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { JobReader, JobLineSummary } from "../domain/job-reader";
 import type { EstimateDepositReader } from "../domain/estimate-deposit-reader";
 
 const DEFAULT_TERMS_DAYS = 7;
-const BPS_DENOMINATOR = 10_000;
 
 export interface CreateInvoiceFromJobCommand {
   readonly orgId: OrgId;
@@ -59,18 +58,35 @@ export class CreateInvoiceFromJobUseCase {
 
     // Priced lines are the bill; the snapshot is the fallback. total_cents is written once at job
     // creation and the on-site sign path never syncs it, so when lines exist the snapshot may be
-    // stale (even 0) and the total must come from the lines: subtotal is pre-tax, the split is
-    // computed on top of it and recorded so documents and QuickBooks can itemise.
+    // stale (even 0) and the total must come from the lines.
+    //
+    // THE DISCOUNT IS PART OF THAT DERIVATION, AND OMITTING IT OVERBILLED THE CUSTOMER. Job lines
+    // are pre-tax AND pre-discount while job.totalCents is both applied, so rebuilding the bill
+    // from lines without re-applying discBps charged the full undiscounted sum. Measured on a live
+    // 10% quote: lines $114.98, agreed $112.02, billed $124.47.
+    //
+    // The chain is discount → net → tax → total, each step rounded to whole cents, mirroring
+    // Estimate.totalsFrom (modules/quoting/domain/estimate.ts) exactly. Same order, same rounding,
+    // so an invoice rebuilt from lines lands on the number the customer accepted.
     const subtotal = lines.reduce((sum, line) => sum + line.amount(), 0);
-    const taxFromLines = money(Math.round((subtotal * job.taxBps) / BPS_DENOMINATOR));
+    const discountFromLines = money(Math.round((subtotal * job.discBps) / BPS_DENOMINATOR));
+    const netFromLines = money(subtotal - discountFromLines);
+    const taxFromLines = money(Math.round((netFromLines * job.taxBps) / BPS_DENOMINATOR));
     const totals =
       lines.length > 0
-        ? { total: money(subtotal + taxFromLines), tax: taxFromLines }
+        ? {
+            total: money(netFromLines + taxFromLines),
+            tax: taxFromLines,
+            discount: discountFromLines,
+          }
         : {
             // Carried, not recomputed. The tax is already inside the snapshot total; recording the
             // split lets the document itemise it and QuickBooks separate revenue from tax liability.
+            // No discount is recorded here: the snapshot total already has it applied and the
+            // amount that came off is not recoverable from a single figure.
             total: job.totalCents > 0 ? money(job.totalCents) : zeroMoney,
             tax: job.taxCents > 0 ? money(job.taxCents) : zeroMoney,
+            discount: zeroMoney,
           };
 
     // The deposit the customer already paid on the estimate this job came from. Credited so the
@@ -93,6 +109,10 @@ export class CreateInvoiceFromJobUseCase {
       total: totals.total,
       taxBps: job.taxBps,
       tax: totals.tax,
+      // Recorded so the document can itemise it. The lines print at their full rates, so a total
+      // 10% under their sum with no discount row reads as an arithmetic error to the customer.
+      discBps: job.discBps,
+      discount: totals.discount,
       depositPaid,
       amountPaid: zeroMoney,
       payments: [],
