@@ -28,12 +28,14 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/trpc/client";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
-import { invDue, invPaid } from "@/lib/store/invoice-balance";
+import { invDue } from "@/lib/store/invoice-balance";
 import { useAppStore, useActiveModal } from "@/lib/store/app-store";
 import type { Brand, Invoice, Job, Lead } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-// Single source for the Net-terms/due-date/PO face line (features/invoices).
-import { termsLine } from "@/features/invoices/terms-line";
+// The ONE itemised invoice renderer (shared with /i/<token> and the field close-out) and the ONE
+// store-dollars → document-cents adapter, which also builds the Net/due/PO face line.
+import { InvoiceDocument } from "@/components/shared/invoice-document";
+import { invoiceDocumentView } from "@/features/invoices/invoice-document-view";
 import { ModalLoading } from "./modal-loading";
 
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
@@ -86,49 +88,10 @@ function CustHead({ brand }: { brand: Brand }) {
 //  LINE ROWS + TOTALS (prototype renderCustInv §.custline + deductions/Due)
 // ===========================================================================
 
-function CustLines({ invoice }: { invoice: Invoice }) {
-  return (
-    <>
-      {(invoice.lines ?? []).map((x, i) => (
-        <div key={i} className="custline">
-          <span>
-            {x.d}
-            {(x.q || 1) !== 1 ? ` × ${x.q}` : ""}
-          </span>
-          <b>{fmt$((x.q || 1) * (x.r || 0))}</b>
-        </div>
-      ))}
-    </>
-  );
-}
-
-function CustTotals({ invoice, due, paid }: { invoice: Invoice; due: number; paid: number }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "flex-end",
-        gap: "var(--space-1)",
-        padding: "var(--space-3) 0 var(--space-1)",
-      }}
-    >
-      {invoice.depPaid ? (
-        <div className="muted" style={{ fontSize: "var(--type-base)", color: "var(--green-700)" }}>
-          − deposit you already paid &nbsp; −{fmt$(invoice.depPaid)}
-        </div>
-      ) : null}
-      {paid ? (
-        <div className="muted" style={{ fontSize: "var(--type-base)", color: "var(--green-700)" }}>
-          − paid so far &nbsp; −{fmt$(paid)}
-        </div>
-      ) : null}
-      <div style={{ fontWeight: 900, fontSize: "var(--type-xl)" }}>
-        {due > 0 ? <>Due &nbsp; {fmt$(due)}</> : "Paid in full ✓"}
-      </div>
-    </div>
-  );
-}
+/* The line rows and the totals used to be hand-rolled HERE, a second time — and the two copies
+   had already drifted: this one carried no subtotal/tax split at all, so a taxed bill previewed
+   as a flat total that did not match the customer's real page. Both now render
+   components/shared/invoice-document.tsx. See that file for why it takes cents. */
 
 // ===========================================================================
 //  PAY BLOCK — method chips + amount + save-card (due > 0). CONTROLLED: the
@@ -306,10 +269,10 @@ export function CustInvoiceModalContent() {
 
   const job: Job | undefined =
     invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
-  const paid = invPaid(invoice);
-  // The face line — "Net 30 · due Sep 2 · PO 4471" (features/invoices/terms-line.ts, the same
-  // helper the office sheet and the public pay page use).
-  const face = termsLine({ termsDays: invoice.termsDays, dueAt: invoice.dueAt, poNumber: invoice.poNumber });
+  // The document itself — lines, subtotal/tax, deposit credit, paid-so-far and the balance —
+  // plus its "Net 30 · due Sep 2 · PO 4471" face line, built by the ONE adapter that turns the
+  // store's dollars into the document's cents (features/invoices/invoice-document-view.ts).
+  const doc = invoiceDocumentView(invoice);
 
   // custPayNow (5656): record the payment, then optionally vault the card.
   // The store update re-renders this view; when due hits 0 the settled state shows.
@@ -338,16 +301,20 @@ export function CustInvoiceModalContent() {
           )}{" "}
           — here&rsquo;s the bill, line by line.
         </p>
-        <p className="muted" style={{ marginBottom: "var(--space-2)" }}>
-          Invoice {invoice.num}
-          {face ? ` · ${face}` : ""}
-        </p>
-
-        {/* line rows */}
-        <CustLines invoice={invoice} />
-
-        {/* deductions + Due / Paid-in-full */}
-        <CustTotals invoice={invoice} due={due} paid={paid} />
+        {/* THE document — the same component the customer's real /i/<token> page renders, so a
+            "Preview as customer" that disagrees with the customer's copy is not expressible. */}
+        <InvoiceDocument
+          num={invoice.num}
+          termsFace={doc.termsFace}
+          // The prose above already names the job; repeating it inside the document is noise.
+          title={null}
+          lines={doc.lines}
+          totalCents={doc.totalCents}
+          taxCents={doc.taxCents}
+          depositPaidCents={doc.depositPaidCents}
+          amountPaidCents={doc.amountPaidCents}
+          balanceDueCents={doc.balanceDueCents}
+        />
 
         {/* deferred: photo proof — "Your work, verified" card (needs verify data) */}
 

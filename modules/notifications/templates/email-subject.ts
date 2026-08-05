@@ -7,6 +7,10 @@ export const emailSubjectFor = (kind: string): string => {
       return "Your invoice is ready";
     case "invoice_reminder":
       return "Reminder: your invoice is due";
+    // A settled bill. The default arm ("A message from your service provider") would be a worse
+    // answer than the truth on the one message a customer files and keeps.
+    case "payment_receipt":
+      return "Your receipt";
     case "estimate_sent":
       return "Your estimate is ready";
     case "estimate_reminder":

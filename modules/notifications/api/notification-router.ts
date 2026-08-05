@@ -16,7 +16,8 @@ import {
 import { FollowUpPolicy } from "../domain/follow-up-policy";
 import { DrizzleNotificationRepository } from "../infra/drizzle-notification-repository";
 import { DrizzleReminderTargetReader } from "../infra/drizzle-reminder-target-reader";
-import { LoggingNotificationSender, STUB_EXTERNAL_ID } from "../infra/logging-notification-sender";
+import { LoggingNotificationSender } from "../infra/logging-notification-sender";
+import { assertDelivered } from "./assert-delivered";
 import { SendNotificationUseCase } from "../app/send-notification";
 import { SendInvoiceNotificationUseCase } from "../app/send-invoice-notification";
 import { AdvanceReminderUseCase } from "../app/advance-reminder";
@@ -83,27 +84,8 @@ const publicOrigin = (): string | null => {
 
 const repoFor = (ctx: NotificationRouterCtx) => new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId);
 
-// Interactive sends must surface delivery truth. The use-case records provider failures
-// gracefully (status='failed', returned as ok) so the background reminder path never
-// hard-fails — but a human clicking Send needs the real outcome: an unconfigured channel
-// (logging-stub sentinel) or a provider rejection must throw, so the UI's inline error
-// handling fires instead of showing false success.
-const assertDelivered = (n: Notification, channel: string): Notification => {
-  const p = n.props;
-  if (p.externalId === STUB_EXTERNAL_ID) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: `${channel} delivery is not configured`,
-    });
-  }
-  if (p.status === "failed") {
-    throw new TRPCError({
-      code: "BAD_GATEWAY",
-      message: `the ${channel} provider rejected the send`,
-    });
-  }
-  return n;
-};
+/* assertDelivered — "did this actually leave the building?" — now lives in ./assert-delivered.ts,
+   because the technician's fieldInvoicing.sendDocument needs the identical answer. */
 
 // Gate outbound SMS on the org's 10DLC campaign being active — the same carrier-compliance rule
 // the messaging router's `send` enforces (Task 14). This router has its own SMS-capable

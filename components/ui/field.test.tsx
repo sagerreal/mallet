@@ -140,13 +140,13 @@ describe("Field", () => {
     const { container } = render(
       <Field
         label="Email"
-        hint={<span className="muted">(for a PDF copy)</span>}
+        hint={<span className="muted">(for the emailed invoice link)</span>}
       >
         <Input />
       </Field>,
     );
     const label = container.querySelector("label")!;
-    expect(label.textContent).toBe("Email (for a PDF copy)");
+    expect(label.textContent).toBe("Email (for the emailed invoice link)");
     expect(screen.getByLabelText(/Email/)).toBe(container.querySelector("input"));
   });
 

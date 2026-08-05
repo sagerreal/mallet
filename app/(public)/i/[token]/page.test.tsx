@@ -30,6 +30,7 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
     num: "INV-810",
     title: "Deck rebuild",
     lines: [{ description: "Labor", quantity: 1, rateCents: 100_00 }],
+    payments: [],
     totalCents: 100_00,
     taxCents: 0,
     depositPaidCents: 0,
@@ -105,5 +106,55 @@ describe("PublicInvoicePage — the shared terms-line face line", () => {
     expect(screen.queryByText(/Net/)).toBeNull();
     expect(screen.queryByText(/PO /)).toBeNull();
     expect(screen.queryByText(/due /)).toBeNull();
+  });
+});
+
+describe("PublicInvoicePage — the paid state is a receipt, not just a statement", () => {
+  it("states the DATE, AMOUNT and METHOD of each payment received", async () => {
+    // A page that says "Paid −$100.00" but cannot say when, how much, or by what means is a
+    // statement. These three facts are what make it something the customer can keep.
+    getPublicInvoiceMock.mockResolvedValue(
+      view({
+        status: "paid",
+        amountPaidCents: 100_00,
+        balanceDueCents: 0,
+        payments: [
+          { amountCents: 100_00, method: "cash", receivedAt: new Date("2026-08-05T18:00:00.000Z") },
+        ],
+      }),
+    );
+    await renderPage();
+    expect(screen.getByText("Payments received")).toBeTruthy();
+    expect(screen.getByText(/Aug 5 · Cash/)).toBeTruthy();
+    expect(screen.getByText("Paid — thank you!")).toBeTruthy();
+  });
+
+  it("lists a part-payment too, so a partly-settled bill shows what already landed", async () => {
+    getPublicInvoiceMock.mockResolvedValue(
+      view({
+        status: "partial",
+        amountPaidCents: 40_00,
+        balanceDueCents: 60_00,
+        payments: [
+          { amountCents: 40_00, method: "check", receivedAt: new Date("2026-08-05T18:00:00.000Z") },
+        ],
+      }),
+    );
+    await renderPage();
+    expect(screen.getByText(/Aug 5 · Check/)).toBeTruthy();
+    expect(screen.getByText("Balance due")).toBeTruthy();
+  });
+
+  it("shows no payments block on an unpaid bill", async () => {
+    getPublicInvoiceMock.mockResolvedValue(view());
+    await renderPage();
+    expect(screen.queryByText("Payments received")).toBeNull();
+  });
+
+  it("states NO balance on a canceled invoice", async () => {
+    getPublicInvoiceMock.mockResolvedValue(view({ status: "void" }));
+    await renderPage();
+    expect(screen.queryByText("Balance due")).toBeNull();
+    expect(screen.getByText(/This invoice was canceled/)).toBeTruthy();
   });
 });

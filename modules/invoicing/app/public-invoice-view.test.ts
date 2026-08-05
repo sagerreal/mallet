@@ -3,6 +3,7 @@ import {
   asOrgId,
   asLeadId,
   asInvoiceId,
+  asUserId,
   money,
   zeroMoney,
   ok,
@@ -17,7 +18,7 @@ import {
 } from "@mallet/shared/types";
 import { Invoice } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
-import type { Payment } from "../domain/payment";
+import { Payment, type PaymentMethod } from "../domain/payment";
 import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
 import type { PaymentLinkGateway } from "../domain/payment-link-gateway";
 import type { ConnectTargetReader } from "../domain/connect-target-reader";
@@ -36,6 +37,22 @@ const line = (description: string, quantity: number, rateCents: number, position
     rate: money(rateCents),
     cost: zeroMoney,
     position,
+  });
+  if (!isOk(r)) throw new Error(r.error.message);
+  return r.value;
+};
+
+let paymentSeq = 0;
+const payment = (amountCents: number, method: PaymentMethod, receivedAt: string): Payment => {
+  paymentSeq += 1;
+  const r = Payment.create({
+    id: `55555555-5555-4555-8555-55555555555${paymentSeq % 10}`,
+    amount: money(amountCents),
+    method,
+    idempotencyKey: `idem-key-${paymentSeq}-abcdefgh`,
+    externalId: null,
+    recordedByUserId: asUserId("66666666-6666-4666-8666-666666666666"),
+    receivedAt: new Date(receivedAt),
   });
   if (!isOk(r)) throw new Error(r.error.message);
   return r.value;
@@ -108,6 +125,46 @@ describe("toPublicInvoiceView", () => {
     const shuffled = invoice({ lines: [line("Second", 1, 200, 1), line("First", 1, 100, 0)] });
     const view = toPublicInvoiceView(shuffled, "Org", true);
     expect(view.lines.map((l) => l.description)).toEqual(["First", "Second"]);
+  });
+
+  it("projects each payment's amount, method and date — what makes the page a RECEIPT", () => {
+    // The aggregate amountPaidCents was always here; the payment ROWS were not, so the page could
+    // not state when the money arrived, how much of it, or by what means.
+    const view = toPublicInvoiceView(
+      invoice({ payments: [payment(6_000, "cash", "2026-06-03T10:00:00Z")] }),
+      "Org",
+      true,
+    );
+    expect(view.payments).toEqual([
+      { amountCents: 6_000, method: "cash", receivedAt: new Date("2026-06-03T10:00:00Z") },
+    ]);
+  });
+
+  it("orders payments OLDEST FIRST — a receipt reads in the order the money arrived", () => {
+    const view = toPublicInvoiceView(
+      invoice({
+        payments: [
+          payment(2_000, "card", "2026-06-09T10:00:00Z"),
+          payment(1_000, "check", "2026-06-02T10:00:00Z"),
+        ],
+      }),
+      "Org",
+      true,
+    );
+    expect(view.payments.map((p) => p.amountCents)).toEqual([1_000, 2_000]);
+  });
+
+  it("projects NO reconciliation data — the acting user and the ledger keys stay in the shop", () => {
+    const view = toPublicInvoiceView(
+      invoice({ payments: [payment(6_000, "cash", "2026-06-03T10:00:00Z")] }),
+      "Org",
+      true,
+    );
+    expect(Object.keys(view.payments[0] ?? {}).sort()).toEqual(["amountCents", "method", "receivedAt"]);
+  });
+
+  it("has an empty payments list when nothing has been collected", () => {
+    expect(toPublicInvoiceView(invoice(), "Org", true).payments).toEqual([]);
   });
 });
 

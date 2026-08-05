@@ -8,6 +8,18 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import type { Principal } from "@mallet/identity";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { DrizzleSettingsRepository } from "@mallet/settings";
+import { isSmsA2pActive } from "@mallet/a2p";
+import {
+  NOTIFICATION_CHANNELS,
+  DrizzleNotificationRepository,
+  DrizzleReminderTargetReader,
+  LoggingNotificationSender,
+  SendNotificationUseCase,
+  SendInvoiceDocumentUseCase,
+  assertDelivered,
+  type NotificationChannel,
+} from "@mallet/notifications";
+import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { Invoice } from "../domain/invoice";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
@@ -31,6 +43,18 @@ import {
 } from "./field-invoice-guard";
 
 const methodEnum = z.enum(PAYMENT_METHODS as unknown as [PaymentMethod, ...PaymentMethod[]]);
+const channelEnum = z.enum(
+  NOTIFICATION_CHANNELS as unknown as [NotificationChannel, ...NotificationChannel[]],
+);
+
+// The canonical origin for the customer's pay/receipt link — memoized exactly as the notification
+// router's does, because loadConfig re-parses the whole schema per call. `undefined` = not resolved
+// yet; a resolved `null` (unconfigured deployment) is cached too.
+let cachedOrigin: string | null | undefined;
+const publicOrigin = (): string | null => {
+  if (cachedOrigin === undefined) cachedOrigin = resolvePublicAppOrigin(loadConfig());
+  return cachedOrigin;
+};
 
 const invoiceIdInput = z.object({ invoiceId: z.string().uuid() });
 const jobIdInput = z.object({
@@ -190,6 +214,75 @@ export const createFieldInvoiceRouter = () =>
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new SendInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock);
         return present(orThrow(await useCase.exec({ invoiceId })), ctx);
+      }),
+
+    /**
+     * Hand the customer their copy — the bill while money is owed, the RECEIPT once it is not.
+     *
+     * THE GAP THIS CLOSES. On a cash-at-the-door close-out the customer used to receive nothing at
+     * all: no document on screen, no text, no email. `send` above flips draft -> sent and mints the
+     * pay-link token but notifies nobody, and the one endpoint that DOES notify
+     * (`v1.notifications.sendInvoiceReminder`) is ownerOrOffice — so the person actually standing
+     * in front of the customer had no way to give them anything.
+     *
+     * WHY A TECHNICIAN MAY DO THIS AND STILL NOT SEE THE TOKEN. The send happens entirely
+     * server-side: the destination is read from the lead's own row, the link is composed from the
+     * canonical origin plus the invoice's own token, and neither ever crosses to the device. That
+     * is what lets this work in a `techSeesPrice: false` shop, where the tech cannot render the
+     * itemised document at all — they can still put it in the customer's hands.
+     *
+     * NOTHING ABOUT THE MESSAGE IS THE CALLER'S CHOICE. No recipient, no channel, no copy — see
+     * SendInvoiceDocumentUseCase. The input is an invoice id and nothing else.
+     *
+     * IT SENDS THE INVOICE FIRST when it is still a draft, because a draft carries no public token
+     * and a document message with no document in it is not worth sending. Deliberate and not a
+     * side effect: this is the same ordering `approvePayment` and the card step already use, and
+     * it is what the office's own Send button does. It therefore also emits `invoice.sent` (which
+     * pushes to QuickBooks) exactly once, as any first send does.
+     *
+     * NOT automatic on payment. Owen's rule: give the option to send, do not send for them.
+     */
+    sendDocument: anyRole
+      .input(invoiceIdInput)
+      .output(z.object({ channel: channelEnum }))
+      .mutation(async ({ ctx, input }) => {
+        const invoiceId = asInvoiceId(input.invoiceId);
+        const invoice = await loadInScope(invoiceId, ctx);
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+
+        // A draft has no public token yet, so there would be no document to link to.
+        if (invoice.props.status === "draft") {
+          orThrow(await new SendInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ invoiceId }));
+        }
+
+        // Whether this shop may text at all right now. Passed in rather than gated on: an org
+        // without an active 10DLC campaign falls back to EMAIL here instead of failing, which is
+        // the difference between "the customer got their receipt" and "nothing happened".
+        const smsAllowed = await isSmsA2pActive(ctx.tx, ctx.principal.orgId);
+
+        const send = new SendNotificationUseCase(
+          new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId),
+          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          ctx.deps.bus,
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const useCase = new SendInvoiceDocumentUseCase(
+          new DrizzleReminderTargetReader(ctx.tx, ctx.principal.orgId),
+          send,
+          ctx.deps.ids,
+          publicOrigin(),
+        );
+        const notification = orThrow(
+          await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: input.invoiceId, smsAllowed }),
+        );
+        // A human just tapped Send. An unconfigured channel or a provider rejection must throw so
+        // the close-out can say so and offer a retry — never a silent "Sent".
+        const channel = notification.props.channel;
+        assertDelivered(notification, channel);
+        // The CHANNEL and nothing else: enough for the tech to say "check your texts", with no
+        // contact detail, message body or notification id crossing back to the device.
+        return { channel };
       }),
 
     /**

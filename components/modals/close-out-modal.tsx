@@ -31,6 +31,7 @@ import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
 import { CardCheckoutStep } from "./close-out-card-step";
+import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
 import { readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { invalidateLists } from "@/lib/trpc/list-cache";
@@ -726,10 +727,12 @@ function PayBlock({
             flexWrap: "wrap",
           }}
         >
-          {/* "Text receipt" was a dead button (no receipt-send endpoint exists yet).
-              Removed per the no-dead-buttons rule; the paid invoice already lands in
-              the customer's SMS thread. Re-add here wired to a real send when a
-              receipt-send primitive exists. */}
+          {/* The receipt send, re-wired. "Text receipt" was deleted from here as a dead button
+              because no receipt-send endpoint existed; `v1.fieldInvoicing.sendDocument` is that
+              endpoint, and once the balance is settled it sends the RECEIPT rather than the bill
+              (the server picks the copy from the invoice's own balance, not from this button).
+              Still an option, never automatic — nothing sends itself on payment. */}
+          <SendDocumentButton invoice={invoice} />
           <button className="btn primary" onClick={onFinish}>
             Done
           </button>
@@ -1435,6 +1438,11 @@ export function CloseOutModalContent() {
 
       {/* Due summary card — the money side. */}
       <DueCard invoice={invoice} />
+
+      {/* The customer's copy: show the itemised document and turn the phone around, or send it
+          to them. Both optional, neither automatic — see close-out-document.tsx. Before this the
+          customer received NOTHING on a cash-at-the-door close-out. */}
+      <CloseOutDocument invoice={invoice} />
 
       {/* Pay block — its steps carry their own buttons (the card checkout, Record,
           Done), so while it is open it renders in-flow and the foot is skipped. */}
