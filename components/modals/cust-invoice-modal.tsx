@@ -296,8 +296,13 @@ export function CustInvoiceModalContent() {
             them with a control that actually transacts. See the FIXED note at the top of this
             file for the bug this replaced. */}
         <div className="banner">
-          Preview only — this is what {brand.name} sends the customer. It doesn&rsquo;t take real
-          payments. To charge a card or record one, use the invoice this preview was opened from.
+          {/* {" "} is load-bearing, not formatting noise. The text chunk after an expression is
+              TRIMMED by JSX when that chunk spans more than one line, so writing "{brand.name} sends"
+              across a wrap silently rendered "E2E Plumbingsends" to the shop. Keep the explicit
+              space, or keep the whole sentence on one line. */}
+          Preview only — this is what {brand.name}{" "}
+          sends the customer. It doesn&rsquo;t take real payments. To charge a card or record one,
+          use the invoice this preview was opened from.
         </div>
 
         {/* intro + invoice number */}
