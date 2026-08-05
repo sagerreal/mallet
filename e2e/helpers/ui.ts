@@ -6,8 +6,24 @@
 
 import type { Page, Locator } from "@playwright/test";
 
-export const OWNER = { email: "owner@e2e.mallet.test", password: "e2e-password-1" };
-export const TECH = { email: "tech@e2e.mallet.test", password: "e2e-password-1" };
+// Fixture credentials for the shared E2E org, environment-overridable so a rotation is a config
+// change rather than a code change — and so the live password never lands in the repository.
+//
+// WHY THIS EXISTS: owner@e2e.mallet.test was reset through the Supabase admin API on 2026-08-04
+// during a manual money-flow walkthrough. The literal below went stale that day and every visual
+// and a11y run has died at the login step since, with "Email or password is incorrect" — the
+// pre-merge gate for pixels and axe silently down, in a way that reads like a broken app.
+//
+// To run the nets: export E2E_OWNER_PASSWORD with the current value, or reset the account back to
+// the literal below via the admin API with SUPABASE_SERVICE_ROLE_KEY.
+export const OWNER = {
+  email: process.env.E2E_OWNER_EMAIL ?? "owner@e2e.mallet.test",
+  password: process.env.E2E_OWNER_PASSWORD ?? "e2e-password-1",
+};
+export const TECH = {
+  email: process.env.E2E_TECH_EMAIL ?? "tech@e2e.mallet.test",
+  password: process.env.E2E_TECH_PASSWORD ?? "e2e-password-1",
+};
 
 /** The instant every visual run pretends it is: 2025-07-15T12:00:00Z. */
 const FROZEN_MS = 1_752_580_800_000;
