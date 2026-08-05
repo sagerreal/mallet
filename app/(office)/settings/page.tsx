@@ -21,6 +21,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { BrandingCard } from "./branding-card";
+import { BusinessIdentityCard } from "./business-identity-card";
 import { CallbackNumberCard } from "./callback-number-card";
 import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
 import { WebsiteFormCard } from "./website-form-card";
@@ -58,6 +59,10 @@ function SecWorkspace() {
   return (
     <>
       <BrandingCard />
+      {/* Directly under Branding: both answer "what does the customer see". Branding is how the
+          shop LOOKS on a document, this is who it IS — and the two are edited together the once,
+          when a shop sets itself up. */}
+      <BusinessIdentityCard />
       <A2pRegistrationCard />
       <TimezoneCard />
     </>

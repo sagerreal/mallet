@@ -84,10 +84,10 @@ describe("OrgSettings.patchBusiness", () => {
     if (isOk(r)) expect(r.value.props.licenseNumber).toBeNull();
   });
 
-  it("accepts licence numbers of any shape — no format validation", () => {
+  it("accepts license numbers of any shape — no format validation", () => {
     // Texas "M-12345", California "C36-1029384", Florida "CFC1428901", a bare number, a
-    // multi-class string. A regex here would reject a valid licence and leave a shop unable
-    // to put its own licence on its own bill.
+    // multi-class string. A regex here would reject a valid license and leave a shop unable
+    // to put its own license on its own bill.
     const shapes = ["M-12345", "C36-1029384", "CFC1428901", "40218", "MP 1234 / RMP 5678"];
     for (const license of shapes) {
       const r = make().patchBusiness({ license }, NOW);

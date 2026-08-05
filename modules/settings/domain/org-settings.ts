@@ -174,15 +174,15 @@ export interface OrgSettingsProps {
   // the fields they resemble: bizAddress is not serviceOriginAddress (a routing origin, often
   // a yard) and bizPhone is not orgs.twilioNumber (telephony config, not the number on a bill).
   // Business NAME is brandName/orgs.name and website is brandSite — neither is duplicated.
-  // All free text with NO format validation: a licence number's shape varies by state and a
-  // wrong regex would reject a valid licence. Trimmed, blank → null (see create).
+  // All free text with NO format validation: a license number's shape varies by state and a
+  // wrong regex would reject a valid license. Trimmed, blank → null (see create).
   /** Street address printed on customer documents. Nullable. */
   readonly bizAddress: string | null;
   /** The number a customer should call. Nullable. */
   readonly bizPhone: string | null;
   /** The address a customer should email about a bill. Nullable. */
   readonly bizEmail: string | null;
-  /** Contractor/trade licence exactly as the shop writes it. Nullable. */
+  /** Contractor/trade license exactly as the shop writes it. Nullable. */
   readonly licenseNumber: string | null;
   // --- Stripe Connect (Express) onboarding state (PR1) ---
   /** The shop's Stripe connected account id (acct_...). Null until onboarding begins. */
@@ -478,10 +478,10 @@ export class OrgSettings {
    * Patch the business-identity subset — what gets PRINTED on a customer's invoice.
    *
    * Same contract as patchBrand: undefined = keep current, explicit null clears the field.
-   * All four are free text with NO format validation. A contractor licence number's shape
-   * varies by state (and by licence class within a state), a phone may legitimately carry an
+   * All four are free text with NO format validation. A contractor license number's shape
+   * varies by state (and by license class within a state), a phone may legitimately carry an
    * extension, and an address is an address — a regex here would reject valid values and leave
-   * a shop unable to put its own licence on its own bill. create() trims and normalises blank
+   * a shop unable to put its own license on its own bill. create() trims and normalises blank
    * to null; nothing else is enforced.
    */
   patchBusiness(

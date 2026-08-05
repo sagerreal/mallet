@@ -29,7 +29,7 @@
  * WHAT MAKES IT A DOCUMENT rather than a pay page: three OPTIONAL prop groups — `business` (who
  * billed you), `dates` (when the work happened and when the bill was raised), `parties` (who was
  * billed and where). For a long time this printed line items and a Pay button and nothing else:
- * no company address, no phone, no licence, no customer name, no service address, no invoice date.
+ * no company address, no phone, no license, no customer name, no service address, no invoice date.
  * The three groups live HERE rather than on the public page so the shop's copy and the customer's
  * copy cannot drift, which is the reason this component was extracted in the first place.
  *
@@ -61,7 +61,7 @@ export interface InvoiceDocumentPayment {
  * WHO billed the customer — the block at the very top of the document.
  *
  * Every field is optional and an absent one prints NOTHING. That is the rule, not a nicety: a
- * document that prints "Licence:" with nothing after it reads as a bug, and a customer who spots
+ * document that prints "License:" with nothing after it reads as a bug, and a customer who spots
  * one stops trusting the rest of the page.
  *
  * `name` is optional ON PURPOSE and carries no boolean flag. The two surfaces that sit under a
@@ -81,7 +81,7 @@ export interface InvoiceDocumentBusiness {
   readonly email?: string | null;
   /** Website, as the shop writes it. */
   readonly site?: string | null;
-  /** Contractor/trade licence. Rendered as "Lic. <value>" — the shop's own string, unparsed. */
+  /** Contractor/trade license. Rendered as "Lic. <value>" — the shop's own string, unparsed. */
   readonly license?: string | null;
 }
 
@@ -187,7 +187,7 @@ const present = (v: string | null | undefined): string | null => {
 function BusinessBlock({ business }: { business: InvoiceDocumentBusiness }) {
   const name = present(business.name);
   const license = present(business.license);
-  // Address / phone / email / site read as one contact paragraph; the licence sits under it
+  // Address / phone / email / site read as one contact paragraph; the license sits under it
   // because it is a credential, not a way to reach anyone.
   const contact = [business.address, business.phone, business.email, business.site]
     .map(present)
