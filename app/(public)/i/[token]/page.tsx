@@ -244,10 +244,7 @@ export default async function PublicInvoicePage({
           {/* Keep it. The browser's own dialog is where "Save as PDF" lives on every desktop OS
               and on iOS, so this one call covers both verbs. Anchored in-flow under the bill, not
               floating over it. */}
-          <div
-            className="noprint"
-            style={{ display: "flex", justifyContent: "center", marginTop: "var(--space-4)" }}
-          >
+          <div className="invactions noprint">
             <PrintInvoiceButton />
           </div>
 

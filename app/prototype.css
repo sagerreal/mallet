@@ -1434,6 +1434,10 @@
      refuses for border-radius. Values are the ones the page carried inline (16px == --radius-lg). */
   .invpage{min-height:100vh;background:var(--bg);display:flex;flex-direction:column;align-items:center;padding:0 0 var(--space-10)}
   .invcard{width:100%;max-width:520px;background:var(--card);border:1px solid var(--line);border-radius:0 0 var(--radius-lg) var(--radius-lg);overflow:hidden;box-shadow:var(--shadow)}
+  /* The row the Print control sits in. A CLASS and not an inline style because `.noprint` has to
+     be able to hide it, and `display:flex` written inline beats `display:none` from any
+     stylesheet — which is exactly how the print button first ended up ON the printed page. */
+  .invactions{display:flex;justify-content:center;margin-top:var(--space-4)}
 
   /* ---------- customer quote page ---------- */
   .custmodal{max-width:470px;padding:0;overflow:hidden}
@@ -2645,7 +2649,9 @@
        separation from the body, the monogram's shape, and the status pill's boundary. */
     .invcard .custhead{border-bottom:1px solid #000}
     .invcard .custlogo{border:1px solid #000}
-    .invcard .pill{border:1px solid #000}
+    /* Tone classes (.pill.amber, .pill.green…) are two-class selectors, so they outrank
+       `.invcard *`. This ties them and wins on order. */
+    .invcard .pill{border:1px solid #000;color:#000;background:#fff}
     .invcard .custline{border-bottom-color:#999}
     /* The banner and the canceled note are bordered boxes once their fill is gone. */
     .invcard .deltabanner,.invcard .reqcard{border:1px solid #000}
