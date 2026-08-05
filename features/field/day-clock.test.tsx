@@ -22,6 +22,9 @@ let openQuery: {
   isFetching: boolean;
   refetch: () => void;
 };
+// The DAY, from v1.timesheets.list — the same query My hours reads, and the reason the card can
+// still show the day's total after End day has closed the running row.
+let listQuery: { data?: { items: unknown[] } };
 let lastTap: { args: TapArgs; callbacks: TapCallbacks } | null = null;
 
 const mutate = vi.fn((args: TapArgs, callbacks: TapCallbacks) => {
@@ -36,6 +39,7 @@ vi.mock("@/lib/trpc/client", () => ({
     v1: {
       timesheets: {
         open: { useQuery: () => openQuery },
+        list: { useQuery: () => listQuery },
         clockTap: { useMutation: () => ({ mutate }) },
       },
     },
@@ -52,6 +56,12 @@ vi.mock("@/lib/trpc/client", () => ({
 
 vi.mock("@/lib/store/write-error", () => ({
   reportWriteError: (action: string, error: unknown) => reportWriteError(action, error),
+}));
+
+// The day panel's list read is scoped to the caller — an unscoped fetch would total somebody
+// else's day into an owner-operator's.
+vi.mock("@/features/identity/hooks", () => ({
+  useMe: () => ({ data: { userId: "user-1", role: "tech" } }),
 }));
 
 import { DayClock } from "./day-clock";
@@ -82,11 +92,32 @@ function loaded(open: unknown) {
   return { data: { open }, isError: false, isFetched: true, isFetching: false, refetch: vi.fn() };
 }
 
+/** One timesheet row as v1.timesheets.list returns it. */
+function row(over: Record<string, unknown> = {}) {
+  return { ...serverEntry(), endTime: "08:30", running: false, ...over };
+}
+
+/**
+ * A normal morning: shop, a fifteen-minute break, then a job still running at 9:05.
+ * Worked = 0:48 + 0:20 = 1:08. Break = 0:15. Deliberately NOT in start order — the server sorts
+ * a day by (work_date, id), i.e. UUID order, and the panel has to fix that itself.
+ */
+function morning() {
+  return [
+    row({ id: "c", jobId: "job-1", kind: "job", startTime: "08:45", endTime: null, running: true }),
+    row({ id: "a", kind: "shop", startTime: "07:42", endTime: "08:30" }),
+    row({ id: "b", kind: "break", startTime: "08:30", endTime: "08:45" }),
+  ];
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   // Local wall time 9:05am — the optimistic label is built from the device clock.
   vi.setSystemTime(new Date(2026, 6, 1, 9, 5));
   openQuery = loaded(null);
+  // No rows by default: the head then carries no total and offers no expander, which is the
+  // honest state before the first punch of the day.
+  listQuery = { data: { items: [] } };
   lastTap = null;
   mutate.mockClear();
   setOpenData.mockClear();
@@ -121,27 +152,31 @@ describe("DayClock — the three states", () => {
     expect(screen.queryByRole("button", { name: "Start day" })).toBeNull();
   });
 
-  it("shows the running total, and advances it as the clock runs", () => {
-    openQuery = loaded(serverEntry());
+  // THE FIGURE IS THE DAY, NOT THE STRETCH. It used to be the length of the current segment,
+  // which resets on every break and every job start — at 4pm after a normal day it read 0:50.
+  it("shows the DAY's worked total, and advances it as the clock runs", () => {
+    openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "08:45" }));
+    listQuery = { data: { items: morning() } };
     render(<DayClock />);
-    // 7:42a → 9:05a.
-    expect(screen.getByText("1:23")).toBeTruthy();
+    // shop 0:48 + the running job 0:20. The unpaid break is not in it.
+    expect(screen.getByText("1:08")).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(screen.getByText("1:24")).toBeTruthy();
+    expect(screen.getByText("1:09")).toBeTruthy();
   });
 
-  it("keeps the running total out of the visual baseline", () => {
-    openQuery = loaded(serverEntry());
+  it("keeps the day total out of the visual baseline", () => {
+    listQuery = { data: { items: morning() } };
     const { container } = render(<DayClock />);
     expect(container.querySelector(".clock-elapsed")?.hasAttribute("data-dynamic")).toBe(true);
   });
 
-  it("shows no total when nobody is on the clock", () => {
+  it("shows no total, and no expander, before the first punch of the day", () => {
     openQuery = loaded(null);
     const { container } = render(<DayClock />);
     expect(container.querySelector(".clock-elapsed")).toBeNull();
+    expect(screen.queryByRole("button", { expanded: false })).toBeNull();
   });
 
   it("on break: names the break start and offers only the way out", () => {
@@ -268,5 +303,104 @@ describe("DayClock — load states", () => {
     expect(screen.queryByText("Off the clock")).toBeNull();
     expect(screen.queryByRole("button", { name: "Start day" })).toBeNull();
     expect(screen.getByRole("status")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The day panel — the card, tapped open. It reads v1.timesheets.list, NOT
+// v1.timesheets.open, so it survives End day.
+// ---------------------------------------------------------------------------
+
+const JOBS = [{ id: "job-1", num: "JOB-2541", title: "Water heater repair", customerName: "Delgado" }];
+
+describe("DayClock — today's hours, expanded in place", () => {
+  beforeEach(() => {
+    openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "08:45" }));
+    listQuery = { data: { items: morning() } };
+  });
+
+  const openPanel = () => fireEvent.click(screen.getByRole("button", { expanded: false }));
+
+  it("stays shut until it is asked for, and then pushes the agenda down in flow", () => {
+    const { container } = render(<DayClock jobs={JOBS} />);
+    expect(container.querySelector(".clock-day")).toBeNull();
+    openPanel();
+    expect(container.querySelector(".clock-day")).not.toBeNull();
+    expect(screen.getByRole("button", { expanded: true })).toBeTruthy();
+  });
+
+  it("names when the day began", () => {
+    render(<DayClock jobs={JOBS} />);
+    openPanel();
+    expect(screen.getByText("Day started 7:42a")).toBeTruthy();
+  });
+
+  // THE SERVER ORDERS A DAY BY (work_date, id) — UUID order. Unsorted, this reads as nonsense.
+  it("lists the day in the order it happened, not the order the rows came back", () => {
+    const { container } = render(<DayClock jobs={JOBS} />);
+    openPanel();
+    const spans = [...container.querySelectorAll(".clock-seg-t")].map((n) => n.textContent);
+    expect(spans).toEqual(["7:42a – 8:30a", "8:30a – 8:45a", "8:45a –"]);
+  });
+
+  it("names a job segment from the agenda instead of calling it 'Job'", () => {
+    render(<DayClock jobs={JOBS} />);
+    openPanel();
+    expect(screen.getByText("#JOB-2541 Delgado — now")).toBeTruthy();
+  });
+
+  it("names a job that is no longer on the agenda plainly, never with the wrong name", () => {
+    render(<DayClock jobs={[]} />);
+    openPanel();
+    expect(screen.getByText("Job — now")).toBeTruthy();
+  });
+
+  // Breaks are separate rows with their own start and end, and break is the only unpaid kind. A
+  // single "0:15 of break" would hide a lunch left running, which is how this record goes wrong.
+  it("lists breaks individually and totals them apart from the paid time", () => {
+    const { container } = render(<DayClock jobs={JOBS} />);
+    openPanel();
+    const labels = [...container.querySelectorAll(".clock-seg-l")].map((n) => n.textContent);
+    expect(labels).toContain("Break");
+    // Twice, and both are right: the break's own row and the day's unpaid total.
+    expect(screen.getByText("Break (unpaid)")).toBeTruthy();
+    expect(screen.getAllByText("0:15")).toHaveLength(2);
+  });
+
+  // entryHours returns 0 for a row with no endTime — right for a timesheet, wrong for a man
+  // looking at his own day at 9am. A naive sum omits the minutes he is standing in.
+  it("counts the RUNNING stretch, which sums to nothing on its own", () => {
+    render(<DayClock jobs={JOBS} />);
+    openPanel();
+    expect(screen.getByText("0:20")).toBeTruthy();
+    expect(screen.getAllByText("1:08").length).toBeGreaterThan(0);
+  });
+
+  it("marks only the live figures dynamic, so the settled ones still guard the baseline", () => {
+    const { container } = render(<DayClock jobs={JOBS} />);
+    openPanel();
+    const settled = [...container.querySelectorAll(".clock-seg")].filter(
+      (n) => n.querySelector(".clock-seg-t")?.textContent === "7:42a – 8:30a",
+    )[0];
+    expect(settled?.querySelector(".clock-seg-d")?.hasAttribute("data-dynamic")).toBe(false);
+  });
+
+  // THE WHOLE REASON IT READS `list`. After End day, `open` is null and the card would otherwise
+  // revert to "Off the clock / Start day" and know nothing about the day it just finished.
+  it("still shows the finished day after End day, when nothing is running", () => {
+    openQuery = loaded(null);
+    listQuery = {
+      data: {
+        items: [
+          row({ id: "a", kind: "shop", startTime: "07:42", endTime: "08:30" }),
+          row({ id: "b", kind: "break", startTime: "08:30", endTime: "08:45" }),
+        ],
+      },
+    };
+    render(<DayClock jobs={JOBS} />);
+    expect(screen.getByText("Off the clock")).toBeTruthy();
+    openPanel();
+    expect(screen.getByText("Worked today")).toBeTruthy();
+    expect(screen.getAllByText("0:48").length).toBeGreaterThan(0);
   });
 });

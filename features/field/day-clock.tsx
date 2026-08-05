@@ -15,7 +15,7 @@
  */
 
 import { haptics } from "@/lib/haptics";
-import { useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { api } from "@/lib/trpc/client";
 import { todayISO } from "@/lib/clock";
 import { useTickingNow } from "@/lib/use-ticking-now";
@@ -23,6 +23,9 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { reportWriteError } from "@/lib/store/write-error";
+import { useMe } from "@/features/identity/hooks";
+import { myHoursListInput, MY_HOURS_STALE_MS } from "./my-hours-input";
+import { daySummary, hoursClock, type DaySummary } from "./day-segments";
 import {
   dayClockView,
   optimisticView,
@@ -30,8 +33,25 @@ import {
   WRITE_ACTION_FOR_TAP,
   type DayClockTap,
   type DayClockView,
-  elapsedLabel,
 } from "./day-clock-view";
+
+/**
+ * Enough of a My day job to NAME a job segment — "#JOB-2541 Delgado" instead of "Job". Passed in
+ * rather than fetched: the page already holds today's agenda, and a card that re-queried for
+ * labels would be asking the same server the same question twice.
+ */
+export interface DayClockJob {
+  readonly id: string;
+  readonly num: string;
+  readonly title: string | null;
+  readonly customerName: string | null;
+}
+
+interface DayClockProps {
+  /** Today's assigned jobs, for labelling job segments. A segment on a job that is no longer on
+   *  the agenda (reassigned) simply reads "Job" — never a wrong name. */
+  jobs?: readonly DayClockJob[];
+}
 
 /**
  * How long the running entry is trusted without a refetch. Short, because the clock can also be
@@ -57,6 +77,92 @@ function ClockCard({ children }: { children: ReactNode }) {
  * predicted entry would need a fabricated row id — and a fake id in the cache is the sort of thing
  * that eventually gets sent somewhere.
  */
+/**
+ * Today's segments, off the SAME query My hours reads — `v1.timesheets.list`, not
+ * `v1.timesheets.open`.
+ *
+ * That choice is load-bearing. After End day, `open` returns null and this card knows nothing
+ * about the day it just finished — it reverts to "Off the clock / Start day" at exactly the
+ * moment somebody wants to check what they worked. `list` still holds every finished row, and
+ * the End-day tap already invalidates it.
+ *
+ * NO EXTRA REQUEST. The field layout already fires this exact input via `myHoursListInput`
+ * (features/field/field-jobs-hydrator.tsx), at this exact staleTime, so the two dedupe into one
+ * fetch. The prefetch is one-shot per mount and only WARMS the cache; this useQuery is what keeps
+ * the card subscribed, so a clockTap invalidation re-renders it.
+ *
+ * Disabled until `me` resolves, for the reason My hours is: an unscoped first fetch would serve
+ * an owner-operator the whole org's rows and quietly total somebody else's day into theirs.
+ */
+function useDaySummary(jobs: readonly DayClockJob[], now: Date): DaySummary | null {
+  const me = useMe();
+  const myUserId = me.data?.userId;
+  const list = api.v1.timesheets.list.useQuery(
+    myHoursListInput(myUserId ?? ""),
+    { staleTime: MY_HOURS_STALE_MS, refetchOnWindowFocus: false, enabled: Boolean(myUserId) },
+  );
+
+  const jobLabel = useCallback(
+    (jobId: string): string | null => {
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job) return null;
+      const who = job.customerName ?? job.title;
+      return who ? `#${job.num} ${who}` : `#${job.num}`;
+    },
+    [jobs],
+  );
+
+  const items = list.data?.items;
+  return useMemo(
+    () => (items ? daySummary(items, todayISO(), now, jobLabel) : null),
+    [items, now, jobLabel],
+  );
+}
+
+/**
+ * The day, laid out: where it began, every stretch in the order it happened, and the two totals.
+ *
+ * Breaks are listed individually because that is how they are stored — an ordinary row with
+ * `kind='break'` and its own start and end — and because "0:30 of break" hides a lunch left
+ * running, which is the commonest way this record goes wrong and the only unpaid kind.
+ */
+function DaySegments({ day }: { day: DaySummary }) {
+  return (
+    <div className="clock-day">
+      {day.dayStart ? (
+        <div className="clock-daystart">Day started {day.dayStart}</div>
+      ) : null}
+      <ul className="clock-segs">
+        {day.segments.map((s) => (
+          <li key={s.id} className={s.kind === "break" ? "clock-seg brk" : "clock-seg"}>
+            <span className="clock-seg-l">{s.running ? `${s.label} — now` : s.label}</span>
+            <span className="clock-seg-t">{s.span}</span>
+            {/* The running stretch grows; everything else is settled. Only the live one is masked
+                out of the visual baseline. */}
+            <span className="clock-seg-d" {...(s.running ? { "data-dynamic": true } : {})}>
+              {hoursClock(s.hours)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      <div className="clock-tot">
+        <span>Worked today</span>
+        <span className="clock-seg-d" data-dynamic>
+          {hoursClock(day.workedHours)}
+        </span>
+      </div>
+      {day.breakHours > 0 ? (
+        <div className="clock-tot brk">
+          <span>Break (unpaid)</span>
+          <span className="clock-seg-d" data-dynamic>
+            {hoursClock(day.breakHours)}
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function useClockTap() {
   const utils = api.useUtils();
   const [predicted, setPredicted] = useState<DayClockView | null>(null);
@@ -96,12 +202,59 @@ function useClockTap() {
   return { predicted, tap };
 }
 
-export function DayClock() {
+/**
+ * The state sentence and the day's total — "On the clock  since 7:42a  1:08".
+ *
+ * THE BIG FIGURE IS THE DAY, NOT THE CURRENT STRETCH. It used to be `elapsedLabel(open)`, the
+ * length of the segment that happened to be running, which resets on every break and on every job
+ * start: at 4pm after a normal day it read 0:50. It is also the number the expanded panel totals
+ * as "Worked today", and two figures on one card that disagree are worse than one being absent —
+ * which is why it stays absent until the day's rows land rather than falling back to the old one.
+ */
+function ClockSentence({ view, workedHours }: { view: DayClockView; workedHours: number | null }) {
+  return (
+    <>
+      <b
+        style={{
+          fontWeight: 700,
+          // The running states are marked in the verified-contrast green. The words carry the
+          // meaning on their own — colour is never the only signal here.
+          color: view.state === "off" ? "var(--ink)" : "var(--green-700)",
+        }}
+      >
+        {view.title}
+      </b>
+      {view.since ? (
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+          {" "}
+          {view.since}
+        </span>
+      ) : null}
+      {workedHours !== null ? (
+        <span
+          className="clock-elapsed"
+          // Genuinely live: masked out of the visual baseline, which would otherwise fail on
+          // every run as the total grows. See dynamicRegions in e2e/helpers/ui.ts.
+          data-dynamic
+          // Announced on its own, not as part of the sentence: a screen reader should not
+          // re-read "On the clock since 8:14p" every minute.
+          aria-live="off"
+        >
+          {hoursClock(workedHours)}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
+export function DayClock({ jobs = [] }: DayClockProps) {
   const now = useTickingNow();
+  const [dayOpen, setDayOpen] = useState(false);
   const open = api.v1.timesheets.open.useQuery(undefined, {
     staleTime: OPEN_STALE_MS,
     refetchOnWindowFocus: false,
   });
+  const day = useDaySummary(jobs, now);
   const { predicted, tap: handleTap } = useClockTap();
 
   // A failed load is not "off the clock". Showing the Start day button on a connection error
@@ -128,11 +281,12 @@ export function DayClock() {
   }
 
   const view = predicted ?? dayClockView(open.data?.open, todayISO());
-  // Nothing while a tap is still in flight: `predicted` describes the NEW segment while
-  // `open.data` still holds the old one, so a total computed across the two would read as the
-  // previous segment's length attached to the state that just replaced it.
-  const elapsed = predicted !== null || view.state === "off" ? null : elapsedLabel(open.data?.open, now);
   const actions = DAY_CLOCK_ACTIONS[view.state];
+  // A day worth opening. No rows today = no toggle: an expander onto an empty panel is a dead
+  // control, and before the first punch there is genuinely nothing to read.
+  const hasDay = day !== null && day.segments.length > 0;
+
+  const stateSentence = <ClockSentence view={view} workedHours={hasDay ? day.workedHours : null} />;
 
   return (
     <ClockCard>
@@ -140,38 +294,24 @@ export function DayClock() {
         {/* One live region for the whole state sentence, so a state change is announced as the
             sentence it is rather than as two unrelated fragments. */}
         <div className="clock-meta" aria-live="polite">
-          <b
-            style={{
-              fontWeight: 700,
-              // The running states are marked in the verified-contrast green. The words carry the
-              // meaning on their own — colour is never the only signal here.
-              color: view.state === "off" ? "var(--ink)" : "var(--green-700)",
-            }}
-          >
-            {view.title}
-          </b>
-          {view.since ? (
-            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              {" "}
-              {view.since}
-            </span>
-          ) : null}
-          {/* The running total, ticking. The day clock is now the whole payroll record, so how long
-              it has been running is the one number worth reading at a glance — and a clock that
-              does not move is the one people distrust. */}
-          {elapsed ? (
-            <span
-              className="clock-elapsed"
-              // Genuinely live: masked out of the visual baseline, which would otherwise fail on
-              // every run as the total grows. See dynamicRegions in e2e/helpers/ui.ts.
-              data-dynamic
-              // Announced on its own, not as part of the sentence: a screen reader should not
-              // re-read "On the clock since 8:14p" every minute.
-              aria-live="off"
+          {hasDay ? (
+            // The sentence and the total ARE the trigger — one large target, and the actions stay
+            // outside it so a button never nests inside a button (WCAG nested-interactive).
+            <button
+              type="button"
+              className="clock-open"
+              aria-expanded={dayOpen}
+              onClick={() => setDayOpen((v) => !v)}
             >
-              {elapsed}
-            </span>
-          ) : null}
+              {stateSentence}
+              <span className="clock-caret" aria-hidden="true">
+                ›
+              </span>
+              <span className="sr-only">{dayOpen ? " Hide today's hours" : " Show today's hours"}</span>
+            </button>
+          ) : (
+            stateSentence
+          )}
         </div>
         <div className="clock-acts">
           {actions.map((action) => (
@@ -185,6 +325,9 @@ export function DayClock() {
           ))}
         </div>
       </div>
+      {/* IN FLOW, inside the same Card, pushing the agenda down — never a popover. Same shape as
+          the My hours row editor (features/field/my-hours-entries.tsx). */}
+      {dayOpen && day ? <DaySegments day={day} /> : null}
     </ClockCard>
   );
 }

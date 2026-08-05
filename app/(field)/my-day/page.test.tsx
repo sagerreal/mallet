@@ -15,6 +15,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 const setData = vi.fn();
 const refetch = vi.fn();
+// Start job / ✓ Complete move the CLOCK server-side, so they must invalidate its two queries —
+// without this the card sat on the previous segment until something remounted it.
+const invalidateOpen = vi.fn();
+const invalidateList = vi.fn();
 let queryState: {
   data: unknown;
   isLoading: boolean;
@@ -30,7 +34,15 @@ const completeMutate = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
-    useUtils: () => ({ v1: { field: { myDay: { setData } } } }),
+    useUtils: () => ({
+      v1: {
+        field: { myDay: { setData } },
+        timesheets: {
+          open: { invalidate: invalidateOpen },
+          list: { invalidate: invalidateList },
+        },
+      },
+    }),
     v1: {
       field: {
         myDay: { useQuery: () => ({ ...queryState, refetch }) },
@@ -124,6 +136,20 @@ describe("My day — the screen moves when you press", () => {
     render(<MyDayPage />);
     completeOpts.onSuccess?.({ clockNotice: null });
     expect(notices).toHaveLength(0);
+  });
+
+  // The clock moved and nothing told it to look again: v1.timesheets.open carries a 15s
+  // staleTime, no refetch interval and no focus refetch, so after "Start job" — which server-side
+  // closes shop time and opens job time — the card kept showing the OLD segment's since and
+  // elapsed until something remounted it.
+  it.each([
+    ["start", () => startOpts],
+    ["complete", () => completeOpts],
+  ])("makes the clock card look again after %s", (_name, opts) => {
+    render(<MyDayPage />);
+    opts().onSuccess?.({ clockNotice: null });
+    expect(invalidateOpen).toHaveBeenCalled();
+    expect(invalidateList).toHaveBeenCalled();
   });
 
   it("surfaces a refused write instead of swallowing it", () => {

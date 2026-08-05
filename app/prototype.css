@@ -1867,6 +1867,24 @@
   .msg-failed{margin-top:var(--space-1);font-size:var(--type-sm);color:var(--red);max-width:38ch}
   .msg.us .msg-failed{text-align:right;margin-left:auto}
   .clock-elapsed{display:block;margin-top:var(--space-1);font-size:var(--type-lg);font-weight:700;color:var(--green-700);font-variant-numeric:tabular-nums}
+  /* The state sentence + the day total ARE the expander. The clock's own buttons stay outside it
+     so a button never nests inside a button (WCAG nested-interactive). */
+  .clock-open{display:block;width:100%;min-height:44px;border:none;background:none;padding:0;margin:0;font-family:inherit;font-size:inherit;color:inherit;text-align:left;cursor:pointer}
+  .clock-open:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .clock-caret{display:inline-block;margin-left:var(--space-2);font-size:var(--type-base);color:var(--ink-3);transition:transform .15s ease}
+  .clock-open[aria-expanded="true"] .clock-caret{transform:rotate(90deg)}
+  /* Today's segments, expanded IN FLOW inside the same card — the agenda below simply moves down.
+     No popover: house rule. */
+  .clock-day{border-top:1px solid var(--line-2);margin-top:var(--space-3);padding-top:var(--space-3)}
+  .clock-daystart{font-size:var(--type-sm);color:var(--ink-3);margin-bottom:var(--space-2)}
+  .clock-segs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-2)}
+  .clock-seg{display:grid;grid-template-columns:1fr auto auto;gap:var(--space-3);align-items:baseline;font-size:var(--type-base)}
+  .clock-seg.brk{color:var(--ink-2)}
+  .clock-seg-l{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .clock-seg-t{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3);white-space:nowrap}
+  .clock-seg-d{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .clock-tot{display:flex;justify-content:space-between;gap:var(--space-3);border-top:1px solid var(--line);margin-top:var(--space-3);padding-top:var(--space-2);font-size:var(--type-base);font-weight:800}
+  .clock-tot.brk{border-top:none;margin-top:var(--space-1);padding-top:0;font-weight:600;color:var(--ink-2)}
   .jaddr svg{flex:0 0 auto;color:var(--ink-2)}
   /* Navigate is the loudest thing on the address row and it is AMBER — the app's one "live
      action" accent. It was --ink-3, the same grey as disabled meta text, so the row's whole

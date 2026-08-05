@@ -230,9 +230,21 @@ export default function MyDayPage() {
     );
   };
 
+  /**
+   * Start job and ✓ Complete MOVE THE CLOCK server-side — start closes the drive and opens job
+   * time, complete closes it and resumes shop — and neither invalidated a timesheets query. With
+   * `v1.timesheets.open` on a 15s staleTime, no refetch interval and focus-refetch off, the clock
+   * card went on showing the PREVIOUS segment's "since" and its elapsed until something else
+   * remounted it. The day panel reads `list`, which was equally stale. Both, on both mutations.
+   */
+  const refreshClock = (): void => {
+    void utils.v1.timesheets.open.invalidate();
+    void utils.v1.timesheets.list.invalidate();
+  };
+
   const startMutation = api.v1.field.start.useMutation({
     onMutate: ({ jobId }) => optimisticStatus(jobId, "in_progress"),
-    onSuccess: (dto) => { announceClock(dto.clockNotice); void refetch(); },
+    onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
     // Roll the guess back and SAY so — a write that failed silently is what made this page
     // untrustworthy in the first place.
     onError: (err) => {
@@ -242,7 +254,7 @@ export default function MyDayPage() {
   });
   const completeMutation = api.v1.field.complete.useMutation({
     onMutate: ({ jobId }) => optimisticStatus(jobId, "complete"),
-    onSuccess: (dto) => { announceClock(dto.clockNotice); void refetch(); },
+    onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
     onError: (err) => {
       void refetch();
       reportWriteError("field.complete", err);
@@ -285,9 +297,11 @@ export default function MyDayPage() {
       <h1>My day</h1>
       <div className="sub">{"Today's jobs."}</div>
 
-      {/* The day clock owns its own query — it must not wait on the agenda, and the agenda's
-          loading state must not blank the row that says whether he is being paid. */}
-      <DayClock />
+      {/* The day clock owns its own queries — it must not wait on the agenda, and the agenda's
+          loading state must not blank the row that says whether he is being paid. Today's jobs go
+          IN so its expanded panel can name a job segment ("#JOB-2541 Delgado") off data this page
+          already holds, instead of asking the server the same question twice. */}
+      <DayClock jobs={items} />
 
       {isLoading ? (
         <div className="card agenda">
