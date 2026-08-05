@@ -543,7 +543,6 @@ function PayBlock({
   const due = invDue(invoice);
   const card = custCard(lead);
   const [p, setP] = useState<PayState>({ step: "method", amt: due });
-  const [chk, setChk] = useState("");
   // A record that could NOT proceed (draft send failed, server refused) — named in
   // place on the step the tech is looking at, never a silent "Approved".
   const [payErr, setPayErr] = useState<string | null>(null);
@@ -657,20 +656,12 @@ function PayBlock({
         style={{ marginTop: "var(--space-2)", display: "flex", gap: "var(--space-2)", alignItems: "center", flexWrap: "wrap" }}
       >
         {amtIn}
-        {p.method === "check" ? (
-          <input
-            placeholder="Check #"
-            value={chk}
-            onChange={(e) => setChk(e.target.value)}
-            style={{
-              width: 100,
-              border: "1.5px solid var(--line)",
-              borderRadius: "var(--radius-sm)",
-              padding: "var(--space-2) var(--space-3)",
-              fontFamily: "inherit",
-            }}
-          />
-        ) : null}
+        {/* No "Check #" field here: `payments` has nowhere honest to put it. `external_id` is
+            documented (payment.ts, payment-gateway.ts) as "Stripe payment id later; null for
+            manual entries" — writing a hand-written check number into that column would be
+            exactly the conflation the domain layer's own comment rules out, and this PR does
+            not add a migration for a real column. An input whose value is silently discarded
+            is worse than no input, so it was removed rather than kept as decoration. */}
         <button className="btn primary" disabled={busy} onClick={approve}>
           {busy ? "Recording…" : <>Record {lbl} — paid</>}
         </button>
