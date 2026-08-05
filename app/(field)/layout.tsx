@@ -15,6 +15,7 @@ import { LeadsHydrator } from "@/features/customers/leads-hydrator";
 import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { FieldTogglesHydrator } from "@/features/settings/field-toggles-hydrator";
+import { BusinessIdentityHydrator } from "@/features/settings/business-identity-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 /**
@@ -76,6 +77,10 @@ export default async function FieldLayout({ children }: { children: ReactNode })
             is anyRole and returns ONE boolean — no office configuration crosses over. Exactly one
             of the two hydrators mounts, so they never race to write the same key. */}
         {isTech && <FieldTogglesHydrator />}
+        {/* EVERY role here, unlike the block above: the close-out sheet a technician turns around
+            at the door is the customer's own copy of the bill, and it printed no address, no phone
+            and no licence. v1.settings.businessIdentity is anyRole for exactly this. */}
+        <BusinessIdentityHydrator />
         <div className="layout">
           <Sidebar initialMe={initialMe} />
           <div className="appmain">

@@ -55,6 +55,18 @@ export const fieldInvoiceDTO = z.object({
   scopeJobId: z.string().uuid().nullable(),
   leadId: z.string().uuid(),
   customerName: z.string().nullable(),
+  /**
+   * WHERE the work happened and WHEN — the two facts that make the close-out sheet a DOCUMENT.
+   *
+   * Argued for like every other key here: what a technician shows the customer at the door is that
+   * customer's own copy of the bill, rendered by the same <InvoiceDocument> as `/i/<token>`. A copy
+   * that omits the service address and the service date is not the same document. Neither is new
+   * information to the person being handed it — it is their address and the day work was done at
+   * it — and the technician is standing there. Both are null far more often than not; the document
+   * omits the row rather than printing an empty label.
+   */
+  serviceAddress: z.string().nullable(),
+  serviceAt: z.string().nullable(),
   title: z.string().nullable(),
   status: statusEnum,
   /** Tax-INCLUSIVE — `tax` says how much of it is tax, it is not added on top. */
@@ -77,6 +89,19 @@ const money$ = (cents: number) => ({ cents, currency: "USD" as const });
 const iso = (d: Date | null) => d?.toISOString() ?? null;
 
 /**
+ * WHO was billed, WHERE and WHEN — the three document facts that are not on the invoice row.
+ *
+ * Grouped rather than passed as three more positional arguments: all three are null-in-practice
+ * (a deleted lead, an addressless lead, a bill with no completed visit), and three nullable
+ * positional arguments in a row is a call site where a swap compiles silently.
+ */
+export interface FieldInvoiceParty {
+  readonly customerName: string | null;
+  readonly serviceAddress: string | null;
+  readonly serviceAt: Date | null;
+}
+
+/**
  * Build the technician's view of an invoice.
  *
  * `seesPrice` governs line rates ONLY. Owner/office callers of the field router pass `true` — they
@@ -85,7 +110,7 @@ const iso = (d: Date | null) => d?.toISOString() ?? null;
  */
 export const toFieldInvoiceDTO = (
   invoice: Invoice,
-  customerName: string | null,
+  party: FieldInvoiceParty,
   seesPrice: boolean,
 ): FieldInvoiceDTO => {
   const p = invoice.props;
@@ -95,7 +120,9 @@ export const toFieldInvoiceDTO = (
     sourceJobId: p.sourceJobId,
     scopeJobId: p.scopeJobId,
     leadId: p.leadId,
-    customerName,
+    customerName: party.customerName,
+    serviceAddress: party.serviceAddress,
+    serviceAt: iso(party.serviceAt),
     title: p.title,
     status: p.status,
     total: money$(p.total),

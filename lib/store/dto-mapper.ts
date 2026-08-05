@@ -545,6 +545,7 @@ export function dtoInvoiceSummaryToStore(
     // A summary row — no lines/jobId/history; deciders must fetch the full record.
     partial: true,
     age: daysSince(dto.createdAt),
+    createdAt: dto.createdAt,
     dueAt: dto.dueAt,
     // From the server now — the hydrator used to leave this unset, so the ledger's follow-up
     // state reset on every refetch.
@@ -595,10 +596,18 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     // money field on this mapper becomes dollars; a signed amount must not.
     authorization: dto.authorization ?? undefined,
     leadId: dto.leadId,
-    // cust/phone/email are not in the DTO; money-derive falls back to leads[leadId].name.
-    cust: priorInv.cust,
+    // The customer's NAME comes off the wire — the ledger pages through the database, so the
+    // store's copy can be stale or absent. Falls back to the prior record only when the server
+    // has none (a deleted lead). phone/email are still not in the DTO; money-derive falls back to
+    // leads[leadId] for those. Matches the summary mapper, which already preferred the server.
+    cust: dto.customerName ?? priorInv.cust,
     phone: priorInv.phone,
     email: priorInv.email,
+    // WHERE the work happened and WHEN — the two document facts the invoice row does not hold.
+    // Resolved server-side so the office preview cannot state a different service date from the
+    // customer's own copy of the same bill.
+    serviceAddress: dto.serviceAddress,
+    serviceAt: dto.serviceAt,
     title: dto.title ?? "Invoice",
     status: dto.status,
     total: dto.total.cents / 100,              // cents → dollars (TAX-INCLUSIVE)
@@ -624,6 +633,8 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     // read "0d" for every row and — while overdue was defined as an age threshold — made the
     // Overdue pill unreachable. Overdue now keys off dueAt below; this is display only.
     age: daysSince(dto.createdAt),
+    // The stamp itself, not just the day count: a document of record states a date.
+    createdAt: dto.createdAt,
     dueAt: dto.dueAt,
     fu: { on: dto.followUpOn, stage: dto.followUpStage },
     // The public pay link, minted server-side on first send. Threaded so the office modal can
@@ -675,6 +686,10 @@ export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice)
     cust: dto.customerName ?? priorInv?.cust ?? "",
     phone: priorInv?.phone ?? "",
     email: priorInv?.email,
+    // The close-out document the technician turns around states these too — same fields, same
+    // server resolution as the office and the customer's own page.
+    serviceAddress: dto.serviceAddress,
+    serviceAt: dto.serviceAt,
     title: dto.title ?? "Invoice",
     status: dto.status,
     total,
@@ -692,6 +707,7 @@ export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice)
       ? []
       : dto.lines.map((l) => ({ d: l.description, q: l.quantity, r: (l.rate?.cents ?? 0) / 100 })),
     age: daysSince(dto.createdAt),
+    createdAt: dto.createdAt,
     dueAt: dto.dueAt,
     archived: dto.status === "void",
     origin: "db",

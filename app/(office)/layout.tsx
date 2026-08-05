@@ -22,6 +22,7 @@ import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { PricebookHydrator } from "@/features/pricebook/pricebook-hydrator";
 import { AssembliesHydrator } from "@/features/pricebook/assemblies-hydrator";
 import { BrandHydrator } from "@/features/settings/brand-hydrator";
+import { BusinessIdentityHydrator } from "@/features/settings/business-identity-hydrator";
 import { A2pHydrator } from "@/features/a2p/a2p-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
@@ -68,6 +69,10 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
         <PricebookHydrator />
         <AssembliesHydrator />
         <BrandHydrator />
+        {/* The shop's address/phone/email/licence — what the customer's invoice prints under the
+            brand. Its own hydrator (not BrandHydrator's) because the FIELD shell needs the same
+            facts from an anyRole read; one writer, both shells. */}
+        <BusinessIdentityHydrator />
         <A2pHydrator />
       </div>
     </MeasurementGateProvider>

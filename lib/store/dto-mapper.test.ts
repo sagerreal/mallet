@@ -97,6 +97,8 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     authorization: null,
     leadId: "lead-abc",
     customerName: "Sofia Hernandez",
+    serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+    serviceAt: "2026-08-03T16:20:00.000Z",
     title: "Final bill",
     status: "sent",
     total: makeMoneyDTO(12000),        // $120.00 — TAX-INCLUSIVE
@@ -353,12 +355,34 @@ describe("dtoInvoiceToStore", () => {
     expect(result.origin).toBe("db");
   });
 
-  it("preserves cust, phone, email from priorInv (not in DTO)", () => {
+  it("takes the customer NAME off the wire and keeps phone/email from priorInv", () => {
+    // The ledger pages through the database, so the store's copy of a name can be stale or absent
+    // — and this name is printed on the customer's own copy of the bill. phone/email are still
+    // not on this DTO, so those stay with the prior record.
     const prior = makePriorInv({ cust: "Jane Doe", phone: "555-9999", email: "jane@test.com" });
     const result = dtoInvoiceToStore(makeInvoiceDTO(), prior);
-    expect(result.cust).toBe("Jane Doe");
+    expect(result.cust).toBe("Sofia Hernandez");
     expect(result.phone).toBe("555-9999");
     expect(result.email).toBe("jane@test.com");
+  });
+
+  it("falls back to the prior name only when the server has none — a deleted lead", () => {
+    const prior = makePriorInv({ cust: "Jane Doe" });
+    const result = dtoInvoiceToStore(makeInvoiceDTO({ customerName: null }), prior);
+    expect(result.cust).toBe("Jane Doe");
+  });
+
+  it("carries the document facts: the invoice date, the service address and the service date", () => {
+    const result = dtoInvoiceToStore(makeInvoiceDTO(), makePriorInv());
+    expect(result.createdAt).toBe("2026-06-01T00:00:00.000Z");
+    expect(result.serviceAddress).toBe("18 Aspen Ct, Dublin, CA 94568");
+    expect(result.serviceAt).toBe("2026-08-03T16:20:00.000Z");
+  });
+
+  it("keeps an unknown service date NULL — never the invoice date under a Service label", () => {
+    const result = dtoInvoiceToStore(makeInvoiceDTO({ serviceAt: null }), makePriorInv());
+    expect(result.serviceAt).toBeNull();
+    expect(result.createdAt).toBe("2026-06-01T00:00:00.000Z");
   });
 
   it("maps sourceJobId to jobId", () => {
@@ -791,6 +815,8 @@ function makeFieldInvoiceDTO(overrides: Partial<FieldInvoiceDTO> = {}): FieldInv
     scopeJobId: null,
     leadId: "lead-abc",
     customerName: "Sofia Hernandez",
+    serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+    serviceAt: "2026-08-03T16:20:00.000Z",
     title: "Water heater",
     status: "sent",
     total: makeMoneyDTO(84_000),      // $840.00

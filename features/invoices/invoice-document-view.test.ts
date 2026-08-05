@@ -80,3 +80,56 @@ describe("invoiceDocumentView", () => {
     expect(view.balanceDueCents).toBe(8_500);
   });
 });
+
+describe("invoiceDocumentView — the document-of-record half", () => {
+  it("states who was billed and where the work happened", () => {
+    const view = invoiceDocumentView(
+      inv({ serviceAddress: "18 Aspen Ct, Dublin, CA 94568" }),
+    );
+    expect(view.parties).toEqual({
+      customerName: "Dana Reyes",
+      serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+    });
+  });
+
+  it("leaves a missing service address null so the document omits the block", () => {
+    // Most leads are created without an address. A blank "Service address" reads as a bug.
+    expect(invoiceDocumentView(inv()).parties.serviceAddress).toBeNull();
+  });
+
+  it("states the invoice date and the service date as two separate facts", () => {
+    const view = invoiceDocumentView(
+      inv({ createdAt: "2026-08-05T18:00:00.000Z", serviceAt: "2026-08-03T16:20:00.000Z" }),
+    );
+    expect(view.dates.invoicedAt).toBe("2026-08-05T18:00:00.000Z");
+    expect(view.dates.serviceAt).toBe("2026-08-03T16:20:00.000Z");
+  });
+
+  it("NEVER substitutes the invoice date for an unknown service date", () => {
+    // A customer may hand this to an insurer or a warranty desk.
+    const view = invoiceDocumentView(inv({ createdAt: "2026-08-05T18:00:00.000Z" }));
+    expect(view.dates.invoicedAt).toBe("2026-08-05T18:00:00.000Z");
+    expect(view.dates.serviceAt).toBeNull();
+  });
+
+  it("carries no due date of its own — termsFace already prints one", () => {
+    // Two Due segments on one strip would print the same date twice.
+    expect(invoiceDocumentView(inv()).dates.dueAt).toBeUndefined();
+  });
+
+  it("omits the identity block entirely when the caller has none to give", () => {
+    expect(invoiceDocumentView(inv()).business).toBeUndefined();
+  });
+
+  it("passes the caller's identity block through untouched", () => {
+    const business = {
+      name: "Ridgeline Plumbing",
+      address: "200 Ray St, Pleasanton, CA 94566",
+      phone: "(925) 555-0100",
+      email: null,
+      site: null,
+      license: "C36-1029384",
+    };
+    expect(invoiceDocumentView(inv(), business).business).toEqual(business);
+  });
+});

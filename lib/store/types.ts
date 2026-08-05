@@ -506,6 +506,30 @@ export interface Invoice {
   /** Days since the invoice was raised. Display only — "overdue" is `dueAt`, not this. */
   age: number;
   /**
+   * When the bill was RAISED, ISO — invoices.created_at, verbatim.
+   *
+   * `age` is derived from the same stamp but is a count of days, and a document of record states a
+   * date. Absent only on a locally-created ("manual") invoice that has never been persisted.
+   */
+  createdAt?: string;
+  /**
+   * WHERE the work happened — the lead's address, resolved SERVER-side and carried on the record.
+   *
+   * Not looked up in `leads` here on purpose: a technician's store holds no leads at all
+   * (LeadsHydrator is office-only), and the office ledger pages through the database, so neither
+   * surface can be relied on to hold this invoice's lead. Frequently null — most leads are created
+   * without an address — and the document omits the block when it is.
+   */
+  serviceAddress?: string | null;
+  /**
+   * WHEN the work was done, ISO — the source job's latest completed visit, resolved server-side.
+   *
+   * NEVER a synonym for `createdAt`. A bill with no source job or no completed visit has none, and
+   * the document omits the row: a customer may hand this to an insurer or a warranty desk, and a
+   * date that is not the service date under a "Service" label is a false statement.
+   */
+  serviceAt?: string | null;
+  /**
    * When payment is due, ISO date, or null when the invoice was never sent.
    *
    * This is what OVERDUE means — past this date and still owed. It used to be inferred from `age`
@@ -586,6 +610,23 @@ export interface Brand {
   color: string;
   tagline: string;
   logoUrl?: string;
+}
+
+/**
+ * WHO the shop is, as a customer document states it — distinct from `Brand`, which is how the shop
+ * LOOKS (colour, monogram, tagline).
+ *
+ * `null` in the store until BusinessIdentityHydrator lands, and that is load-bearing: the invoice
+ * document omits the whole identity block rather than printing the brand placeholder
+ * ("My Business") to a customer. Everything but `name` is nullable — an unset field prints nothing.
+ */
+export interface BusinessIdentity {
+  name: string;
+  address: string | null;
+  phone: string | null;
+  email: string | null;
+  site: string | null;
+  license: string | null;
 }
 
 // ---- UI state --------------------------------------------------------------

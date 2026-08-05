@@ -11,7 +11,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Company, Tech, Brand } from "../types";
+import type { Company, Tech, Brand, BusinessIdentity } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 
 // Placeholder shown ONLY until BrandHydrator seeds the real brand from
@@ -29,6 +29,15 @@ export interface DataSlice {
   /** Starts empty; populated by TechsHydrator from the identity.members endpoint. */
   techs: Tech[];
   brand: Brand;
+  /**
+   * WHO the shop is, as a customer document states it — address, phone, email, website, licence.
+   *
+   * NULL until BusinessIdentityHydrator lands, and deliberately not defaulted: `brand` can hold a
+   * placeholder because a placeholder monogram is only ugly, whereas printing "My Business" on the
+   * bill a technician turns around at the door is a lie told to a customer. The invoice document
+   * omits the whole identity block while this is null.
+   */
+  business: BusinessIdentity | null;
 
   /** Replace the companies slice — called by CompaniesHydrator on hydration. */
   setCompanies: (companies: Company[]) => void;
@@ -53,6 +62,8 @@ export interface DataSlice {
 
   /** Replace the whole brand — called by BrandHydrator on hydration. */
   setBrand: (brand: Brand) => void;
+  /** Replace the business identity — called by BusinessIdentityHydrator on hydration. */
+  setBusiness: (business: BusinessIdentity) => void;
   /**
    * Optimistically patch the brand, then persist via v1.settings.updateBrand.
    * Reconciles from the returned settingsDTO.brand; rolls back on error.
@@ -64,12 +75,15 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set,
   companies: [],
   techs: [],
   brand: { ...DEFAULT_BRAND },
+  business: null,
 
   setCompanies: (companies) => set({ companies }),
 
   setTechs: (techs) => set({ techs }),
 
   setBrand: (brand) => set({ brand }),
+
+  setBusiness: (business) => set({ business }),
 
   updateBrand: (patch) => {
     const snapshot = get().brand;

@@ -37,6 +37,9 @@ vi.mock("@/lib/store/app-store", () => ({
       leads: [],
       jobs: [],
       brand,
+      // The shop's address/phone/licence — null here, so the identity block is absent and
+      // these cases stay about what they were about.
+      business: null,
       recordPayment: mockRecordPayment,
       adoptInvoice: noop,
       updateLead: noop,
