@@ -1441,7 +1441,12 @@
 
   /* ---------- customer quote page ---------- */
   .custmodal{max-width:470px;padding:0;overflow:hidden}
-  .custhead{background:var(--green-900);color:#fff;padding:var(--space-6) var(--space-6) var(--space-5);display:flex;align-items:center;gap:var(--space-3)}
+  /* The foreground MUST be themed, not a raw #fff. --green-900 inverts to near-white under
+     [data-theme="dark"], so a hard-coded white here rendered the shop's name and invoice number
+     at 1.09:1 — white on near-white — on the customer's own copy of their bill. --green-50 is
+     --green-900's contrast partner in both themes: 16.07:1 light, 15.21:1 dark. Shared with
+     /q/[token] and the cust-invoice preview, which had the same bug. */
+  .custhead{background:var(--green-900);color:var(--green-50);padding:var(--space-6) var(--space-6) var(--space-5);display:flex;align-items:center;gap:var(--space-3)}
   .custlogo{width:46px;height:46px;border-radius:var(--radius);background:var(--card);color:var(--green-900);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:var(--type-lg)}
   .custbody{padding:var(--space-5) var(--space-6) var(--space-6)}
   .custline{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
