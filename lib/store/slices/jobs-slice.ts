@@ -82,6 +82,7 @@ import {
   type JobDTO,
 } from "@/lib/store/dto-mapper";
 import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/lib/store/visit-status-write";
+import { optimisticVisit } from "@/lib/store/visit-stamps";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { reportWriteError } from "../write-error";
@@ -1107,11 +1108,16 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   setVisitStatus: (jobId, visitId, status, surface) => {
     const prior = snapshot(get().jobs, jobId);
 
-    // 1. Optimistic update.
+    // 1. Optimistic update — the status AND the stamp that status records. Status alone made the
+    // stepper report the tap just made as "skipped" until the DTO landed; see visit-stamps.ts.
+    const tappedAt = new Date();
     set((s) => ({
       jobs: s.jobs.map((j) =>
         j.id === jobId
-          ? withVisits(j, j.visits.map((v) => (v.id === visitId ? { ...v, status } : v)))
+          ? withVisits(
+              j,
+              j.visits.map((v) => (v.id === visitId ? optimisticVisit(v, status, tappedAt) : v)),
+            )
           : j
       ),
     }));

@@ -15,6 +15,10 @@ import { render, screen, fireEvent } from "@testing-library/react";
 
 const setData = vi.fn();
 const refetch = vi.fn();
+// Start job / ✓ Complete move the CLOCK server-side, so they must invalidate its two queries —
+// without this the card sat on the previous segment until something remounted it.
+const invalidateOpen = vi.fn();
+const invalidateList = vi.fn();
 let queryState: {
   data: unknown;
   isLoading: boolean;
@@ -30,7 +34,15 @@ const completeMutate = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
-    useUtils: () => ({ v1: { field: { myDay: { setData } } } }),
+    useUtils: () => ({
+      v1: {
+        field: { myDay: { setData } },
+        timesheets: {
+          open: { invalidate: invalidateOpen },
+          list: { invalidate: invalidateList },
+        },
+      },
+    }),
     v1: {
       field: {
         myDay: { useQuery: () => ({ ...queryState, refetch }) },
@@ -126,11 +138,44 @@ describe("My day — the screen moves when you press", () => {
     expect(notices).toHaveLength(0);
   });
 
+  // The clock moved and nothing told it to look again: v1.timesheets.open carries a 15s
+  // staleTime, no refetch interval and no focus refetch, so after "Start job" — which server-side
+  // closes shop time and opens job time — the card kept showing the OLD segment's since and
+  // elapsed until something remounted it.
+  it.each([
+    ["start", () => startOpts],
+    ["complete", () => completeOpts],
+  ])("makes the clock card look again after %s", (_name, opts) => {
+    render(<MyDayPage />);
+    opts().onSuccess?.({ clockNotice: null });
+    expect(invalidateOpen).toHaveBeenCalled();
+    expect(invalidateList).toHaveBeenCalled();
+  });
+
   it("surfaces a refused write instead of swallowing it", () => {
     render(<MyDayPage />);
     completeOpts.onError?.(new Error("job already complete"));
     expect(errors).toEqual(["field.complete"]);
     expect(refetch).toHaveBeenCalled();
+  });
+
+  // THE ASYMMETRY. The job sheet's Done has always worked straight from scheduled; this card
+  // offered only "Start job" and the endpoint behind ✓ Complete refused a scheduled job outright.
+  // A technician who finished a call without tapping Start hit a wall on the card and none on the
+  // sheet, which reads as the app contradicting itself. v1.field.complete now starts it first.
+  it("lets a SCHEDULED job be completed without pressing Start first", () => {
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Start job" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+  });
+
+  it("still moves the card straight to done on that press", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    completeOpts.onMutate?.({ jobId: "job-1" });
+    const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { status: string }[] };
+    expect(patch({ items: [job()] }).items[0]!.status).toBe("complete");
   });
 });
 

@@ -288,7 +288,31 @@ export const createFieldRouter = () =>
     complete: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
-      await assertOnJobIfTech(repo, jobId, ctx.principal);
+      const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+      // FINISHING A JOB NOBODY STARTED IS LEGAL IN THE FIELD.
+      //
+      // Two Dones existed and they disagreed. The job modal's "✓ Mark done" has always worked
+      // straight from scheduled — SetVisitStatusUseCase allows pending → complete deliberately,
+      // because a technician may finish without ever tapping On my way or Arrived. But this
+      // endpoint went through Job.complete(), which refuses anything but in_progress, so My day's
+      // "✓ Complete" card button returned BAD_REQUEST on the same job the modal would close. The
+      // technician experienced it as "the card makes me press Start first but the sheet doesn't".
+      //
+      // The fix is HERE and not in Job.complete(): that domain method is also the OFFICE complete
+      // path, where "only an in-progress job can be completed" is a rule worth keeping — a
+      // dispatcher closing a job nobody has been to is a mistake, not a shortcut.
+      //
+      // No clock tap for the implicit start, deliberately. Opening and closing a job segment in
+      // the same instant would record a sub-minute stretch the clock then throws away (and
+      // announces as "that was under a minute"). Finishing without arriving records no job
+      // minutes — the same honest outcome the visit path already produces, and the same one the
+      // stepper reports by showing those steps as skipped.
+      // assertOnJobIfTech already loaded and returned this job for a tech caller — that is what it
+      // returns it FOR. Only owner/office (for whom it returns null) still owe a read.
+      const before = techJob ?? (await repo.findById(jobId));
+      if (before?.canStart()) {
+        orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
+      }
       const completed = orThrow(await new CompleteJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
       const dto = await toJobDTOWithExecution(repo, completed);
       // Completing the job = done on it: close job time and auto-resume shop, so whoever did the work

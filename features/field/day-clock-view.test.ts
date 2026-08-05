@@ -1,6 +1,5 @@
 import { describe, it, expect } from "vitest";
 import {
-  elapsedLabel,
   dayClockView,
   optimisticView,
   hhmmLabel,
@@ -130,32 +129,3 @@ describe("optimisticView — what the row shows before the server answers", () =
   });
 });
 
-describe("elapsedLabel — the running total", () => {
-  const open = { kind: "shop" as const, workDate: "2026-07-25", startTime: "08:14" };
-
-  it("reads h:mm from the segment's own start, not a counter", () => {
-    expect(elapsedLabel(open, new Date("2026-07-25T09:21:00"))).toBe("1:07");
-  });
-
-  it("pads the minutes so the figure does not jump width", () => {
-    expect(elapsedLabel(open, new Date("2026-07-25T08:17:00"))).toBe("0:03");
-  });
-
-  it("keeps counting past a full day rather than wrapping", () => {
-    expect(elapsedLabel(open, new Date("2026-07-26T10:14:00"))).toBe("26:00");
-  });
-
-  it("shows nothing when nothing is running", () => {
-    expect(elapsedLabel(null, new Date("2026-07-25T09:21:00"))).toBeNull();
-    expect(elapsedLabel(undefined, new Date("2026-07-25T09:21:00"))).toBeNull();
-  });
-
-  // Device clock behind the shop's: a negative total is never the honest answer.
-  it("shows nothing when the start is in the future", () => {
-    expect(elapsedLabel(open, new Date("2026-07-25T08:00:00"))).toBeNull();
-  });
-
-  it("shows nothing when the stored start cannot be read", () => {
-    expect(elapsedLabel({ ...open, startTime: "oops" }, new Date("2026-07-25T09:21:00"))).toBeNull();
-  });
-});

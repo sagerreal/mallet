@@ -465,6 +465,13 @@
   .otab.on{color:var(--ink);font-weight:700}
   .otab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1.5px;height:2.5px;border-radius:var(--radius-2xs);background:var(--ink)}
   .otab .oct{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3);background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-2)}
+  /* SHEET tabs (the tech job sheet's Job · Quote): the two halves of one decision, so they split
+     the width evenly and centre their labels instead of huddling at the left edge. A pair of
+     small left-aligned words does not read as a choice at arm's length in a van, and half a
+     sheet's width is a target a gloved thumb cannot miss. The underline runs the full half. */
+  .tj-tabs{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .tj-tabs .otab{justify-content:center;min-height:44px;font-size:var(--type-md)}
+  .tj-tabs .otab.on::after{left:0;right:0;height:3px}
   .odot{width:8px;height:8px;border-radius:50%;background:var(--green-700);box-shadow:0 0 0 2.5px color-mix(in srgb,var(--green-700) 22%,transparent);animation:odotbreathe 2.6s ease-in-out infinite;flex:0 0 auto}
   .odot.off{background:var(--ink-3);box-shadow:none;animation:none}
   @keyframes odotbreathe{50%{box-shadow:0 0 0 5px color-mix(in srgb,var(--green-700) 10%,transparent)}}
@@ -981,6 +988,13 @@
   .sheet-foot{position:sticky;bottom:calc(0px - var(--modal-pad-y) - var(--safe-b));background:var(--card);margin:var(--space-4) calc(0px - var(--modal-pad-x)) calc(0px - var(--modal-pad-y) - var(--safe-b));padding:var(--space-3) var(--modal-pad-x) calc(var(--space-3) + var(--safe-b));border-top:1px solid var(--line-2);z-index:3;border-radius:0 0 var(--radius-xl) var(--radius-xl)}
   .sheet-pri{display:flex;align-items:center;justify-content:center;gap:var(--space-2);width:100%;min-height:52px;border:none;border-radius:var(--radius);background:var(--pri-bg);color:var(--pri-fg);font-family:inherit;font-size:var(--type-md);font-weight:700;letter-spacing:.1px;cursor:pointer;box-shadow:0 2px 8px rgba(26,21,16,.22);transition:transform .1s,filter .12s}
   .sheet-pri:active{transform:translateY(1px) scale(.99);filter:brightness(.92)}
+  /* The escape hatch UNDER the primary, not beside it. Used where the sheet's next step is not
+     the step you may actually want (the tech job sheet's "Finish job" while the primary still
+     reads "Start driving"). Stacked rather than side-by-side so the primary keeps the full width
+     a gloved thumb needs; quiet enough that it never competes for the eye. */
+  .sheet-quiet{display:block;width:100%;min-height:44px;margin-top:var(--space-2);border:none;background:none;font-family:inherit;font-size:var(--type-base);font-weight:700;color:var(--ink-2);cursor:pointer;text-align:center}
+  .sheet-quiet:hover{color:var(--ink)}
+  .sheet-quiet:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   /* 48px: the ergonomics pass measured the first cut at 35pt — under the 44pt glove
      floor for what are the highest-frequency actions on a working lead. */
   .sheet-secrow{display:flex;gap:var(--space-2);margin-top:var(--space-3)}
@@ -1813,11 +1827,36 @@
   .fsec-h{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);font-size:var(--type-xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:var(--space-3)}
   /* collapsible field-job sections (tech view) — default to titles, tap to expand */
   .tjf.open .fsec-h{margin-bottom:var(--space-3)} .tjf:not(.open) .fsec-h{margin-bottom:0}
+  /* .fsec-h is a div rule; as the tap target of a collapsible section it is a real <button> and
+     needs the button chrome stripped back off. 52px is the sheet grammar's glove target — the
+     same one every .sheet-row carries, because this IS a SheetRow (variant="section"). */
+  button.fsec-h{width:100%;min-height:52px;background:none;border:none;padding:0;font-family:inherit;color:inherit;text-align:left}
+  button.fsec-h:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .tjf-h{cursor:pointer;user-select:none}
   .tjf-t{display:inline-flex;align-items:center;gap:var(--space-2)}
+  /* The trailing cluster: count, its qualifier, the caret. A figure, not a label — so the
+     section head's uppercase tracking is turned back off for it. */
+  .tjf-v{display:inline-flex;align-items:center;gap:var(--space-2);font-weight:600;letter-spacing:normal;text-transform:none}
   .tjf .tjcaret{display:inline-block;transition:transform .15s ease;font-size:var(--type-xs);color:var(--ink-3)}
   .tjf.open .tjcaret{transform:rotate(90deg)}
   .tjf-h:hover{color:var(--ink-2)}
+  /* Visit stepper (tech job sheet) — Scheduled → On the way → On site as a READOUT, never a
+     control (see components/modals/tech-job-modal/visit-steps.ts). The connector is drawn on the
+     node rather than between nodes so the three thirds stay equal at any width. */
+  .vstep{display:flex;align-items:flex-start;list-style:none;margin:0 0 var(--space-4);padding:0}
+  .vstep-n{flex:1;text-align:center;position:relative;min-width:0}
+  .vstep-n::before{content:"";position:absolute;top:6px;left:-50%;width:100%;height:2px;background:var(--line)}
+  .vstep-n:first-child::before{display:none}
+  .vstep-n.reached::before,.vstep-n.current::before{background:var(--ink)}
+  .vstep-dot{display:block;width:13px;height:13px;border-radius:50%;border:2px solid var(--line);background:var(--card);margin:0 auto var(--space-2);position:relative;z-index:1;box-sizing:border-box}
+  .vstep-n.reached .vstep-dot{background:var(--ink);border-color:var(--ink)}
+  /* The current node is RINGED, not filled — "you are here", not "this is finished". */
+  .vstep-n.current .vstep-dot{border-color:var(--ink);box-shadow:0 0 0 3px var(--amber-bg)}
+  .vstep-lab{display:block;font-size:var(--type-sm);font-weight:700;color:var(--ink-3);line-height:1.2}
+  .vstep-n.reached .vstep-lab,.vstep-n.current .vstep-lab{color:var(--ink)}
+  /* The "when" line under the stepper — the one big figure in this section. */
+  .vwhen b{display:block;font-size:var(--type-lg);font-weight:800;letter-spacing:-.01em}
+  .vwhen span{display:block;font-size:var(--type-sm);color:var(--ink-2)}
   /* the job address IS the navigate action — a prominent tappable row, never a faint grey line */
   .jaddr{display:flex;align-items:center;gap:var(--space-3);width:100%;text-align:left;border:1.5px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);background:var(--card);color:var(--ink);font-family:inherit;font-size:var(--type-md);font-weight:600;cursor:pointer;margin:var(--space-3) 0 var(--space-1);transition:border-color .12s,background .12s}
   .jaddr:hover{border-color:var(--ink-3);background:var(--green-50)}
@@ -1832,8 +1871,31 @@
   .msg-failed{margin-top:var(--space-1);font-size:var(--type-sm);color:var(--red);max-width:38ch}
   .msg.us .msg-failed{text-align:right;margin-left:auto}
   .clock-elapsed{display:block;margin-top:var(--space-1);font-size:var(--type-lg);font-weight:700;color:var(--green-700);font-variant-numeric:tabular-nums}
+  /* The state sentence + the day total ARE the expander. The clock's own buttons stay outside it
+     so a button never nests inside a button (WCAG nested-interactive). */
+  .clock-open{display:flex;align-items:center;gap:var(--space-2);width:100%;min-height:44px;border:none;background:none;padding:0;margin:0;font-family:inherit;font-size:inherit;color:inherit;text-align:left;cursor:pointer}
+  .clock-open-t{min-width:0}
+  .clock-open:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  .clock-caret{flex:0 0 auto;font-size:var(--type-md);color:var(--ink-3);transition:transform .15s ease}
+  .clock-open[aria-expanded="true"] .clock-caret{transform:rotate(90deg)}
+  /* Today's segments, expanded IN FLOW inside the same card — the agenda below simply moves down.
+     No popover: house rule. */
+  .clock-day{border-top:1px solid var(--line-2);margin-top:var(--space-3);padding-top:var(--space-3)}
+  .clock-daystart{font-size:var(--type-sm);color:var(--ink-3);margin-bottom:var(--space-2)}
+  .clock-segs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:var(--space-2)}
+  .clock-seg{display:grid;grid-template-columns:1fr auto auto;gap:var(--space-3);align-items:baseline;font-size:var(--type-base)}
+  .clock-seg.brk{color:var(--ink-2)}
+  .clock-seg-l{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .clock-seg-t{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3);white-space:nowrap}
+  .clock-seg-d{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-weight:700;white-space:nowrap}
+  .clock-tot{display:flex;justify-content:space-between;gap:var(--space-3);border-top:1px solid var(--line);margin-top:var(--space-3);padding-top:var(--space-2);font-size:var(--type-base);font-weight:800}
+  .clock-tot.brk{border-top:none;margin-top:var(--space-1);padding-top:0;font-weight:600;color:var(--ink-2)}
   .jaddr svg{flex:0 0 auto;color:var(--ink-2)}
-  .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:700;color:var(--ink-3);white-space:nowrap}
+  /* Navigate is the loudest thing on the address row and it is AMBER — the app's one "live
+     action" accent. It was --ink-3, the same grey as disabled meta text, so the row's whole
+     point read as a caption. (iOS blue is the obvious alternative and is not available: Mallet
+     has no blue anywhere.) */
+  .jaddr .nav{margin-left:auto;flex:0 0 auto;font-size:var(--type-base);font-weight:800;color:var(--amber);white-space:nowrap}
   /* "Add a line" action tiles (Build the price) — a clean 2×2 of tappable cards: icon + title + subtitle */
   .addgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:var(--space-3)}
   .addtile{display:block;width:100%;text-align:left;border:1.5px solid var(--line);border-radius:var(--radius-lg);padding:var(--space-4) var(--space-4);background:var(--card);color:var(--ink);font-family:inherit;cursor:pointer;transition:border-color .12s,background .12s,box-shadow .15s,transform .08s}

@@ -102,14 +102,28 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
   // ignoring you rather than as dead space. Only the button itself may keep the row from opening.
   const acts =
     job.status === "scheduled" ? (
-      <button
-        type="button"
-        className="btn sm primary"
-        onClick={(e) => { e.stopPropagation(); onStart(job.id); }}
-        disabled={isPending}
-      >
-        Start job
-      </button>
+      // BOTH, on a scheduled job. Start job is the expected next step and stays the primary; ✓
+      // Complete is beside it because the job sheet has always let a technician finish without
+      // starting, and the card refusing the same thing read as the app contradicting itself.
+      // v1.field.complete now starts the job first when it has to (see field-router.ts).
+      <>
+        <button
+          type="button"
+          className="btn sm primary"
+          onClick={(e) => { e.stopPropagation(); onStart(job.id); }}
+          disabled={isPending}
+        >
+          Start job
+        </button>
+        <button
+          type="button"
+          className="btn sm"
+          onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
+          disabled={isPending}
+        >
+          ✓ Complete
+        </button>
+      </>
     ) : job.status === "in_progress" ? (
       <button
         type="button"
@@ -216,9 +230,21 @@ export default function MyDayPage() {
     );
   };
 
+  /**
+   * Start job and ✓ Complete MOVE THE CLOCK server-side — start closes the drive and opens job
+   * time, complete closes it and resumes shop — and neither invalidated a timesheets query. With
+   * `v1.timesheets.open` on a 15s staleTime, no refetch interval and focus-refetch off, the clock
+   * card went on showing the PREVIOUS segment's "since" and its elapsed until something else
+   * remounted it. The day panel reads `list`, which was equally stale. Both, on both mutations.
+   */
+  const refreshClock = (): void => {
+    void utils.v1.timesheets.open.invalidate();
+    void utils.v1.timesheets.list.invalidate();
+  };
+
   const startMutation = api.v1.field.start.useMutation({
     onMutate: ({ jobId }) => optimisticStatus(jobId, "in_progress"),
-    onSuccess: (dto) => { announceClock(dto.clockNotice); void refetch(); },
+    onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
     // Roll the guess back and SAY so — a write that failed silently is what made this page
     // untrustworthy in the first place.
     onError: (err) => {
@@ -228,7 +254,7 @@ export default function MyDayPage() {
   });
   const completeMutation = api.v1.field.complete.useMutation({
     onMutate: ({ jobId }) => optimisticStatus(jobId, "complete"),
-    onSuccess: (dto) => { announceClock(dto.clockNotice); void refetch(); },
+    onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
     onError: (err) => {
       void refetch();
       reportWriteError("field.complete", err);
@@ -271,9 +297,11 @@ export default function MyDayPage() {
       <h1>My day</h1>
       <div className="sub">{"Today's jobs."}</div>
 
-      {/* The day clock owns its own query — it must not wait on the agenda, and the agenda's
-          loading state must not blank the row that says whether he is being paid. */}
-      <DayClock />
+      {/* The day clock owns its own queries — it must not wait on the agenda, and the agenda's
+          loading state must not blank the row that says whether he is being paid. Today's jobs go
+          IN so its expanded panel can name a job segment ("#JOB-2541 Delgado") off data this page
+          already holds, instead of asking the server the same question twice. */}
+      <DayClock jobs={items} />
 
       {isLoading ? (
         <div className="card agenda">

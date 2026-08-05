@@ -1,9 +1,26 @@
 /**
  * components/modals/tech-job-modal/work-order-sec.tsx
- * Work order (prototype workOrderBlock, 4649-4669) — a read-only "office-sold"
- * scope handoff, install jobs only, not done, with scope lines. Our JobLine has
- * no `fee`, so scope = every non-empty `d` line. The sold $ shows ONLY when
- * techSeesPrice (the crew usually gets scope, no $).
+ * The work order: what was sold, itemised, with a count and a Total.
+ *
+ * "WORK ORDER · 4 items · $730" is not a money-rule violation. The rule (see job-modal.tsx) is
+ * that this surface shows the PRICE THE OFFICE SET — line items and a total — and never cost,
+ * margin, profit or P&L. Line COST is not rendered here under any condition, for any role.
+ *
+ * MONEY HAS THREE STATES HERE, NOT TWO. `redactMoneyForTech` nulls every line rate when the org's
+ * `techSeesPrice` is off, so a naive sum of a genuinely priced job returns 0 and would print a
+ * fabricated "$0" at a technician standing on a doorstep. The three:
+ *
+ *   1. figures visible          → "4 items · $730" and a Total row
+ *   2. genuinely free / unset   → "4 items · $0" and a Total row reading $0
+ *   3. withheld from this device→ "4 items", no Total, and one plain sentence saying so
+ *
+ * `pricesHidden` (a null rate = the redaction signal, never a real zero) is what separates 3 from
+ * 2, and getting that wrong is documented in done-block.tsx as the most damaging failure this
+ * screen can produce. `seesPrice` — the store's own copy of the org toggle — is asked alongside
+ * it so a device that has the flag but not the redaction still shows no figures.
+ *
+ * The count and the total are computed over exactly the lines this section RENDERS, so the header
+ * always adds up to what is beneath it.
  */
 
 "use client";
@@ -12,12 +29,29 @@ import { memo } from "react";
 import type { CSSProperties } from "react";
 import type { Job } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
+import { pricesHidden } from "./helpers";
 
 const SCOPE_HEAD: CSSProperties = {
   fontSize: "var(--type-xs)",
   fontWeight: 800,
   textTransform: "uppercase",
   letterSpacing: ".05em",
+};
+
+const LINE_ROW: CSSProperties = {
+  fontSize: "var(--type-base)",
+  padding: "var(--space-1) 0",
+  display: "flex",
+  gap: "var(--space-2)",
+  alignItems: "baseline",
+};
+
+const TOTAL_ROW: CSSProperties = {
+  ...LINE_ROW,
+  borderTop: "1px solid var(--line)",
+  marginTop: "var(--space-2)",
+  paddingTop: "var(--space-2)",
+  fontWeight: 800,
 };
 
 export interface WorkOrderSecProps {
@@ -44,12 +78,20 @@ export function workOrderPropsEqual(a: WorkOrderSecProps, b: WorkOrderSecProps):
 function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
   const scope = (job.lines ?? []).filter((l) => (l.d ?? "").trim());
   const photoN = (job.photos ?? []).length;
+  const hidden = pricesHidden(job);
+  const showMoney = seesPrice && !hidden;
+  // Summed over the RENDERED lines only, so "4 items · $730" and the Total row can never
+  // disagree with the four numbers between them.
+  const total = scope.reduce((sum, l) => sum + (l.q ?? 1) * (l.r ?? 0), 0);
+  const items = `${scope.length} item${scope.length === 1 ? "" : "s"}`;
 
   return (
     <div className="fsec">
       <div className="fsec-h">
         <span>Work order</span>
-        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>office-sold</span>
+        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
+          {showMoney ? `${items} · ${fmt$(total)}` : items}
+        </span>
       </div>
       <div style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{job.title}</div>
 
@@ -59,23 +101,32 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
             Scope — what was sold
           </div>
           {scope.map((x, i) => (
-            <div
-              key={i}
-              style={{ fontSize: "var(--type-base)", padding: "var(--space-1) 0", display: "flex", gap: "var(--space-2)", alignItems: "baseline" }}
-            >
+            <div key={i} style={LINE_ROW}>
               <span style={{ color: "var(--green-700)" }}>✓</span>
               <span style={{ flex: 1 }}>
                 {x.d}
                 {(x.q ?? 1) > 1 ? <span className="muted"> × {x.q}</span> : null}
               </span>
               {/* x.r === null = server-redacted (techSeesPrice off) — show nothing, never $0. */}
-              {seesPrice && x.r != null && (
+              {showMoney && x.r != null && (
                 <span className="muted fig" style={{ fontSize: "var(--type-sm)" }}>
                   {fmt$((x.q ?? 1) * x.r)}
                 </span>
               )}
             </div>
           ))}
+          {showMoney ? (
+            <div style={TOTAL_ROW}>
+              <span style={{ flex: 1 }}>Total</span>
+              <span className="fig">{fmt$(total)}</span>
+            </div>
+          ) : hidden ? (
+            // State 3. One plain sentence, not a blank where a number should be — a technician
+            // who cannot see a figure needs to know the figure exists.
+            <div className="muted" style={{ fontSize: "var(--type-base)", paddingTop: "var(--space-2)" }}>
+              Prices aren&rsquo;t shown on your device.
+            </div>
+          ) : null}
         </>
       ) : null}
 

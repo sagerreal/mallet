@@ -72,11 +72,23 @@ export function entryHours(entry: MyHoursEntry): number {
 }
 
 /**
- * Paid length. Break is the only state inside the day that is unpaid — that single sentence is
- * the whole policy, and it is the one the office has to be able to defend.
+ * THE UNPAID-KIND POLICY, and the only place it is written down. Break is the only state inside
+ * the day that is unpaid — that single sentence is the whole policy, and it is the one the office
+ * has to be able to defend.
+ *
+ * It is the KIND test rather than the hours that is exported, because the day panel needs the same
+ * policy over a different length: `paidHours` runs through `entryHours`, which returns 0 for a
+ * running row, and the panel has to count the stretch the technician is standing in
+ * (features/field/day-segments.ts). Sharing the sentence and not the sum is what keeps My hours
+ * and the day panel from disagreeing when a second unpaid kind is added.
  */
+export function isPaidKind(kind: MyHoursEntry["kind"]): boolean {
+  return kind !== "break";
+}
+
+/** Paid recorded length — the policy above, applied to a settled row. */
 export function paidHours(entry: MyHoursEntry): number {
-  return entry.kind === "break" ? 0 : entryHours(entry);
+  return isPaidKind(entry.kind) ? entryHours(entry) : 0;
 }
 
 /** The entries falling inside the week beginning `weekStartISO`. */

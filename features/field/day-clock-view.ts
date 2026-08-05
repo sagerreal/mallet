@@ -122,28 +122,6 @@ export function sinceLabel(open: OpenEntryView, today: string): string {
   return `since ${time} on ${day.toLocaleDateString(undefined, { month: "short", day: "numeric" })}`;
 }
 
-/**
- * How long the running segment has been going, as "1:07" or "12:03:41"-free h:mm.
- *
- * Elapsed, not a countdown, and derived from the row's own start rather than a counter held in the
- * component: a tab left open, a phone that slept, a reload — all of them must land on the same
- * number, and only the start time can do that.
- *
- * Returns null when nothing is running, or when the start is in the future (a clock skew between
- * the shop's timezone and the device — better to show nothing than a negative).
- */
-export function elapsedLabel(open: OpenEntryView | null | undefined, now: Date): string | null {
-  if (open == null) return null;
-  const started = new Date(`${open.workDate}T${open.startTime}:00`);
-  if (Number.isNaN(started.getTime())) return null;
-  const ms = now.getTime() - started.getTime();
-  if (ms < 0) return null;
-  const totalMinutes = Math.floor(ms / 60_000);
-  const h = Math.floor(totalMinutes / 60);
-  const m = totalMinutes % 60;
-  return `${h}:${String(m).padStart(2, "0")}`;
-}
-
 /** The row, from whatever the server says is running. */
 export function dayClockView(open: OpenEntryView | null | undefined, today: string): DayClockView {
   if (open == null) return { state: "off", title: TITLE.off, since: "" };

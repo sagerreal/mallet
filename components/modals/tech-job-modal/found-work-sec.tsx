@@ -12,6 +12,7 @@ import { memo, useState } from "react";
 import type { Addon, Job } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { AO_INPUT } from "./helpers";
+import { SheetRow } from "@/components/modals/sheet-row";
 
 interface AddonStatusPillProps {
   status: Addon["status"];
@@ -80,15 +81,13 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
   }
 
   return (
-    <div className="fsec">
-      <div className="fsec-h">
-        <span>Found work / add-ons</span>
-        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
-          {addons.length}
-          {awaiting ? ` · ${awaiting} awaiting OK` : ""}
-        </span>
-      </div>
-
+    <SheetRow
+      variant="section"
+      label="Found work"
+      value={addons.length}
+      after={awaiting ? <span>· {awaiting} awaiting OK</span> : undefined}
+      expandable
+    >
       {addons.map((a) => (
         <div key={a.id} className="stage-row">
           <div style={{ flex: 1 }}>
@@ -137,12 +136,12 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
               style={{ flex: "0 0 92px", ...AO_INPUT }}
             />
           )}
-          <button className="btn sm primary" onClick={submit}>
+          <button type="button" className="btn sm primary" onClick={submit}>
             Add
           </button>
         </div>
       )}
-    </div>
+    </SheetRow>
   );
 }
 export const FoundWorkSec = memo(FoundWorkSecFn, foundWorkPropsEqual);

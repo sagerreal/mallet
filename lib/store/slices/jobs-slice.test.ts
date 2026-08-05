@@ -784,6 +784,27 @@ describe("setVisitStatus — On my way (office surface)", () => {
     });
     expect(mockSetVisitEnroute).not.toHaveBeenCalled();
   });
+
+  // The optimistic patch carries the STAMP as well as the status. Without it the stepper — which
+  // reads the two together — reported the tap just made as "skipped" until the DTO landed, which
+  // is two taps' worth of time on a slow connection. See lib/store/visit-stamps.ts.
+  it("stamps the step optimistically, so a second tap does not report the first as skipped", () => {
+    mockSetVisitEnroute.mockReturnValue(new Promise(() => {}));
+    mockSetVisitStatus.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDbJob(get, "j-enroute", [SCHEDULED_VISIT]);
+
+    get().setVisitStatus("j-enroute", SCHEDULED_VISIT.id, "enroute", "office");
+    const enrouteAt = get().jobs[0]!.visits[0]!.enrouteAt;
+    expect(enrouteAt).toBeTruthy();
+
+    get().setVisitStatus("j-enroute", SCHEDULED_VISIT.id, "onsite", "office");
+    const moved = get().jobs[0]!.visits[0]!;
+    expect(moved.status).toBe("onsite");
+    // The drive's stamp survives the second tap; the arrival gets its own.
+    expect(moved.enrouteAt).toBe(enrouteAt);
+    expect(moved.startedAt).toBeTruthy();
+  });
 });
 
 // ---------------------------------------------------------------------------

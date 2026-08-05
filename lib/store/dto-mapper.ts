@@ -250,6 +250,12 @@ export function toStoreVisit(v: VisitDTO): Visit {
         ? v.durationMinutes / 60
         : hoursBetween(v.scheduledStart, v.scheduledEnd),
     status: toStoreVisitStatusInternal(v.status, v.enrouteAt),
+    // The step stamps, carried through verbatim — including their nulls, which mean "nobody
+    // tapped it" and not "we don't know". The visit stepper prints these; see the Visit type.
+    // `?? null` normalises an absent DTO field to the same absence the column has.
+    enrouteAt: v.enrouteAt ?? null,
+    startedAt: v.startedAt ?? null,
+    completedAt: v.completedAt ?? null,
     ...(v.notes ? { scopeNotes: v.notes } : {}),
   };
 }

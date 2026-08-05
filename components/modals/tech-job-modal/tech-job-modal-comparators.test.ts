@@ -11,6 +11,7 @@
  * comparator AND to this matrix.
  */
 import { describe, it, expect } from "vitest";
+import { techHeaderPropsEqual } from "./tech-header";
 import { workOrderPropsEqual } from "./work-order-sec";
 import { foundWorkPropsEqual } from "./found-work-sec";
 import { noteFeedPropsEqual } from "./note-feed";
@@ -41,6 +42,27 @@ const withField = (j: Job, field: string, value: unknown): Job =>
   ({ ...(j as object), [field]: value }) as unknown as Job;
 
 const noop = () => null;
+
+describe("techHeaderPropsEqual", () => {
+  const visit = { id: "v1", date: "2026-08-04", techId: "t1", start: 15, dur: 2, status: "scheduled" };
+  const props = { job: baseJob, custName: "Marta Delgado", visit };
+  it("SKIPS on a verify-only change", () => {
+    expect(techHeaderPropsEqual(props, { ...props, job: verifyTapped(baseJob) })).toBe(true);
+  });
+  // tradeLabel reads svc → title → jobMode(kind, lines); visitWhenLabel reads date + start.
+  it.each(["svc", "title", "kind", "lines"])("re-renders when job.%s changes (tradeLabel reads it)", (f) => {
+    expect(techHeaderPropsEqual(props, { ...props, job: withField(baseJob, f, f === "lines" ? [] : "X") })).toBe(false);
+  });
+  it("re-renders when the customer's name changes", () => {
+    expect(techHeaderPropsEqual(props, { ...props, custName: "Someone Else" })).toBe(false);
+  });
+  it.each(["date", "start"])("re-renders when the visit's %s moves", (f) => {
+    expect(techHeaderPropsEqual(props, { ...props, visit: { ...visit, [f]: f === "date" ? "2026-08-05" : 9 } })).toBe(false);
+  });
+  it("re-renders when the visit appears or disappears", () => {
+    expect(techHeaderPropsEqual(props, { ...props, visit: undefined })).toBe(false);
+  });
+});
 
 describe("workOrderPropsEqual", () => {
   const props = { job: baseJob, seesPrice: true };

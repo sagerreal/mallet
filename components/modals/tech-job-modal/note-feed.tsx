@@ -1,8 +1,11 @@
 /**
  * components/modals/tech-job-modal/note-feed.tsx
  * Notes feed (reuses the job-modal NoteFeed pattern, prototype jobNoteFeed) —
- * renders job.acts through the shared .nfeed chip rows. Renders nothing when
- * there's nothing to show. bare — no card wrapper (the .fsec carries the label).
+ * renders job.acts through the shared .nfeed chip rows.
+ *
+ * A COUNTED ROW ("Job notes  2 ›") that expands in flow. The count already existed in this file
+ * and was never rendered, so the header said "Notes" whether the office had left three of them or
+ * none, and the only way to find out was to scroll past the whole feed.
  */
 
 "use client";
@@ -11,6 +14,7 @@ import { memo, useState } from "react";
 import type { Job } from "@/lib/store/types";
 import { todayISO } from "@/lib/clock";
 import { AO_INPUT } from "./helpers";
+import { SheetRow } from "@/components/modals/sheet-row";
 
 interface NoteEntry {
   key: string;
@@ -110,10 +114,9 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
   }
 
   return (
-    <div className="fsec">
-      <div className="fsec-h">
-        <span>Notes</span>
-      </div>
+    // The count was already computed and simply never shown — the header was a bare "Notes", so
+    // the only way to learn whether the office had left anything was to read past it.
+    <SheetRow variant="section" label="Job notes" value={entries.length} expandable>
       {entries.length > 0 ? (
         <div className="nfeed">
           {entries.map((n) => (
@@ -149,6 +152,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
               style={{ flex: 1, minWidth: 140, ...AO_INPUT }}
             />
             <button
+              type="button"
               className="btn sm primary"
               aria-label="Add note"
               disabled={saving}
@@ -162,7 +166,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
           )}
         </>
       )}
-    </div>
+    </SheetRow>
   );
 }
 export const NoteFeed = memo(NoteFeedFn, noteFeedPropsEqual);

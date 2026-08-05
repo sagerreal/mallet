@@ -38,6 +38,7 @@ import {
   useAppStore,
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
+import { useCanText } from "@/features/messaging/use-can-text";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { VISIT_FEE_TITLE } from "@/features/invoices/visit-fee";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
@@ -45,26 +46,15 @@ import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { isJobAssignedTo } from "@/lib/store/job-assignment";
 import { MODAL } from "@/lib/store/modal-ids";
 import { CopilotSection } from "@/features/field-copilot/copilot-section";
-import { fmt$ } from "@/lib/format";
-import {
-  colLabel,
-  currentVisit,
-  custNameOf,
-  hmLabel,
-  invDue,
-  isUnpricedEstimate,
-  jobMode,
-  jobQuoted,
-  jobTotal,
-  vPlaced,
-} from "./helpers";
+import { currentVisit, custNameOf, invDue, isUnpricedEstimate, vPlaced } from "./helpers";
 import { TechHeader } from "./tech-header";
-import { VisitRow } from "./visit-row";
+import { VisitsSec } from "./visits-sec";
 import { WorkOrderSec } from "./work-order-sec";
 import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
-import { DoneBlock, ScopeHandoffBlock, doneFootAction } from "./done-block";
+import { DoneBlock, ScopeHandoffBlock } from "./done-block";
+import { footActions } from "./tech-job-foot";
 import { QuoteTab } from "./quote-tab";
 
 /** The modal's two tabs. Hours are NOT a tab here on purpose — the clock lives on
@@ -88,6 +78,10 @@ export function TechJobModalContent() {
   // view. Taking payment is NOT one of them any more; see canTakePayment below.
   const me = useMe();
   const isOffice = me.data?.role === "owner" || me.data?.role === "office";
+
+  // May the SHOP text at all (A2P 10DLC campaign active)? A capability, asked of every role —
+  // see the Call/Text row below for why this replaced the old isOffice gate.
+  const canText = useCanText();
 
   // Extract jobId before all store subscriptions so by-id selectors below can
   // capture it in their closure. useActiveModal is already narrow (scalar).
@@ -142,7 +136,6 @@ export function TechJobModalContent() {
   // creating new object references on every store write).
   const custName = job ? custNameOf(job, lead) : "";
   const addr = (job?.addr || lead?.address || "") as string;
-  const quoted = job ? jobQuoted(job) : false;
   const done = job?.status === "done";
   // The tech only sees PLACED visits — never "Invalid Date" rows in the field.
   const placed = (job?.visits ?? []).filter(vPlaced);
@@ -293,51 +286,62 @@ export function TechJobModalContent() {
   const scoping = scopingCandidate;
   const hasScope = placed.some((v) => Boolean(v.scopeNotes?.trim()));
 
-  // --- The ONE foot primary (sheet grammar) ----------------------------------
-  // Close-out states hand the DoneBlock branch's terminal action to the sticky
-  // foot; every other state gets a plain full-width Done so the field view is
-  // never dismissable only via the tiny shell ✕. All non-destructive. An
-  // unpriced estimate never gets a billing foot — its close-out is the handoff.
-  const footKind =
-    done && canTakePayment && !scoping ? doneFootAction(job, lead, invoice, isOffice) : null;
-  const footDue = invoice ? invDue(invoice) : jobTotal(job);
-  const footCard = lead?.card;
-  const footPri =
-    footKind === "charge" && footCard
-      ? { label: `Charge ${fmt$(footDue)} to ${footCard.brand} ···· ${footCard.last4}`, run: chargeOnFile }
-      : footKind === "collect"
-        ? { label: "Take payment →", run: openCloseOut }
-        : footKind === "sendoffice"
-          ? { label: "Send to the office to bill", run: sendToOffice }
-          : { label: "Done", run: close };
-
   // The viewer's own visit (the one their scope belongs to), else the job's current
   // visit — an owner-operator scoping their own walkthrough still lands somewhere.
   const myVisit = placed.find((v) => v.techId === me.data?.userId);
   const scopeVisit = myVisit ?? curVisit;
 
+  /**
+   * The visit this sheet's FOOT moves. Own visit first; an owner/office viewer may move the
+   * job's current one either way. A technician looking at a colleague's visit gets neither the
+   * step nor the finish — the server refuses both, so a live-looking button would just error.
+   */
+  const actVisit = !done ? (myVisit ?? (isOffice ? curVisit : undefined)) : undefined;
+
+  // The foot — sheet grammar: ONE loud primary, and a quiet Finish under it whenever the primary
+  // is something else. The branch is a pure view model; see tech-job-foot.ts for the four rules.
+  const { primary: footPri, quiet: footQuiet } = footActions(
+    { job, lead, invoice, isOffice, canTakePayment, scoping, done, actVisit },
+    {
+      setVisitStatus: onVisitStatus,
+      chargeOnFile,
+      openCloseOut,
+      sendToOffice,
+      dismiss: close,
+    },
+  );
+
   const onQuoteTab = tab === "quote";
 
   return (
     <>
-      {/* 1. Sticky sheet header — customer name + service word + title. NO status pill. */}
-      <TechHeader job={job} custName={custName} />
+      {/* 1. Sticky sheet header — customer name over "<trade> · <when>". NO status pill. */}
+      <TechHeader job={job} custName={custName} visit={scopeVisit} />
 
-      {/* 1b. Tabs — Job · Quote (underline tab bar, same grammar as the Office page).
-          Surface-based, not role-based: owner-operators quote on site too. */}
-      <div className="otabs" role="tablist" aria-label="Job view">
+      {/* 1b. Tabs — Job · Quote. TWO EQUAL HALVES of the sheet's width, centred, with the active
+          one carrying a heavy underline: at arm's length in a van, a pair of small left-aligned
+          words does not read as a choice. Surface-based, not role-based — owner-operators quote
+          on site too. Each half is a real tab with a matching tabpanel; the panels were missing,
+          so the tablist named controls that pointed at nothing. */}
+      <div className="otabs tj-tabs" role="tablist" aria-label="Job view">
         <button
+          id="tj-tab-job"
           className={tab === "job" ? "otab on" : "otab"}
           role="tab"
+          type="button"
           aria-selected={tab === "job"}
+          aria-controls="tj-panel-job"
           onClick={() => setTab("job")}
         >
           Job
         </button>
         <button
+          id="tj-tab-quote"
           className={tab === "quote" ? "otab on" : "otab"}
           role="tab"
+          type="button"
           aria-selected={tab === "quote"}
+          aria-controls="tj-panel-quote"
           onClick={() => setTab("quote")}
         >
           Quote
@@ -347,44 +351,18 @@ export function TechJobModalContent() {
       {onQuoteTab ? (
         /* The Quote tab owns its whole body AND its sticky foot (the builder's
            "Present to customer →" is the sheet's one primary while it shows). */
-        <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+        <div role="tabpanel" id="tj-panel-quote" aria-labelledby="tj-tab-quote">
+          <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+        </div>
       ) : (
-        <>
-      {/* 2. Call / Text — the quiet peer-action row. CALL is for everyone: a technician ringing
-          the customer on their way is the ordinary field case, and going through Mallet is what
-          keeps their personal mobile off the customer's phone. myDay now carries the customers
-          behind a tech's own jobs, so the lead is in the store on this surface too. TEXT stays
-          office-only — outbound SMS is gated on the org's 10DLC registration, a separate question
-          from voice. Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no
-          number is on file. They disable only with NO linked customer (nobody to call). */}
-      <div className="sheet-secrow">
-        <button
-          className="sheet-sec"
-          disabled={!lead}
-          title={!lead ? "No linked customer" : undefined}
-          onClick={() => {
-            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
-          }}
-        >
-          Call
-        </button>
-        {isOffice && (
-          <button
-            className="sheet-sec"
-            disabled={!lead}
-            title={!lead ? "No linked customer" : undefined}
-            onClick={() => {
-              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
-            }}
-          >
-            Text
-          </button>
-        )}
-      </div>
-
-      {/* 3. Address — tappable Navigate row, or the muted no-address line. */}
+        <div role="tabpanel" id="tj-panel-job" aria-labelledby="tj-tab-job">
+      {/* 2. Address — the tappable Navigate row, or the muted no-address line. It leads the body:
+          the first thing a technician does with this sheet is get to it. Navigate carries the
+          AMBER accent (see .jaddr .nav) — the app's accent colour, which also carries pending and
+          due-now (.pill.amber, .tdue.now, the awaiting-OK pill on this very sheet). There is no
+          blue anywhere in Mallet. */}
       {addr ? (
-        <button className="jaddr" onClick={navigate}>
+        <button type="button" className="jaddr" onClick={navigate}>
           <svg
             viewBox="0 0 24 24"
             width="17"
@@ -394,6 +372,7 @@ export function TechJobModalContent() {
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+            aria-hidden="true"
           >
             <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" />
             <circle cx="12" cy="10" r="3" />
@@ -406,6 +385,44 @@ export function TechJobModalContent() {
           No address on this job yet.
         </div>
       )}
+
+      {/* 3. Call / Text — the quiet peer-action row, side by side beneath the address.
+          CALL is for everyone: a technician ringing the customer on their way is the ordinary
+          field case, and going through Mallet keeps their personal mobile off the customer's
+          phone. TEXT is gated on CAPABILITY, not on role — `canText` is the org's A2P 10DLC
+          campaign being active (see features/messaging/use-can-text.ts). It used to be gated on
+          `isOffice`, which answered a different question: a shop that has not finished carrier
+          registration cannot text whoever is holding the phone, and a shop that HAS finished it
+          has no reason to withhold the thread from the man standing at the door. When the org
+          cannot text, no button is drawn at all — a control that is certain to be refused is a
+          dead control. Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no
+          number is on file. They disable only with NO linked customer (nobody to call). */}
+      <div className="sheet-secrow">
+        <button
+          type="button"
+          className="sheet-sec"
+          disabled={!lead}
+          title={!lead ? "No linked customer" : undefined}
+          onClick={() => {
+            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+          }}
+        >
+          Call
+        </button>
+        {canText && (
+          <button
+            type="button"
+            className="sheet-sec"
+            disabled={!lead}
+            title={!lead ? "No linked customer" : undefined}
+            onClick={() => {
+              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
+            }}
+          >
+            Text
+          </button>
+        )}
+      </div>
 
       {/* 4. The close-out HERO. A done, UNPRICED ESTIMATE gets the scope handoff for every
           role — there is no bill on a scoping visit, so no billing branch may render. The
@@ -444,59 +461,24 @@ export function TechJobModalContent() {
         />
       ) : null}
 
-      {/* Work order (5a) — install job, not done, with scope lines (office-sold). */}
-      {jobMode(job) === "install" &&
-      !done &&
-      (job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
+      {/* Work order (5a) — ONE gate: is there anything to show?
+          It used to be gated three ways — `jobMode === "install"` AND not done AND at least one
+          described line. `jobMode` reads "install" only for PRICED lines, so a plain service call
+          never showed a work order at all: the technician arrived knowing the customer's name and
+          nothing about the work. A finished job hid it too, exactly when someone wants to check
+          what was sold. The remaining condition is the honest one. */}
+      {(job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
         <WorkOrderSec job={job} seesPrice={seesPrice} />
       ) : null}
 
       {/* 5. Your visit(s). */}
-      <div className="fsec">
-        <div className="fsec-h">
-          <span>Your visit{placed.length > 1 ? "s" : ""}</span>
-          {done && (
-            <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>
-          )}
-        </div>
-        {done ? (
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
-            <span className="muted" style={{ fontSize: "var(--type-base)" }}>
-              {curVisit
-                ? `${colLabel(curVisit.date)} · ~${hmLabel(curVisit.dur)} on site`
-                : "Completed"}
-            </span>
-            {/* Reopen writes VISIT status (ownerOrOffice) — office only, and only when there is
-                a placed visit to move. A job completed straight from My Day has none, and this
-                button took the tap and did nothing. */}
-            {isOffice && curVisit && (
-              <button className="btn sm ghost" onClick={() => onVisitStatus(curVisit.id, "scheduled")}>
-                ↩ Reopen
-              </button>
-            )}
-          </div>
-        ) : placed.length ? (
-          placed.map((v) => (
-            <VisitRow
-              key={v.id}
-              visit={v}
-              quoted={quoted}
-              canReopen={isOffice}
-              // A tech may only move THEIR OWN visit. A two-visit job shows both rows (they are
-              // useful context — "my stop is the second one today"), but the step buttons appear
-              // only on the row assigned to the viewer. Without this a tech tapping the wrong row
-              // would move a colleague's visit and write time against it; the server refuses that
-              // now, so the alternative is an unexplained error on a button that looked live.
-              canAct={isOffice || v.techId === me.data?.userId}
-              onStatus={(status) => onVisitStatus(v.id, status)}
-            />
-          ))
-        ) : (
-          <div className="empty-att" style={{ marginBottom: "0" }}>
-            Not scheduled yet — the office will set the time.
-          </div>
-        )}
-      </div>
+      <VisitsSec
+        placed={placed}
+        curVisit={curVisit}
+        done={done}
+        isOffice={isOffice}
+        onStatus={onVisitStatus}
+      />
 
       {/* 6. Pricing lives in the Quote tab — the one pricing home on this surface for
           every role. The old office-only PricingSec entry (a second door to the same
@@ -531,11 +513,16 @@ export function TechJobModalContent() {
 
       {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
       <div className="sheet-foot">
-        <button className="sheet-pri" onClick={footPri.run}>
+        <button type="button" className="sheet-pri" onClick={footPri.run}>
           {footPri.label}
         </button>
+        {footQuiet ? (
+          <button type="button" className="sheet-quiet" onClick={footQuiet.run}>
+            {footQuiet.label}
+          </button>
+        ) : null}
       </div>
-        </>
+        </div>
       )}
     </>
   );

@@ -146,6 +146,22 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     expect(completed.status).toBe("complete");
   });
 
+  // THE ASYMMETRY, closed. The job sheet's "✓ Mark done" has always accepted a scheduled visit
+  // (SetVisitStatusUseCase allows pending → complete deliberately), but this endpoint went
+  // through Job.complete(), which refuses anything but in_progress — so My day's ✓ Complete
+  // returned BAD_REQUEST on the very job the sheet would happily close. The field router starts
+  // it first now; Job.complete() itself is untouched, because it is also the office path.
+  it("tech completes a SCHEDULED job in one call, without a Start first", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, ${"JOB-TA-SKIP-" + randomUUID().slice(0, 8)}, 'scheduled', 0, ${techAId})
+      returning id
+    `;
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    const completed = await caller.v1.field.complete({ jobId: j!.id });
+    expect(completed.status).toBe("complete");
+  });
+
   it("tech gets FORBIDDEN on someone else's job", async () => {
     // techA tries to start techB's job
     const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));

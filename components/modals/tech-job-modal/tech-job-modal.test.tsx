@@ -33,6 +33,10 @@ let mockRole: "owner" | "office" | "tech" | undefined = "owner";
 // office layout) — the tech job modal reads the org's visit fee via useOrgServiceFee instead.
 // Mocked directly here (see use-org-service-fee.test.ts for the hook's own fetch/fallback tests).
 let mockOrgFee: number | null = 89;
+// May the SHOP text (A2P 10DLC campaign active)? The Text button is gated on this CAPABILITY for
+// every role — not on isOffice, which answered a different question. The hook behind it reads
+// v1.settings.fieldToggles; mocked here so this suite stays store-only (see use-can-text.ts).
+let mockCanText = true;
 
 const noop = vi.fn();
 const mockOpenModal = vi.fn();
@@ -85,6 +89,15 @@ function mockStoreState(): Record<string, unknown> {
   };
 }
 
+/**
+ * Found work and Job notes are COUNTED ROWS now — collapsed until tapped, so the work order and
+ * the foot primary are not pushed off the bottom of a phone by two always-open feeds. Tests that
+ * assert on their bodies open them first.
+ */
+function openSection(label: "Found work" | "Job notes"): void {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
+}
+
 function useAppStoreMock(selector: (s: Record<string, unknown>) => unknown) {
   return selector(mockStoreState());
 }
@@ -113,6 +126,10 @@ vi.mock("@/features/identity/hooks", () => ({
 
 vi.mock("@/features/settings/use-org-service-fee", () => ({
   useOrgServiceFee: () => mockOrgFee,
+}));
+
+vi.mock("@/features/messaging/use-can-text", () => ({
+  useCanText: () => mockCanText,
 }));
 
 // Deterministic date stamp for the notes composer ("[Jul 13] …").
@@ -165,6 +182,7 @@ beforeEach(() => {
   mockSeesPrice = true;
   mockRole = "owner";
   mockOrgFee = 89;
+  mockCanText = true;
   mockOpenModal.mockClear();
   mockUpdateJob.mockReset();
   mockUpdateJob.mockResolvedValue({ ok: true });
@@ -179,19 +197,20 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — owner/office", () => {
-  it("shows Call/Text, visit step buttons, and add-on controls", () => {
+  it("shows Call/Text, the advancing foot, and add-on controls", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText("Call")).toBeTruthy();
     expect(screen.getByText("Text")).toBeTruthy();
-    expect(screen.getByText("On my way →")).toBeTruthy();
-    expect(screen.getByText("✓ Mark done")).toBeTruthy();
+    expect(screen.getByText("Start driving →")).toBeTruthy();
+    expect(screen.getByText("Finish job →")).toBeTruthy();
+    openSection("Found work");
     expect(screen.getByText(/Customer OK/)).toBeTruthy();
     expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
   });
 
   it("writes the office's taps through the OFFICE surface (no clock — she wasn't there)", () => {
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("On my way →"));
+    fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "office");
   });
 
@@ -218,7 +237,10 @@ describe("TechJobModalContent — owner/office", () => {
     ];
     render(<TechJobModalContent />);
     expect(screen.getByText(/Take payment/)).toBeTruthy();
-    expect(screen.getByText("$285")).toBeTruthy();
+    // Three, and each is right: the close-out hero's amount, the work-order line, and the work
+    // order's Total. A finished job keeps its work order now — that is when someone checks what
+    // was sold — so the figure legitimately appears more than once.
+    expect(screen.getAllByText("$285").length).toBe(3);
     expect(screen.queryByText(/No price set/)).toBeNull();
   });
 
@@ -247,18 +269,37 @@ describe("TechJobModalContent — tech", () => {
   });
 
   // Call is for everyone: ringing the customer on the way is the ordinary field case, and going
-  // through Mallet is what keeps the tech's personal mobile off the customer's phone. Text stays
-  // office-only — outbound SMS is gated on the org's 10DLC registration, a separate question.
-  it("shows Call and hides Text", () => {
+  // through Mallet is what keeps the tech's personal mobile off the customer's phone.
+  //
+  // Text is gated on CAPABILITY, not on role. It was `isOffice`-only, which answered the wrong
+  // question: whether the shop may send an SMS is decided by its A2P 10DLC campaign, and that
+  // answer is the same whoever is holding the phone. A technician in a registered shop gets the
+  // thread; nobody in an unregistered one does.
+  it("shows Call, and Text too — a registered shop can text from the field", () => {
+    render(<TechJobModalContent />);
+    expect(screen.queryByText("Call")).not.toBeNull();
+    expect(screen.queryByText("Text")).not.toBeNull();
+  });
+
+  it("draws NO Text button when the org cannot text — a dead control is worse than none", () => {
+    mockCanText = false;
     render(<TechJobModalContent />);
     expect(screen.queryByText("Call")).not.toBeNull();
     expect(screen.queryByText("Text")).toBeNull();
   });
 
+  it("withholds Text from the OFFICE too when the campaign isn't active", () => {
+    mockRole = "owner";
+    mockCanText = false;
+    render(<TechJobModalContent />);
+    expect(screen.queryByText("Text")).toBeNull();
+  });
+
   // A reviewer found this: the modal renders every PLACED visit, unfiltered by assignee, and the
-  // step buttons had been unhidden for techs wholesale. On a two-visit job the tech saw live
-  // controls on a colleague's row, and tapping them moved that visit and wrote time against it.
-  it("shows NO step buttons on a colleague's visit, only on the tech's own", () => {
+  // step buttons had been unhidden for techs wholesale. On a two-visit job the tech could move a
+  // colleague's visit and write time against it. The controls now live in the foot, which acts on
+  // exactly one visit — so the guard is that the foot picks the TECH'S OWN.
+  it("the foot moves the tech's OWN visit on a job they share with a colleague", () => {
     mockJobs = [
       makeJob({
         visits: [
@@ -268,19 +309,30 @@ describe("TechJobModalContent — tech", () => {
       }),
     ];
     render(<TechJobModalContent />);
-    // Both rows are visible (useful context), but exactly ONE carries the control.
-    expect(screen.getAllByText("On my way →")).toHaveLength(1);
+    // Both visits are on the sheet (useful context — "my stop is the second one today"), but
+    // there is exactly one foot and it moves v1, the tech's own.
+    expect(screen.getAllByRole("list", { name: "Visit progress" })).toHaveLength(2);
+    fireEvent.click(screen.getByText("Start driving →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
 
-  it("shows the step buttons — they are the tech's, and they are how his hours get recorded", () => {
+  // A visit that is not theirs and not the office's to move gets no foot step at all — the
+  // server refuses it, so the sheet falls back to a plain dismiss rather than an erroring button.
+  it("offers no step at all on a job assigned to somebody else", () => {
+    mockJobs = [
+      makeJob({
+        visits: [{ id: "v9", date: "2026-07-12", techId: "someone-else", start: 9, dur: 2, status: "scheduled" }],
+      }),
+    ];
     render(<TechJobModalContent />);
-    expect(screen.getByText("On my way →")).toBeTruthy();
-    expect(screen.getByText("✓ Mark done")).toBeTruthy();
+    expect(screen.queryByText("Start driving →")).toBeNull();
+    expect(screen.queryByText("Finish job →")).toBeNull();
+    expect(screen.getByText("Done")).toBeTruthy();
   });
 
   it("writes the tech's taps through the FIELD surface (the office API would refuse him)", () => {
     render(<TechJobModalContent />);
-    fireEvent.click(screen.getByText("On my way →"));
+    fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
 
@@ -296,6 +348,7 @@ describe("TechJobModalContent — tech", () => {
 
   it("hides add-on add + status controls but keeps the read-only found-work list", () => {
     render(<TechJobModalContent />);
+    openSection("Found work");
     expect(screen.getByText("Extra shutoff valve")).toBeTruthy(); // read stays
     expect(screen.queryByText(/Customer OK/)).toBeNull();
     expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
@@ -392,6 +445,7 @@ describe("TechJobModalContent — tech", () => {
       }),
     ];
     render(<TechJobModalContent />);
+    openSection("Found work");
     expect(screen.getByText("Extra shutoff valve")).toBeTruthy();
     expect(screen.queryByText(/\$0/)).toBeNull();
   });
@@ -399,7 +453,214 @@ describe("TechJobModalContent — tech", () => {
   it("hides the empty found-work section for techs (no dead add form)", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
-    expect(screen.queryByText("Found work / add-ons")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The foot: the primary IS the next step, and Finish is always one tap away.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — the advancing foot", () => {
+  const withVisit = (status: string) =>
+    makeJob({ visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status }] });
+
+  it.each([
+    ["scheduled", "Start driving →", "enroute"],
+    ["enroute", "I've arrived →", "onsite"],
+    ["onsite", "Finish job →", "done"],
+  ])("from %s the primary reads %s and writes %s", (status, label, written) => {
+    mockJobs = [withVisit(status)];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText(label));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", written, "office");
+  });
+
+  // THE RULE. On my way and Arrived are optional — the server allows pending → complete
+  // deliberately — so a man in a customer's kitchen is never told to tap "on the way" first.
+  it.each(["scheduled", "enroute"])("offers a quiet Finish from %s — never more than one tap away", (status) => {
+    mockJobs = [withVisit(status)];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Finish job →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "done", "office");
+  });
+
+  it("shows Finish ONCE on site — the primary is already it, so there is no quiet twin", () => {
+    mockJobs = [withVisit("onsite")];
+    render(<TechJobModalContent />);
+    expect(screen.getAllByText("Finish job →")).toHaveLength(1);
+  });
+
+  // No confirmation dialog: finishing is reversible by the office, and a modal on top of a modal
+  // in a truck is worse than the mistake it guards against.
+  it("finishes on the first tap, with nothing to confirm", () => {
+    mockJobs = [withVisit("onsite")];
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Finish job →"));
+    expect(mockSetVisitStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The work order: a count, a Total, and THREE money states.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — work order", () => {
+  const priced = [
+    { d: "Replace T&P relief valve", q: 1, r: 325 },
+    { d: "Repair shut-off valve", q: 1, r: 245 },
+  ];
+
+  it("heads the section with the count and the total, and closes with a Total row", () => {
+    mockJobs = [makeJob({ lines: priced })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("2 items · $570")).toBeTruthy();
+    // The header figure and the Total row are computed from the same rendered lines, so they
+    // cannot disagree with the numbers between them.
+    expect(screen.getByText("Total")).toBeTruthy();
+    expect(screen.getByText("$570")).toBeTruthy();
+    expect(screen.getByText("$325")).toBeTruthy();
+    expect(screen.getByText("$245")).toBeTruthy();
+  });
+
+  // A plain service call has unpriced scope lines, so jobMode() reads "service" — and the old
+  // three-way gate meant the technician arrived knowing the customer's name and nothing else.
+  it("renders for an UNPRICED service call, which never showed a work order at all", () => {
+    mockJobs = [makeJob({ lines: [{ d: "Clear kitchen drain", q: 1, r: 0 }] })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Clear kitchen drain")).toBeTruthy();
+    expect(screen.getByText("1 item · $0")).toBeTruthy();
+  });
+
+  // STATE 3, and the one that matters: a redacted rate is null, not zero. A shop that hides
+  // prices from its techs must not have its priced job summarised as free.
+  it("says prices are withheld rather than printing a fabricated $0", () => {
+    mockRole = "tech";
+    mockJobs = [
+      makeJob({
+        lines: [
+          { d: "Replace T&P relief valve", q: 1, r: null },
+          { d: "Repair shut-off valve", q: 1, r: null },
+        ],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("2 items")).toBeTruthy();
+    expect(screen.getByText(/Prices aren’t shown on your device/)).toBeTruthy();
+    expect(screen.queryByText("Total")).toBeNull();
+    expect(screen.queryByText("$0")).toBeNull();
+  });
+
+  it("shows no figures when the org toggle is off, even with rates in hand", () => {
+    mockSeesPrice = false;
+    mockJobs = [makeJob({ lines: priced })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("2 items")).toBeTruthy();
+    expect(screen.queryByText("$570")).toBeNull();
+  });
+
+  // Line COST is never rendered on this surface, for any role, under any toggle.
+  it("never renders a line's cost", () => {
+    mockJobs = [makeJob({ lines: [{ d: "Replace T&P relief valve", q: 1, r: 325, c: 140 }] })];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText("$140")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Counted navigation rows — the two feeds collapse to a label and a number.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — counted rows", () => {
+  it("collapses Found work and Job notes to a count, and expands them in flow", () => {
+    mockJobs = [makeJob({ notes: "Gate code 4411" })];
+    render(<TechJobModalContent />);
+    const notes = screen.getByRole("button", { name: /^Job notes/ });
+    expect(notes.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Gate code 4411")).toBeNull();
+    fireEvent.click(notes);
+    expect(notes.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Gate code 4411")).toBeTruthy();
+  });
+
+  // Whitespace-tolerant: the count, its qualifier and the caret are three flex items separated by
+  // a CSS gap (.tjf-v), and jsdom loads no stylesheet — so the run-together name here is a test
+  // artefact, not what a screen reader gets. The words and their order are the contract.
+  it("counts the found work, and names how many are still awaiting the customer's OK", () => {
+    render(<TechJobModalContent />);
+    expect(screen.getByRole("button", { name: /^Found work\s*1\s*·\s*1 awaiting OK/ })).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The visit stepper — a readout of what was recorded, never a control.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — visit stepper", () => {
+  it("names the three steps and marks the current one for a screen reader", () => {
+    render(<TechJobModalContent />);
+    const list = screen.getByRole("list", { name: "Visit progress" });
+    const nodes = screen.getAllByRole("listitem");
+    expect(list).toBeTruthy();
+    expect(nodes.map((n) => n.textContent)).toEqual([
+      "Scheduled, current step",
+      "On the way, not yet",
+      "On site, not yet",
+    ]);
+    expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
+  });
+
+  // The nodes are deliberately not buttons: three ~30px targets is the worst tap geometry for a
+  // gloved thumb, and the server refuses every backwards transition, so tappable nodes would look
+  // live and refuse. The foot primary is the one big target.
+  it("draws no tappable node — the stepper reads, the foot advances", () => {
+    render(<TechJobModalContent />);
+    for (const name of ["Scheduled", "On the way", "On site"]) {
+      expect(screen.queryByRole("button", { name })).toBeNull();
+    }
+  });
+
+  // THE RULE: skipped stays skipped. No backfilled arrival, in the record or on the glass.
+  it("shows a finished-without-taps visit as SKIPPED, with no invented times", () => {
+    mockJobs = [
+      makeJob({
+        status: "done",
+        visits: [{ id: "v1", date: "2026-07-12", techId: "tech-1", start: 9, dur: 2, status: "done" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getAllByText("skipped")).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The header: the customer, then what the work is and when it was due.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — header", () => {
+  it("leads with the customer and names the TRADE beneath, from job.svc", () => {
+    mockJobs = [makeJob({ svc: "Water heater repair", visits: [{ id: "v1", date: "2026-07-13", techId: "tech-1", start: 15, dur: 2, status: "scheduled" }] })];
+    render(<TechJobModalContent />);
+    expect(screen.getByRole("heading", { name: "Dana Alvarez" })).toBeTruthy();
+    expect(screen.getByText("Water heater repair")).toBeTruthy();
+    // todayISO is mocked to 2026-07-13, so this visit is today.
+    expect(screen.getByText("Today, 3:00 PM")).toBeTruthy();
+  });
+
+  // The store's mapper fills a null svc column with the literal "service" and older rows carry
+  // the board's lane keys in it. Printing either would name the lane, not the work.
+  it("falls back to the job title rather than printing the lane key", () => {
+    mockJobs = [makeJob({ svc: "service", title: "Fix water heater" })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Fix water heater")).toBeTruthy();
+    expect(screen.queryByText("service")).toBeNull();
+  });
+
+  it("prints no time at all for a job with no placed visit — it must not invent one", () => {
+    mockJobs = [makeJob({ svc: "Water heater repair", visits: [] })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Water heater repair")).toBeTruthy();
+    expect(screen.queryByText(/Today,/)).toBeNull();
   });
 });
 
@@ -473,6 +734,7 @@ describe("TechJobModalContent — phone controls (office)", () => {
 describe("NoteFeed — office composer", () => {
   it("adds a stamped note through updateJob (empty notes → single stamped line)", async () => {
     render(<TechJobModalContent />);
+    openSection("Job notes");
     const input = screen.getByPlaceholderText("add a note…");
     fireEvent.change(input, { target: { value: "Gate code 4411" } });
     fireEvent.click(screen.getByLabelText("Add note"));
@@ -490,6 +752,7 @@ describe("NoteFeed — office composer", () => {
   it("appends to existing notes on its own stamped line", async () => {
     mockJobs = [makeJob({ notes: "Bring the tall ladder" })];
     render(<TechJobModalContent />);
+    openSection("Job notes");
     fireEvent.change(screen.getByPlaceholderText("add a note…"), {
       target: { value: "Left key under mat" },
     });
@@ -504,6 +767,7 @@ describe("NoteFeed — office composer", () => {
   it("surfaces the save-failure copy when updateJob reports not-ok", async () => {
     mockUpdateJob.mockResolvedValue({ ok: false });
     render(<TechJobModalContent />);
+    openSection("Job notes");
     fireEvent.change(screen.getByPlaceholderText("add a note…"), {
       target: { value: "won't stick" },
     });
@@ -519,6 +783,7 @@ describe("NoteFeed — office composer", () => {
       }),
     ];
     render(<TechJobModalContent />);
+    openSection("Job notes");
     expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
     expect(screen.getByText("No notes yet.")).toBeTruthy();
   });
@@ -531,6 +796,7 @@ describe("NoteFeed — tech (read-only)", () => {
 
   it("shows 'No notes yet.' and no composer when there are zero entries", () => {
     render(<TechJobModalContent />);
+    openSection("Job notes");
     expect(screen.getByText("No notes yet.")).toBeTruthy();
     expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
     expect(screen.queryByLabelText("Add note")).toBeNull();
@@ -539,6 +805,7 @@ describe("NoteFeed — tech (read-only)", () => {
   it("shows existing note entries without a composer", () => {
     mockJobs = [makeJob({ notes: "Customer prefers mornings" })];
     render(<TechJobModalContent />);
+    openSection("Job notes");
     expect(screen.getByText("Customer prefers mornings")).toBeTruthy();
     expect(screen.queryByText("No notes yet.")).toBeNull();
     expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
@@ -567,6 +834,20 @@ describe("TechJobModalContent — tabs", () => {
     // office-only PricingSec entry is gone.
     expect(screen.queryByText("Price it on site →")).toBeNull();
     expect(screen.queryByText("Pricing")).toBeNull();
+  });
+
+  // The tablist named two controls and neither pointed at anything: there was no tabpanel in the
+  // file at all. A screen-reader user tabbed off "Quote" straight into the sheet body with no
+  // announcement that the body was what the tab controlled.
+  it("each tab controls a real, matching tabpanel", () => {
+    render(<TechJobModalContent />);
+    const jobTab = screen.getByRole("tab", { name: "Job" });
+    const panel = screen.getByRole("tabpanel");
+    expect(jobTab.getAttribute("aria-controls")).toBe(panel.id);
+    expect(panel.getAttribute("aria-labelledby")).toBe(jobTab.id);
+    fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    const quotePanel = screen.getByRole("tabpanel");
+    expect(screen.getByRole("tab", { name: "Quote" }).getAttribute("aria-controls")).toBe(quotePanel.id);
   });
 
   it("owner: the Quote tab opens with Scope + the embedded builder", () => {
