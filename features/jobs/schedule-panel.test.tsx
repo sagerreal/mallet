@@ -10,9 +10,27 @@ interface Store {
   addVisit: () => void;
   updateVisit: () => void;
   removeVisit: () => void;
+  adoptJob: () => void;
+  mergeJobs: () => void;
 }
 let storeState: Store;
-let q = { isFetched: true, isError: false };
+let q: { isFetched: boolean; isError: boolean; data?: unknown } = { isFetched: true, isError: false };
+
+// A needsSlot DTO as v1.jobs.list returns it — the tray reads the SERVER view, not the store.
+const trayDTO = (over: Record<string, unknown> = {}) => ({
+  id: "j1", leadId: "l1", num: "JOB-1", title: "Water heater", svc: "repair", kind: "work",
+  status: "scheduled", sourceEstimateId: null, assigneeUserId: null, customerName: "Dana",
+  addr: null, phone: null, notes: null, completion: null, invRequested: false, scope: null,
+  callbackOf: null, callbackReason: null, checklist: null, requiredCerts: null,
+  total: { cents: 0, currency: "USD" }, createdAt: "2026-08-01T00:00:00.000Z",
+  lines: [], addons: [], verifyAnswers: [], photos: [],
+  visits: [
+    { id: "v1", assigneeUserId: null, scheduledDate: null, scheduledStart: null, scheduledEnd: null,
+      durationMinutes: 120, status: "pending", enrouteAt: null, startedAt: null, completedAt: null,
+      notes: null, position: 1 },
+  ],
+  ...over,
+});
 const openModal = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
@@ -26,6 +44,7 @@ import { SchedulePanel } from "./schedule-panel";
 const store = (jobs: unknown[], leads: Store["leads"] = []): Store => ({
   jobs, leads, techs: [],
   placeVisit: vi.fn(), addVisit: vi.fn(), updateVisit: vi.fn(), removeVisit: vi.fn(),
+  adoptJob: vi.fn(), mergeJobs: vi.fn(),
 });
 
 describe("SchedulePanel — first-run empty state (board untouched)", () => {
@@ -75,5 +94,56 @@ describe("SchedulePanel — first-run empty state (board untouched)", () => {
     expect(screen.queryByText("Nothing to schedule yet")).toBeNull();
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+});
+
+// Owen, testing: "how am I supposed to drag the boxes to the ones that are cut off". The board's
+// crew rows run off the bottom and its hours off the right, and the ONE affordance that says you
+// do not have to drag at all — tap the visit, then tap a crew and time — was hidden inside the
+// multi-visit branch. The common card, a job with a single unplaced visit, had only a `title`
+// tooltip, which never fires on a touch screen.
+describe("SchedulePanel — the two-step is on the card you actually see", () => {
+  beforeEach(() => { q = { isFetched: true, isError: false }; vi.clearAllMocks(); });
+
+  // The store holds the job (adopted from the tray read); the TRAY itself comes from the
+  // server's needsSlot view, so both have to be present for a tray card to render.
+  const withTrayCard = () => {
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 2 }] }]);
+    q = { isFetched: true, isError: false, data: { items: [trayDTO()] } };
+  };
+
+  it("names the tap-then-tap path on a single-unplaced-visit card", () => {
+    withTrayCard();
+    render(<SchedulePanel />);
+    expect(screen.getByText(/Tap a visit, then a crew & time/)).toBeTruthy();
+  });
+
+  it("labels the button with what it does, not a bare verb", () => {
+    withTrayCard();
+    render(<SchedulePanel />);
+    // "Schedule" alone reads as "do it now"; the button only ARMS the visit.
+    expect(screen.getByRole("button", { name: "Place on board" })).toBeTruthy();
+  });
+
+  it("gives the board its height back while a visit is armed", () => {
+    withTrayCard();
+    const { container } = render(<SchedulePanel />);
+    const tray = () => container.querySelector(".tray-grid") as HTMLElement;
+    expect(tray().className).not.toMatch(/compact/);
+
+    fireEvent.click(screen.getByRole("button", { name: "Place on board" }));
+    expect(tray().className).toMatch(/compact/);
+  });
+
+  it("puts the 'tap a crew & time' strip next to the board, below the toolbar", () => {
+    withTrayCard();
+    const { container } = render(<SchedulePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Place on board" }));
+
+    const strip = screen.getByText(/Tap a crew & time on the board to place/).closest("div") as HTMLElement;
+    const toolbar = container.querySelector(".sched-toolbar") as HTMLElement;
+    // Node.DOCUMENT_POSITION_FOLLOWING — the strip comes AFTER the toolbar in document order, so
+    // it sits against the thing it is talking about instead of above the tray.
+    expect(toolbar.compareDocumentPosition(strip) & 4).toBeTruthy();
   });
 });

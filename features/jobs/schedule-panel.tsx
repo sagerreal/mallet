@@ -31,7 +31,6 @@ import {
   jobMode,
   techById,
   boardItemsFor,
-  jobsUnscheduled,
   dayLoad,
   type Held,
 } from "./jobs-helpers";
@@ -63,6 +62,16 @@ function addDaysLocal(iso: string, n: number): string {
   d.setDate(d.getDate() + n);
   return d.toISOString().slice(0, 10);
 }
+
+/**
+ * The one sentence that says you do not have to drag.
+ *
+ * Dragging is the only affordance the board advertises, and it is the one that fails: the crew
+ * rows run off the bottom and the hours off the right edge, so the target is frequently not on
+ * screen at the moment you pick the card up. Tap-then-tap has none of that problem. It existed
+ * already; it was just written on the branch almost nobody sees.
+ */
+const PLACE_HINT = "Tap a visit, then a crew & time — or drag it";
 
 // First-run empty-state copy. Shown when a brand-new shop opens Schedule with nothing to place
 // (no jobs and no estimate visits). Rendered via a full early return that never touches the board.
@@ -492,6 +501,9 @@ export function SchedulePanel() {
   const scheduleCount = jobs.length;
   // Gated on the window's own fetch: it is the read that fills this board, so it is the one that
   // says whether "nothing here" means loading, failed, or genuinely empty.
+  // Armed or dragging: the tray steps out of the board's way. See the .tray-grid.compact rule.
+  const trayCompact = Boolean(placing || drag);
+
   const gate = { isFetched: shown.isFetched, isError: shown.isError, count: scheduleCount };
   const firstRun = shouldShowFirstRun(gate);
   const loadFailed = shouldShowLoadFailed(gate);
@@ -542,7 +554,22 @@ export function SchedulePanel() {
               })()}
             </span>
           </b>
-          <div className="tray-grid" style={{ marginTop: "var(--space-3)", display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))`, gap: "var(--space-2)" }}>
+          {/* While something is armed or in the hand, the tray gives the board back the ~44vh it
+              normally holds — the card being placed is already in hand, and the space directly
+              under the cursor is the scarce thing. It becomes one horizontally scrolling row, so
+              nothing is hidden. */}
+          <div
+            className={`tray-grid${trayCompact ? " compact" : ""}`}
+            style={{
+              marginTop: "var(--space-3)",
+              gap: "var(--space-2)",
+              // One definition of the card width, shared with the CSS compact rule.
+              ["--tray-card-min" as string]: `${TRAY_CARD_MIN_WIDTH_PX}px`,
+              ...(trayCompact
+                ? { display: "flex", overflowX: "auto" as const }
+                : { display: "grid", gridTemplateColumns: `repeat(auto-fill,minmax(${TRAY_CARD_MIN_WIDTH_PX}px,1fr))` }),
+            }}
+          >
             {trayCards.map((card) => {
               const name = custName(card.j, leads);
               const title = card.j.title;
@@ -584,7 +611,7 @@ export function SchedulePanel() {
                       </span>
                     </div>
                     <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-2)" }}>
-                      Tap a visit, then a crew &amp; time — or drag it
+                      {PLACE_HINT}
                     </div>
                     <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
                       {unplacedList.map((v) => (
@@ -641,11 +668,19 @@ export function SchedulePanel() {
                   </button>
                   <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
                   <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
                     <span style={{ fontSize: "var(--type-xs)", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
                       {m.lbl}
                     </span>
                     <span className="muted" style={{ fontSize: "var(--type-sm)", fontWeight: 700 }}>{hmLabel(hrs)}</span>
+                  </div>
+                  {/* The two-step, on the card people actually have. This sentence used to exist
+                      only inside the multi-visit branch; the single-visit card — the common case —
+                      had a `title` tooltip, which never fires on a touch screen. So the only
+                      discoverable way to place work was to drag it, onto rows that are off the
+                      bottom of the board. */}
+                  <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-2)" }}>
+                    {PLACE_HINT}
                   </div>
                   <div style={{ display: "flex", gap: "var(--space-2)" }}>
                     <button
@@ -653,7 +688,9 @@ export function SchedulePanel() {
                       style={{ flex: 1, justifyContent: "center" }}
                       onClick={(e) => { e.stopPropagation(); onSchedule(); }}
                     >
-                      {armed ? "Cancel" : "Schedule"}
+                      {/* "Schedule" reads as "do it now"; the button only ARMS the visit, and the
+                          next tap is the one that places it. Name the two-step. */}
+                      {armed ? "Cancel" : "Place on board"}
                     </button>
                   </div>
                 </div>
@@ -675,6 +712,26 @@ export function SchedulePanel() {
         </div>
       )}
 
+      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "var(--space-2xs) 0 var(--space-2)" }}>
+        On the board
+      </div>
+      <div className="sched-toolbar" style={{ marginBottom: "var(--space-2)" }}>
+        {toggle}
+        <span className="sched-toolbar-gap" />
+        {nav}
+      </div>
+
+      {/* Called as plain functions ON PURPOSE (not <DayView/>): DayView/WeekView are
+          re-declared on every render, so mounting them as JSX components changes the
+          element type identity each render and React REMOUNTS the whole grid — the
+          setDrag re-render inside a block's dragstart then destroyed the drag-source
+          DOM node and Chrome aborted the drag (placed blocks could never be dropped).
+          Plain calls keep the grid in SchedulePanel's own element tree so re-renders
+          reconcile in place. These functions MUST stay hook-free while they are
+          called conditionally like this. */}
+      {/* Anchored to the BOARD, not to the tray: this strip is an instruction about where to tap
+          next, and it used to sit above the tray — the thing you are being told to look away from
+          — with the toolbar between it and the board. In flow and flush, no portal. */}
       {placing && (
         <div
           style={{
@@ -712,23 +769,6 @@ export function SchedulePanel() {
         </div>
       )}
 
-      <div style={{ fontSize: "var(--type-xs)", fontWeight: 800, textTransform: "uppercase", letterSpacing: ".05em", color: "var(--ink-3)", margin: "var(--space-2xs) 0 var(--space-2)" }}>
-        On the board
-      </div>
-      <div className="sched-toolbar" style={{ marginBottom: "var(--space-2)" }}>
-        {toggle}
-        <span className="sched-toolbar-gap" />
-        {nav}
-      </div>
-
-      {/* Called as plain functions ON PURPOSE (not <DayView/>): DayView/WeekView are
-          re-declared on every render, so mounting them as JSX components changes the
-          element type identity each render and React REMOUNTS the whole grid — the
-          setDrag re-render inside a block's dragstart then destroyed the drag-source
-          DOM node and Chrome aborted the drag (placed blocks could never be dropped).
-          Plain calls keep the grid in SchedulePanel's own element tree so re-renders
-          reconcile in place. These functions MUST stay hook-free while they are
-          called conditionally like this. */}
       {day ? DayView() : WeekView()}
     </>
   );
