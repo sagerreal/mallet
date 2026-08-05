@@ -471,10 +471,13 @@ export function TechJobModalContent() {
         />
       ) : null}
 
-      {/* Work order (5a) — install job, not done, with scope lines (office-sold). */}
-      {jobMode(job) === "install" &&
-      !done &&
-      (job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
+      {/* Work order (5a) — ONE gate: is there anything to show?
+          It used to be gated three ways — `jobMode === "install"` AND not done AND at least one
+          described line. `jobMode` reads "install" only for PRICED lines, so a plain service call
+          never showed a work order at all: the technician arrived knowing the customer's name and
+          nothing about the work. A finished job hid it too, exactly when someone wants to check
+          what was sold. The remaining condition is the honest one. */}
+      {(job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
         <WorkOrderSec job={job} seesPrice={seesPrice} />
       ) : null}
 

@@ -1820,6 +1820,10 @@
   .fsec-h{display:flex;align-items:center;justify-content:space-between;gap:var(--space-2);font-size:var(--type-xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-bottom:var(--space-3)}
   /* collapsible field-job sections (tech view) — default to titles, tap to expand */
   .tjf.open .fsec-h{margin-bottom:var(--space-3)} .tjf:not(.open) .fsec-h{margin-bottom:0}
+  /* .fsec-h is a div rule; as the tap target of a collapsible section it is a real <button> and
+     needs the button chrome stripped back off. 44px is the glove floor. */
+  button.fsec-h{width:100%;min-height:44px;background:none;border:none;padding:0;font-family:inherit;color:inherit;text-align:left}
+  button.fsec-h:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
   .tjf-h{cursor:pointer;user-select:none}
   .tjf-t{display:inline-flex;align-items:center;gap:var(--space-2)}
   .tjf .tjcaret{display:inline-block;transition:transform .15s ease;font-size:var(--type-xs);color:var(--ink-3)}

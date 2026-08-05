@@ -12,6 +12,7 @@ import { memo, useState } from "react";
 import type { Addon, Job } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
 import { AO_INPUT } from "./helpers";
+import { CountedSection } from "./counted-section";
 
 interface AddonStatusPillProps {
   status: Addon["status"];
@@ -80,15 +81,11 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
   }
 
   return (
-    <div className="fsec">
-      <div className="fsec-h">
-        <span>Found work / add-ons</span>
-        <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
-          {addons.length}
-          {awaiting ? ` · ${awaiting} awaiting OK` : ""}
-        </span>
-      </div>
-
+    <CountedSection
+      label="Found work"
+      count={addons.length}
+      hint={awaiting ? `${awaiting} awaiting OK` : undefined}
+    >
       {addons.map((a) => (
         <div key={a.id} className="stage-row">
           <div style={{ flex: 1 }}>
@@ -137,12 +134,12 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
               style={{ flex: "0 0 92px", ...AO_INPUT }}
             />
           )}
-          <button className="btn sm primary" onClick={submit}>
+          <button type="button" className="btn sm primary" onClick={submit}>
             Add
           </button>
         </div>
       )}
-    </div>
+    </CountedSection>
   );
 }
 export const FoundWorkSec = memo(FoundWorkSecFn, foundWorkPropsEqual);

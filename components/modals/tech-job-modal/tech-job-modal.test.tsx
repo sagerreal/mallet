@@ -89,6 +89,15 @@ function mockStoreState(): Record<string, unknown> {
   };
 }
 
+/**
+ * Found work and Job notes are COUNTED ROWS now — collapsed until tapped, so the work order and
+ * the foot primary are not pushed off the bottom of a phone by two always-open feeds. Tests that
+ * assert on their bodies open them first.
+ */
+function openSection(label: "Found work" | "Job notes"): void {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
+}
+
 function useAppStoreMock(selector: (s: Record<string, unknown>) => unknown) {
   return selector(mockStoreState());
 }
@@ -194,6 +203,7 @@ describe("TechJobModalContent — owner/office", () => {
     expect(screen.getByText("Text")).toBeTruthy();
     expect(screen.getByText("On my way →")).toBeTruthy();
     expect(screen.getByText("✓ Mark done")).toBeTruthy();
+    openSection("Found work");
     expect(screen.getByText(/Customer OK/)).toBeTruthy();
     expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
   });
@@ -227,7 +237,10 @@ describe("TechJobModalContent — owner/office", () => {
     ];
     render(<TechJobModalContent />);
     expect(screen.getByText(/Take payment/)).toBeTruthy();
-    expect(screen.getByText("$285")).toBeTruthy();
+    // Three, and each is right: the close-out hero's amount, the work-order line, and the work
+    // order's Total. A finished job keeps its work order now — that is when someone checks what
+    // was sold — so the figure legitimately appears more than once.
+    expect(screen.getAllByText("$285").length).toBe(3);
     expect(screen.queryByText(/No price set/)).toBeNull();
   });
 
@@ -323,6 +336,7 @@ describe("TechJobModalContent — tech", () => {
 
   it("hides add-on add + status controls but keeps the read-only found-work list", () => {
     render(<TechJobModalContent />);
+    openSection("Found work");
     expect(screen.getByText("Extra shutoff valve")).toBeTruthy(); // read stays
     expect(screen.queryByText(/Customer OK/)).toBeNull();
     expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
@@ -419,6 +433,7 @@ describe("TechJobModalContent — tech", () => {
       }),
     ];
     render(<TechJobModalContent />);
+    openSection("Found work");
     expect(screen.getByText("Extra shutoff valve")).toBeTruthy();
     expect(screen.queryByText(/\$0/)).toBeNull();
   });
@@ -426,7 +441,95 @@ describe("TechJobModalContent — tech", () => {
   it("hides the empty found-work section for techs (no dead add form)", () => {
     mockJobs = [makeJob({ addons: [] })];
     render(<TechJobModalContent />);
-    expect(screen.queryByText("Found work / add-ons")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The work order: a count, a Total, and THREE money states.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — work order", () => {
+  const priced = [
+    { d: "Replace T&P relief valve", q: 1, r: 325 },
+    { d: "Repair shut-off valve", q: 1, r: 245 },
+  ];
+
+  it("heads the section with the count and the total, and closes with a Total row", () => {
+    mockJobs = [makeJob({ lines: priced })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("2 items · $570")).toBeTruthy();
+    // The header figure and the Total row are computed from the same rendered lines, so they
+    // cannot disagree with the numbers between them.
+    expect(screen.getByText("Total")).toBeTruthy();
+    expect(screen.getByText("$570")).toBeTruthy();
+    expect(screen.getByText("$325")).toBeTruthy();
+    expect(screen.getByText("$245")).toBeTruthy();
+  });
+
+  // A plain service call has unpriced scope lines, so jobMode() reads "service" — and the old
+  // three-way gate meant the technician arrived knowing the customer's name and nothing else.
+  it("renders for an UNPRICED service call, which never showed a work order at all", () => {
+    mockJobs = [makeJob({ lines: [{ d: "Clear kitchen drain", q: 1, r: 0 }] })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("Clear kitchen drain")).toBeTruthy();
+    expect(screen.getByText("1 item · $0")).toBeTruthy();
+  });
+
+  // STATE 3, and the one that matters: a redacted rate is null, not zero. A shop that hides
+  // prices from its techs must not have its priced job summarised as free.
+  it("says prices are withheld rather than printing a fabricated $0", () => {
+    mockRole = "tech";
+    mockJobs = [
+      makeJob({
+        lines: [
+          { d: "Replace T&P relief valve", q: 1, r: null },
+          { d: "Repair shut-off valve", q: 1, r: null },
+        ],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("2 items")).toBeTruthy();
+    expect(screen.getByText(/Prices aren’t shown on your device/)).toBeTruthy();
+    expect(screen.queryByText("Total")).toBeNull();
+    expect(screen.queryByText("$0")).toBeNull();
+  });
+
+  it("shows no figures when the org toggle is off, even with rates in hand", () => {
+    mockSeesPrice = false;
+    mockJobs = [makeJob({ lines: priced })];
+    render(<TechJobModalContent />);
+    expect(screen.getByText("2 items")).toBeTruthy();
+    expect(screen.queryByText("$570")).toBeNull();
+  });
+
+  // Line COST is never rendered on this surface, for any role, under any toggle.
+  it("never renders a line's cost", () => {
+    mockJobs = [makeJob({ lines: [{ d: "Replace T&P relief valve", q: 1, r: 325, c: 140 }] })];
+    render(<TechJobModalContent />);
+    expect(screen.queryByText("$140")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Counted navigation rows — the two feeds collapse to a label and a number.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — counted rows", () => {
+  it("collapses Found work and Job notes to a count, and expands them in flow", () => {
+    mockJobs = [makeJob({ notes: "Gate code 4411" })];
+    render(<TechJobModalContent />);
+    const notes = screen.getByRole("button", { name: /^Job notes/ });
+    expect(notes.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Gate code 4411")).toBeNull();
+    fireEvent.click(notes);
+    expect(notes.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText("Gate code 4411")).toBeTruthy();
+  });
+
+  it("counts the found work, and names how many are still awaiting the customer's OK", () => {
+    render(<TechJobModalContent />);
+    expect(screen.getByRole("button", { name: /^Found work 1 · 1 awaiting OK/ })).toBeTruthy();
   });
 });
 
@@ -572,6 +675,7 @@ describe("TechJobModalContent — phone controls (office)", () => {
 describe("NoteFeed — office composer", () => {
   it("adds a stamped note through updateJob (empty notes → single stamped line)", async () => {
     render(<TechJobModalContent />);
+    openSection("Job notes");
     const input = screen.getByPlaceholderText("add a note…");
     fireEvent.change(input, { target: { value: "Gate code 4411" } });
     fireEvent.click(screen.getByLabelText("Add note"));
@@ -589,6 +693,7 @@ describe("NoteFeed — office composer", () => {
   it("appends to existing notes on its own stamped line", async () => {
     mockJobs = [makeJob({ notes: "Bring the tall ladder" })];
     render(<TechJobModalContent />);
+    openSection("Job notes");
     fireEvent.change(screen.getByPlaceholderText("add a note…"), {
       target: { value: "Left key under mat" },
     });
@@ -603,6 +708,7 @@ describe("NoteFeed — office composer", () => {
   it("surfaces the save-failure copy when updateJob reports not-ok", async () => {
     mockUpdateJob.mockResolvedValue({ ok: false });
     render(<TechJobModalContent />);
+    openSection("Job notes");
     fireEvent.change(screen.getByPlaceholderText("add a note…"), {
       target: { value: "won't stick" },
     });
@@ -618,6 +724,7 @@ describe("NoteFeed — office composer", () => {
       }),
     ];
     render(<TechJobModalContent />);
+    openSection("Job notes");
     expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
     expect(screen.getByText("No notes yet.")).toBeTruthy();
   });
@@ -630,6 +737,7 @@ describe("NoteFeed — tech (read-only)", () => {
 
   it("shows 'No notes yet.' and no composer when there are zero entries", () => {
     render(<TechJobModalContent />);
+    openSection("Job notes");
     expect(screen.getByText("No notes yet.")).toBeTruthy();
     expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
     expect(screen.queryByLabelText("Add note")).toBeNull();
@@ -638,6 +746,7 @@ describe("NoteFeed — tech (read-only)", () => {
   it("shows existing note entries without a composer", () => {
     mockJobs = [makeJob({ notes: "Customer prefers mornings" })];
     render(<TechJobModalContent />);
+    openSection("Job notes");
     expect(screen.getByText("Customer prefers mornings")).toBeTruthy();
     expect(screen.queryByText("No notes yet.")).toBeNull();
     expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
