@@ -1,7 +1,7 @@
 "use client";
 
 import type { InvoiceAuthorization } from "@/lib/store/types";
-import { fmt$ } from "@/lib/format";
+import { fmt$, formatDocDate } from "@/lib/format";
 
 /**
  * What the customer signed, cited on the bill — and a warning when the bill outgrew it.
@@ -23,8 +23,9 @@ export interface InvoiceAuthorizationProps {
   readonly authorization: InvoiceAuthorization | undefined;
 }
 
-const day = (iso: string): string =>
-  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+// Same "Aug 5, 2026" a document date carries — shared with the invoice document's meta strip via
+// lib/format so the two dates on one bill cannot end up in two different formats.
+const day = formatDocDate;
 
 export function InvoiceAuthorizationNote({ authorization: a }: InvoiceAuthorizationProps) {
   if (!a) return null;

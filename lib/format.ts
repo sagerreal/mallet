@@ -62,6 +62,24 @@ export const formatMoney = (cents: number): string =>
 export const formatDate = (iso: string | null): string =>
   iso ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(new Date(iso)) : "—";
 
+/**
+ * A date on a DOCUMENT — "Aug 5, 2026". Carries the year, which `formatDate` deliberately does not.
+ *
+ * `formatDate` ("Aug 5") is for surfaces the reader is standing in: a list, a thread, a payment row
+ * inside a bill they just opened. A document is different — an invoice gets filed, attached to a
+ * claim, and read in March by someone who was not there. "Invoiced Aug 5" on a two-year-old bill is
+ * ambiguous in a way that costs the shop the argument, so the invoice date, the service date and
+ * the signed-on date all state the year.
+ *
+ * Null/absent renders as an em dash, same convention as the formatters above; callers that must
+ * omit a missing date entirely check for it BEFORE calling (a document never prints a label with
+ * no value).
+ */
+export const formatDocDate = (iso: string | null | undefined): string =>
+  iso
+    ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(new Date(iso))
+    : "—";
+
 export const formatDateTime = (iso: string | null): string =>
   iso
     ? new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }).format(new Date(iso))
