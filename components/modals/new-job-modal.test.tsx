@@ -18,6 +18,7 @@ let storeLeads: unknown[] = [];
 // Declared before vi.mock so the factory closure captures the binding (not the value).
 const openModalMock = vi.fn();
 const pushModalMock = vi.fn();
+const routerPush = vi.fn();
 const adoptLead = vi.fn();
 const vanillaSearch = vi.fn(async () => ({ items: [], nextCursor: null }));
 let closeMock = vi.fn();
@@ -34,6 +35,8 @@ vi.mock("@/lib/trpc/client", () => ({
 vi.mock("@/lib/trpc/vanilla", () => ({
   trpcVanilla: { v1: { customers: { list: { query: (...a: unknown[]) => vanillaSearch(...a) } } } },
 }));
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush, replace: vi.fn() }) }));
 
 vi.mock("@/lib/store/app-store", () => ({
   useCloseModal: () => closeMock,
@@ -809,7 +812,7 @@ describe("NewJobModalContent — customer picker", () => {
 describe("NewJobModalContent — booking fixes", () => {
   beforeEach(() => {
     addLead.mockReset(); addJob.mockReset(); addVisit.mockReset();
-    openModalMock.mockReset(); pushModalMock.mockReset();
+    openModalMock.mockReset(); pushModalMock.mockReset(); routerPush.mockReset();
     closeMock = vi.fn();
     addLead.mockReturnValue({
       lead: { id: "opt-lead-1", name: "Maria Garcia" },
@@ -834,23 +837,51 @@ describe("NewJobModalContent — booking fixes", () => {
     expect((screen.getByRole("button", { name: /^Create/ }) as HTMLButtonElement).type).toBe("button");
   });
 
-  // FLAT RATE MEANS THE PRICE IS KNOWN — creating one lands in the price builder in one motion.
-  it("flat rate's primary creates the job and opens the price builder", async () => {
+  // Owen, testing: "when I create the flat rate job it brings me to the job modal, it should be
+  // bringing me to the scheduling page so I can drag and drop it". This form has no date picker,
+  // so every job it makes has UNPLACED visits — the record sheet is a dead end and the board is
+  // the actual next step.
+  it("flat rate lands on the schedule board with the new job armed, and asks for the price there", async () => {
     render(<NewJobModalContent />);
     fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), { target: { value: "fix boiler" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
     fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
-    await waitFor(() => expect(pushModalMock).toHaveBeenCalled());
-    expect(pushModalMock.mock.calls[0]![0]).toBe("price-builder");
+
+    await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/jobs?tab=schedule&place=job-opt-1"));
+    // A ROOT open, not a drill-in: closing the builder reveals the BOARD, not a job sheet.
+    expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-opt-1" });
+    expect(pushModalMock).not.toHaveBeenCalled();
+    expect(openModalMock).not.toHaveBeenCalledWith("job", expect.anything());
   });
 
-  it("an estimate creates plain — its price comes later by definition", async () => {
+  // The estimate branch was worse than the flat-rate one: createEstimate threw the created job
+  // away and returned a bare `true`, and commit hard-coded `job: null` — so submit closed onto
+  // whatever was behind it, with no way back to what had just been made.
+  it("an estimate navigates to the board too, and skips the builder — it has no price by definition", async () => {
     render(<NewJobModalContent />);
     fireEvent.click(screen.getByText("Estimate"));
     fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), { target: { value: "quote a repipe" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
     fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+
     await waitFor(() => expect(closeMock).toHaveBeenCalled());
+    expect(routerPush).toHaveBeenCalledWith("/jobs?tab=schedule&place=job-opt-1");
+    expect(openModalMock).not.toHaveBeenCalled();
     expect(pushModalMock).not.toHaveBeenCalled();
+  });
+
+  it("navigates nowhere when the create failed — the form stays put with its error", async () => {
+    addJob.mockReturnValue({
+      job: { id: "job-opt-1", origin: "manual", visits: [] },
+      persisted: Promise.reject(new Error("network error")),
+    });
+    render(<NewJobModalContent />);
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), { target: { value: "fix boiler" } });
+    fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
+    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+
+    await waitFor(() => expect(screen.getByText(/Couldn't save the job/i)).toBeTruthy());
+    expect(routerPush).not.toHaveBeenCalled();
+    expect(closeMock).not.toHaveBeenCalled();
   });
 });

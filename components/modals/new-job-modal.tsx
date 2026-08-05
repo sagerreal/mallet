@@ -29,7 +29,8 @@
 "use client";
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { useCloseModal, useOpenModal, usePushModal, useLeads, useAppStore } from "@/lib/store/app-store";
+import { useRouter } from "next/navigation";
+import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead } from "@/lib/store/types";
@@ -90,7 +91,7 @@ function clampHours(h: number): number {
 export function NewJobModalContent() {
   const close = useCloseModal();
   const openModal = useOpenModal();
-  const pushModal = usePushModal();
+  const router = useRouter();
   const leads = useLeads();
   const addJob = useAppStore((s) => s.addJob);
   const addVisit = useAppStore((s) => s.addVisit);
@@ -303,8 +304,14 @@ export function NewJobModalContent() {
     }
   }
 
-  /** Returns true on success, false if the server create failed (error already set). */
-  async function createEstimate(job: string): Promise<boolean> {
+  /**
+   * Returns the created job, or null if the server create failed (error already set).
+   *
+   * It used to return a bare `true` and throw the created job away, and `commit` then hard-coded
+   * `job: null` — so the estimate branch closed onto whatever happened to be behind it, with no
+   * way to reach the thing that had just been created.
+   */
+  async function createEstimate(job: string): Promise<{ ok: boolean; createdJob: Job | null }> {
     const rows = resolvedVisits();
     const custName = customer.trim();
     const match = await resolveTypedCustomer(custName);
@@ -330,7 +337,7 @@ export function NewJobModalContent() {
         // The server's own reason (e.g. an invalid phone) outranks the generic
         // connection line — that line is only for a genuine transport failure.
         setError(userMessage(err, "Couldn't save the customer — check your connection and try again."));
-        return false;
+        return { ok: false, createdJob: null };
       }
     }
 
@@ -373,13 +380,13 @@ export function NewJobModalContent() {
       await jobPersisted;
     } catch (err) {
       setError(userMessage(err, "The customer was saved, but the estimate visit wasn't — check your connection and try again."));
-      return false;
+      return { ok: false, createdJob: null };
     }
     // Unplaced (hours only) — dragged onto the Schedule later. Must run after the
     // reconcile: addVisit only persists once the job is DB-origin.
     rows.forEach((v) => addVisit(created.id, v.h));
     // No checklist on estimates — the section only renders for the Job type.
-    return true;
+    return { ok: true, createdJob: created };
   }
 
   /** Create a new Job and persist it (along with its visits) to the database.
@@ -501,8 +508,8 @@ export function NewJobModalContent() {
       return { ok: false, job: null };
     }
     if (njType === "estimate") {
-      const ok = await createEstimate(job);
-      return { ok, job: null };
+      const { ok, createdJob } = await createEstimate(job);
+      return { ok, job: createdJob };
     }
     const { ok, createdJob } = await createJob(job);
     return { ok, job: createdJob };
@@ -533,10 +540,22 @@ export function NewJobModalContent() {
       const { ok, job } = await commit();
       if (!ok) return;
       close();
-      if (openBuilder && job) {
-        // Land the builder ON the new job: ✕ / Done pop back to the job modal.
-        openModal(MODAL.JOB, { jobId: job.id });
-        pushModal(MODAL.PRICE_BUILDER, { jobId: job.id });
+      if (!job) return;
+      // A NEW JOB'S NEXT STEP IS A SLOT ON THE BOARD. Owen, testing: "when I create the flat rate
+      // job it brings me to the job modal, it should be bringing me to the scheduling page so I
+      // can drag and drop it". Every job here is created with UNPLACED visits by definition —
+      // there is no date picker in this form — so the record sheet was a dead end and the board is
+      // the only place the work becomes real. `?place=` arms the new job there.
+      //
+      // Already on the board? Same push: the pathname is unchanged, so this only updates the query
+      // and arms — it does not yank anyone off the board they are standing on.
+      router.push(`/jobs?tab=schedule&place=${job.id}`);
+      if (openBuilder) {
+        // Flat rate means the price is known, so ask for it while it is still in the user's head.
+        // A ROOT open, not a drill-in: the builder's own ✕ / Price later / save all call close(),
+        // which now reveals the BOARD behind it rather than popping to a job sheet. No new exit
+        // control, and ModalHost has no route-change close, so it survives the nav above.
+        openModal(MODAL.PRICE_BUILDER, { jobId: job.id });
       }
     } finally {
       // Released in `finally`, never only on success: commit() deliberately supports retry (the

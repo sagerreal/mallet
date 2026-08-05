@@ -20,7 +20,7 @@
  *       Labor    (browse your rates $/hr) · Custom labor (one-off $/hr)
  *     browsing a sublist stays open while building (adding does NOT collapse it)
  *   - the sticky .sheet-foot: ONE .sheet-pri "Save price →" (tqSavePrice) →
- *     updateJob(jobId, { lines }); "← Back" stays a quiet ghost beside it
+ *     updateJob(jobId, { lines }); "Price later" stays a quiet ghost beside it
  *
  * OUT OF SCOPE — correctly, for office single-tier mode (fromCreate=true):
  *   - the Good/Better/Best tier selector + the "Give the customer choices?"
@@ -140,9 +140,10 @@ export function PriceBuilderModalContent() {
   // Commit the built lines straight to the job — no signature, no on-site
   // approval (the office set the price). Map to JobLine[] and drop zero lines.
 
-  // Close back to the job that PUSHED this builder — the modal back-stack owns
-  // the return (closeModal pops), so ✕ / Back land on the job, never a dead end.
-  function returnToJob() {
+  // Close. The back-stack owns where that lands: pushed from a job record it pops back to it;
+  // opened as a ROOT over the schedule board (the create flow, where the job's next step is a
+  // slot, not a record sheet) it simply reveals the board. Never a dead end either way.
+  function dismiss() {
     close();
   }
 
@@ -162,7 +163,7 @@ export function PriceBuilderModalContent() {
       setSaveError("Couldn't save the price — check your connection and try again.");
       return;
     }
-    returnToJob();
+    dismiss();
   }
 
   return (
@@ -239,8 +240,11 @@ export function PriceBuilderModalContent() {
       {/* Sticky footer — ONE filled primary (the office single-tier save, prototype
           tqSavePrice) docked where the thumb is; Back stays quiet beside it. */}
       <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <button className="btn ghost" onClick={returnToJob} disabled={saving} style={{ flexShrink: 0 }}>
-          ← Back
+        {/* Not "← Back": from the create flow there is nothing behind this but the board the
+            user was sent to, and an arrow pointing at it is a lie. This says what leaving without
+            a price actually means — the job is already saved, unpriced. */}
+        <button className="btn ghost" onClick={dismiss} disabled={saving} style={{ flexShrink: 0 }}>
+          Price later
         </button>
         <button
           className="sheet-pri"

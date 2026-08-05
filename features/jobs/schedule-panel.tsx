@@ -13,6 +13,7 @@
  */
 
 import { useState, useRef, useEffect, useMemo, type DragEvent as ReactDragEvent } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { useScheduleWindow } from "./use-schedule-window";
@@ -87,6 +88,8 @@ const FIRST_RUN = {
 
 export function SchedulePanel() {
   const openModal = useOpenModal();
+  const router = useRouter();
+  const placeParam = useSearchParams().get("place");
   const jobs = useAppStore((s) => s.jobs);
   const adoptJob = useAppStore((s) => s.adoptJob);
   const needsSlotQ = api.v1.jobs.list.useQuery(
@@ -501,13 +504,44 @@ export function SchedulePanel() {
   const scheduleCount = jobs.length;
   // Gated on the window's own fetch: it is the read that fills this board, so it is the one that
   // says whether "nothing here" means loading, failed, or genuinely empty.
-  // Armed or dragging: the tray steps out of the board's way. See the .tray-grid.compact rule.
-  const trayCompact = Boolean(placing || drag);
-
   const gate = { isFetched: shown.isFetched, isError: shown.isError, count: scheduleCount };
   const firstRun = shouldShowFirstRun(gate);
   const loadFailed = shouldShowLoadFailed(gate);
   const loading = isFirstLoad(gate);
+
+  // Armed or dragging: the tray steps out of the board's way. See the .tray-grid.compact rule.
+  const trayCompact = Boolean(placing || drag);
+
+  /**
+   * `?place=<jobId>` — a job that was just created and needs a slot.
+   *
+   * The New-job form has no date picker, so every job it makes arrives with UNPLACED visits and
+   * the board is its actual next step. It navigates here with the id rather than reaching into
+   * this component's state.
+   *
+   * ARM ONLY, from the STORE, and never `addVisit`. `addVisit` is fire-and-forget in the create
+   * path, so a board mounting straight after a create can see a tray DTO whose `visits` is still
+   * empty; once that first createVisit settles, the slice's in-flight dedupe guard no longer
+   * applies and arming through `armJob` would mint a SECOND visit on a job that already has one.
+   * So: no-op until the store's copy of the job actually shows an unplaced visit, then arm it and
+   * drop the param. `jobs` is in the deps precisely so the retry happens when the store catches up.
+   *
+   * The ref makes the arm HAPPEN ONCE per id. The retry above is a real loop — it re-runs on every
+   * store change until the visit lands — and without the latch, re-arming after the dispatcher has
+   * moved on would drag their selection back to a job they already placed.
+   */
+  const armedParamRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!placeParam || armedParamRef.current === placeParam) return;
+    const target = jobs.find((j) => j.id === placeParam);
+    if (!target) return;
+    const unplaced = (target.visits ?? []).find((v) => !isVisitPlaced(v));
+    if (!unplaced) return;
+    armedParamRef.current = placeParam;
+    setPlacing({ kind: "job", ownerId: target.id, visitId: unplaced.id });
+    // replace, not push: the arm has been consumed, and Back should not re-fire it.
+    router.replace("/jobs?tab=schedule");
+  }, [placeParam, jobs, router]);
 
   if (loadFailed) {
     return <LoadFailed noun="schedule" onRetry={shown.refetch} retrying={shown.isRefetching} />;

@@ -32,6 +32,13 @@ const trayDTO = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 const openModal = vi.fn();
+const routerReplace = vi.fn();
+let placeParam: string | null = null;
+
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), replace: routerReplace }),
+  useSearchParams: () => new URLSearchParams(placeParam ? { place: placeParam } : {}),
+}));
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),
@@ -145,5 +152,53 @@ describe("SchedulePanel — the two-step is on the card you actually see", () =>
     // Node.DOCUMENT_POSITION_FOLLOWING — the strip comes AFTER the toolbar in document order, so
     // it sits against the thing it is talking about instead of above the tray.
     expect(toolbar.compareDocumentPosition(strip) & 4).toBeTruthy();
+  });
+});
+
+
+// A job created from the New-job form arrives with UNPLACED visits — there is no date picker in
+// that form — so it navigates here with ?place=<id> to arm itself. The hazard the read-only arm
+// exists for: addVisit is fire-and-forget in the create path, so a board mounting immediately
+// after can see the job before its first visit lands. Minting one here would give the job two.
+describe("SchedulePanel — ?place= arms the job that was just created", () => {
+  beforeEach(() => {
+    q = { isFetched: true, isError: false, data: { items: [trayDTO()] } };
+    placeParam = null;
+    vi.clearAllMocks();
+  });
+
+  it("arms the job's unplaced visit and drops the param", () => {
+    placeParam = "j1";
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 2 }] }]);
+    render(<SchedulePanel />);
+
+    expect(screen.getByText(/Tap a crew & time on the board to place/)).toBeTruthy();
+    expect(routerReplace).toHaveBeenCalledWith("/jobs?tab=schedule");
+  });
+
+  it("does NOT mint a visit when the store job has none yet — it waits", () => {
+    placeParam = "j1";
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [] }]);
+    render(<SchedulePanel />);
+
+    expect(storeState.addVisit).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Tap a crew & time on the board to place/)).toBeNull();
+    // Param NOT consumed — the next render, once the visit lands, arms it.
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("does nothing at all when the store has not caught up with the job", () => {
+    placeParam = "j-not-here-yet";
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 2 }] }]);
+    render(<SchedulePanel />);
+
+    expect(storeState.addVisit).not.toHaveBeenCalled();
+    expect(routerReplace).not.toHaveBeenCalled();
+  });
+
+  it("arms nothing without the param", () => {
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 2 }] }]);
+    render(<SchedulePanel />);
+    expect(screen.queryByText(/Tap a crew & time on the board to place/)).toBeNull();
   });
 });
