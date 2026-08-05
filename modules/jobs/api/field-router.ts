@@ -173,23 +173,55 @@ const fieldSetVisitStatusInput = jobIdVisitIdInput.extend({
 // than the rule that was broken.
 const CLOSED_JOB_MESSAGE = "This job is closed — ask the office to change it.";
 
+/**
+ * The caller's own day, as two ABSOLUTE INSTANTS.
+ *
+ * The client sends them because only the client knows what day it is where the van is. There is no
+ * org timezone column, so a server-side `completed_at::date = current_date` would be asking UTC:
+ * at 5pm Pacific that is already tomorrow, and every job the tech finished after lunch would drop
+ * off the list. Sending instants keeps the rule in one place and makes it testable.
+ *
+ * Bounded because it is client input: a window running backwards is a bug, and an unbounded one
+ * turns the agenda into the whole history of the shop.
+ */
+const MY_DAY_MAX_SPAN_MS = 26 * 60 * 60 * 1000; // 24h + DST slack, generously
+
+const myDayInput = z
+  .object({ dayStart: z.date(), dayEnd: z.date() })
+  .refine((v) => v.dayEnd.getTime() > v.dayStart.getTime(), {
+    message: "the day must end after it starts",
+    path: ["dayEnd"],
+  })
+  .refine((v) => v.dayEnd.getTime() - v.dayStart.getTime() <= MY_DAY_MAX_SPAN_MS, {
+    message: "that is more than one day",
+    path: ["dayEnd"],
+  });
+
 export const createFieldRouter = () =>
   router({
-    myDay: anyRole.output(z.object({ items: z.array(jobSummaryDTO), customers: z.array(fieldCustomerDTO) })).query(async ({ ctx }) => {
+    myDay: anyRole.input(myDayInput).output(z.object({ items: z.array(jobSummaryDTO), customers: z.array(fieldCustomerDTO) })).query(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const useCase = new ListJobsUseCase(repo);
       // Visit-aware assignment (same predicate the write gates use): a tech sees every
       // job they can act on, including jobs where they only hold a visit.
       const mine = { assignedUserId: ctx.principal.userId };
-      // Sequential on purpose: one tx = one connection.
-      const inProgress = await useCase.exec({ page: toPage({ limit: 50, cursor: null }), filter: { ...mine, status: "in_progress" } });
-      const scheduled = await useCase.exec({ page: toPage({ limit: 50, cursor: null }), filter: { ...mine, status: "scheduled" } });
-      const byStart = (a: (typeof inProgress.items)[number], b: (typeof inProgress.items)[number]) => {
+      // ONE read, not two. It was two hard status equalities — scheduled, then in_progress — which
+      // is also why a finished job vanished the instant it was completed. Open work plus work
+      // finished inside the caller's own day, in a single round trip on the single connection this
+      // tx holds.
+      const page = await useCase.exec({
+        page: toPage({ limit: 100, cursor: null }),
+        filter: { ...mine, openOrCompletedBetween: { from: input.dayStart, to: input.dayEnd } },
+      });
+      const rank = (s: string) => (s === "in_progress" ? 0 : s === "scheduled" ? 1 : 2);
+      const byStart = (a: (typeof page.items)[number], b: (typeof page.items)[number]) => {
+        const byRank = rank(a.props.status) - rank(b.props.status);
+        if (byRank !== 0) return byRank;
         const av = a.props.scheduledStart ? a.props.scheduledStart.getTime() : Infinity;
         const bv = b.props.scheduledStart ? b.props.scheduledStart.getTime() : Infinity;
         return av - bv;
       };
-      const ordered = [...[...inProgress.items].sort(byStart), ...[...scheduled.items].sort(byStart)];
+      const ordered = [...page.items].sort(byStart);
       // Load execution data (checklist answers, add-ons, photos) for the whole page in one
       // batched read (4 IN-clause queries) — toJobSummaryDTO without it returns empty arrays.
       const executionByJob = await repo.listExecutionForJobs(ordered.map((j) => j.props.id));

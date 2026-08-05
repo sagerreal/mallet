@@ -22,6 +22,7 @@ import { DayClock } from "@/features/field/day-clock";
 import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { useMyDayInput } from "@/features/field/my-day-input";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -129,7 +130,9 @@ export default function MyDayPage() {
   // page sits open on a phone in the truck, and no store invalidation can reach a different
   // device. Focus refetch covers "picked the phone back up"; the interval covers "screen was on
   // the whole time".
-  const { data, isLoading, isFetching, isFetched, isError, isRefetching, refetch } = api.v1.field.myDay.useQuery(undefined, {
+  // ONE builder, shared with the hydrator and with setData below — see features/field/my-day-input.
+  const dayInput = useMyDayInput();
+  const { data, isLoading, isFetching, isFetched, isError, isRefetching, refetch } = api.v1.field.myDay.useQuery(dayInput, {
     staleTime: 30_000,
     refetchOnWindowFocus: true,
     refetchInterval: 60_000,
@@ -167,7 +170,10 @@ export default function MyDayPage() {
   };
 
   const optimisticStatus = (jobId: string, status: JobSummary["status"]) => {
-    utils.v1.field.myDay.setData(undefined, (prev) =>
+    // The SAME input the query above was made with. setData matches on it: pass anything else and
+    // this patches a cache entry nobody is reading, the card never moves, and the button sits on
+    // "✓ Complete" for the whole round trip — precisely the failure this path exists to prevent.
+    utils.v1.field.myDay.setData(dayInput, (prev) =>
       prev
         ? { ...prev, items: prev.items.map((j) => (j.id === jobId ? { ...j, status } : j)) }
         : prev,
