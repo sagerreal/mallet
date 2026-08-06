@@ -130,12 +130,13 @@ describe("tierViewsFor", () => {
     const better = views!.tiers[1]!;
     expect(better.fixedLines.map((l) => l.description)).toEqual(["Repair section"]);
     expect(better.optionalLines.map((l) => l.description)).toEqual(["Camera inspection"]);
-    // Redaction: the view carries exactly id/description/quantity/rateCents — no cost.
+    // Redaction: the view carries exactly id/description/quantity/rateCents/taxable — no cost.
     expect(Object.keys(better.fixedLines[0]!).sort()).toEqual([
       "description",
       "id",
       "quantity",
       "rateCents",
+      "taxable",
     ]);
   });
 

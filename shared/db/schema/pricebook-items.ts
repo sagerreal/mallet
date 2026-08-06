@@ -24,7 +24,16 @@ export const pricebookItems = pgTable(
     unitPriceCents: integer("unit_price_cents").notNull().default(0),
     costCents: integer("cost_cents").notNull().default(0),
     laborHours: numeric("labor_hours", { precision: 5, scale: 2 }),
-    taxable: boolean("taxable").notNull().default(false),
+    /**
+     * Does this service take sales tax. Seeds `taxable` on every estimate/job/invoice line raised
+     * from it, overridable per line — Housecall Pro's model exactly.
+     *
+     * DEFAULT FLIPPED false → true (migration 0142), and the existing rows backfilled with it. The
+     * column shipped as `false` when nothing on earth read it; a shop that then set a rate would
+     * have seen $0 tax on a bill because every item in its book was silently non-taxable. `false`
+     * was a schema default, never a shop's answer to a question it was never asked.
+     */
+    taxable: boolean("taxable").notNull().default(true),
     warrantyText: text("warranty_text"),
     imageUrl: text("image_url"),
     isAddon: boolean("is_addon").notNull().default(false),

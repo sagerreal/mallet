@@ -448,6 +448,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
       opt: l.isOptional || undefined,
       photo: l.needsPhoto || undefined,
+      // Only the EXCEPTION is written — an ordinary taxable line carries no key at all.
+      ...(l.taxable ? {} : { notax: true as const }),
       tier: l.tier ?? undefined,                              // GBB tier tag (null → absent)
     })),
     pricing: {
@@ -545,6 +547,7 @@ export function dtoInvoiceSummaryToStore(
     // A summary row — no lines/jobId/history; deciders must fetch the full record.
     partial: true,
     age: daysSince(dto.createdAt),
+    createdAt: dto.createdAt,
     dueAt: dto.dueAt,
     // From the server now — the hydrator used to leave this unset, so the ledger's follow-up
     // state reset on every refetch.
@@ -595,18 +598,27 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
     // money field on this mapper becomes dollars; a signed amount must not.
     authorization: dto.authorization ?? undefined,
     leadId: dto.leadId,
-    // cust/phone/email are not in the DTO; money-derive falls back to leads[leadId].name.
-    cust: priorInv.cust,
+    // The customer's NAME comes off the wire — the ledger pages through the database, so the
+    // store's copy can be stale or absent. Falls back to the prior record only when the server
+    // has none (a deleted lead). phone/email are still not in the DTO; money-derive falls back to
+    // leads[leadId] for those. Matches the summary mapper, which already preferred the server.
+    cust: dto.customerName ?? priorInv.cust,
     phone: priorInv.phone,
     email: priorInv.email,
+    // WHERE the work happened and WHEN — the two document facts the invoice row does not hold.
+    // Resolved server-side so the office preview cannot state a different service date from the
+    // customer's own copy of the same bill.
+    serviceAddress: dto.serviceAddress,
+    serviceAt: dto.serviceAt,
     title: dto.title ?? "Invoice",
     status: dto.status,
     total: dto.total.cents / 100,              // cents → dollars (TAX-INCLUSIVE)
     // The modal has always drawn a Tax row from `pricing`; until now nothing populated it for an
     // invoice, so the row rendered off client-only state. `disc` stays 0 because an invoice carries
     // no discount of its own — the estimate's discount is already inside the total it snapshotted.
-    pricing: { disc: 0, tax: dto.taxBps / 100 },   // basis points → percent (875 bps = 8.75%)
+    pricing: { disc: dto.discBps / 100, tax: dto.taxBps / 100 },  // bps → percent (875 = 8.75%)
     tax: dto.tax.cents / 100,                     // cents → dollars, the recorded amount
+    disc: dto.discount.cents / 100,               // cents → dollars, what came off before tax
     depPaid: dto.depositPaid.cents / 100,      // cents → dollars
     payments: dto.payments.map((p) => ({
       amt: p.amount.cents / 100,               // cents → dollars
@@ -619,11 +631,14 @@ export function dtoInvoiceToStore(dto: InvoiceDTO, priorInv: Invoice): Invoice {
       q: l.quantity,
       r: l.rate.cents / 100,                                  // cents → dollars
       c: l.cost.cents > 0 ? l.cost.cents / 100 : undefined,  // omit when zero-cost
+      ...(l.taxable ? {} : { notax: true as const }),         // only the exception is written
     })),
     // Days since the invoice was raised. Was hard-coded to 0, which made the ledger's age column
     // read "0d" for every row and — while overdue was defined as an age threshold — made the
     // Overdue pill unreachable. Overdue now keys off dueAt below; this is display only.
     age: daysSince(dto.createdAt),
+    // The stamp itself, not just the day count: a document of record states a date.
+    createdAt: dto.createdAt,
     dueAt: dto.dueAt,
     fu: { on: dto.followUpOn, stage: dto.followUpStage },
     // The public pay link, minted server-side on first send. Threaded so the office modal can
@@ -675,10 +690,15 @@ export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice)
     cust: dto.customerName ?? priorInv?.cust ?? "",
     phone: priorInv?.phone ?? "",
     email: priorInv?.email,
+    // The close-out document the technician turns around states these too — same fields, same
+    // server resolution as the office and the customer's own page.
+    serviceAddress: dto.serviceAddress,
+    serviceAt: dto.serviceAt,
     title: dto.title ?? "Invoice",
     status: dto.status,
     total,
     tax: dto.tax.cents / 100,
+    disc: dto.discount.cents / 100,
     depPaid: dto.depositPaid.cents / 100,
     paidTotal: dto.amountPaid.cents / 100,
     due,
@@ -690,8 +710,14 @@ export function dtoFieldInvoiceToStore(dto: FieldInvoiceDTO, priorInv?: Invoice)
     termsDays: dto.termsDays,
     lines: pricesHidden
       ? []
-      : dto.lines.map((l) => ({ d: l.description, q: l.quantity, r: (l.rate?.cents ?? 0) / 100 })),
+      : dto.lines.map((l) => ({
+          d: l.description,
+          q: l.quantity,
+          r: (l.rate?.cents ?? 0) / 100,
+          ...(l.taxable ? {} : { notax: true as const }),
+        })),
     age: daysSince(dto.createdAt),
+    createdAt: dto.createdAt,
     dueAt: dto.dueAt,
     archived: dto.status === "void",
     origin: "db",

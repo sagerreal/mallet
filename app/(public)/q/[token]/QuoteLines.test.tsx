@@ -32,6 +32,7 @@ function renderLines() {
   return render(
     <QuoteLines
       fixedSubtotalCents={100_000}
+        fixedTaxableCents={100_000}
       optionalLines={OPTIONAL_LINES}
       discBps={0}
       taxBps={0}
@@ -418,6 +419,7 @@ describe("QuoteLines — a settled quote is a record, not an offer", () => {
     render(
       <QuoteLines
         fixedSubtotalCents={100_000}
+        fixedTaxableCents={100_000}
         optionalLines={OPTIONAL_LINES}
         discBps={0}
         taxBps={0}
@@ -443,6 +445,7 @@ describe("QuoteLines — a settled quote is a record, not an offer", () => {
     render(
       <QuoteLines
         fixedSubtotalCents={100_000}
+        fixedTaxableCents={100_000}
         optionalLines={OPTIONAL_LINES}
         discBps={0}
         taxBps={0}

@@ -20,6 +20,7 @@ vi.mock("@/lib/store/invoice-write", () => ({
 }));
 
 import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
+import { useAppStore } from "@/lib/store/app-store";
 
 const inv = (over: Partial<Invoice> = {}): Invoice => ({
   id: "inv-1",
@@ -164,5 +165,68 @@ describe("SendDocumentButton", () => {
     render(<SendDocumentButton invoice={inv()} />);
     await userEvent.click(screen.getByRole("button", { name: "Send the invoice" }));
     expect(await screen.findByRole("button", { name: "Send again" })).toBeTruthy();
+  });
+});
+
+describe("CloseOutDocument — the document a customer is handed", () => {
+  beforeEach(() => {
+    sendMock.mockReset();
+    sendMock.mockResolvedValue({ channel: "sms" });
+    // The field shell hydrates this from v1.settings.businessIdentity (anyRole). Null is the
+    // pre-hydration state, and the block must be absent rather than half-printed.
+    useAppStore.setState({ business: null });
+  });
+
+  it("prints WHO billed, WHO was billed, WHERE and WHEN", async () => {
+    // Before this the technician turned around a phone showing line items, a total and nothing
+    // else — no shop name, no address, no licence, no customer name, no dates.
+    useAppStore.setState({
+      business: {
+        name: "Ridgeline Plumbing",
+        address: "200 Ray St, Pleasanton, CA 94566",
+        phone: "(925) 555-0100",
+        email: "billing@ridgeline.test",
+        site: "ridgelineplumbing.com",
+        license: "C36-1029384",
+      },
+    });
+    render(
+      <CloseOutDocument
+        invoice={inv({
+          createdAt: "2026-08-05T18:00:00.000Z",
+          serviceAt: "2026-08-03T16:20:00.000Z",
+          serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+        })}
+      />,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Show the invoice" }));
+
+    // This sheet has no branded header of its own, so the shop's NAME belongs inside the block.
+    expect(screen.getByText("Ridgeline Plumbing")).toBeTruthy();
+    expect(screen.getByText("200 Ray St, Pleasanton, CA 94566")).toBeTruthy();
+    expect(screen.getByText("Lic. C36-1029384")).toBeTruthy();
+
+    expect(screen.getByText("Dana Reyes")).toBeTruthy();
+    expect(screen.getByText("18 Aspen Ct, Dublin, CA 94568")).toBeTruthy();
+    expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Service Aug 3, 2026/)).toBeTruthy();
+  });
+
+  it("omits the whole identity block until the shop's details have arrived", async () => {
+    render(<CloseOutDocument invoice={inv({ createdAt: "2026-08-05T18:00:00.000Z" })} />);
+    await userEvent.click(screen.getByRole("button", { name: "Show the invoice" }));
+    // Never the store's brand placeholder ("My Business") — that would be a lie on a customer's
+    // bill. Never a blank "Lic." either.
+    expect(screen.queryByText("My Business")).toBeNull();
+    expect(screen.queryByText(/^Lic\./)).toBeNull();
+  });
+
+  it("omits the service address and the service date it does not have", async () => {
+    render(<CloseOutDocument invoice={inv({ createdAt: "2026-08-05T18:00:00.000Z" })} />);
+    await userEvent.click(screen.getByRole("button", { name: "Show the invoice" }));
+    expect(screen.getByText("Bill to")).toBeTruthy();
+    expect(screen.queryByText("Service address")).toBeNull();
+    expect(screen.queryByText(/Service Aug/)).toBeNull();
+    expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
   });
 });

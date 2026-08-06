@@ -12,8 +12,10 @@ import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository"
 import { OrgSettings } from "../domain/org-settings";
 import { GetSettingsUseCase } from "../app/get-settings";
 import { GetFieldTogglesUseCase } from "../app/get-field-toggles";
+import { GetBusinessIdentityUseCase } from "../app/get-business-identity";
 import { UpdateConfigUseCase } from "../app/update-config";
 import { UpdateBrandUseCase } from "../app/update-brand";
+import { UpdateBusinessUseCase } from "../app/update-business";
 import { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "../app/connect-onboarding";
 import { CreatePricebookUseCase, UpdatePricebookUseCase, RemovePricebookUseCase } from "../app/pricebook";
 import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase } from "../app/labor-rates";
@@ -23,6 +25,7 @@ import {
   settingsDTO,
   orgSettingsDTO,
   fieldTogglesDTO,
+  businessIdentityDTO,
   pricebookItemDTO,
   laborRateDTO,
   jobTermDTO,
@@ -43,6 +46,7 @@ import {
   termUpdateInput,
   sourceCreateInput,
   updateBrandInput,
+  updateBusinessInput,
   connectStatusDTO,
   beginOnboardingResultDTO,
 } from "./settings-dto";
@@ -63,6 +67,11 @@ const updateConfigInput = z.object({
   // so an unknown zone is a BAD_REQUEST rather than a stored value nothing can interpret.
   timezone: z.string().min(1).max(64).optional(),
   markupBps: z.number().int().min(0).max(1_000_000).optional(),
+  // The shop's default sales-tax rate, in bps. Capped at 2500 (25%) — no US state, county and city
+  // combination reaches half of that, so a larger number is a typed "825" that lost its decimal
+  // point, and a rate that high on a five-figure quote is a customer the shop loses rather than a
+  // filing anyone owes.
+  taxBps: z.number().int().min(0).max(2500).optional(),
   visitScopeMinutes: z.number().int().min(0).max(1440).optional(),
   visitRepairMinutes: z.number().int().min(0).max(1440).optional(),
   visitInstallMinutes: z.number().int().min(0).max(1440).optional(),
@@ -140,6 +149,24 @@ export const createSettingsRouter = () =>
         return { ...orThrow(toggles), canText };
       }),
 
+    /**
+     * WHO billed the customer — `anyRole`, six fields wide, all of them already printed on the
+     * customer's own copy of the bill.
+     *
+     * `get` above is ownerOrOffice, so the field layout mounts its hydrator behind `!isTech` and a
+     * technician's store never held the shop's address, phone, email, website or licence. The
+     * close-out document the technician turns around at the door renders the SAME
+     * <InvoiceDocument> as `/i/<token>`, so without this read the customer's two copies of one
+     * bill disagreed about who had billed them. See businessIdentityDTO for what may go in here.
+     */
+    businessIdentity: anyRole
+      .output(businessIdentityDTO)
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new GetBusinessIdentityUseCase(repo).exec(ctx.principal.orgId);
+        return orThrow(result);
+      }),
+
     // Patch org config scalars and/or the booking jsonb blob.
     updateConfig: ownerOrOffice
       .input(updateConfigInput)
@@ -191,6 +218,29 @@ export const createSettingsRouter = () =>
         orThrow(result);
         // Re-fetch the full snapshot so the response includes all four collections —
         // avoids partial responses and keeps the client store reconciliation simple.
+        const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
+        return toSettingsDTO(orThrow(snapshot));
+      }),
+
+    // Patch the business identity printed on customer documents (address / phone / email /
+    // licence → org_settings). Returns the full settingsDTO for the same reason updateBrand
+    // does: one response the client reconciles everything from.
+    // Org is always sourced from ctx.principal.orgId; the client MUST NOT pass orgId.
+    updateBusiness: ownerOrOffice
+      .input(updateBusinessInput)
+      .output(settingsDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new UpdateBusinessUseCase(repo, ctx.deps.clock).exec(
+          {
+            address: input.address,
+            phone: input.phone,
+            email: input.email,
+            license: input.license,
+          },
+          ctx.principal.orgId,
+        );
+        orThrow(result);
         const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
         return toSettingsDTO(orThrow(snapshot));
       }),

@@ -25,8 +25,10 @@
 import { useState } from "react";
 import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { invoiceDocumentView } from "@/features/invoices/invoice-document-view";
+import { documentIdentity } from "@/features/invoices/document-business";
 import { sendInvoiceDocument } from "@/lib/store/invoice-write";
 import { invDue } from "@/lib/store/invoice-balance";
+import { useAppStore } from "@/lib/store/app-store";
 import type { Invoice } from "@/lib/store/types";
 
 /** What the tech is handed back after a send, so "Sent" can say WHERE it went. */
@@ -125,10 +127,15 @@ export interface CloseOutDocumentProps {
  */
 export function CloseOutDocument({ invoice }: CloseOutDocumentProps) {
   const [open, setOpen] = useState(false);
+  // WHO billed the customer. `documentIdentity`, not `documentContact`: this sheet has no branded
+  // header of its own, so the shop's name has to come from inside the document. Null until
+  // BusinessIdentityHydrator lands — a technician's store never had these facts at all before
+  // v1.settings.businessIdentity, and the block is omitted rather than half-printed.
+  const business = useAppStore((s) => s.business);
 
   if ((invoice.total ?? 0) <= 0) return null;
 
-  const doc = invoiceDocumentView(invoice);
+  const doc = invoiceDocumentView(invoice, documentIdentity(business));
   const canShow = doc.lines.length > 0;
 
   return (
@@ -147,11 +154,15 @@ export function CloseOutDocument({ invoice }: CloseOutDocumentProps) {
         <div className="reqcard" style={{ marginTop: "var(--space-2)" }}>
           <InvoiceDocument
             num={invoice.num}
+            business={doc.business}
+            dates={doc.dates}
+            parties={doc.parties}
             termsFace={doc.termsFace}
             title={invoice.title}
             lines={doc.lines}
             totalCents={doc.totalCents}
             taxCents={doc.taxCents}
+            discountCents={doc.discountCents}
             depositPaidCents={doc.depositPaidCents}
             amountPaidCents={doc.amountPaidCents}
             balanceDueCents={doc.balanceDueCents}

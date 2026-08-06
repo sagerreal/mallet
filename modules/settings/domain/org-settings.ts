@@ -25,14 +25,18 @@ export type ServiceLane = "estimate" | "flat";
 
 export type LegacyServiceLane = ServiceLane | "repair";
 
+// The return type names `feeApplies` explicitly rather than inheriting it through Omit<T>. This
+// function both SETS the flag (repair → estimate) and CLEARS it (flat), so on an argument that
+// carried no such property the result still does — and `Omit<T, "lane">` alone dropped it, making
+// every read of `out.feeApplies` a TS2339 at the call site.
 export function normalizeBookingService<T extends { lane: LegacyServiceLane; feeApplies?: boolean }>(
   svc: T,
-): Omit<T, "lane"> & { lane: ServiceLane } {
+): Omit<T, "lane" | "feeApplies"> & { lane: ServiceLane; feeApplies?: boolean } {
   if (svc.lane === "repair") return { ...svc, lane: "estimate", feeApplies: true };
   // The flag only means something on the estimate lane; a flat service carrying it is a dormant
   // misread for any reader that forgets to gate on lane first, so it is stripped here.
   if (svc.lane === "flat" && svc.feeApplies) return { ...svc, lane: "flat", feeApplies: undefined };
-  return svc as Omit<T, "lane"> & { lane: ServiceLane };
+  return svc as Omit<T, "lane" | "feeApplies"> & { lane: ServiceLane; feeApplies?: boolean };
 }
 
 export interface BookingService {
@@ -92,6 +96,17 @@ export interface OrgSettingsProps {
   readonly trade: string;
   /** Markup percentage in basis points (non-negative; 10000 = 100%). */
   readonly markupBps: number;
+  /**
+   * The shop's DEFAULT sales-tax rate in basis points (825 = 8.25%).
+   *
+   * ONE rate for the shop, seeded onto each new quote and overridable on that quote — the
+   * Jobber/Housecall Pro model. Not a per-document fact: the document carries its own `taxBps`
+   * once it exists, and editing this never reaches back into a quote already sent.
+   *
+   * 0 means "not set", and it is the default because a wrong rate is worse than none — it would
+   * put money on a customer's bill that the shop never agreed to and owes to nobody.
+   */
+  readonly taxBps: number;
   /** Duration of a scoping visit (clamped to ≥ VISIT_FLOOR_MINUTES). */
   readonly visitScopeMinutes: number;
   /** Duration of a repair visit (clamped to ≥ VISIT_FLOOR_MINUTES). */
@@ -169,6 +184,21 @@ export interface OrgSettingsProps {
   readonly brandLogoUrl: string | null;
   /** 1-3 character monogram initials. Nullable. */
   readonly brandInitials: string | null;
+  // --- Business identity (printed on customer documents) ---
+  // What a customer needs to know WHO billed them, act on it, and keep it. Deliberately NOT
+  // the fields they resemble: bizAddress is not serviceOriginAddress (a routing origin, often
+  // a yard) and bizPhone is not orgs.twilioNumber (telephony config, not the number on a bill).
+  // Business NAME is brandName/orgs.name and website is brandSite — neither is duplicated.
+  // All free text with NO format validation: a license number's shape varies by state and a
+  // wrong regex would reject a valid license. Trimmed, blank → null (see create).
+  /** Street address printed on customer documents. Nullable. */
+  readonly bizAddress: string | null;
+  /** The number a customer should call. Nullable. */
+  readonly bizPhone: string | null;
+  /** The address a customer should email about a bill. Nullable. */
+  readonly bizEmail: string | null;
+  /** Contractor/trade license exactly as the shop writes it. Nullable. */
+  readonly licenseNumber: string | null;
   // --- Stripe Connect (Express) onboarding state (PR1) ---
   /** The shop's Stripe connected account id (acct_...). Null until onboarding begins. */
   readonly stripeConnectedAccountId: string | null;
@@ -191,6 +221,19 @@ const clampMinutes = (n: number): number =>
 
 const clampHour = (n: number): number =>
   Math.min(HOUR_MAX, Math.max(HOUR_MIN, Math.round(Number.isFinite(n) ? n : 0)));
+
+/**
+ * Free-text optional field → trimmed value, or null when there is nothing left.
+ *
+ * ONE representation for "not set". Without it a cleared input arrives as "" and a whitespace
+ * paste as "  ", and every consumer downstream has to remember that both mean absent — which is
+ * how a document ends up printing a label above an empty line. Documents omit a null row; they
+ * cannot omit a row holding a space.
+ */
+const blankToNull = (v: string | null): string | null => {
+  const trimmed = (v ?? "").trim();
+  return trimmed.length === 0 ? null : trimmed;
+};
 
 // One day's [open, close] is valid iff it is the closed sentinel (0/0) or a forward range
 // (open < close). Hours are clamped to [0, 24] first so the check matches what would be stored.
@@ -288,6 +331,11 @@ export class OrgSettings {
     if (props.markupBps < 0) {
       return err(validation("markup must be non-negative", "markupBps"));
     }
+    // Integer bps, not a float percent: 8.25% is 825, and a fractional bps would round differently
+    // in the domain's chain than in the client mirror that recomputes the same total live.
+    if (!Number.isInteger(props.taxBps) || props.taxBps < 0) {
+      return err(validation("sales tax rate must be a non-negative whole number of bps", "taxBps"));
+    }
     // A bad zone is worse than no zone: Intl silently falls back to UTC, which would put a
     // late-afternoon Pacific finish on tomorrow's timesheet with nothing to show it happened.
     // Validate here so the wrong value can never be stored in the first place.
@@ -329,6 +377,12 @@ export class OrgSettings {
         hoursSunOpen: clampHour(props.hoursSunOpen),
         hoursSunClose: clampHour(props.hoursSunClose),
         areaRadiusMi: Math.max(0, Math.round(props.areaRadiusMi)),
+        // Business identity: trimmed, and blank normalised to null so "not set" has exactly one
+        // representation on every read path (DB row, patch, fixture) — see blankToNull.
+        bizAddress: blankToNull(props.bizAddress),
+        bizPhone: blankToNull(props.bizPhone),
+        bizEmail: blankToNull(props.bizEmail),
+        licenseNumber: blankToNull(props.licenseNumber),
         // Legacy 'repair' lanes normalise here — the one boundary every read and write passes
         // through, so stored blobs and stale clients both come out as estimate + feeApplies.
         booking: { ...props.booking, services: props.booking.services.map(normalizeBookingService) },
@@ -349,6 +403,7 @@ export class OrgSettings {
       ...this.p,
       trade: fields.trade !== undefined ? fields.trade : this.p.trade,
       markupBps: fields.markupBps !== undefined ? fields.markupBps : this.p.markupBps,
+      taxBps: fields.taxBps !== undefined ? fields.taxBps : this.p.taxBps,
       visitScopeMinutes:
         fields.visitScopeMinutes !== undefined
           ? fields.visitScopeMinutes
@@ -436,6 +491,35 @@ export class OrgSettings {
       brandColor: fields.color !== undefined ? fields.color : this.p.brandColor,
       brandLogoUrl: fields.logoUrl !== undefined ? fields.logoUrl : this.p.brandLogoUrl,
       brandInitials: fields.initials !== undefined ? fields.initials : this.p.brandInitials,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Patch the business-identity subset — what gets PRINTED on a customer's invoice.
+   *
+   * Same contract as patchBrand: undefined = keep current, explicit null clears the field.
+   * All four are free text with NO format validation. A contractor license number's shape
+   * varies by state (and by license class within a state), a phone may legitimately carry an
+   * extension, and an address is an address — a regex here would reject valid values and leave
+   * a shop unable to put its own license on its own bill. create() trims and normalises blank
+   * to null; nothing else is enforced.
+   */
+  patchBusiness(
+    fields: {
+      address?: string | null;
+      phone?: string | null;
+      email?: string | null;
+      license?: string | null;
+    },
+    now: Date,
+  ): Result<OrgSettings, ValidationError> {
+    return OrgSettings.create({
+      ...this.p,
+      bizAddress: fields.address !== undefined ? fields.address : this.p.bizAddress,
+      bizPhone: fields.phone !== undefined ? fields.phone : this.p.bizPhone,
+      bizEmail: fields.email !== undefined ? fields.email : this.p.bizEmail,
+      licenseNumber: fields.license !== undefined ? fields.license : this.p.licenseNumber,
       updatedAt: now,
     });
   }

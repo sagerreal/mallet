@@ -48,6 +48,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         cost: makeMoneyDTO(3000),  // $30.00
         isOptional: false,
         needsPhoto: false,
+        taxable: true,
         position: 0,
         tier: null,
       },
@@ -59,6 +60,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         cost: makeMoneyDTO(0),     // $0 → should be omitted
         isOptional: true,
         needsPhoto: true,
+        taxable: false,
         position: 1,
         tier: null,
       },
@@ -97,11 +99,15 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
     authorization: null,
     leadId: "lead-abc",
     customerName: "Sofia Hernandez",
+    serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+    serviceAt: "2026-08-03T16:20:00.000Z",
     title: "Final bill",
     status: "sent",
     total: makeMoneyDTO(12000),        // $120.00 — TAX-INCLUSIVE
     taxBps: 875,                       // 8.75%
     tax: makeMoneyDTO(965),            // the part of the $120 that is tax
+    discBps: 0,
+    discount: makeMoneyDTO(0),
     depositPaid: makeMoneyDTO(3000),   // $30.00
     amountPaid: makeMoneyDTO(3000),
     due: makeMoneyDTO(9000),
@@ -113,6 +119,7 @@ function makeInvoiceDTO(overrides: Partial<InvoiceDTO> = {}): InvoiceDTO {
         quantity: 1,
         rate: makeMoneyDTO(12000),   // $120.00
         cost: makeMoneyDTO(5000),    // $50.00
+        taxable: true,
         position: 0,
       },
     ],
@@ -341,6 +348,7 @@ describe("dtoInvoiceToStore", () => {
         quantity: 1,
         rate: makeMoneyDTO(1000),
         cost: makeMoneyDTO(0),
+        taxable: true,
         position: 0,
       }],
     });
@@ -353,12 +361,34 @@ describe("dtoInvoiceToStore", () => {
     expect(result.origin).toBe("db");
   });
 
-  it("preserves cust, phone, email from priorInv (not in DTO)", () => {
+  it("takes the customer NAME off the wire and keeps phone/email from priorInv", () => {
+    // The ledger pages through the database, so the store's copy of a name can be stale or absent
+    // — and this name is printed on the customer's own copy of the bill. phone/email are still
+    // not on this DTO, so those stay with the prior record.
     const prior = makePriorInv({ cust: "Jane Doe", phone: "555-9999", email: "jane@test.com" });
     const result = dtoInvoiceToStore(makeInvoiceDTO(), prior);
-    expect(result.cust).toBe("Jane Doe");
+    expect(result.cust).toBe("Sofia Hernandez");
     expect(result.phone).toBe("555-9999");
     expect(result.email).toBe("jane@test.com");
+  });
+
+  it("falls back to the prior name only when the server has none — a deleted lead", () => {
+    const prior = makePriorInv({ cust: "Jane Doe" });
+    const result = dtoInvoiceToStore(makeInvoiceDTO({ customerName: null }), prior);
+    expect(result.cust).toBe("Jane Doe");
+  });
+
+  it("carries the document facts: the invoice date, the service address and the service date", () => {
+    const result = dtoInvoiceToStore(makeInvoiceDTO(), makePriorInv());
+    expect(result.createdAt).toBe("2026-06-01T00:00:00.000Z");
+    expect(result.serviceAddress).toBe("18 Aspen Ct, Dublin, CA 94568");
+    expect(result.serviceAt).toBe("2026-08-03T16:20:00.000Z");
+  });
+
+  it("keeps an unknown service date NULL — never the invoice date under a Service label", () => {
+    const result = dtoInvoiceToStore(makeInvoiceDTO({ serviceAt: null }), makePriorInv());
+    expect(result.serviceAt).toBeNull();
+    expect(result.createdAt).toBe("2026-06-01T00:00:00.000Z");
   });
 
   it("maps sourceJobId to jobId", () => {
@@ -791,16 +821,19 @@ function makeFieldInvoiceDTO(overrides: Partial<FieldInvoiceDTO> = {}): FieldInv
     scopeJobId: null,
     leadId: "lead-abc",
     customerName: "Sofia Hernandez",
+    serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+    serviceAt: "2026-08-03T16:20:00.000Z",
     title: "Water heater",
     status: "sent",
     total: makeMoneyDTO(84_000),      // $840.00
     tax: makeMoneyDTO(0),
+    discount: makeMoneyDTO(0),
     depositPaid: makeMoneyDTO(0),
     amountPaid: makeMoneyDTO(0),
     due: makeMoneyDTO(84_000),
     termsDays: 0,
     lines: [
-      { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(84_000), position: 0 },
+      { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(84_000), taxable: true, position: 0 },
     ],
     payments: [],
     sentAt: "2026-08-01T09:00:00.000Z",
@@ -889,8 +922,8 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   const hidden = () =>
     makeFieldInvoiceDTO({
       lines: [
-        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: null, position: 0 },
-        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, position: 1 },
+        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: null, taxable: true, position: 0 },
+        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, taxable: true, position: 1 },
       ],
     });
 
@@ -911,8 +944,8 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   it("drops the WHOLE breakdown when even one rate is hidden — never a partial bill", () => {
     const dto = makeFieldInvoiceDTO({
       lines: [
-        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(80_000), position: 0 },
-        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, position: 1 },
+        { id: "linv-1", description: "Water heater — 40 gal", quantity: 1, rate: makeMoneyDTO(80_000), taxable: true, position: 0 },
+        { id: "linv-2", description: "Haul-away", quantity: 1, rate: null, taxable: true, position: 1 },
       ],
     });
     expect(dtoFieldInvoiceToStore(dto).lines).toEqual([]);
@@ -922,7 +955,7 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   it("keeps a genuine $0 line — {cents: 0} is not the redaction signal", () => {
     const dto = makeFieldInvoiceDTO({
       lines: [
-        { id: "linv-1", description: "Warranty callback", quantity: 1, rate: makeMoneyDTO(0), position: 0 },
+        { id: "linv-1", description: "Warranty callback", quantity: 1, rate: makeMoneyDTO(0), taxable: true, position: 0 },
       ],
     });
     expect(dtoFieldInvoiceToStore(dto).lines).toEqual([{ d: "Warranty callback", q: 1, r: 0 }]);

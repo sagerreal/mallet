@@ -7,7 +7,7 @@ import type { AcceptLineInput } from "./accept-estimate";
  * SECURITY-CRITICAL: the public quote route accepts only an ID SUBSET from the
  * (unauthenticated) token holder — never client-authored line content. Every
  * committed line here is built FROM THE STORED ESTIMATE's lines, preserving the
- * stored description/quantity/rate/cost/needsPhoto, so a token holder can toggle
+ * stored description/quantity/rate/cost/needsPhoto/taxable, so a token holder can toggle
  * add-ons on/off but can never rewrite prices.
  *
  * Result kinds (discriminated union, same convention as public-quote.ts):
@@ -30,6 +30,9 @@ const toAcceptLineInput = (line: EstimateLine): AcceptLineInput => {
     costCents: lp.cost,
     isOptional: false,
     needsPhoto: lp.needsPhoto,
+    // Taxability rides the STORED line like every other priced fact — a token holder toggling
+    // an add-on on must not be able to flip it out of the tax base.
+    taxable: lp.taxable,
   };
 };
 

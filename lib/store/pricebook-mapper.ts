@@ -138,7 +138,7 @@ export function serviceCreatePayload(id: string, fields: AddServiceFields): Serv
     unitPriceCents: Math.max(0, Math.round(fields.unitPrice * 100)),
     costCents: Math.max(0, Math.round((fields.cost ?? 0) * 100)),
     laborHours: fields.laborHours ?? null,
-    taxable: fields.taxable ?? false,
+    taxable: fields.taxable ?? true,
     warrantyText: fields.warrantyText ?? null,
     imageUrl: fields.imageUrl ?? null,
     isAddon: fields.isAddon ?? false,
@@ -264,7 +264,7 @@ export function materialCreatePayload(id: string, fields: AddMaterialFields): Ma
     unitCostCents: Math.max(0, Math.round(fields.unitCost * 100)),
     unitOfMeasure: fields.unitOfMeasure ?? "each",
     markupBps: fields.markupBps ?? null,
-    taxable: fields.taxable ?? false,
+    taxable: fields.taxable ?? true,
     vendor: fields.vendor ?? null,
   };
 }

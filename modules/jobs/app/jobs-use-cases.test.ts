@@ -216,8 +216,8 @@ const acceptedEstimate = (): EstimateSummary => ({
   taxCents: 8_855,
   // The sold scope, which the job now carries so a technician can see what was bought.
   lines: [
-    { description: "Deck boards — cedar", quantity: 1, rateCents: 80_000, costCents: 40_000, position: 1 },
-    { description: "Railing", quantity: 1, rateCents: 21_200, costCents: 9_000, position: 2 },
+    { description: "Deck boards — cedar", quantity: 1, rateCents: 80_000, costCents: 40_000, taxable: true, position: 1 },
+    { description: "Railing", quantity: 1, rateCents: 21_200, costCents: 9_000, taxable: true, position: 2 },
   ],
 });
 

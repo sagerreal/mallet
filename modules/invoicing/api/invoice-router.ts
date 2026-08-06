@@ -17,6 +17,7 @@ import { INVOICE_VIEWS } from "../infra/invoice-views";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
 import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
+import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
@@ -39,6 +40,9 @@ const lineDTO = z.object({
   quantity: z.number(),
   rate: moneyDTO,
   cost: moneyDTO,
+  /** Does this line take sales tax. What the DOCUMENT marks; the bill's stored `tax` is still
+   *  the authority for what was charged. */
+  taxable: z.boolean(),
   position: z.number().int(),
 });
 const paymentDTO = z.object({
@@ -82,12 +86,35 @@ const invoiceDTO = z.object({
    * database, so an invoice opened from a later page showed a blank customer.
    */
   customerName: z.string().nullable(),
+  /**
+   * WHERE the work happened — `leads.address`, resolved SERVER-side beside `customerName`.
+   *
+   * On the DTO rather than looked up in the browser's store for the same reason the name is, and
+   * for one more: this is what the office's "Preview as customer" prints under "Service address",
+   * and a preview that reads a different source from the customer's own `/i/<token>` page is a
+   * preview that can disagree with the bill. Frequently null — most leads are created without an
+   * address — and the document omits the whole block when it is.
+   */
+  serviceAddress: z.string().nullable(),
+  /**
+   * WHEN the work was done — the source job's latest completed visit.
+   *
+   * Resolved server-side so the office preview, the technician's close-out and the customer's own
+   * page state ONE service date. Null when the bill has no source job or no completed visit, and
+   * NEVER a fallback to `createdAt`: a customer may hand this to an insurer or a warranty desk.
+   */
+  serviceAt: z.string().nullable(),
   title: z.string().nullable(),
   status: statusEnum,
   /** Tax-INCLUSIVE — `tax` says how much of it is tax, it is not added on top. */
   total: moneyDTO,
   taxBps: z.number().int().min(0),
   tax: moneyDTO,
+  /** The discount taken off the line sum before tax — the rate agreed and the amount it came to.
+   *  The document states it: the lines print at full rates, so a total under their sum with no
+   *  discount row reads as an arithmetic error. */
+  discBps: z.number().int().min(0),
+  discount: moneyDTO,
   depositPaid: moneyDTO,
   amountPaid: moneyDTO,
   due: moneyDTO,
@@ -158,6 +185,9 @@ const lineInput = z.object({
   quantity: z.number().nonnegative(),
   rateCents: z.number().int().nonnegative(),
   costCents: z.number().int().nonnegative().optional(),
+  /** Omitted reads as TRUE — the column default. Sent back on an edit so the office does not
+   *  re-tax a line it had marked non-taxable just by saving the bill again. */
+  taxable: z.boolean().optional(),
 });
 const draftInput = z.object({
   // Client-authored id — preserved so the store's optimistic id matches the persisted row.
@@ -246,14 +276,29 @@ const toInvoiceDTOWithAuth = async (
   tx: TenantTx,
   orgId: OrgId,
 ): Promise<
-  ReturnType<typeof toInvoiceDTO> & { customerName: string | null; authorization: InvoiceAuthorizationDTO }
+  ReturnType<typeof toInvoiceDTO> & {
+    customerName: string | null;
+    serviceAddress: string | null;
+    serviceAt: string | null;
+    authorization: InvoiceAuthorizationDTO;
+  }
 > => {
-  // The customer's name, resolved here rather than looked up in the browser's store — the ledger
-  // pages through the database, so the store cannot be relied on to hold this invoice's lead.
-  const leads = await new DrizzleLeadRepository(tx, orgId).findByIds([invoice.props.leadId]);
-  const customerName = leads[0]?.props.name ?? null;
-  const base = { ...toInvoiceDTO(invoice), customerName };
+  // The customer's name and service address, resolved here rather than looked up in the browser's
+  // store — the ledger pages through the database, so the store cannot be relied on to hold this
+  // invoice's lead. Both are what the customer's own copy of the bill prints, so they are resolved
+  // once here instead of twice, differently, on two surfaces.
   const jobId = invoice.props.sourceJobId;
+  const [leads, serviceAt] = await Promise.all([
+    new DrizzleLeadRepository(tx, orgId).findByIds([invoice.props.leadId]),
+    // No source job means no service date. Omitted, never faked from the invoice date.
+    jobId ? new DrizzleServiceDateReader(tx, orgId).forJob(jobId) : Promise.resolve(null),
+  ]);
+  const base = {
+    ...toInvoiceDTO(invoice),
+    customerName: leads[0]?.props.name ?? null,
+    serviceAddress: leads[0]?.props.address ?? null,
+    serviceAt: iso(serviceAt),
+  };
   if (!jobId) return { ...base, authorization: null };
 
   const auth = await new DrizzleAuthorizationReader(tx, orgId).forJob(jobId);
@@ -296,6 +341,8 @@ const toInvoiceDTO = (invoice: Invoice) => {
     total: money$(p.total),
     taxBps: p.taxBps,
     tax: money$(p.tax),
+    discBps: p.discBps,
+    discount: money$(p.discount),
     depositPaid: money$(p.depositPaid),
     amountPaid: money$(p.amountPaid),
     due: money$(invoice.due()),
@@ -306,6 +353,7 @@ const toInvoiceDTO = (invoice: Invoice) => {
       quantity: line.props.quantity,
       rate: money$(line.props.rate),
       cost: money$(line.props.cost),
+      taxable: line.props.taxable,
       position: line.props.position,
     })),
     payments: p.payments.map((pay) => ({
@@ -370,6 +418,7 @@ export const createInvoiceRouter = () =>
             quantity: l.quantity,
             rateCents: l.rateCents,
             costCents: l.costCents ?? 0,
+            taxable: l.taxable,
           })),
         });
         return toInvoiceDTOWithAuth(orThrow(result), ctx.tx, ctx.principal.orgId);
@@ -504,6 +553,7 @@ export const createInvoiceRouter = () =>
                 quantity: l.quantity,
                 rateCents: l.rateCents,
                 costCents: l.costCents ?? 0,
+                taxable: l.taxable,
               })),
             }),
           ),

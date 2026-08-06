@@ -15,6 +15,9 @@ export interface PublicInvoiceLine {
   readonly description: string;
   readonly quantity: number;
   readonly rateCents: number;
+  /** Does this line take sales tax — marked on the document so the customer can see which
+   *  line the rate was not charged on. */
+  readonly taxable: boolean;
 }
 
 /**
@@ -34,6 +37,43 @@ export interface PublicInvoicePayment {
   readonly receivedAt: Date;
 }
 
+/**
+ * The facts a DOCUMENT OF RECORD states that the invoice row itself does not carry, resolved by
+ * the orchestrator (public-invoice.ts) and handed in here.
+ *
+ * They live in a context object rather than as five more positional arguments because every one of
+ * them is optional-in-practice — a shop that has not filled in Settings, a lead with no address, a
+ * bill with no source job — and a positional list of five nullable strings is a call site nobody
+ * can read. Keeping them OUT of this module's data access is the point: this file stays
+ * import-light (domain + one use-case) so its unit tests never pull DB or config wiring.
+ */
+export interface PublicInvoiceContext {
+  /** orgs.name, resolved from the token — never from the page. */
+  readonly orgName: string;
+  readonly chargesEnabled: boolean;
+  /** The shop's address/phone/email/website/licence, from org_settings via the settings use-case. */
+  readonly business: PublicInvoiceBusiness;
+  /** leads.name for the invoice's own lead. Null only when the lead is gone. */
+  readonly customerName: string | null;
+  /** leads.address — null on most leads, and omitted from the document when it is. */
+  readonly serviceAddress: string | null;
+  /** The source job's completed visit. Null when there is no job, or no completed visit. */
+  readonly serviceAt: Date | null;
+}
+
+/**
+ * The shop's identity as the customer's copy states it. `name` is deliberately ABSENT: the public
+ * page's branded header already prints it an inch above the document body, and a second copy there
+ * would be the shop's name twice.
+ */
+export interface PublicInvoiceBusiness {
+  readonly address: string | null;
+  readonly phone: string | null;
+  readonly email: string | null;
+  readonly site: string | null;
+  readonly license: string | null;
+}
+
 // The redacted shape the unauthenticated customer page renders: display lines WITHOUT cost,
 // money in integer cents, plus the two flags the Pay button needs.
 export interface PublicInvoiceView {
@@ -44,6 +84,9 @@ export interface PublicInvoiceView {
   readonly payments: readonly PublicInvoicePayment[];
   readonly totalCents: number;
   readonly taxCents: number;
+  /** What came off the line sum before tax. The lines print at full rates, so the document
+   *  must state it or the total reads as an arithmetic error. */
+  readonly discountCents: number;
   readonly depositPaidCents: number;
   readonly amountPaidCents: number;
   readonly balanceDueCents: number;
@@ -53,14 +96,26 @@ export interface PublicInvoiceView {
   readonly poNumber: string | null;
   readonly orgName: string;
   readonly chargesEnabled: boolean;
+  /**
+   * WHO billed, WHO was billed, WHERE the work happened and WHEN — what separates a document of
+   * record from a pay page. For a long time this page carried none of it: not the customer's own
+   * name, not the shop's address or licence, not the invoice date. See PublicInvoiceContext.
+   */
+  readonly business: PublicInvoiceBusiness;
+  readonly customerName: string | null;
+  readonly serviceAddress: string | null;
+  /** When the bill was raised — invoices.created_at, always present. */
+  readonly invoicedAt: Date;
+  /** When the work was done. NEVER a fallback for invoicedAt; null when genuinely unknown. */
+  readonly serviceAt: Date | null;
 }
 
 export const toPublicInvoiceView = (
   invoice: Invoice,
-  orgName: string,
-  chargesEnabled: boolean,
+  context: PublicInvoiceContext,
 ): PublicInvoiceView => {
   const p = invoice.props;
+  const { orgName, chargesEnabled, business, customerName, serviceAddress, serviceAt } = context;
   return {
     num: p.num,
     title: p.title,
@@ -70,6 +125,7 @@ export const toPublicInvoiceView = (
         description: line.props.description,
         quantity: line.props.quantity,
         rateCents: line.props.rate,
+        taxable: line.props.taxable,
       })),
     payments: [...p.payments]
       .sort((a, b) => a.props.receivedAt.getTime() - b.props.receivedAt.getTime())
@@ -80,6 +136,7 @@ export const toPublicInvoiceView = (
       })),
     totalCents: p.total,
     taxCents: p.tax,
+    discountCents: p.discount,
     depositPaidCents: p.depositPaid,
     amountPaidCents: p.amountPaid,
     // The domain's due() — total − deposit − paid, clamped ≥ 0 — never recomputed by a page.
@@ -90,6 +147,12 @@ export const toPublicInvoiceView = (
     poNumber: p.poNumber,
     orgName,
     chargesEnabled,
+    business,
+    customerName,
+    serviceAddress,
+    // The bill's own creation stamp. Always present — an invoice cannot exist without one.
+    invoicedAt: p.createdAt,
+    serviceAt,
   };
 };
 

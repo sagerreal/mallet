@@ -16,9 +16,10 @@
  * announcing a bare spinbutton is what axe's `label` rule flags, and it went unnoticed while an
  * empty composer hid this table behind a hero.
  *
- * Row actions are deliberately minimal: Optional (customer-facing choice) and
- * remove. Save-to-book died when the estimator's learning loop took over
- * feeding the pricebook; the Photo chip returns when it attaches real photos.
+ * Row actions are deliberately minimal: Optional (customer-facing choice), No tax (only once
+ * the quote carries a rate — with no rate nothing is taxed and the chip would decide nothing),
+ * and remove. Save-to-book died when the estimator's learning loop took over feeding the
+ * pricebook; the Photo chip returns when it attaches real photos.
  */
 
 import { fmt$ } from "@/lib/format";
@@ -33,6 +34,7 @@ export function LineTable({
   footerTools,
   materialize,
   provenanceFor,
+  taxed = false,
 }: {
   lines: ComposerLine[];
   showCost: boolean;
@@ -46,6 +48,11 @@ export function LineTable({
   materialize?: boolean;
   /** Optional per-line provenance caption ("pricebook") — B3. Null hides it. */
   provenanceFor?: (description: string) => "pricebook" | null;
+  /**
+   * Does this quote charge sales tax at all. Gates the per-line No-tax chip: with no rate on
+   * the quote nothing is taxed, so the chip would be a control that decides nothing.
+   */
+  taxed?: boolean;
 }) {
   const cols = showCost ? 6 : 5;
 
@@ -151,6 +158,18 @@ export function LineTable({
                       >
                         {x.opt ? "✓ Optional" : "Optional"}
                       </button>{" "}
+                      {taxed && (
+                        <>
+                          <button
+                            className={`optchip${x.notax ? " on" : ""}`}
+                            title="Not taxable — the shop's sales-tax rate is not charged on this line. It is still billed in full."
+                            aria-pressed={Boolean(x.notax)}
+                            onClick={() => onUpdateLine(i, { notax: !x.notax })}
+                          >
+                            {x.notax ? "✓ No tax" : "No tax"}
+                          </button>{" "}
+                        </>
+                      )}
                     </>
                   )}
                   {(hasContent || lines.length > 1) && (

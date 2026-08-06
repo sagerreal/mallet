@@ -172,6 +172,8 @@ export default async function PublicQuotePage({
   const fixedLines = p.lines.filter((l) => !l.props.isOptional);
   const optLines = p.lines.filter((l) => l.props.isOptional);
   const fixedSubtotalCents = estimate.subtotal();
+  // The SECOND base: what the rate is charged on. Non-taxable lines stay in the subtotal above.
+  const fixedTaxableCents = estimate.taxableBase();
 
   // The deposit a RETURNING customer can still pay. 0 — so no button renders at all — whenever
   // paying it is impossible: an unaccepted quote, nothing left owed, a shop that can't take cards,
@@ -289,6 +291,8 @@ export default async function PublicQuotePage({
                     description={lp.description}
                     quantity={lp.quantity}
                     rateCents={lp.rate}
+                    taxable={lp.taxable}
+                    showTaxMark={p.taxBps > 0}
                   />
                 );
               })}
@@ -296,6 +300,7 @@ export default async function PublicQuotePage({
               {/* Optional add-on toggles + live totals + actions — client island */}
               <QuoteLines
                 fixedSubtotalCents={fixedSubtotalCents}
+                fixedTaxableCents={fixedTaxableCents}
                 optionalLines={optLines.map((line) => {
                   const lp = line.props;
                   return {
@@ -303,6 +308,7 @@ export default async function PublicQuotePage({
                     description: lp.description,
                     quantity: lp.quantity,
                     rateCents: lp.rate,
+                    taxable: lp.taxable,
                   };
                 })}
                 discBps={p.discBps}

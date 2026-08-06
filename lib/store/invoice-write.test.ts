@@ -74,7 +74,8 @@ const prior: Invoice = {
 const officeDTO = {
   id: "inv-1", num: "INV-800", sourceJobId: "job-1", leadId: "lead-1", title: "Water heater",
   status: "sent", total: { cents: 84_000, currency: "USD" }, taxBps: 0,
-  tax: { cents: 0, currency: "USD" }, depositPaid: { cents: 0, currency: "USD" },
+  tax: { cents: 0, currency: "USD" }, discBps: 0, discount: { cents: 0, currency: "USD" },
+  depositPaid: { cents: 0, currency: "USD" },
   termsDays: 7, lines: [], payments: [], createdAt: "2026-08-01T12:00:00.000Z",
   dueAt: null, followUpOn: false, followUpStage: 0,
 };
@@ -84,6 +85,7 @@ const fieldDTO = {
   id: "inv-2", num: "INV-900", sourceJobId: null, scopeJobId: "job-1", leadId: "lead-1",
   customerName: "Dana Alvarez", title: "Visit fee — service call", status: "draft",
   total: { cents: 8_900, currency: "USD" }, tax: { cents: 0, currency: "USD" },
+  discount: { cents: 0, currency: "USD" },
   depositPaid: { cents: 0, currency: "USD" }, amountPaid: { cents: 0, currency: "USD" },
   due: { cents: 8_900, currency: "USD" }, termsDays: 0, lines: [], payments: [],
   sentAt: null, dueAt: null, createdAt: "2026-08-01T12:00:00.000Z",

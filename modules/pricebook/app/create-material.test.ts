@@ -268,7 +268,8 @@ describe("CreateMaterialUseCase", () => {
       expect(result.value.props.description).toBeNull();
       expect(result.value.props.unitOfMeasure).toBe("each");
       expect(result.value.props.markupBps).toBeNull();
-      expect(result.value.props.taxable).toBe(false);
+      // TRUE by default, matching the column — an unanswered item is one the shop charges tax on.
+      expect(result.value.props.taxable).toBe(true);
       expect(result.value.props.vendor).toBeNull();
       expect(result.value.props.active).toBe(true);
       expect(result.value.props.position).toBe(0);

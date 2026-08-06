@@ -16,6 +16,8 @@ const props = (overrides: Partial<InvoiceProps> = {}): InvoiceProps => ({
   orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
   num: "INV-1000",
   taxBps: 0,
+  discBps: 0,
+  discount: zeroMoney,
   tax: zeroMoney,
   sourceJobId: null,
   scopeJobId: null,

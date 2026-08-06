@@ -45,6 +45,8 @@ export interface AddJobLineCommand {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Omitted reads as TRUE (JobLine.create's default). */
+  readonly taxable?: boolean;
   readonly position?: number;
 }
 
@@ -65,6 +67,7 @@ export class AddJobLineUseCase {
       quantity: cmd.quantity,
       rateCents: cmd.rateCents,
       costCents: cmd.costCents,
+      taxable: cmd.taxable,
       position: cmd.position ?? 0,
     });
     if (!line.ok) return line;
@@ -81,6 +84,8 @@ export interface UpdateJobLineCommand {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Omitted reads as TRUE (JobLine.create's default). */
+  readonly taxable?: boolean;
   readonly position: number;
 }
 
@@ -100,6 +105,7 @@ export class UpdateJobLineUseCase {
       quantity: cmd.quantity,
       rateCents: cmd.rateCents,
       costCents: cmd.costCents,
+      taxable: cmd.taxable,
       position: cmd.position,
     });
     if (!line.ok) return line;
@@ -116,6 +122,8 @@ export interface SetJobLinesLine {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Omitted reads as TRUE (JobLine.create's default). */
+  readonly taxable?: boolean;
 }
 
 export interface SetJobLinesCommand {
@@ -157,6 +165,7 @@ export class SetJobLinesUseCase {
         quantity: input.quantity,
         rateCents: input.rateCents,
         costCents: input.costCents,
+        taxable: input.taxable,
         position: i,
       });
       if (!line.ok) return line;

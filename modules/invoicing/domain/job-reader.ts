@@ -11,6 +11,9 @@ export interface JobLineSummary {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Does this line take sales tax. The bill copies it onto the invoice line and charges the
+   *  job's taxBps on the taxable lines only. */
+  readonly taxable: boolean;
   readonly position: number;
 }
 
@@ -31,11 +34,20 @@ export interface JobSummary {
    * themselves: they are both the priced-ness signal and the content of the bill.
    */
   readonly lines: readonly JobLineSummary[];
-  /** Tax-INCLUSIVE, snapshotted from the accepted estimate. */
+  /** Tax-INCLUSIVE and discount-APPLIED, snapshotted from the accepted estimate. */
   readonly totalCents: number;
   /** The rate applied, and how much of `totalCents` it accounts for. Carried, never re-derived. */
   readonly taxBps: number;
   readonly taxCents: number;
+  /**
+   * The discount rate agreed on the quote, in bps. 0 on a job that was never discounted.
+   *
+   * The bill CANNOT be correct without it. `lines` are pre-tax AND pre-discount, `totalCents` is
+   * both applied, and the invoice prefers the lines because the snapshot goes stale on the on-site
+   * sign path — so a discounted sale billed from its lines charged the customer the full,
+   * undiscounted sum.
+   */
+  readonly discBps: number;
 }
 
 export interface JobReader {

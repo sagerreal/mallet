@@ -9,6 +9,7 @@ const props = (overrides: Partial<InvoiceLineProps> = {}): InvoiceLineProps => (
   quantity: 2,
   rate: money(5000),
   cost: money(3000),
+  taxable: true,
   position: 0,
   ...overrides,
 });

@@ -23,6 +23,7 @@ import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
 import { termsLine } from "@/features/invoices/terms-line";
 import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { PayInvoiceButton } from "./PayInvoiceButton";
+import { PrintInvoiceButton } from "./PrintInvoiceButton";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
 const TOKEN_RE = /^[0-9a-f]{64}$/i;
@@ -143,28 +144,14 @@ export default async function PublicInvoicePage({
     (view.status === "sent" || view.status === "partial");
 
   return (
-    <main
-      style={{
-        minHeight: "100vh",
-        background: "var(--bg)",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        padding: "0 0 var(--space-10)",
-      }}
-    >
+    // .invpage / .invcard are classes rather than inline styles for ONE reason: the print
+    // stylesheet has to reach them. An inline style beats any rule a stylesheet can write short
+    // of !important, and stylelint's token allow-list refuses `border-radius: 0 !important`, so
+    // an inline-styled card is a card that cannot be un-rounded on paper. Same pixels, same
+    // tokens — see the `@media print` block in app/prototype.css.
+    <main className="invpage">
       {/* Invoice card — max 520px, full-width on mobile */}
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 520,
-          background: "var(--card)",
-          border: "1px solid var(--line)",
-          borderRadius: "0 0 16px 16px",
-          overflow: "hidden",
-          boxShadow: "var(--shadow)",
-        }}
-      >
+      <div className="invcard">
         {/* Branded header */}
         <div className="custhead">
           <div className="custlogo">{initials}</div>
@@ -199,19 +186,33 @@ export default async function PublicInvoicePage({
 
           {/* THE document — the same component the office preview and the technician's
               close-out render, so the customer's copy cannot drift from the shop's.
-              Meta line: status pill · Net terms once sent · PO when the customer issued one.
-              The invoice NUMBER is omitted here — the branded header above already states it. */}
+              Meta line: status pill · invoice date · service date · Net terms once sent · PO when
+              the customer issued one.
+              The invoice NUMBER is omitted here — the branded header above already states it, and
+              so is the shop's NAME for the same reason: `business` carries the contact block only. */}
           <InvoiceDocument
             statusPill={<span className={`pill ${pill.tone}`}>{pill.label}</span>}
+            business={view.business}
+            dates={{
+              invoicedAt: view.invoicedAt.toISOString(),
+              // Omitted when there is no completed visit to state. NEVER the invoice date under a
+              // "Service" label — see InvoiceDocumentDates.
+              serviceAt: view.serviceAt?.toISOString() ?? null,
+              // `termsFace` already carries "Net 30 · due Sep 2"; a second Due segment would
+              // print the same date twice.
+            }}
+            parties={{ customerName: view.customerName, serviceAddress: view.serviceAddress }}
             termsFace={line}
             title={view.title}
             lines={view.lines.map((l) => ({
               description: l.description,
               quantity: l.quantity,
               amountCents: Math.round(l.quantity * l.rateCents),
+              taxable: l.taxable,
             }))}
             totalCents={view.totalCents}
             taxCents={view.taxCents}
+            discountCents={view.discountCents}
             depositPaidCents={view.depositPaidCents}
             amountPaidCents={view.amountPaidCents}
             // A canceled invoice owes nothing, so it states no balance at all.
@@ -224,8 +225,13 @@ export default async function PublicInvoicePage({
             }))}
           />
 
-          {/* THE action — only when it can actually run */}
-          {payable && <PayInvoiceButton token={token} balanceDueCents={view.balanceDueCents} />}
+          {/* THE action — only when it can actually run. `.noprint`: a paper copy of a bill has
+              no button on it, and the printed page must be the document alone. */}
+          {payable && (
+            <div className="noprint">
+              <PayInvoiceButton token={token} balanceDueCents={view.balanceDueCents} />
+            </div>
+          )}
 
           {/* Open but not card-payable: say how to settle instead of showing nothing. */}
           {!payable && !isPaid && !isVoid && view.balanceDueCents > 0 && (
@@ -237,8 +243,18 @@ export default async function PublicInvoicePage({
             </p>
           )}
 
-          {/* Footer */}
-          <p className="muted" style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-4)" }}>
+          {/* Keep it. The browser's own dialog is where "Save as PDF" lives on every desktop OS
+              and on iOS, so this one call covers both verbs. Anchored in-flow under the bill, not
+              floating over it. */}
+          <div className="invactions noprint">
+            <PrintInvoiceButton />
+          </div>
+
+          {/* Footer — our name, not the shop's, and not on the customer's paper copy. */}
+          <p
+            className="muted noprint"
+            style={{ fontSize: "var(--type-xs)", textAlign: "center", marginTop: "var(--space-4)" }}
+          >
             Powered by Mallet
           </p>
         </div>

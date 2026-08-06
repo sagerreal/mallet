@@ -137,6 +137,7 @@ export const createJobInput = z.object({
         quantity: z.number().min(0),
         rateCents: z.number().int().min(0),
         costCents: z.number().int().min(0).optional(),
+        taxable: z.boolean().optional(),
       }),
     )
     .max(200)
@@ -181,6 +182,8 @@ const lineFields = {
   quantity: z.number().min(0),
   rateCents: z.number().int().min(0),
   costCents: z.number().int().min(0),
+  /** Omitted reads as TRUE — the column default and what every pre-taxability line meant. */
+  taxable: z.boolean().optional(),
 };
 const addLineInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), ...lineFields, position: z.number().int().min(0).optional() });
 const updateLineInput = z.object({ jobId: z.string().uuid(), lineId: z.string().uuid(), ...lineFields, position: z.number().int().min(0) });
@@ -485,7 +488,7 @@ export const createJobRouter = () =>
         const useCase = new AddJobLineUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
           await useCase.exec(
-            { jobId: asJobId(input.jobId), id: input.id, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, position: input.position },
+            { jobId: asJobId(input.jobId), id: input.id, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, taxable: input.taxable, position: input.position },
             ctx.principal.orgId,
           ),
         );
@@ -500,7 +503,7 @@ export const createJobRouter = () =>
         const useCase = new UpdateJobLineUseCase(repo, ctx.deps.clock);
         const r = orThrow(
           await useCase.exec(
-            { jobId: asJobId(input.jobId), lineId: input.lineId, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, position: input.position },
+            { jobId: asJobId(input.jobId), lineId: input.lineId, description: input.description, quantity: input.quantity, rateCents: input.rateCents, costCents: input.costCents, taxable: input.taxable, position: input.position },
             ctx.principal.orgId,
           ),
         );

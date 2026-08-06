@@ -905,8 +905,8 @@ describe("applyReviseSeed", () => {
     tierNames: null,
     jobId: null,
     lines: [
-      { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, tier: null },
-      { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, tier: null },
+      { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null },
+      { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null },
     ],
   };
 
@@ -918,7 +918,8 @@ describe("applyReviseSeed", () => {
     expect(next.pricing).toEqual({ disc: 5, tax: 8.25, dep: 25 });
     expect(next.lines).toEqual([
       { d: "Walls", q: 320, r: 2.5, c: 1 },
-      { d: "Trim", q: 60, r: 4, opt: true, photo: true },
+      // taxable:false on the seed comes back as the notax exception, not as a `taxable` key.
+      { d: "Trim", q: 60, r: 4, opt: true, photo: true, notax: true },
     ]);
   });
 
@@ -928,8 +929,8 @@ describe("applyReviseSeed", () => {
       recommendedTier: "best" as const,
       tierNames: { good: "Basic", better: "Standard", best: "Premium" },
       lines: [
-        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, tier: "good" as const },
-        { d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, tier: "best" as const },
+        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const },
+        { d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, taxable: true, tier: "best" as const },
       ],
     });
     expect(next.format).toBe("gbb");
@@ -954,7 +955,7 @@ describe("applyReviseSeed", () => {
       recommendedTier: "best" as const,
       tierNames: { good: "Basic", better: "Standard", best: "Premium" },
       lines: [
-        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, tier: "good" as const },
+        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const },
       ],
     });
     expect(tiered.jobId).toBe("job-9");

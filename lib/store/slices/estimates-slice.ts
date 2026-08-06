@@ -152,6 +152,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
           costCents:   Math.round((l.c ?? 0) * 100),     // dollars → cents; 0 when absent
           isOptional:  l.opt ?? false,
           needsPhoto:  l.photo ?? false,
+          taxable:     !l.notax,                        // absent notax = taxable
           tier:        l.tier,                           // GBB tier tag; absent on single quotes
         })),
         // Good/Better/Best: the full three-tier structure persists. The server's
@@ -241,6 +242,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         costCents: Math.round((l.c ?? 0) * 100),    // dollars → cents; 0 when absent
         isOptional: l.opt ?? false,
         needsPhoto: l.photo ?? false,
+        taxable: !l.notax,
       }));
 
       trpcVanilla.v1.quoting.accept

@@ -27,6 +27,9 @@ export interface ComposerLine {
   c?: number;
   opt?: boolean;
   photo?: boolean;
+  /** This line is NOT taxable. Seeded from the pricebook item/material; the exception, not the
+   *  default — see the same key on the store's EstimateLine. */
+  notax?: boolean;
   /** Provenance: set when the line came from a pricebook MATERIAL (sellable part/equipment).
    * Values are snapshots — this id rides to the server for costing, never live repricing. */
   materialId?: string;
@@ -476,6 +479,9 @@ export interface ReviseSeedLine {
   cCents: number;
   opt: boolean;
   photo: boolean;
+  /** Does this line take sales tax. Restored so a revision does not silently re-tax a line the
+   *  shop had excluded. */
+  taxable: boolean;
   tier: TierKey | null;
 }
 
@@ -512,6 +518,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
     ...(l.cCents > 0 ? { c: l.cCents / 100 } : {}),
     ...(l.opt ? { opt: true } : {}),
     ...(l.photo ? { photo: true } : {}),
+    ...(l.taxable ? {} : { notax: true }),
   });
   const pricing = { disc: seed.discBps / 100, tax: seed.taxBps / 100, dep: seed.depBps / 100 };
   const tiered = seed.lines.some((l) => l.tier != null);
@@ -654,7 +661,7 @@ export function pricingSummary(p: { disc: number; dep: number; tax: number }): s
   return parts.join(" · ");
 }
 
-// ---- ComposerLine[] → EstimateLine[] (keep d,q,r,c,opt,photo,tier) -----------
+// ---- ComposerLine[] → EstimateLine[] (keep d,q,r,c,opt,photo,notax,tier) ----
 
 export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): EstimateLine[] {
   return lines.map((l) => {
@@ -662,6 +669,7 @@ export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): E
     if (l.c != null) e.c = l.c;
     if (l.opt != null) e.opt = l.opt;
     if (l.photo != null) e.photo = l.photo;
+    if (l.notax != null) e.notax = l.notax;
     if ("tier" in l && l.tier != null) e.tier = l.tier;
     return e;
   });

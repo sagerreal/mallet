@@ -46,6 +46,7 @@ import { fmt$ } from "@/lib/format";
 // store-dollars → document-cents adapter, which also builds the Net/due/PO face line.
 import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { invoiceDocumentView } from "@/features/invoices/invoice-document-view";
+import { documentContact } from "@/features/invoices/document-business";
 import { ModalLoading } from "./modal-loading";
 
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
@@ -219,6 +220,10 @@ export function CustInvoiceModalContent() {
   const leads = useAppStore((s) => s.leads);
   const jobs = useAppStore((s) => s.jobs);
   const brand = useAppStore((s) => s.brand);
+  // The shop's address/phone/email/website/licence. Null until BusinessIdentityHydrator lands,
+  // and the document omits the whole block while it is — a preview that printed an empty "Lic."
+  // would be previewing a bug.
+  const business = useAppStore((s) => s.business);
   const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const updateLead = useAppStore((s) => s.updateLead);
 
@@ -241,7 +246,9 @@ export function CustInvoiceModalContent() {
     if (!needsFull || !invQ.data) return;
     const dto = invQ.data;
     adoptInvoice(
-      dtoInvoiceToStore(dto as never, { cust: dto.customerName ?? "—", phone: "", email: "" } as never),
+      // "" not "—": this synthetic prior only supplies the three fields the wire does not carry,
+      // and the em-dash placeholder it used to invent reached the document as "Bill to —".
+      dtoInvoiceToStore(dto as never, { cust: "", phone: "", email: "" } as never),
     );
   }, [needsFull, invQ.data, adoptInvoice]);
 
@@ -275,7 +282,9 @@ export function CustInvoiceModalContent() {
   // The document itself — lines, subtotal/tax, deposit credit, paid-so-far and the balance —
   // plus its "Net 30 · due Sep 2 · PO 4471" face line, built by the ONE adapter that turns the
   // store's dollars into the document's cents (features/invoices/invoice-document-view.ts).
-  const doc = invoiceDocumentView(invoice);
+  // `documentContact`, not `documentIdentity`: CustHead above already prints the shop's name, and
+  // the contact-only shape cannot express one — so it cannot be printed twice.
+  const doc = invoiceDocumentView(invoice, documentContact(business));
 
   return (
     <>
@@ -287,8 +296,13 @@ export function CustInvoiceModalContent() {
             them with a control that actually transacts. See the FIXED note at the top of this
             file for the bug this replaced. */}
         <div className="banner">
-          Preview only — this is what {brand.name} sends the customer. It doesn&rsquo;t take real
-          payments. To charge a card or record one, use the invoice this preview was opened from.
+          {/* {" "} is load-bearing, not formatting noise. The text chunk after an expression is
+              TRIMMED by JSX when that chunk spans more than one line, so writing "{brand.name} sends"
+              across a wrap silently rendered "E2E Plumbingsends" to the shop. Keep the explicit
+              space, or keep the whole sentence on one line. */}
+          Preview only — this is what {brand.name}{" "}
+          sends the customer. It doesn&rsquo;t take real payments. To charge a card or record one,
+          use the invoice this preview was opened from.
         </div>
 
         {/* intro + invoice number */}
@@ -308,12 +322,16 @@ export function CustInvoiceModalContent() {
             "Preview as customer" that disagrees with the customer's copy is not expressible. */}
         <InvoiceDocument
           num={invoice.num}
+          business={doc.business}
+          dates={doc.dates}
+          parties={doc.parties}
           termsFace={doc.termsFace}
           // The prose above already names the job; repeating it inside the document is noise.
           title={null}
           lines={doc.lines}
           totalCents={doc.totalCents}
           taxCents={doc.taxCents}
+          discountCents={doc.discountCents}
           depositPaidCents={doc.depositPaidCents}
           amountPaidCents={doc.amountPaidCents}
           balanceDueCents={doc.balanceDueCents}

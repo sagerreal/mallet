@@ -582,6 +582,7 @@ export class DrizzleJobRepository implements JobRepository {
       quantity: p.quantity,
       rateCents: p.rate,
       costCents: p.cost,
+      taxable: p.taxable,
       position: p.position,
       createdAt: now,
       updatedAt: now,
@@ -598,6 +599,7 @@ export class DrizzleJobRepository implements JobRepository {
         quantity: p.quantity,
         rateCents: p.rate,
         costCents: p.cost,
+        taxable: p.taxable,
         position: p.position,
         updatedAt: now,
       })
@@ -659,6 +661,7 @@ export class DrizzleJobRepository implements JobRepository {
             quantity: p.quantity,
             rateCents: p.rate,
             costCents: p.cost,
+            taxable: p.taxable,
             position: p.position,
             createdAt: now,
             updatedAt: now,

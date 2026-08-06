@@ -12,6 +12,8 @@ export interface CreateManualJobLineInput {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents?: number;
+  /** Omitted reads as TRUE (JobLine.create's default). */
+  readonly taxable?: boolean;
 }
 
 // Matches the router's zod bound (createJobInput lines max 200) so a direct server-side caller
@@ -182,6 +184,7 @@ export class CreateManualJobUseCase {
         quantity: l.quantity,
         rateCents: l.rateCents,
         costCents: l.costCents ?? 0,
+        taxable: l.taxable,
         position: i + 1,
       });
       if (!isOk(line)) return line;

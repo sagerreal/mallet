@@ -73,18 +73,29 @@ const invoice = (): Invoice => {
   return r.value;
 };
 
+/** The three document facts resolved beside the invoice: who was billed, where, and when. */
+const PARTY = {
+  customerName: "Dana Ruiz",
+  serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+  serviceAt: new Date("2026-08-03T16:20:00Z"),
+};
+
 describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
   it("emits EXACTLY this key set and nothing else", () => {
     // The key-set assertion is the whole point of this file. It is the only thing standing between
     // a future refactor that "just reuses invoiceDTO" and every technician in the shop holding a
     // permanent unauthenticated pay-link for their customers' invoices.
-    const dto = toFieldInvoiceDTO(invoice(), "Dana Ruiz", true);
+    const dto = toFieldInvoiceDTO(invoice(), PARTY, true);
     expect(Object.keys(dto).sort()).toEqual(
       [
         "amountPaid",
         "createdAt",
         "customerName",
         "depositPaid",
+        // The discount AMOUNT (not the rate — taxBps' sibling discBps stays office-only). The
+        // close-out sheet renders the same <InvoiceDocument> as the customer's copy, and a total
+        // below the sum of its lines with nothing explaining it reads as an arithmetic error.
+        "discount",
         "due",
         "dueAt",
         "id",
@@ -94,6 +105,8 @@ describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
         "payments",
         "scopeJobId",
         "sentAt",
+        "serviceAddress",
+        "serviceAt",
         "sourceJobId",
         "status",
         "tax",
@@ -105,7 +118,7 @@ describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
   });
 
   it("never carries cost, the pay-link credential, or the office-only fields", () => {
-    const dto = toFieldInvoiceDTO(invoice(), "Dana Ruiz", true) as unknown as Record<string, unknown>;
+    const dto = toFieldInvoiceDTO(invoice(), PARTY, true) as unknown as Record<string, unknown>;
     for (const forbidden of [
       "cost",
       "publicToken",
@@ -122,10 +135,10 @@ describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
 
   it("strips cost from every LINE, unconditionally, at both settings", () => {
     for (const seesPrice of [true, false]) {
-      const dto = toFieldInvoiceDTO(invoice(), "Dana Ruiz", seesPrice);
+      const dto = toFieldInvoiceDTO(invoice(), PARTY, seesPrice);
       for (const line of dto.lines) {
         expect(Object.keys(line).sort()).toEqual(
-          ["description", "id", "position", "quantity", "rate"].sort(),
+          ["description", "id", "position", "quantity", "rate", "taxable"].sort(),
         );
       }
     }
@@ -133,7 +146,7 @@ describe("fieldInvoiceDTO — what may cross to a tech's device", () => {
 
   it("passes its own schema at both settings", () => {
     for (const seesPrice of [true, false]) {
-      expect(() => fieldInvoiceDTO.parse(toFieldInvoiceDTO(invoice(), "Dana Ruiz", seesPrice))).not.toThrow();
+      expect(() => fieldInvoiceDTO.parse(toFieldInvoiceDTO(invoice(), PARTY, seesPrice))).not.toThrow();
     }
   });
 });
@@ -142,7 +155,7 @@ describe("fieldInvoiceDTO — the price-visibility rule", () => {
   it("ALWAYS shows the amounts needed to collect, even when the shop hides prices", () => {
     // You cannot collect $840 without displaying "$840". In a techSeesPrice=false shop the
     // technician sees the balance and no per-line breakdown — that is the rule, not a leak.
-    const hidden = toFieldInvoiceDTO(invoice(), "Dana Ruiz", false);
+    const hidden = toFieldInvoiceDTO(invoice(), PARTY, false);
     expect(hidden.total.cents).toBe(84_000);
     expect(hidden.due.cents).toBe(54_000); // 84000 − 10000 deposit − 20000 paid
     expect(hidden.depositPaid.cents).toBe(10_000);
@@ -152,12 +165,12 @@ describe("fieldInvoiceDTO — the price-visibility rule", () => {
   });
 
   it("nulls line rate when the shop hides prices — null, never a fabricated 0", () => {
-    const hidden = toFieldInvoiceDTO(invoice(), "Dana Ruiz", false);
+    const hidden = toFieldInvoiceDTO(invoice(), PARTY, false);
     // The client must be able to tell "hidden from you" from "free"; a 0 here would render as $0.00
     // on a customer-facing bill line.
     expect(hidden.lines[0]?.rate).toBeNull();
 
-    const shown = toFieldInvoiceDTO(invoice(), "Dana Ruiz", true);
+    const shown = toFieldInvoiceDTO(invoice(), PARTY, true);
     expect(shown.lines[0]?.rate).toEqual({ cents: 78_505, currency: "USD" });
   });
 });

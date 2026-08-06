@@ -174,6 +174,11 @@ function mergeIncomingInvoice(prior: Invoice, incoming: Invoice): Invoice {
     cust: incoming.cust || prior.cust,
     phone: incoming.phone || prior.phone,
     email: incoming.email ?? prior.email,
+    // The document facts the LIST does not send. Without these a refetch behind an open sheet
+    // stripped the service address and the service date off a record that had them, and the
+    // customer preview quietly lost two rows it had been printing a second earlier.
+    serviceAddress: incoming.serviceAddress ?? prior.serviceAddress,
+    serviceAt: incoming.serviceAt ?? prior.serviceAt,
   };
 }
 
@@ -443,6 +448,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           quantity: l.q ?? 1,
           rateCents: Math.round((l.r ?? 0) * 100), // dollars → cents
           costCents: Math.round((l.c ?? 0) * 100), // dollars → cents; 0 when absent
+          taxable: !l.notax,                       // absent notax = taxable; carried, not reset
         })),
       })
       .then((dto) => {
@@ -576,6 +582,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
             quantity:    l.q ?? 1,
             rateCents:   Math.round((l.r ?? 0) * 100),   // dollars → cents
             costCents:   Math.round((l.c ?? 0) * 100),   // dollars → cents; 0 when absent
+            taxable:     !l.notax,                       // absent notax = taxable
           })),
         })
         .then(

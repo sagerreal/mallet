@@ -10,6 +10,9 @@ export interface EstimateLineSummary {
   readonly quantity: number;
   readonly rateCents: number;
   readonly costCents: number;
+  /** Does this line take sales tax — carried onto the job line so the bill rebuilt from those
+   *  lines charges tax on exactly what the quote did. */
+  readonly taxable: boolean;
   readonly position: number;
 }
 

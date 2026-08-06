@@ -47,6 +47,7 @@ function renderQuote(options: Options = {}) {
   return render(
     <QuoteLines
       fixedSubtotalCents={options.fixedSubtotalCents ?? 100_000}
+      fixedTaxableCents={options.fixedSubtotalCents ?? 100_000}
       optionalLines={[]}
       discBps={0}
       taxBps={0}

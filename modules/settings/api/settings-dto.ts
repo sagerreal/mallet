@@ -100,11 +100,33 @@ export const fieldTogglesDTO = z.object({
   canText: z.boolean(),
 });
 
+/**
+ * WHO billed the customer — the identity block every invoice document prints, `anyRole`.
+ *
+ * Same bar as `fieldTogglesDTO` and the same reason for existing: `settingsDTO` is owner/office
+ * only, so the technician's close-out — which IS the customer's copy of the bill, handed over at
+ * the door — had no address, no phone and no licence on it. Every field here is already printed on
+ * the invoice that same customer receives by link, so a technician learning them discloses nothing.
+ *
+ * Anything added here becomes readable by every technician in the org. Keep it to facts that
+ * appear on a customer document — never prices, credentials, or office configuration.
+ */
+export const businessIdentityDTO = z.object({
+  name: z.string(),
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  site: z.string().nullable(),
+  license: z.string().nullable(),
+});
+
 // --- Org config DTO --------------------------------------------------------
 
 export const orgSettingsDTO = z.object({
   trade: z.string(),
   markupBps: z.number().int(),
+  /** The shop's DEFAULT sales-tax rate in bps (825 = 8.25%). 0 = not set. */
+  taxBps: z.number().int(),
   visitScopeMinutes: z.number().int(),
   visitRepairMinutes: z.number().int(),
   visitInstallMinutes: z.number().int(),
@@ -155,6 +177,23 @@ export const brandDTO = z.object({
   color: z.string().nullable(),
   logoUrl: z.string().nullable(),
   initials: z.string().nullable(),
+});
+
+// --- Business identity DTO -------------------------------------------------
+
+/**
+ * What a customer document prints about the shop, returned on every settingsDTO response.
+ *
+ * A sibling of brandDTO rather than part of it: brand is how the shop LOOKS (colour, monogram,
+ * tagline), this is who it legally IS and how to reach it. Every field is nullable — a shop that
+ * has not filled these in sends documents without those rows, never with an empty label.
+ * Business name and website are NOT here; they are brandDTO.name and brandDTO.site.
+ */
+export const businessDTO = z.object({
+  address: z.string().nullable(),
+  phone: z.string().nullable(),
+  email: z.string().nullable(),
+  license: z.string().nullable(),
 });
 
 // --- Collection item DTOs --------------------------------------------------
@@ -208,6 +247,7 @@ export const settingsSnapshotDTO = z.object({
 
 export const settingsDTO = settingsSnapshotDTO.extend({
   brand: brandDTO,
+  business: businessDTO,
 });
 
 // --- Input schemas (named exports, mirroring output DTOs above) ------------
@@ -279,6 +319,23 @@ export const updateBrandInput = z.object({
   initials: z.string().max(3).nullable().optional(),
 });
 
+/**
+ * updateBusiness input: all fields optional — the caller sends only what changed, and an
+ * explicit null clears a field.
+ *
+ * Length caps ONLY. No email regex, no phone parse, no licence pattern: these are printed on a
+ * document exactly as the shop writes them, and every format rule here is a way to reject a
+ * valid value. A licence number's shape varies by state and by licence class; a phone may carry
+ * an extension; an "email for billing questions" may be a shared alias the shop knows works.
+ * The domain trims and normalises blank to null — that is the whole of the normalisation.
+ */
+export const updateBusinessInput = z.object({
+  address: z.string().max(500).nullable().optional(),
+  phone: z.string().max(64).nullable().optional(),
+  email: z.string().max(320).nullable().optional(),
+  license: z.string().max(120).nullable().optional(),
+});
+
 // --- Mappers (domain → wire) -----------------------------------------------
 
 export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO> => {
@@ -286,6 +343,7 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
   return {
     trade: p.trade,
     markupBps: p.markupBps,
+    taxBps: p.taxBps,
     visitScopeMinutes: p.visitScopeMinutes,
     visitRepairMinutes: p.visitRepairMinutes,
     visitInstallMinutes: p.visitInstallMinutes,
@@ -346,7 +404,8 @@ export const toSnapshotDTO = (s: SettingsSnapshot): z.infer<typeof settingsSnaps
 
 /**
  * Maps a SettingsSnapshot (config aggregate + collections) to the full settingsDTO wire shape.
- * Brand fields are sourced from the OrgSettings aggregate's props; brandName mirrors orgs.name
+ * Brand fields (how the shop looks) and business fields (who it is and how to reach it) are both
+ * sourced from the OrgSettings aggregate's props; brandName mirrors orgs.name
  * (the Drizzle repo joins orgs.name into the aggregate at read time).
  * Authoritative mapper for updateBrand — returns brand + config scalars + all four collections
  * so the client reconciles everything from a single response.
@@ -362,6 +421,12 @@ export const toSettingsDTO = (s: SettingsSnapshot): z.infer<typeof settingsDTO> 
       color: p.brandColor,
       logoUrl: p.brandLogoUrl,
       initials: p.brandInitials,
+    },
+    business: {
+      address: p.bizAddress,
+      phone: p.bizPhone,
+      email: p.bizEmail,
+      license: p.licenseNumber,
     },
   };
 };

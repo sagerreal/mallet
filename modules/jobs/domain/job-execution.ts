@@ -29,6 +29,12 @@ export interface JobLineProps {
   readonly quantity: number;
   readonly rate: Money;
   readonly cost: Money;
+  /**
+   * Does this line take sales tax — copied from the estimate line it was sold on, carried on to
+   * the invoice line. A SECOND, DIFFERENT filter from a line being on the bill at all: a
+   * non-taxable line is still billed, it just does not feed the tax base.
+   */
+  readonly taxable: boolean;
   readonly position: number;
 }
 
@@ -47,6 +53,9 @@ export class JobLine {
     quantity: number;
     rateCents: number;
     costCents: number;
+    /** Omitted reads as TRUE — the column's default (`job_lines.taxable NOT NULL DEFAULT true`)
+     *  and what every row written before taxability existed already meant. */
+    taxable?: boolean;
     position: number;
   }): Result<JobLine, ValidationError> {
     const description = input.description.trim();
@@ -70,6 +79,7 @@ export class JobLine {
         quantity: input.quantity,
         rate: money(input.rateCents),
         cost: money(input.costCents),
+        taxable: input.taxable ?? true,
         position: input.position,
       }),
     );

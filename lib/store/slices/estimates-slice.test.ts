@@ -88,6 +88,7 @@ describe("updateEstimate(accepted) — tier choice forwarding", () => {
           costCents: 0,
           isOptional: false,
           needsPhoto: false,
+          taxable: true,
         },
         {
           description: "Camera inspection",
@@ -96,6 +97,7 @@ describe("updateEstimate(accepted) — tier choice forwarding", () => {
           costCents: 0,
           isOptional: false,
           needsPhoto: false,
+          taxable: true,
         },
       ],
     });

@@ -81,6 +81,14 @@ export interface SettingsRepository {
   getTimezone(): Promise<string>;
 
   /**
+   * Focused read of the shop's DEFAULT sales-tax rate in bps — used where a document is born
+   * without ever passing through the composer's Tax % input, above all the field sign path
+   * (Estimate.sellOnSite). Returns the schema default (0) when the org_settings row does not
+   * exist yet, mirroring getTechSeesPrice/getTimezone (no lazy create).
+   */
+  getTaxBps(): Promise<number>;
+
+  /**
    * Side-effect-free existence check: does an org_settings row already exist for the current
    * tenant? Unlike getConfig, this never lazy-creates the row — callers that need to
    * distinguish "brand-new org, no settings yet" from "org has settings, possibly already

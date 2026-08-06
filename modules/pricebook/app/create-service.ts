@@ -52,7 +52,10 @@ export class CreateServiceUseCase {
       unitPriceCents: Math.max(0, Math.round(cmd.unitPriceCents)),
       costCents: Math.max(0, Math.round(cmd.costCents)),
       laborHours: cmd.laborHours ?? null,
-      taxable: cmd.taxable ?? false,
+      // Defaults TRUE, matching the column (migration 0142). A service created with no answer
+      // is a service the shop will charge tax on — assuming the opposite means a shop sets its
+      // rate in Settings and still bills $0.00 with nothing on screen explaining why.
+      taxable: cmd.taxable ?? true,
       warrantyText: cmd.warrantyText ?? null,
       imageUrl: cmd.imageUrl ?? null,
       isAddon: cmd.isAddon ?? false,

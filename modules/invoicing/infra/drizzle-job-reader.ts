@@ -33,11 +33,13 @@ export class DrizzleJobReader implements JobReader {
         quantity: l.props.quantity,
         rateCents: l.props.rate,
         costCents: l.props.cost,
+        taxable: l.props.taxable,
         position: l.props.position,
       })),
       totalCents: job.props.total,
       taxBps: job.props.taxBps,
       taxCents: job.props.tax,
+      discBps: job.props.discBps,
     };
   }
 }

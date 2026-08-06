@@ -41,7 +41,12 @@ import type { QuoteTier } from "@/modules/quoting/domain/estimate";
 import { LineRow } from "./LineRow";
 import { QuoteActions, PayDepositButton, type QuotePhase } from "./QuoteActions";
 import { TierPicker } from "./TierPicker";
-import { computeQuoteTotals, lineAmountCents, sumLineAmountsCents } from "./quote-totals";
+import {
+  computeQuoteTotals,
+  lineAmountCents,
+  sumLineAmountsCents,
+  sumTaxableLineAmountsCents,
+} from "./quote-totals";
 
 function centsToDisplay(cents: number): string {
   return fmt$(cents / 100);
@@ -52,6 +57,8 @@ export interface QuoteLineView {
   readonly description: string;
   readonly quantity: number;
   readonly rateCents: number;
+  /** Does this line take sales tax. Absent reads as TRUE (see OptionalLineAmount). */
+  readonly taxable?: boolean;
 }
 
 /** One Good/Better/Best option as the public page sees it (redacted — no costs). */
@@ -102,6 +109,8 @@ interface SingleQuoteLinesProps extends QuoteLinesBaseProps {
   readonly tiers?: null;
   /** Sum of the fixed (non-optional) line amounts, computed server-side. */
   readonly fixedSubtotalCents: number;
+  /** Sum of the fixed lines that TAKE TAX — estimate.taxableBase(), computed server-side. */
+  readonly fixedTaxableCents: number;
   readonly optionalLines: readonly QuoteLineView[];
 }
 
@@ -222,6 +231,7 @@ interface ResolvedLines {
   readonly activeTier: TierLinesView | null;
   readonly optionalLines: readonly QuoteLineView[];
   readonly fixedSubtotalCents: number;
+  readonly fixedTaxableCents: number;
 }
 
 /** Which lines the totals derive from: the selected tier's on a GBB quote
@@ -233,6 +243,7 @@ function resolveLines(props: QuoteLinesProps, selectedTier: QuoteTier | null): R
       activeTier: null,
       optionalLines: props.optionalLines,
       fixedSubtotalCents: props.fixedSubtotalCents,
+      fixedTaxableCents: props.fixedTaxableCents,
     };
   }
   const activeTier = props.tiers.find((t) => t.tier === selectedTier) ?? null;
@@ -240,6 +251,8 @@ function resolveLines(props: QuoteLinesProps, selectedTier: QuoteTier | null): R
     activeTier,
     optionalLines: activeTier?.optionalLines ?? [],
     fixedSubtotalCents: activeTier ? sumLineAmountsCents(activeTier.fixedLines) : 0,
+    // The tier's tax base, derived with the same per-line rounding as its subtotal.
+    fixedTaxableCents: activeTier ? sumTaxableLineAmountsCents(activeTier.fixedLines) : 0,
   };
 }
 
@@ -281,7 +294,10 @@ export function QuoteLines(props: QuoteLinesProps) {
     phase === "approved" ||
     phase === "declined";
 
-  const { activeTier, optionalLines, fixedSubtotalCents } = resolveLines(props, selectedTier);
+  const { activeTier, optionalLines, fixedSubtotalCents, fixedTaxableCents } = resolveLines(
+    props,
+    selectedTier,
+  );
 
   function handlePhaseChange(next: QuotePhase, committedLineIds?: readonly string[]): void {
     if (next === "approved" && committedLineIds) {
@@ -311,6 +327,7 @@ export function QuoteLines(props: QuoteLinesProps) {
 
   const totals = computeQuoteTotals({
     fixedSubtotalCents,
+    fixedTaxableCents,
     selectedOptionalLines: optionalLines.filter((line) => selectedIds.has(line.id)),
     discBps,
     taxBps,
@@ -337,6 +354,8 @@ export function QuoteLines(props: QuoteLinesProps) {
           description={line.description}
           quantity={line.quantity}
           rateCents={line.rateCents}
+          taxable={line.taxable}
+          showTaxMark={taxBps > 0}
         />
       ))}
 

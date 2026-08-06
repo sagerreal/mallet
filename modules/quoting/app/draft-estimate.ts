@@ -19,6 +19,9 @@ export interface EstimateLineInput {
   readonly costCents: number;
   readonly isOptional: boolean;
   readonly needsPhoto: boolean;
+  /** Does this line take sales tax. Seeded by the composer from the pricebook item/material the
+   *  line came from; omitted it reads as TRUE (see EstimateLineCreateProps). */
+  readonly taxable?: boolean;
   /** Good/Better/Best tag — required on every line of a tiered draft, absent otherwise. */
   readonly tier?: QuoteTier | null;
   readonly materialId?: string | null;
@@ -154,6 +157,7 @@ export class DraftEstimateUseCase {
         cost: money(input.costCents),
         isOptional: input.isOptional,
         needsPhoto: input.needsPhoto,
+        taxable: input.taxable ?? true,
         position: i,
         tier: input.tier ?? null,
         materialId: input.materialId ?? null,

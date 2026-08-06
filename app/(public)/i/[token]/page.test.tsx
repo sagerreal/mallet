@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
 
 const getPublicInvoiceMock = vi.fn();
@@ -29,10 +30,11 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
   return {
     num: "INV-810",
     title: "Deck rebuild",
-    lines: [{ description: "Labor", quantity: 1, rateCents: 100_00 }],
+    lines: [{ description: "Labor", quantity: 1, rateCents: 100_00, taxable: true }],
     payments: [],
     totalCents: 100_00,
     taxCents: 0,
+    discountCents: 0,
     depositPaidCents: 0,
     amountPaidCents: 0,
     balanceDueCents: 100_00,
@@ -42,6 +44,13 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
     poNumber: null,
     orgName: "Rivera Plumbing",
     chargesEnabled: false,
+    // The document-of-record block. An unfilled shop and an addressless lead are the DEFAULT here
+    // on purpose: the invariant these tests protect is that nothing unset ever prints a label.
+    business: { address: null, phone: null, email: null, site: null, license: null },
+    customerName: null,
+    serviceAddress: null,
+    invoicedAt: new Date("2026-08-05T18:00:00.000Z"),
+    serviceAt: null,
     ...over,
   };
 }
@@ -57,7 +66,9 @@ describe("PublicInvoicePage — the shared terms-line face line", () => {
       view({ termsDays: 30, dueAt: new Date("2026-09-02T18:00:00.000Z"), poNumber: "4471" }),
     );
     await renderPage();
-    expect(screen.getByText("Net 30 · due Sep 2 · PO 4471")).toBeTruthy();
+    // The face line now sits inside the one meta strip, after the invoice date, so these assert
+    // the SEGMENT rather than the whole text node.
+    expect(screen.getByText(/Net 30 · due Sep 2 · PO 4471/)).toBeTruthy();
   });
 
   it("on-receipt (termsDays 0) shows the due date without 'Net 0'", async () => {
@@ -65,7 +76,7 @@ describe("PublicInvoicePage — the shared terms-line face line", () => {
       view({ termsDays: 0, dueAt: new Date("2026-09-02T18:00:00.000Z"), poNumber: null }),
     );
     await renderPage();
-    expect(screen.getByText("due Sep 2")).toBeTruthy();
+    expect(screen.getByText(/due Sep 2/)).toBeTruthy();
     expect(screen.queryByText(/Net 0/)).toBeNull();
   });
 
@@ -81,7 +92,7 @@ describe("PublicInvoicePage — the shared terms-line face line", () => {
       }),
     );
     await renderPage();
-    expect(screen.getByText("PO 4471")).toBeTruthy();
+    expect(screen.getByText(/PO 4471/)).toBeTruthy();
     expect(screen.queryByText(/Net 30/)).toBeNull();
     expect(screen.queryByText(/due Sep/)).toBeNull();
   });
@@ -96,11 +107,13 @@ describe("PublicInvoicePage — the shared terms-line face line", () => {
       }),
     );
     await renderPage();
-    expect(screen.getByText("PO 4471")).toBeTruthy();
+    expect(screen.getByText(/PO 4471/)).toBeTruthy();
     expect(screen.queryByText(/Net 30/)).toBeNull();
   });
 
-  it("renders no meta line at all when there is nothing to say", async () => {
+  it("adds no terms segment at all when there is nothing to say", async () => {
+    // The strip itself always states the invoice date now (a document of record has one), so what
+    // is under test is that NO Net/due/PO segment is invented alongside it.
     getPublicInvoiceMock.mockResolvedValue(view({ termsDays: 0, dueAt: null, poNumber: null }));
     await renderPage();
     expect(screen.queryByText(/Net/)).toBeNull();
@@ -156,5 +169,96 @@ describe("PublicInvoicePage — the paid state is a receipt, not just a statemen
     await renderPage();
     expect(screen.queryByText("Balance due")).toBeNull();
     expect(screen.getByText(/This invoice was canceled/)).toBeTruthy();
+  });
+});
+
+describe("PublicInvoicePage — a document of record, not a pay page", () => {
+  it("prints who billed, who was billed, where and when", async () => {
+    // The whole defect: this page carried the org NAME and nothing else. Not the customer's own
+    // name, not an address, not a phone number, not a licence, not a date.
+    getPublicInvoiceMock.mockResolvedValue(
+      view({
+        business: {
+          address: "200 Ray St, Pleasanton, CA 94566",
+          phone: "(925) 555-0100",
+          email: "billing@rivera.test",
+          site: "riveraplumbing.com",
+          license: "C36-1029384",
+        },
+        customerName: "Dana Whitfield",
+        serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
+        serviceAt: new Date("2026-08-03T16:20:00.000Z"),
+      }),
+    );
+    await renderPage();
+
+    expect(screen.getByText("200 Ray St, Pleasanton, CA 94566")).toBeTruthy();
+    expect(screen.getByText("(925) 555-0100")).toBeTruthy();
+    expect(screen.getByText("billing@rivera.test")).toBeTruthy();
+    expect(screen.getByText("riveraplumbing.com")).toBeTruthy();
+    expect(screen.getByText("Lic. C36-1029384")).toBeTruthy();
+
+    expect(screen.getByText("Bill to")).toBeTruthy();
+    expect(screen.getByText("Dana Whitfield")).toBeTruthy();
+    expect(screen.getByText("Service address")).toBeTruthy();
+    expect(screen.getByText("18 Aspen Ct, Dublin, CA 94568")).toBeTruthy();
+
+    expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
+    expect(screen.getByText(/Service Aug 3, 2026/)).toBeTruthy();
+  });
+
+  it("prints the shop's NAME once — from the branded header, never twice", async () => {
+    getPublicInvoiceMock.mockResolvedValue(view({ customerName: "Dana Whitfield" }));
+    await renderPage();
+    expect(screen.getAllByText("Rivera Plumbing")).toHaveLength(1);
+  });
+
+  it("omits the whole row for anything the shop has not set", async () => {
+    // A blank "Service address:" reads as a bug and a customer who finds one stops trusting the
+    // numbers too. Nothing set means nothing printed.
+    getPublicInvoiceMock.mockResolvedValue(view({ customerName: "Dana Whitfield" }));
+    await renderPage();
+    expect(screen.getByText("Bill to")).toBeTruthy();
+    expect(screen.queryByText("Service address")).toBeNull();
+    expect(screen.queryByText(/^Lic\./)).toBeNull();
+  });
+
+  it("states no service date rather than the invoice date wearing a Service label", async () => {
+    // A bill handed to an insurer or a warranty desk must not carry a date that is not the date
+    // the work happened.
+    getPublicInvoiceMock.mockResolvedValue(view({ serviceAt: null }));
+    await renderPage();
+    expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
+    expect(screen.queryByText(/Service Aug/)).toBeNull();
+  });
+});
+
+describe("PublicInvoicePage — keepable, not just payable", () => {
+  it("offers Print or save as PDF, and it actually prints", async () => {
+    // No dead buttons: the browser's own dialog is where "Save as PDF" lives, so this one call
+    // covers both verbs. Owen's ask was that the document be keepable.
+    const print = vi.fn();
+    vi.stubGlobal("print", print);
+    getPublicInvoiceMock.mockResolvedValue(view());
+    await renderPage();
+
+    const button = screen.getByRole("button", { name: "Print or save as PDF" });
+    await userEvent.click(button);
+    expect(print).toHaveBeenCalledTimes(1);
+    vi.unstubAllGlobals();
+  });
+
+  it("marks the control itself and our own footer as .noprint", async () => {
+    // The printed page must be the document alone. The rules that act on these live in
+    // app/prototype.css under @media print, which jsdom does not apply — so what is asserted
+    // here is the WIRING: that the two things which must not print carry the class that hides
+    // them, and that the document body does not.
+    getPublicInvoiceMock.mockResolvedValue(view());
+    await renderPage();
+
+    const button = screen.getByRole("button", { name: "Print or save as PDF" });
+    expect(button.parentElement?.className).toContain("noprint");
+    expect(screen.getByText("Powered by Mallet").className).toContain("noprint");
+    expect(screen.getByText("Labor").closest(".noprint")).toBeNull();
   });
 });

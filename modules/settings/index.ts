@@ -14,6 +14,10 @@ export { GetSettingsUseCase } from "./app/get-settings";
 export type { SettingsSnapshot } from "./app/get-settings";
 export { GetFieldTogglesUseCase } from "./app/get-field-toggles";
 export type { FieldToggles } from "./app/get-field-toggles";
+// The identity block every invoice document prints. Exported so invoicing's public (token-gated)
+// page resolves it through the settings use-case rather than re-querying org_settings itself.
+export { GetBusinessIdentityUseCase } from "./app/get-business-identity";
+export type { BusinessIdentity } from "./app/get-business-identity";
 export { defaultBooking } from "./app/default-booking";
 export { UpdateConfigUseCase } from "./app/update-config";
 export { DrizzleSettingsRepository } from "./infra/drizzle-settings-repository";

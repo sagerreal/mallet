@@ -28,6 +28,7 @@ import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { DrizzleFieldScopeReader } from "../infra/drizzle-field-scope-reader";
 import { DrizzleVisitFeeReader } from "../infra/drizzle-visit-fee-reader";
+import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
 import { CreatePaymentUseCase } from "../app/create-payment";
@@ -398,11 +399,23 @@ const loadInScope = async (invoiceId: InvoiceId, ctx: FieldCtx): Promise<Invoice
  */
 const present = async (invoice: Invoice, ctx: FieldCtx) => {
   const orgId: OrgId = ctx.principal.orgId;
-  const leads = await new DrizzleLeadRepository(ctx.tx, orgId).findByIds([invoice.props.leadId]);
-  const customerName = leads[0]?.props.name ?? null;
-  const seesPrice =
+  const jobId = invoice.props.sourceJobId;
+  const [leads, serviceAt, seesPrice] = await Promise.all([
+    new DrizzleLeadRepository(ctx.tx, orgId).findByIds([invoice.props.leadId]),
+    // The close-out document states WHEN the work was done, from the same reader the office and
+    // the customer's own page use. No source job, no completed visit — no date, never a fallback.
+    jobId ? new DrizzleServiceDateReader(ctx.tx, orgId).forJob(jobId) : Promise.resolve(null),
     ctx.principal.role === "tech"
-      ? await new DrizzleSettingsRepository(ctx.tx, orgId).getTechSeesPrice()
-      : true;
-  return toFieldInvoiceDTO(invoice, customerName, seesPrice);
+      ? new DrizzleSettingsRepository(ctx.tx, orgId).getTechSeesPrice()
+      : Promise.resolve(true),
+  ]);
+  return toFieldInvoiceDTO(
+    invoice,
+    {
+      customerName: leads[0]?.props.name ?? null,
+      serviceAddress: leads[0]?.props.address ?? null,
+      serviceAt,
+    },
+    seesPrice,
+  );
 };

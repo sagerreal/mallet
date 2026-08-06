@@ -65,7 +65,9 @@ export class CreateMaterialUseCase {
       pricingMode: cmd.unitPriceCents !== undefined ? "manual" : "rule",
       unitOfMeasure: cmd.unitOfMeasure ?? "each",
       markupBps,
-      taxable: cmd.taxable ?? false,
+      // Defaults TRUE, matching the column (migration 0142) — parts are the most reliably
+      // taxable thing a trade shop sells.
+      taxable: cmd.taxable ?? true,
       vendor: cmd.vendor ?? null,
       active: cmd.active ?? true,
       position: cmd.position ?? 0,

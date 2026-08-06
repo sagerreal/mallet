@@ -74,6 +74,9 @@ export interface SampleEstimateLine {
   r: number;
   photo?: boolean;
   opt?: boolean;
+  /** This line is NOT taxable. The exception, absent on an ordinary line — see the same key on
+   *  the store's EstimateLine. */
+  notax?: boolean;
   c?: number;
   h?: number;
   tune?: boolean;
@@ -732,15 +735,34 @@ export const OWNER_FIRST = "Mike";
 
 // ---------- derived helpers (mirrors the prototype's calc functions) ----------
 
-/** Calculate quote subtotal / total for an estimate (ignores opt lines) */
+/**
+ * Calculate quote subtotal / total for an estimate (ignores opt lines).
+ *
+ * TWO filters, not one. `opt` decides whether the line is on the bill at all; `notax` decides
+ * whether it feeds the tax. A non-taxable line stays in `sub` and in `total` — it simply is not
+ * in the base the rate is charged on. The discount comes off that base at the same rate it comes
+ * off the bill, mirroring Estimate.totalsFrom's step order.
+ *
+ * KNOWN DIVERGENCE, PRE-DATING TAXABILITY: this is FLOAT DOLLARS with no rounding, while the
+ * canonical chain (modules/quoting/domain/estimate.ts) is integer cents rounded at every step —
+ * per line, then discount, then tax, then deposit. On odd-cent quotes the two land up to a cent
+ * apart, and the office screens that render from here therefore show a figure the customer's own
+ * document does not. Measured on the live 10% / 8.25% case behind commit 1cbc070 ($114.98 of
+ * lines): the domain, the invoice and the customer's page all say $112.02; this says $112.014394,
+ * which displays as $112.01. calc-quote-drift.test.ts pins that gap so it cannot widen unnoticed.
+ * Closing it means rounding here to whole cents, which moves every office money display on an
+ * odd-cent quote — a deliberate change, not a side effect of adding taxability.
+ */
 export function calcQuote(
   lines: SampleEstimateLine[],
   pricing?: { disc?: number; dep?: number; tax?: number }
 ): { sub: number; disc: number; taxed: number; total: number; dep: number } {
   const p = pricing ?? {};
-  const sub = lines.filter((l) => !l.opt).reduce((s, l) => s + l.q * l.r, 0);
+  const billed = lines.filter((l) => !l.opt);
+  const sub = billed.reduce((s, l) => s + l.q * l.r, 0);
+  const taxBase = billed.filter((l) => !l.notax).reduce((s, l) => s + l.q * l.r, 0);
   const disc = sub * ((p.disc ?? 0) / 100);
-  const taxed = (sub - disc) * ((p.tax ?? 0) / 100);
+  const taxed = (taxBase - taxBase * ((p.disc ?? 0) / 100)) * ((p.tax ?? 0) / 100);
   const total = sub - disc + taxed;
   const dep = total * ((p.dep ?? 0) / 100);
   return { sub, disc, taxed, total, dep };

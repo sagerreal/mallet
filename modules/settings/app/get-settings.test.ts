@@ -27,7 +27,7 @@ export class FakeSettingsRepository implements SettingsRepository {
   async getConfig(orgId: string, defaults: () => BookingCfg): Promise<OrgSettings> {
     if (this.config) return this.config;
     const r = OrgSettings.create({
-      orgId: asOrgId(orgId), trade: "plumbing", markupBps: 3500,
+      orgId: asOrgId(orgId), trade: "plumbing", markupBps: 3500, taxBps: 0,
       visitScopeMinutes: 30, visitRepairMinutes: 90, visitInstallMinutes: 240,
       techSeesPrice: true, techTexts: true, frontDesk: true, scopeOn: false,
       autoRemind: true,
@@ -50,6 +50,7 @@ export class FakeSettingsRepository implements SettingsRepository {
       brandName: "Test Business",
       brandTagline: null, brandSite: null, brandColor: null,
       brandLogoUrl: null, brandInitials: null,
+      bizAddress: null, bizPhone: null, bizEmail: null, licenseNumber: null,
       stripeConnectedAccountId: null, stripeChargesEnabled: false, stripePayoutsEnabled: false,
       stripeDetailsSubmitted: false, stripeOnboardedAt: null,
       createdAt: new Date("2026-07-01T00:00:00Z"),
@@ -65,6 +66,8 @@ export class FakeSettingsRepository implements SettingsRepository {
   async getTechSeesPrice(): Promise<boolean> { return this.config?.props.techSeesPrice ?? true; }
 
   async getTimezone(): Promise<string> { return this.config?.props.timezone ?? "America/Los_Angeles"; }
+
+  async getTaxBps(): Promise<number> { return this.config?.props.taxBps ?? 0; }
 
   async hasConfig(): Promise<boolean> { return this.config !== null; }
 

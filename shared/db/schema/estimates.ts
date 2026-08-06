@@ -195,6 +195,17 @@ export const estimateLines = pgTable(
     costCents: integer("cost_cents").notNull().default(0),
     isOptional: boolean("is_optional").notNull().default(false),
     needsPhoto: boolean("needs_photo").notNull().default(false),
+    /**
+     * Does this line take sales tax. Inherited from the pricebook item/material it came from and
+     * overridable per line — the model Housecall Pro and Jobber both use.
+     *
+     * DEFAULT TRUE, and that default is load-bearing. Every estimate line written before this
+     * column existed was summed into a tax base with no exclusions, so `true` is what those rows
+     * already meant; `false` would have silently rebased 594 live quotes. The rate still lives on
+     * the estimate header (one rate per document, same as both incumbents) — this only decides
+     * which lines it is charged on.
+     */
+    taxable: boolean("taxable").notNull().default(true),
     position: integer("position").notNull().default(0),
     // Good/Better/Best tag. Null on single-format estimates and on resolved (accepted) ones.
     tier: text("tier"),

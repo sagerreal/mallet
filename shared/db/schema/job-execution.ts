@@ -32,6 +32,10 @@ export const jobLines = pgTable(
     quantity: numeric("quantity", { precision: 12, scale: 2, mode: "number" }).notNull().default(1),
     rateCents: integer("rate_cents").notNull().default(0),
     costCents: integer("cost_cents").notNull().default(0),
+    /** Does this line take sales tax — copied from the estimate line, carried on to the invoice
+     *  line. DEFAULT TRUE for the same reason as estimate_lines.taxable: every existing row was
+     *  already in the tax base with no exclusions. */
+    taxable: boolean("taxable").notNull().default(true),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

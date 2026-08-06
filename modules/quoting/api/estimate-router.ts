@@ -53,6 +53,9 @@ const estimateLineDTO = z.object({
   cost: moneyDTO,
   isOptional: z.boolean(),
   needsPhoto: z.boolean(),
+  /** Does this line take sales tax. The estimate's taxBps is charged on the taxable, non-optional
+   *  lines only — see Estimate.taxableBaseOf. */
+  taxable: z.boolean(),
   position: z.number().int(),
   tier: tierEnum.nullable(),
 });
@@ -208,6 +211,8 @@ const lineInput = z.object({
   costCents: z.number().int().nonnegative().optional(),
   isOptional: z.boolean().optional(),
   needsPhoto: z.boolean().optional(),
+  /** Seeded by the composer from the pricebook item/material; omitted it reads as TRUE. */
+  taxable: z.boolean().optional(),
   tier: tierEnum.optional(),
   // Provenance pointer when the line came from a pricebook material (sellable parts).
   materialId: z.string().uuid().nullable().optional(),
@@ -384,6 +389,7 @@ const toEstimateDTO = (estimate: Estimate) => {
         cost: money(lp.cost),
         isOptional: lp.isOptional,
         needsPhoto: lp.needsPhoto,
+        taxable: lp.taxable,
         position: lp.position,
         tier: lp.tier,
       };
@@ -555,6 +561,7 @@ export const createEstimateRouter = () =>
             costCents: line.costCents ?? 0,
             isOptional: line.isOptional ?? false,
             needsPhoto: line.needsPhoto ?? false,
+            taxable: line.taxable ?? true,
             tier: line.tier ?? null,
             materialId: line.materialId ?? null,
           })),
@@ -778,6 +785,7 @@ export const createEstimateRouter = () =>
               costCents: line.costCents ?? 0,
               isOptional: line.isOptional ?? false,
               needsPhoto: line.needsPhoto ?? false,
+              taxable: line.taxable ?? true,
             })),
             chosenTier: input.chosenTier,
           }),

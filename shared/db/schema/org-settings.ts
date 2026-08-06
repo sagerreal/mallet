@@ -24,6 +24,17 @@ export const orgSettings = pgTable(
       .references(() => orgs.id, { onDelete: "cascade" }),
     trade: text("trade").notNull().default("plumbing"),
     markupBps: integer("markup_bps").notNull().default(3500),
+    /**
+     * The shop's default sales-tax rate in basis points (825 = 8.25%).
+     *
+     * ONE rate per shop, seeded onto each new quote and overridable on that quote — Jobber's
+     * global-with-override model, and the reason 830 of 832 live invoices carry 0%: the only place
+     * tax could be authored was a per-quote number input that started empty every time.
+     *
+     * Defaults to 0 because a wrong rate is worse than none: it would put a number on a customer's
+     * bill that the shop never agreed to and owes to nobody. A shop sets it once in Settings.
+     */
+    taxBps: integer("tax_bps").notNull().default(0),
     visitScopeMinutes: integer("visit_scope_minutes").notNull().default(30),
     visitRepairMinutes: integer("visit_repair_minutes").notNull().default(90),
     visitInstallMinutes: integer("visit_install_minutes").notNull().default(240),
@@ -90,6 +101,23 @@ export const orgSettings = pgTable(
     brandColor: text("brand_color"),
     brandLogoUrl: text("brand_logo_url"),
     brandInitials: text("brand_initials"),
+    // ── Business identity (printed on customer documents) ────────────────────
+    // What a customer needs to see to know WHO billed them, act on it, and keep it.
+    // Deliberately separate from the fields that look like them:
+    //   • bizAddress is NOT serviceOriginAddress — that one is a routing origin (often a yard)
+    //     and editing an invoice must never move where drive time is measured from.
+    //   • bizPhone is NOT orgs.twilioNumber — a shop with no provisioned line still has a phone,
+    //     and the number on a document should not change when telephony is reconfigured.
+    // Business NAME is orgs.name and website is brandSite; neither is duplicated here.
+    // All nullable: the lazily-created default org_settings row must stay valid without them,
+    // and every consumer omits the row it has no value for rather than printing a blank label.
+    bizAddress: text("biz_address"),
+    bizPhone: text("biz_phone"),
+    bizEmail: text("biz_email"),
+    // Contractor/trade licence as the shop writes it. Texas 22 TAC 367.10 requires it on a
+    // plumbing invoice; California B&P 7030.5 covers contracts and advertising but NOT invoices.
+    // Treated as commercial convention, never as a legal guarantee — free text, no validation.
+    licenseNumber: text("license_number"),
     // ── Stripe Connect (Express) — PR1 onboarding foundation ──────────────────
     // The connected account id (acct_...) is null until onboarding begins. Status booleans mirror
     // the Stripe Account object and default false; onboardedAt stamps the first time charges go live.

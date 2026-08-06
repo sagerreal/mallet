@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
-import { registerListCache, resetListCache, invalidateLists } from "./list-cache";
+import { registerListCache, resetListCache, invalidateLists, withListBatch } from "./list-cache";
 
 /**
  * The bridge between store mutations and the server-paginated lists.
@@ -82,5 +82,115 @@ describe("invalidateLists", () => {
     // list + count for timesheets, and nothing from another domain.
     expect(spy).toHaveBeenCalledTimes(2);
     expect(keysInvalidated().join(" ")).not.toContain("customers");
+  });
+
+  /**
+   * "Create & price it" is a CHAIN — create the customer, await it, create the job that needs its
+   * id, then the job's visits. Each link reconciled and refetched every list, so one press ran the
+   * whole refetch three times, and the customer one went out a millisecond before v1.jobs.create,
+   * the request the user was blocked on (measured: 3275 ms alongside it, 2485 ms without).
+   */
+  describe("withListBatch — one refetch per flow, not one per write", () => {
+    it("holds the refetch while the flow is still running", async () => {
+      let duringFlow = -1;
+      await withListBatch(async () => {
+        invalidateLists("customers");
+        // The write that comes NEXT in the chain must not be racing a refetch.
+        duringFlow = spy.mock.calls.length;
+      });
+      expect(duringFlow).toBe(0);
+    });
+
+    it("refetches once the flow finishes — a deferred list is not a dropped one", async () => {
+      await withListBatch(async () => {
+        invalidateLists("customers");
+      });
+      const keys = keysInvalidated().join(" ");
+      expect(keys).toContain("customers");
+      expect(keys).toContain("count");
+    });
+
+    it("collapses the chain's repeated invalidations into a single refetch per domain", async () => {
+      await withListBatch(async () => {
+        // addLead's reconcile, then addJob's, then the visit create's — the real create chain.
+        invalidateLists("customers");
+        invalidateLists("jobs", "invoices");
+        invalidateLists("jobs", "invoices");
+      });
+      // customers (4) + jobs (5) + invoices (2) = 11 keys, each asked for exactly once —
+      // not the 22 the unbatched chain fired.
+      expect(spy).toHaveBeenCalledTimes(11);
+    });
+
+    it("still covers every key the domain owns, so the header count cannot go stale", async () => {
+      await withListBatch(async () => {
+        invalidateLists("jobs");
+      });
+      const keys = keysInvalidated().join(" ");
+      for (const key of ["list", "count", "viewCounts", "myDay", "myJobs"]) {
+        expect(keys).toContain(key);
+      }
+    });
+
+    it("only the outermost batch flushes — a nested flow must not refetch mid-chain", async () => {
+      let afterInner = -1;
+      await withListBatch(async () => {
+        invalidateLists("jobs");
+        await withListBatch(async () => {
+          invalidateLists("customers");
+        });
+        afterInner = spy.mock.calls.length;
+      });
+      expect(afterInner).toBe(0);
+      expect(keysInvalidated().join(" ")).toContain("customers");
+      expect(keysInvalidated().join(" ")).toContain("jobs");
+    });
+
+    // A create that saved the customer and then lost the job would otherwise leave that customer
+    // in the database and off every list on screen — the data-loss report this module prevents.
+    it("refetches even when the flow throws, and re-raises", async () => {
+      await expect(
+        withListBatch(async () => {
+          invalidateLists("customers");
+          throw new Error("job create failed");
+        }),
+      ).rejects.toThrow("job create failed");
+      expect(keysInvalidated().join(" ")).toContain("customers");
+    });
+
+    it("returns the flow's value", async () => {
+      await expect(withListBatch(async () => "created")).resolves.toBe("created");
+    });
+
+    it("leaves unbatched callers refetching immediately, as before", () => {
+      invalidateLists("estimates");
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
+
+    // A batch abandoned by a crashing suite must not swallow the next suite's invalidations, and
+    // must not leave the depth counter negative — a negative counter never reaches zero again, so
+    // every later batch would close without flushing and the lists would quietly stop refreshing.
+    it("survives resetListCache called inside an open batch", async () => {
+      await withListBatch(async () => {
+        invalidateLists("jobs");
+        resetListCache();
+        registerListCache(qc);
+      });
+
+      spy.mockClear();
+      invalidateLists("estimates");
+      expect(spy).toHaveBeenCalledTimes(1);
+
+      // The next batch must still BATCH. A negative counter reads as "no batch open", so every
+      // later flow would go straight back to refetching mid-chain — the defect, silently restored.
+      spy.mockClear();
+      let duringNextFlow = -1;
+      await withListBatch(async () => {
+        invalidateLists("estimates");
+        duringNextFlow = spy.mock.calls.length;
+      });
+      expect(duringNextFlow).toBe(0);
+      expect(spy).toHaveBeenCalledTimes(1);
+    });
   });
 });

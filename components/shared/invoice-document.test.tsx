@@ -142,3 +142,191 @@ describe("InvoiceDocument", () => {
     expect(screen.getAllByText("$4,200.00").length).toBe(2);
   });
 });
+
+// ── The document-of-record blocks ────────────────────────────────────────────
+// Every one is optional, and the rule they all share is: NEVER print a label with no value.
+
+describe("InvoiceDocument discount row", () => {
+  it("states the discount, and a subtotal that matches the sum of the printed lines", () => {
+    // Lines print at full rates ($185.00). 10% off, then 8.25% tax on the net:
+    //   185.00 − 18.50 = 166.50; 166.50 + 13.74 = 180.24.
+    render(
+      <InvoiceDocument
+        {...doc({
+          totalCents: 180_24,
+          taxCents: 13_74,
+          discountCents: 18_50,
+          balanceDueCents: 180_24,
+        })}
+      />,
+    );
+    // total − tax + discount = the sum of the lines the customer can add up themselves.
+    expect(screen.getByText("Subtotal")).toBeTruthy();
+    expect(screen.getAllByText("$185.00").length).toBe(1);
+    expect(screen.getByText("Discount")).toBeTruthy();
+    expect(screen.getByText("−$18.50")).toBeTruthy();
+    expect(screen.getByText("Tax")).toBeTruthy();
+  });
+
+  it("prints a subtotal for a discounted bill even when no tax was charged", () => {
+    render(
+      <InvoiceDocument
+        {...doc({ totalCents: 166_50, taxCents: 0, discountCents: 18_50, balanceDueCents: 166_50 })}
+      />,
+    );
+    expect(screen.getByText("Subtotal")).toBeTruthy();
+    expect(screen.getByText("Discount")).toBeTruthy();
+    expect(screen.queryByText("Tax")).toBeNull();
+  });
+
+  it("prints no discount row on an undiscounted bill", () => {
+    render(<InvoiceDocument {...doc()} />);
+    expect(screen.queryByText("Discount")).toBeNull();
+  });
+});
+
+describe("InvoiceDocument non-taxable lines", () => {
+  const mixed = (over: Partial<InvoiceDocumentProps> = {}) =>
+    doc({
+      lines: [
+        { description: "Water heater — 50 gal", quantity: 1, amountCents: 145_00, taxable: true },
+        { description: "Permit fee", quantity: 1, amountCents: 40_00, taxable: false },
+      ],
+      ...over,
+    });
+
+  it("marks the untaxed line on a bill that charges tax", () => {
+    render(<InvoiceDocument {...mixed({ totalCents: 196_96, taxCents: 11_96, balanceDueCents: 196_96 })} />);
+    expect(screen.getByText("No tax")).toBeTruthy();
+  });
+
+  it("says nothing about tax on a bill that charges none — all of it is untaxed", () => {
+    render(<InvoiceDocument {...mixed()} />);
+    expect(screen.queryByText("No tax")).toBeNull();
+  });
+
+  it("leaves a taxable line unmarked", () => {
+    render(<InvoiceDocument {...doc({ totalCents: 200_00, taxCents: 15_00, balanceDueCents: 200_00 })} />);
+    expect(screen.queryByText("No tax")).toBeNull();
+  });
+});
+
+describe("InvoiceDocument business block", () => {
+  it("prints who billed the customer, with the licence prefixed", () => {
+    render(
+      <InvoiceDocument
+        {...doc({
+          business: {
+            name: "Rivera Plumbing",
+            address: "200 Ray St, Pleasanton, CA 94566",
+            phone: "(925) 555-0100",
+            email: "billing@rivera.com",
+            site: "riveraplumbing.com",
+            license: "C36-1029384",
+          },
+        })}
+      />,
+    );
+    expect(screen.getByText("Rivera Plumbing")).toBeTruthy();
+    expect(screen.getByText("200 Ray St, Pleasanton, CA 94566")).toBeTruthy();
+    expect(screen.getByText("(925) 555-0100")).toBeTruthy();
+    expect(screen.getByText("billing@rivera.com")).toBeTruthy();
+    expect(screen.getByText("riveraplumbing.com")).toBeTruthy();
+    expect(screen.getByText("Lic. C36-1029384")).toBeTruthy();
+  });
+
+  it("omits the name when the surface's own branded header already prints it", () => {
+    // The public page and the office preview both sit under a custhead naming the shop.
+    render(<InvoiceDocument {...doc({ business: { address: "200 Ray St", phone: "(925) 555-0100" } })} />);
+    expect(screen.queryByText("Rivera Plumbing")).toBeNull();
+    expect(screen.getByText("200 Ray St")).toBeTruthy();
+  });
+
+  it("prints nothing at all for a shop that has filled none of it in", () => {
+    const { container } = render(
+      <InvoiceDocument {...doc({ business: { address: null, phone: null, email: null, license: null } })} />,
+    );
+    expect(screen.queryByText(/Lic\./)).toBeNull();
+    // No stray empty rows above the meta line.
+    expect(container.textContent).not.toMatch(/Lic\.\s*$/);
+  });
+
+  it("treats a whitespace-only value as absent — no empty licence row", () => {
+    render(<InvoiceDocument {...doc({ business: { name: "Rivera Plumbing", license: "   " } })} />);
+    expect(screen.queryByText(/Lic\./)).toBeNull();
+  });
+});
+
+describe("InvoiceDocument meta strip", () => {
+  it("states the invoice, both dates and the PO on one line, with the year", () => {
+    render(
+      <InvoiceDocument
+        {...doc({
+          num: "1042",
+          termsFace: "Net 30",
+          dates: {
+            invoicedAt: "2026-08-05T12:00:00.000Z",
+            serviceAt: "2026-08-03T12:00:00.000Z",
+            dueAt: "2026-08-12T12:00:00.000Z",
+          },
+          poNumber: "88-1191",
+        })}
+      />,
+    );
+    expect(
+      screen.getByText(
+        "Invoice 1042 · Invoiced Aug 5, 2026 · Service Aug 3, 2026 · Net 30 · Due Aug 12, 2026 · PO 88-1191",
+      ),
+    ).toBeTruthy();
+  });
+
+  it("omits a date the record does not have rather than inventing one", () => {
+    // No completed visit means no service date. Falling back to the invoice date and labelling it
+    // "Service" would print something untrue on a page a customer may hand to an insurer.
+    render(
+      <InvoiceDocument
+        {...doc({ num: "1042", termsFace: "", dates: { invoicedAt: "2026-08-05T12:00:00.000Z", serviceAt: null } })}
+      />,
+    );
+    expect(screen.getByText("Invoice 1042 · Invoiced Aug 5, 2026")).toBeTruthy();
+    expect(screen.queryByText(/Service/)).toBeNull();
+  });
+
+  it("collapses to the pre-existing line when no dates and no PO are supplied", () => {
+    render(<InvoiceDocument {...doc()} />);
+    expect(screen.getByText("Invoice INV-1852 · Net 30 · due Sep 2")).toBeTruthy();
+  });
+
+  it("skips a blank PO number", () => {
+    render(<InvoiceDocument {...doc({ poNumber: "  " })} />);
+    expect(screen.queryByText(/PO /)).toBeNull();
+  });
+});
+
+describe("InvoiceDocument parties block", () => {
+  it("names who was billed and where the work happened", () => {
+    render(
+      <InvoiceDocument
+        {...doc({ parties: { customerName: "Dana Whitfield", serviceAddress: "18 Elm Ct, Dublin, CA" } })}
+      />,
+    );
+    expect(screen.getByText("Bill to")).toBeTruthy();
+    expect(screen.getByText("Dana Whitfield")).toBeTruthy();
+    expect(screen.getByText("Service address")).toBeTruthy();
+    expect(screen.getByText("18 Elm Ct, Dublin, CA")).toBeTruthy();
+  });
+
+  it("omits the Service address block entirely when the lead has no address", () => {
+    // Most leads are created without one (see leads.address) — a blank labelled block is the
+    // documented failure this rule exists to prevent.
+    render(<InvoiceDocument {...doc({ parties: { customerName: "Dana Whitfield", serviceAddress: null } })} />);
+    expect(screen.getByText("Bill to")).toBeTruthy();
+    expect(screen.queryByText("Service address")).toBeNull();
+  });
+
+  it("renders no block at all when neither party fact is known", () => {
+    render(<InvoiceDocument {...doc({ parties: { customerName: null, serviceAddress: null } })} />);
+    expect(screen.queryByText("Bill to")).toBeNull();
+    expect(screen.queryByText("Service address")).toBeNull();
+  });
+});

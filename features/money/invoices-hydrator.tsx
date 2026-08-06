@@ -83,6 +83,8 @@ export function toStoreInvoice(dto: InvoiceSummaryDTO): Invoice {
     paidTotal: Math.max(0, total - due),
     payments: [],
     age: daysAgo(dto.createdAt),
+    // The stamp itself, so a document of record can state the invoice DATE and not a day count.
+    createdAt: dto.createdAt,
     // termsDays: not in summary DTO; undefined until modal loads full record.
     termsDays: undefined,
     // lines: empty from list DTO; modal fetches them on open.

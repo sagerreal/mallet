@@ -15,6 +15,7 @@ const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
     cost: money(row.costCents),
     isOptional: row.isOptional,
     needsPhoto: row.needsPhoto,
+    taxable: row.taxable,
     position: row.position,
     // DB CHECK constrains the value set; EstimateLine.create re-validates and fails loud.
     tier: row.tier as QuoteTier | null,

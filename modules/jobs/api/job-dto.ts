@@ -58,6 +58,8 @@ export const jobLineDTO = z.object({
   quantity: z.number(),
   rate: moneyDTO.nullable(),
   cost: moneyDTO.nullable(),
+  /** Does this line take sales tax — carried from the quote, carried on to the invoice line. */
+  taxable: z.boolean(),
   position: z.number().int(),
 });
 
@@ -257,7 +259,7 @@ const emptyExecution: Execution = { lines: [], addons: [], verifyAnswers: [], ph
 
 const toLineDTO = (l: JobLine) => {
   const p = l.props;
-  return { id: p.id, description: p.description, quantity: p.quantity, rate: money(p.rate), cost: money(p.cost), position: p.position };
+  return { id: p.id, description: p.description, quantity: p.quantity, rate: money(p.rate), cost: money(p.cost), taxable: p.taxable, position: p.position };
 };
 
 const toAddonDTO = (a: JobAddon) => {

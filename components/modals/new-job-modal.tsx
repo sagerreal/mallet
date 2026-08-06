@@ -43,6 +43,7 @@ import { api } from "@/lib/trpc/client";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
+import { withListBatch } from "@/lib/trpc/list-cache";
 
 // A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
 const CHK_PHOTO_RE = /photo|picture/i;
@@ -537,7 +538,15 @@ export function NewJobModalContent() {
     inFlightRef.current = true;
     setSaving(true);
     try {
-      const { ok, job } = await commit();
+      // THE LIST REFETCHES WAIT FOR THE CHAIN, NOT FOR EACH LINK OF IT. commit() is two or three
+      // awaited writes in a row, and each one used to refetch every jobs, customers and invoice
+      // list the moment it landed — while the NEXT write in the chain, the one the user is
+      // watching the button spin for, was already going out beside it. Measured in the browser,
+      // the customers refetch was dispatched one millisecond ahead of v1.jobs.create and was still
+      // in flight across it on every press. withListBatch holds all of it to the end of the chain
+      // and then refetches once: same domains, same keys, so nothing on screen goes stale — it
+      // just stops happening three times, and stops happening in front of the create.
+      const { ok, job } = await withListBatch(commit);
       if (!ok) return;
       close();
       if (!job) return;
