@@ -1519,6 +1519,16 @@
   .ts-tbl{width:100%;border-collapse:collapse;font-size:var(--type-base);margin:var(--space-2xs) 0 var(--space-2)}
   .ts-tbl th{font-size:var(--type-xs);text-transform:uppercase;letter-spacing:.4px;color:var(--ink-2);text-align:left;padding:var(--space-2) var(--space-2);border-bottom:1px solid var(--line);font-weight:700}
   .ts-tbl th.r,.ts-tbl td.r{text-align:right}
+  /* A ROW header is not a column header. `.ts-tbl th` is styled as the uppercase, letter-spaced
+     column label, and job costing names its jobs in `<th scope="row">` (the row's label, and what
+     a screen reader should announce with each figure). Left as-is that shouted every customer's
+     name in caps. Reset to body text; the column heads keep their own styling above. */
+  .ts-tbl tbody th,.ts-tbl tfoot th{
+    font-size:var(--type-base);text-transform:none;letter-spacing:normal;
+    color:var(--ink);font-weight:400;text-align:left;
+    padding:var(--space-1) var(--space-2);border-bottom:1px solid var(--line-2)
+  }
+  .ts-tbl tfoot th,.ts-tbl tfoot td{border-top:1px solid var(--line);border-bottom:none;color:var(--ink-2)}
   .ts-tbl td{padding:var(--space-1) var(--space-2);border-bottom:1px solid var(--line-2);vertical-align:middle}
   .ts-tbl tr.appr td{color:var(--ink-2);background:color-mix(in srgb,var(--paper) 45%,var(--card))}
   .ts-tbl input,.ts-tbl select{font:inherit;border:1px solid var(--line);border-radius:var(--radius-xs);padding:var(--space-1) var(--space-2);background:var(--card);color:var(--ink)}
