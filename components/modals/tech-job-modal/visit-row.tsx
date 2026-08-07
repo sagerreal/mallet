@@ -5,13 +5,15 @@
  *
  * The stepper REPLACED a pair of "ARRIVE / ON SITE" columns that printed the plan twice and the
  * state not at all: which state a visit was in could only be inferred from which button happened
- * to be showing. It is a readout — see visit-steps.ts for why the nodes are not tappable and why
- * a skipped step stays visibly skipped.
+ * to be showing. It reads out what was recorded and, on the viewer's OWN visit, lets them jump
+ * forward to a step that has not happened yet — see visit-steps.ts for why only the nodes ahead
+ * are live and why a skipped step stays visibly skipped.
  *
- * NO STEP BUTTONS LIVE HERE ANY MORE. On my way / Arrived / Finish moved to the sticky foot, where
- * the primary names the next step and a quiet Finish sits under it (see tech-job-foot.ts): two
+ * THE FOOT IS STILL THE MAIN ROAD. On my way / Arrived / Finish live in the sticky foot, where the
+ * primary names the next step and a quiet Finish sits under it (see tech-job-foot.ts): two
  * half-width buttons partway up a tall sheet sit past one-handed reach exactly when the sheet is
- * fullest, and the foot's full-width target is the one place a thumb always owns.
+ * fullest, and the foot's full-width target is the one place a thumb always owns. The stepper adds
+ * the one move the foot's ladder cannot express — SKIPPING a step — and changes nothing else.
  */
 
 "use client";
@@ -27,10 +29,17 @@ import { stampLabel } from "./visit-steps";
 interface VisitRowProps {
   visit: Visit;
   /**
-   * ↩ Reopen — the row's ONLY control, and an office correction: it rewrites a visit that already
-   * ended, days later, against hours somebody may already have been paid for. Owner/office only.
+   * ↩ Reopen — an office correction: it rewrites a visit that already ended, days later, against
+   * hours somebody may already have been paid for. Owner/office only.
    */
   canReopen: boolean;
+  /**
+   * May this viewer move THIS visit forward? The same rule the foot uses (tech-job-modal's
+   * `actVisit`): your own visit, or the job's current one if you are owner/office. False leaves
+   * the stepper the pure readout it has always been — a technician looking at a colleague's stop
+   * gets no live node, because the server would refuse the write anyway.
+   */
+  canStep: boolean;
   onStatus: (status: string) => void;
 }
 
@@ -76,7 +85,7 @@ function WhenLine({ visit }: { visit: Visit }) {
   );
 }
 
-export function VisitRow({ visit, canReopen, onStatus }: VisitRowProps) {
+export function VisitRow({ visit, canReopen, canStep, onStatus }: VisitRowProps) {
   const reopen =
     canReopen && visit.status === STORE_VISIT_STATUS.DONE ? (
       <div style={{ display: "flex", marginTop: "var(--space-3)" }}>
@@ -93,7 +102,7 @@ export function VisitRow({ visit, canReopen, onStatus }: VisitRowProps) {
 
   return (
     <div style={{ marginBottom: "var(--space-2xs)" }}>
-      <VisitStepper visit={visit} />
+      <VisitStepper visit={visit} onJump={canStep ? onStatus : undefined} />
       <WhenLine visit={visit} />
       {reopen}
     </div>

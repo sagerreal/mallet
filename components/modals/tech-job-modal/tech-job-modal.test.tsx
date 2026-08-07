@@ -488,6 +488,74 @@ describe("TechJobModalContent — tech", () => {
 });
 
 // ---------------------------------------------------------------------------
+// FOUND WORK MEANS "EXTRA BEYOND WHAT WAS SOLD".
+//
+// On an estimate walkthrough nothing has been sold, so the add form is not clutter — it is a
+// category error. It gave the person holding the phone TWO places to type a price (here and the
+// Quote tab's builder), and before a sale only one of them is right: a price typed into Found
+// Work on a walkthrough is neither a quote nor billable work, and nothing converts it.
+// ---------------------------------------------------------------------------
+
+describe("TechJobModalContent — found work needs something sold to be extra to", () => {
+  // An estimate visit with no priced lines — isUnpricedEstimate, the sheet's own `scoping`.
+  const walkthrough = (over: Partial<Job> = {}) =>
+    makeJob({ svc: "estimate", lines: [], addons: [], ...over });
+
+  it("is absent on an estimate walkthrough, for the owner who WOULD otherwise be able to add", () => {
+    mockRole = "owner";
+    mockJobs = [walkthrough()];
+    render(<TechJobModalContent />);
+    expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
+    expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
+  });
+
+  it("comes back the moment the walkthrough sells something — a quote signed on site", () => {
+    mockRole = "owner";
+    // signJobQuote writes real priced lines onto the job; jobQuoted flips true and the estimate
+    // stops being "unpriced".
+    mockJobs = [walkthrough({ lines: [{ d: "Repipe", q: 1, r: 4200 }] })];
+    render(<TechJobModalContent />);
+    openSection("Found work");
+    expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
+  });
+
+  // The third state, and the one that would quietly break this: a shop that hides prices from
+  // techs sends every rate NULL, so a genuinely sold job reads as unpriced to a naive check.
+  // Invisible is not unsold — isUnpricedEstimate carries that, which is why the host passes it.
+  it("stays available when the SOLD price is merely withheld from this device", () => {
+    mockRole = "owner";
+    mockSeesPrice = false;
+    mockJobs = [walkthrough({ lines: [{ d: "Repipe", q: 1, r: null }] })];
+    render(<TechJobModalContent />);
+    openSection("Found work");
+    expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
+  });
+
+  // No data is hidden by this: an addon that already exists on such a job is real, and the tech
+  // sheet is the only surface showing it. The FORM goes, the rows stay.
+  it("still lists found work already on a walkthrough — only the add form goes", () => {
+    mockRole = "owner";
+    mockJobs = [
+      walkthrough({
+        addons: [{ id: 0, dbId: "a-db-1", d: "Extra shutoff valve", q: 1, r: 120, status: "proposed" }],
+      }),
+    ];
+    render(<TechJobModalContent />);
+    openSection("Found work");
+    expect(screen.getByText("Extra shutoff valve")).toBeTruthy();
+    expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
+  });
+
+  // JOB NOTES is not gated on any of this. A note is always worth having.
+  it("keeps Job notes on a walkthrough", () => {
+    mockRole = "owner";
+    mockJobs = [walkthrough({ notes: "Crawlspace access is round the back" })];
+    render(<TechJobModalContent />);
+    expect(screen.getByRole("button", { name: /^Job notes/ })).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The foot: the primary IS the next step, and Finish is always one tap away.
 // ---------------------------------------------------------------------------
 
@@ -623,7 +691,8 @@ describe("TechJobModalContent — counted rows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The visit stepper — a readout of what was recorded, never a control.
+// The visit stepper — a readout of what was recorded, plus a forward jump on the steps still
+// ahead of the visit (the owner's request: he forgot to tap Start driving and was at the door).
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — visit stepper", () => {
@@ -634,20 +703,28 @@ describe("TechJobModalContent — visit stepper", () => {
     expect(list).toBeTruthy();
     expect(nodes.map((n) => n.textContent)).toEqual([
       "Scheduled, current step",
-      "On the way, not yet",
-      "On site, not yet",
+      // A live node says what tapping it does rather than only that it has not happened.
+      "On the way, not yet — tap to move the visit here",
+      "On site, not yet — tap to move the visit here",
     ]);
     expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
   });
 
-  // The nodes are deliberately not buttons: three ~30px targets is the worst tap geometry for a
-  // gloved thumb, and the server refuses every backwards transition, so tappable nodes would look
-  // live and refuse. The foot primary is the one big target.
-  it("draws no tappable node — the stepper reads, the foot advances", () => {
+  // THE OWNER'S REQUEST, end to end through the real sheet. The foot's ladder offers
+  // "I've arrived →" only from enroute, so this is the only route from scheduled to on site.
+  it("tapping On site from scheduled writes in_progress — the skipped-departure shortcut", () => {
     render(<TechJobModalContent />);
-    for (const name of ["Scheduled", "On the way", "On site"]) {
-      expect(screen.queryByRole("button", { name })).toBeNull();
-    }
+    fireEvent.click(screen.getByRole("button", { name: /On site/ }));
+    // Default viewer in this file is the owner, so the write names the OFFICE surface — same
+    // routing the foot's own taps take (see the owner/office describe above).
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "onsite", "office");
+  });
+
+  // Forward only. Behind the cursor there is no control at all — going back is the office's
+  // ↩ Reopen, because un-finishing rewrites hours somebody may already have been paid for.
+  it("draws no node behind the visit — Scheduled is never tappable", () => {
+    render(<TechJobModalContent />);
+    expect(screen.queryByRole("button", { name: /Scheduled/ })).toBeNull();
   });
 
   // THE RULE: skipped stays skipped. No backfilled arrival, in the record or on the glass.

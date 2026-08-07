@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
 import { resolveMe } from "@/lib/auth/server-me";
-import { resolveMeasurementGate } from "@/lib/auth/server-measurement-gate";
-import { MeasurementGateProvider } from "@/features/settings/measurement-gate-provider";
+import { resolveFieldToggles } from "@/lib/auth/server-field-toggles";
+import { FieldTogglesProvider } from "@/features/settings/field-toggles-provider";
 import { Sidebar } from "@/components/shell/sidebar";
 import { MobileTabs } from "@/components/shell/mobile-tabs";
 import { Topbar } from "@/components/shell/topbar";
@@ -31,16 +31,17 @@ import { WriteErrorToast } from "@/components/shared/write-error-toast";
 export default async function FieldLayout({ children }: { children: ReactNode }) {
   const principal = await guardRole(["owner", "office", "tech"]);
   const isTech = principal.role === "tech";
-  // The measurement gate is resolved SERVER-SIDE, beside `me`, so the field Quote tab's scan row
-  // is right on the first paint instead of appearing and vanishing when a hydrator lands. It is
-  // resolved for EVERY role here — `v1.settings.fieldToggles` is anyRole — so a tech gets it too.
-  // See lib/auth/server-measurement-gate.ts.
-  const [initialMe, measurementGate] = await Promise.all([
+  // The org's field capability flags are resolved SERVER-SIDE, beside `me`, so the surfaces that
+  // change shape on them are right on the FIRST paint instead of appearing (or vanishing) when a
+  // hydrator lands: the Quote tab's scan row on `measurement`, the job sheet's Text button on
+  // `canText`. One anyRole read carries both, so a tech gets them too.
+  // See lib/auth/server-field-toggles.ts.
+  const [initialMe, fieldToggles] = await Promise.all([
     resolveMe(principal),
-    resolveMeasurementGate(principal),
+    resolveFieldToggles(principal),
   ]);
   return (
-    <MeasurementGateProvider gate={measurementGate}>
+    <FieldTogglesProvider seed={fieldToggles}>
       <div className="appshell field-shell">
         {/* Fills store.jobs from v1.field.myDay — the office JobsHydrator is
             ownerOrOffice-only, so without this a tech's store (and the
@@ -98,6 +99,6 @@ export default async function FieldLayout({ children }: { children: ReactNode })
         <MobileTabs initialMe={initialMe} />
         <ModalHost />
       </div>
-    </MeasurementGateProvider>
+    </FieldTogglesProvider>
   );
 }

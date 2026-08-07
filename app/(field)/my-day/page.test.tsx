@@ -196,7 +196,7 @@ describe("My day — a failed load is not a free afternoon", () => {
     render(<MyDayPage />);
 
     expect(screen.getByRole("alert")).toBeTruthy();
-    expect(screen.queryByText(/No jobs assigned to you today/i)).toBeNull();
+    expect(screen.queryByText(/No open jobs assigned to you/i)).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(refetch).toHaveBeenCalled();
@@ -227,7 +227,7 @@ describe("My day — a failed load is not a free afternoon", () => {
     };
     render(<MyDayPage />);
 
-    expect(screen.getByText(/No jobs assigned to you today/i)).toBeTruthy();
+    expect(screen.getByText(/No open jobs assigned to you/i)).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
@@ -275,10 +275,72 @@ describe("My day — the time on the card", () => {
     expect(screen.getByText("11:15a")).toBeTruthy();
   });
 
-  it("says nothing rather than guessing when the job has no dated visit", () => {
+  it("names the gap rather than guessing when the job has no dated visit", () => {
     withVisits([visit({ scheduledStart: "09:00" })]);
     render(<MyDayPage />);
-    expect(screen.getByText("—")).toBeTruthy();
+    // "Not scheduled" is colLabel's own word for it — the same one the job sheet's header uses.
+    // A bare "—" said nothing, and there is no time to print here either.
+    expect(screen.getByText("Not scheduled")).toBeTruthy();
+    expect(screen.queryByText("9a")).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WHICH DAY. `v1.field.myDay` returns status IN (scheduled, in_progress) UNCONDITIONALLY, OR'd
+// with complete-inside-today — deliberately, because a plumber who did not finish yesterday needs
+// that job on the glass (job-repository.ts). The query is right; the PRESENTATION said "Today's
+// jobs" over it, and the row printed a time with no date, so yesterday's 8:30a and today's 8:30a
+// were the same three characters. Sorting is earliest-first, so the carried-over job is the FIRST
+// row on the page.
+// ---------------------------------------------------------------------------
+
+describe("My day — which day a row is actually from", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+  });
+
+  const withVisits = (visits: unknown[]) => {
+    queryState = {
+      data: { items: [job({ visits })], customers: [] },
+      isLoading: false,
+      isFetching: false,
+      isError: false,
+    };
+  };
+
+  // The pinned clock is 2026-07-01 (vitest.setup.ts).
+  it("prints the time ALONE for today — a 'Today' label on every row is noise", () => {
+    withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("8:30a")).toBeTruthy();
+    expect(screen.queryByText("Today")).toBeNull();
+  });
+
+  // THE DEFECT: this row sorts to the top of the list and used to be indistinguishable from the
+  // first stop of the morning.
+  it("puts the DAY on a job carried over from yesterday", () => {
+    withVisits([visit({ scheduledDate: "2026-06-30", scheduledStart: "08:30" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("Tue 30")).toBeTruthy();
+    expect(screen.getByText("8:30a")).toBeTruthy();
+  });
+
+  // The other direction the same predicate allows, which nobody had considered: an open job the
+  // office has already scheduled ahead.
+  it("puts the DAY on a job scheduled for a future date", () => {
+    withVisits([visit({ scheduledDate: "2026-07-03", scheduledStart: "15:00" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("Fri 3")).toBeTruthy();
+    expect(screen.getByText("3p")).toBeTruthy();
+  });
+
+  // The heading and the empty state described a narrower list than the query returns.
+  it("the heading names what the list actually holds", () => {
+    withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("Your open jobs, and what you finished today.")).toBeTruthy();
+    expect(screen.queryByText(/Today's jobs/)).toBeNull();
   });
 });
 

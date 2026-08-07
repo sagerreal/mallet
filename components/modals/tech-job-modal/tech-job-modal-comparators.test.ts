@@ -88,11 +88,17 @@ describe("foundWorkPropsEqual", () => {
     job: baseJob,
     seesPrice: true,
     readOnly: false,
+    hasSoldWork: true,
     addAddon: noop as never,
     setAddonStatus: noop as never,
   };
   it("SKIPS on a verify-only change", () => {
     expect(foundWorkPropsEqual(props, { ...props, job: verifyTapped(baseJob) })).toBe(true);
+  });
+  // The add form's second gate: a job that sells something mid-visit (a quote signed on the
+  // doorstep) must grow the form on the spot, so the comparator cannot skip this one.
+  it("re-renders when the job goes from nothing-sold to sold", () => {
+    expect(foundWorkPropsEqual(props, { ...props, hasSoldWork: false })).toBe(false);
   });
   it("re-renders when job.addons changes", () => {
     expect(foundWorkPropsEqual(props, { ...props, job: withField(baseJob, "addons", [{}]) })).toBe(false);

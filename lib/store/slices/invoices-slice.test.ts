@@ -968,3 +968,82 @@ describe("raiseVisitFee", () => {
     expect(row.phone).toBe("");
   });
 });
+
+// ---------------------------------------------------------------------------
+// recordPayment RESOLVES THE SERVER'S ANSWER (fix round 3).
+//
+// It was typed `=> void`: it kicked the write off and rolled back inside a `.catch`, so the
+// close-out sheet's approvePayment returned { ok: true } on the very next line and PayBlock
+// rendered "Approved · $450" for money the server had refused. Every path below now answers.
+// ---------------------------------------------------------------------------
+
+describe("recordPayment resolves the server's outcome", () => {
+  beforeEach(() => {
+    recordPaymentMutate.mockReset();
+    fieldRecordPaymentMutate.mockReset();
+  });
+
+  const cash = { amt: 450, when: "Just now", method: "cash" } as const;
+
+  it("resolves { ok: true } once the server has accepted and the row is reconciled", async () => {
+    recordPaymentMutate.mockResolvedValue(dbDto({ status: "paid" }));
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "sent" })]);
+
+    const res = await s.state.recordPayment("inv-1", cash);
+
+    expect(res).toEqual({ ok: true });
+    expect(s.state.invoices[0]!.status).toBe("paid");
+  });
+
+  it("passes a domain refusal's own sentence back, and rolls the optimistic credit off", async () => {
+    recordPaymentMutate.mockRejectedValue(
+      Object.assign(new Error("this invoice is void"), { data: { code: "CONFLICT" } }),
+    );
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "sent", payments: [] })]);
+
+    const res = await s.state.recordPayment("inv-1", cash);
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe("this invoice is void");
+    expect(s.state.invoices[0]!.payments).toHaveLength(0); // the store agrees with the answer
+  });
+
+  it("names a connection failure rather than leaking transport text", async () => {
+    recordPaymentMutate.mockRejectedValue(new Error("fetch failed"));
+    const s = makeSlice();
+    s.seed([makeInvoice({ status: "sent" })]);
+
+    const res = await s.state.recordPayment("inv-1", cash);
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("check your connection");
+  });
+
+  // A "manual" invoice has no DB row, and sendInvoice snapshots LINES, not payments — so money
+  // recorded against one is persisted by nothing, ever, and evaporates on the next refresh.
+  it("refuses a store-local invoice in place: no network call, optimistic credit undone", async () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ origin: "manual", status: "sent", payments: [] })]);
+
+    const res = await s.state.recordPayment("inv-1", cash);
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("never raised on the server");
+    expect(recordPaymentMutate).not.toHaveBeenCalled();
+    expect(fieldRecordPaymentMutate).not.toHaveBeenCalled();
+    expect(s.state.invoices[0]!.payments).toHaveLength(0);
+  });
+
+  it("refuses an id this device no longer holds", async () => {
+    const s = makeSlice();
+    s.seed([]);
+
+    const res = await s.state.recordPayment("inv-gone", cash);
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("no longer open on this device");
+    expect(recordPaymentMutate).not.toHaveBeenCalled();
+  });
+});

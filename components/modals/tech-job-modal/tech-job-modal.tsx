@@ -200,7 +200,7 @@ export function TechJobModalContent() {
     const card = lead?.card;
     const dueNow = invDue(invoice);
     if (dueNow <= 0 || !card) return;
-    recordPayment(
+    void recordPayment(
       invoice.id,
       { amt: dueNow, when: "Just now", method: "card", onFile: true },
       invoiceSurface,
@@ -499,6 +499,9 @@ export function TechJobModalContent() {
         curVisit={curVisit}
         done={done}
         isOffice={isOffice}
+        // The stepper's forward jumps follow the FOOT's rule exactly — same visit, same viewer,
+        // so the two can never offer different moves.
+        stepVisitId={actVisit?.id}
         onStatus={onVisitStatus}
         onAddFollowUp={canBookFollowUp ? bookFollowUp : undefined}
       />
@@ -522,11 +525,18 @@ export function TechJobModalContent() {
         <CopilotSection job={job} addAddonField={addAddonField} />
       )}
 
-      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes). */}
+      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes), and
+          absent entirely on a job with nothing sold. Found work means "extra beyond what was
+          sold"; on an estimate walkthrough nothing has been, so the add form would be a second
+          place to type a price beside the Quote tab's builder — and before a sale only one of
+          them is right. `scoping` is isUnpricedEstimate, which already treats prices WITHHELD
+          from this device as sold rather than unsold. JOB NOTES below is unaffected: a note is
+          always worth having, on either kind of job. */}
       <FoundWorkSec
         job={job}
         seesPrice={seesPrice}
         readOnly={!isOffice}
+        hasSoldWork={!scoping}
         addAddon={addAddon}
         setAddonStatus={setAddonStatus}
       />

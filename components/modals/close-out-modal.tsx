@@ -1321,7 +1321,17 @@ export function CloseOutModalContent() {
         };
       }
     }
-    recordPayment(invoice.id, { amt, when: "Just now", method, onFile }, surface);
+    // 3. AWAIT the record itself. This was the last unawaited leg: recordPayment used to be
+    //    `=> void`, so a server refusal (invoice voided, paid concurrently, offline, amount
+    //    race) rolled the store back behind an "Approved · $1,000" screen the tech had already
+    //    read out to the customer. The slice now resolves the server's real answer.
+    const recorded = await recordPayment(invoice.id, { amt, when: "Just now", method, onFile }, surface);
+    if (!recorded.ok) {
+      return {
+        ok: false,
+        error: recorded.error ?? "Couldn't record the payment — check your connection and try again.",
+      };
+    }
     // A card on file is NOT recorded here. This used to write a hardcoded
     // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
     // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.

@@ -37,6 +37,11 @@ interface VisitsSecProps {
   done: boolean;
   /** Owner/office. ↩ Reopen writes a VISIT status, which has no field endpoint. */
   isOffice: boolean;
+  /**
+   * The one visit this viewer may move forward — the sheet's `actVisit`, the same visit the foot's
+   * primary steps. Only that row's stepper has live nodes; on every other row it stays a readout.
+   */
+  stepVisitId: string | undefined;
   onStatus: (visitId: string, status: string) => void;
   /** Books a return trip. Absent when this viewer may not (the server refuses off-job callers). */
   onAddFollowUp?: (reason: string) => Promise<{ ok: boolean; error?: string }>;
@@ -48,6 +53,7 @@ export function VisitsSec({
   curVisit,
   done,
   isOffice,
+  stepVisitId,
   onStatus,
   onAddFollowUp,
 }: VisitsSecProps) {
@@ -94,7 +100,15 @@ export function VisitsSec({
         <>
           {placed.length ? (
             placed.map((v) => (
-              <VisitRow key={v.id} visit={v} canReopen={isOffice} onStatus={(status) => onStatus(v.id, status)} />
+              <VisitRow
+                key={v.id}
+                visit={v}
+                canReopen={isOffice}
+                // Only the sheet's own actVisit gets live stepper nodes — the same visit the foot
+                // steps, so a two-visit job can never offer two places to move a different stop.
+                canStep={v.id === stepVisitId}
+                onStatus={(status) => onStatus(v.id, status)}
+              />
             ))
           ) : awaiting.length ? null : (
             <div className="empty-att" style={{ marginBottom: "0" }}>
