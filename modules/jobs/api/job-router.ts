@@ -4,6 +4,7 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asJobId, asLeadId, asEstimateId, asUserId, toPage } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
+import { DrizzleLaborReader } from "../infra/drizzle-labor-reader";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { JOB_SORTS } from "../infra/job-sorts";
 import { JOB_VIEWS } from "../infra/job-views";
@@ -340,6 +341,48 @@ export const createJobRouter = () =>
      * This is what makes the filter dropdown honest: "Needs a slot (13)" counts thirteen jobs in
      * the business, where the grouped list it replaces counted thirteen of whatever had loaded.
      */
+    /**
+     * What a week of work cost — the Job costing tab beside Timesheets.
+     *
+     * ownerOrOffice, and it stays that way. A technician has no use for labour against a job, and
+     * putting margin on a field screen is a conversation a shop owner has not asked to have.
+     *
+     * Money in cents, as everywhere. Hours are decimal — a timesheet is read in hours, not
+     * seconds, and the rollup rounds to two places so the column sums to what it displays.
+     */
+    laborByJob: ownerOrOffice
+      .input(
+        z.object({
+          from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+        }),
+      )
+      .output(
+        z.object({
+          items: z.array(
+            z.object({
+              jobId: z.string().uuid(),
+              num: z.string(),
+              title: z.string().nullable(),
+              customerName: z.string(),
+              jobStatus: z.string(),
+              /** Visits that CONTRIBUTED hours — not every visit on the job. */
+              visits: z.number().int(),
+              hours: z.number(),
+              /** Null when nobody who worked it has a cost rate. Never 0 standing in for unknown. */
+              costCents: z.number().int().nullable(),
+              costIsPartial: z.boolean(),
+              source: z.enum(["measured", "scheduled", "mixed"]),
+              quotedCents: z.number().int(),
+            }),
+          ),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        const items = await new DrizzleLaborReader(ctx.tx, ctx.principal.orgId).byJob(input.from, input.to);
+        return { items };
+      }),
+
     viewCounts: ownerOrOffice
       .input(
         z.object({

@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD COLUMN "cost_rate_cents" integer;

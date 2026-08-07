@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { pgTable, uuid, text, boolean, timestamp, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, boolean, integer, timestamp, index, uniqueIndex, unique, check } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 
 // A member of an org. `auth_user_id` is the Supabase Auth user id (the JWT `sub`); it is the
@@ -20,6 +20,23 @@ export const users = pgTable(
     // Certification tags for this tech (e.g. ["Gas", "Boiler"]). Additive column —
     // existing rows default to empty array. No new RLS needed (users table is FOR ALL).
     skillTags: text("skill_tags").array().notNull().default(sql`'{}'::text[]`),
+    /**
+     * What an hour of this person's time COSTS the shop, in cents, fully burdened.
+     *
+     * NOT their wage, and the distinction is the whole point: burdened means wage plus payroll
+     * tax, insurance, the truck, the phone. Housecall Pro's own worked example is a $25/hr W-2
+     * employee costing $32–35/hr once loaded, so a job costed off the wage alone understates
+     * labour by around a third and reports a profit the shop never made.
+     *
+     * NULLABLE, and null is not zero. It means "this shop has not told us what they cost", and
+     * job costing then reports that person's HOURS with no money against them rather than
+     * quietly costing their day at $0 — which would read as a job that was free to run.
+     *
+     * This does not contradict "payroll owns the wage" (lib/store/types.ts): payroll is what we
+     * PAY, which still lives in QuickBooks and never here. This is what we internally reckon an
+     * hour costs, and it is only ever used to divide into revenue.
+     */
+    costRateCents: integer("cost_rate_cents"),
     // The mobile Mallet rings first on an outbound click-to-call, E.164. Additive + nullable:
     // existing rows are unaffected, and it is remembered the first time a call is placed so the
     // office does not retype it. No new RLS needed (users table is already FOR ALL).

@@ -291,13 +291,15 @@ export const createIdentityRouter = () =>
               isFieldCrew: z.boolean(),
               takesCalls: z.boolean(),
               skillTags: z.array(z.string()),
+              /** Burdened cost per hour, cents. Null = the shop has not set one. */
+              costRateCents: z.number().int().nullable(),
             }),
           ),
         }),
       )
       .query(async ({ ctx }) => {
         const rows = await ctx.tx
-          .select({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew, takesCalls: users.takesCalls, skillTags: users.skillTags })
+          .select({ id: users.id, email: users.email, role: users.role, name: users.name, isFieldCrew: users.isFieldCrew, takesCalls: users.takesCalls, skillTags: users.skillTags, costRateCents: users.costRateCents })
           .from(users)
           .where(eq(users.orgId, ctx.principal.orgId));
         return {
@@ -309,6 +311,7 @@ export const createIdentityRouter = () =>
             isFieldCrew: r.isFieldCrew,
             takesCalls: r.takesCalls,
             skillTags: r.skillTags ?? [],
+            costRateCents: r.costRateCents,
           })),
         };
       }),
@@ -558,6 +561,42 @@ export const createIdentityRouter = () =>
     // Restricted to owner/office — field techs cannot flip their own flag.
     // Whether the AI front desk may put an urgent caller through to this person. Their HOURS come
     // from crew_schedules — this is only "may they be interrupted at all".
+    /**
+     * What an hour of this person costs the shop, fully burdened. Cents, or null to clear it.
+     *
+     * NULL IS A REAL ANSWER and must stay reachable: it means "we have not worked this out yet",
+     * and job costing then reports that person's hours with no money against them. Forcing a
+     * number would make a shop guess, and a guessed cost rate is worse than a blank one — it
+     * produces a margin figure somebody will believe.
+     *
+     * Bounded at $10,000/h. Not a real rate, just a wall against a typo — somebody entering
+     * dollars into a cents field turns $32 into $0.32 in the other direction, which is why the
+     * UI does the conversion and this only refuses the absurd.
+     */
+    setMemberCostRate: ownerOrOffice
+      .input(
+        z.object({
+          userId: z.string().uuid(),
+          costRateCents: z.number().int().min(0).max(1_000_000).nullable(),
+        }),
+      )
+      .output(z.object({ id: z.string().uuid(), costRateCents: z.number().int().nullable() }))
+      .mutation(async ({ ctx, input }) => {
+        const [updated] = await ctx.tx
+          .update(users)
+          .set({ costRateCents: input.costRateCents, updatedAt: new Date() })
+          .where(and(eq(users.id, asUserId(input.userId)), eq(users.orgId, ctx.principal.orgId)))
+          .returning({ id: users.id, costRateCents: users.costRateCents });
+
+        if (!updated) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "user not found in this org" });
+        }
+
+        // The VALUE is deliberately not logged — it is somebody's pay, near enough.
+        logger.info({ userId: input.userId, cleared: input.costRateCents === null }, "identity.setMemberCostRate");
+        return { id: updated.id, costRateCents: updated.costRateCents };
+      }),
+
     setMemberTakesCalls: ownerOrOffice
       .input(z.object({ userId: z.string().uuid(), takesCalls: z.boolean() }))
       .output(z.object({ id: z.string().uuid(), takesCalls: z.boolean() }))
