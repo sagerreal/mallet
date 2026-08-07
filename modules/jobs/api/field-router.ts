@@ -21,10 +21,12 @@ import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
+import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
+import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
-import { redactMoneyForTech } from "./money-redaction";
+import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 import { byAgenda } from "./my-day-order";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 
@@ -113,6 +115,27 @@ const fieldAddAddonInput = z.object({
   id: z.string().uuid().optional(),
   description: z.string().trim().min(1, "description is required").max(200, "description must be 200 characters or fewer"),
   rateCents: z.number().int().min(0).optional(),
+});
+
+/**
+ * The customer's signature on found work — the addendum to a job they already signed.
+ *
+ * Only the chosen items, the name and the mark come from the client. The PRICES are not sent: they
+ * are read from the add-on rows the tech already recorded, so a tablet cannot sign the customer up
+ * at one number and bill at another. The shop name, the authorisation sentence, the snapshot and
+ * the timestamp are all assembled server-side, exactly as on signQuote.
+ */
+const fieldApproveFoundWorkInput = z.object({
+  jobId: z.string().uuid(),
+  addonIds: z
+    .array(z.string().uuid())
+    .min(1, "choose at least one item of found work to approve")
+    // Bounded like the sign-quote line list — a sheet a customer can read, not a bulk operation.
+    .max(200),
+  signerName: z.string().trim().min(1, "type the customer's name to sign").max(120),
+  // Optional for the same reason as on signQuote: a typed name IS the signature, and requiring a
+  // drawing would gate approval on the weakest evidence and lock out anyone who cannot draw.
+  signatureSvg: z.string().trim().max(100_000).optional(),
 });
 
 // The tech-facing surface. Assignment is the authorization boundary for techs: a tech may act only
@@ -226,7 +249,7 @@ export const createFieldRouter = () =>
         : true;
       const items = ordered.map((j) => {
         const dto = toJobSummaryDTO(j, executionByJob.get(j.props.id));
-        return isTech ? redactMoneyForTech(dto, seesPrice) : dto;
+        return isTech ? redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) : dto;
       });
       // The customers on THESE jobs, and no others — the technician's reach is their own work.
       // Without this the field shell has no name or number for anyone, which is why its Call
@@ -282,7 +305,7 @@ export const createFieldRouter = () =>
       const clockNotice = noticeFor(outcome);
       if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return { ...redactMoneyForTech(dto, seesPrice), clockNotice };
+      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
     }),
 
     complete: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
@@ -326,7 +349,7 @@ export const createFieldRouter = () =>
       const clockNotice = noticeFor(outcome);
       if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return { ...redactMoneyForTech(dto, seesPrice), clockNotice };
+      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
     }),
 
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
@@ -366,7 +389,7 @@ export const createFieldRouter = () =>
         const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // "On my way" from the technician's own visit row. A STAMP, not a status change — the visit
@@ -404,7 +427,7 @@ export const createFieldRouter = () =>
         const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // Scope notes from the job site. JOB-level assignment gate (same as signQuote): the person
@@ -448,7 +471,7 @@ export const createFieldRouter = () =>
         const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // Mint a signed upload URL for a job photo from the field surface. Any role may call this
@@ -516,20 +539,9 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
-    // Field-surface found-work write. Open to all roles (anyRole) but techs are assignment-gated
-    // and non-terminal-gated like every other field write. The money contract is strict:
-    //   • status is ALWAYS "proposed" — the office OK-pill is the approval gate; a tech may never
-    //     land an accepted addon.
-    //   • For tech callers with !techSeesPrice: IGNORE the client's rateCents entirely → store 0.
-    //     seesPrice techs may pass a rate; owner/office callers behave like the office endpoint.
-    //   • org from principal (never from client input).
-    //   • response is redacted for techs (B1 pattern — same as setVerifyAnswer / addPhoto).
-    //   • quantity and costCents are forced to the office defaults (1, 0) — techs don't author
-    //     cost; office callers should use the office addAddon endpoint for full control.
-    //   • isOptional follows the office default (false) for field-created found work.
     signQuote: anyRole
       .input(fieldSignQuoteInput)
       .output(jobDTO)
@@ -631,6 +643,85 @@ export const createFieldRouter = () =>
         return toJobDTO(r.job, r.execution);
       }),
 
+    /**
+     * The customer signs for FOUND WORK, and the found work starts billing.
+     *
+     * The sentence they already signed on this job says "Work beyond what is listed above is not
+     * included and needs my approval before it is done." A technician tapping "approved" is not
+     * that approval, and until now it was also not money: the status flipped and nothing else
+     * happened, because the invoice bills from the job's LINES and has never read add-ons.
+     *
+     * One call, one transaction, three writes — the addendum, the approval stamp and the job
+     * lines. Same shape as signQuote above, for the same reasons: the assignment gate, the org
+     * name read from the DATABASE (a client-supplied counterparty on a signed document is a
+     * hole), the terminal-job guard, and a throw anywhere rolling the whole thing back.
+     */
+    approveFoundWork: anyRole
+      .input(fieldApproveFoundWorkInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const job = techJob ?? (await repo.findById(jobId));
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        if (job.isTerminal()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This job is closed — ask the office to change it.",
+          });
+        }
+
+        // The customer must exist to own the addendum. findById excludes archived leads, so
+        // approving against an archived customer's job fails LOUDLY rather than writing a signed
+        // document nobody owns.
+        const lead = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findById(job.props.leadId);
+        if (!lead) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "This job's customer is missing or archived — restore the customer, then approve again.",
+          });
+        }
+
+        const orgName = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getOrgName();
+
+        const useCase = new ApproveFoundWorkUseCase(
+          repo,
+          new QuotingChangeOrderRecorder(ctx.tx, ctx.principal.orgId, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const r = orThrow(
+          await useCase.exec(
+            {
+              jobId,
+              addonIds: input.addonIds,
+              signerName: input.signerName,
+              signatureSvg: input.signatureSvg ?? "",
+              orgName,
+              approvedByUserId: ctx.principal.userId,
+            },
+            ctx.principal.orgId,
+          ),
+        );
+
+        const dto = toJobDTO(r.job, r.execution);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+      }),
+
+    // Field-surface found-work write. Open to all roles (anyRole) but techs are assignment-gated
+    // and non-terminal-gated like every other field write. The money contract is strict:
+    //   • status is ALWAYS "proposed" — a tech may never land an accepted add-on. Approval is the
+    //     CUSTOMER's signature (v1.field.approveFoundWork) or the office OK-pill, never a tap here.
+    //   • rateCents is stored as sent, whatever techSeesPrice says — see the note in the body.
+    //   • org from principal (never from client input).
+    //   • response is redacted for techs (B1 pattern — same as setVerifyAnswer / addPhoto).
+    //   • quantity and costCents are forced to the office defaults (1, 0) — techs don't author
+    //     cost; office callers should use the office addAddon endpoint for full control.
+    //   • isOptional follows the office default (false) for field-created found work.
     addAddon: anyRole
       .input(fieldAddAddonInput)
       .output(jobDTO)
@@ -653,14 +744,15 @@ export const createFieldRouter = () =>
         }
 
         const isTech = ctx.principal.role === "tech";
-        let rateCents: number;
-        if (isTech) {
-          const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-          // Money contract: !seesPrice → force 0 regardless of what the client sent.
-          rateCents = seesPrice ? (input.rateCents ?? 0) : 0;
-        } else {
-          rateCents = input.rateCents ?? 0;
-        }
+        // Found work carries the rate the caller sent, whatever techSeesPrice says.
+        //
+        // This USED to be forced to 0 for a !seesPrice tech, which is the write-side half of the
+        // same hole as the read-side redaction: the customer is asked to sign for found work on
+        // this device, so a shop that hides margins from its techs would have produced a $0
+        // addendum for real work and then billed nothing for it. The setting keeps a technician
+        // out of the shop's pricing on the JOB; it cannot be allowed to zero out the price the
+        // customer is agreeing to. Cost stays server-forced to 0 — that is the margin.
+        const rateCents = input.rateCents ?? 0;
 
         const useCase = new AddJobAddonUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
@@ -680,7 +772,7 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (!isTech) return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // Crew checklist capture: write one verify answer (pass/override/clear) from the job site.
@@ -711,6 +803,6 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
   });

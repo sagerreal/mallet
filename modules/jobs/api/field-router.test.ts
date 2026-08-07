@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { redactMoneyForTech } from "./money-redaction";
+import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 
 // Unit tests for the redactMoneyForTech helper — the server-side enforcement point
 // for the org's techSeesPrice setting. These tests run without a DB connection and
@@ -87,7 +87,7 @@ describe("redactMoneyForTech", () => {
       expect(result.lines[0]?.cost).toBeNull();
     });
 
-    it("strips rate from addons", () => {
+    it("strips rate from addons under the default (strict) reading", () => {
       const dto = makeDto();
       const result = redactMoneyForTech(dto, false);
       expect(result.addons[0]?.rate).toBeNull();
@@ -108,6 +108,30 @@ describe("redactMoneyForTech", () => {
     it("total null is returned even when the input total was null already (idempotent)", () => {
       const dto = makeDto({ total: null });
       const result = redactMoneyForTech(dto, false);
+      expect(result.total).toBeNull();
+    });
+  });
+
+  // The one exemption, opt-in per caller. The technician's own screens set it because the CUSTOMER
+  // is about to read the found-work price off the same tablet and sign for it; a $0 approval sheet
+  // in front of a customer asking "how much?" is the failure mode. The AI copilot deliberately does
+  // NOT set it — its prompt forbids the model from stating a price in a !seesPrice shop, so those
+  // numbers must not enter its context.
+  describe("FIELD_SURFACE_REDACTION (the found-work exemption)", () => {
+    it("keeps addon rates even when the org hid prices from techs", () => {
+      const result = redactMoneyForTech(makeDto(), false, FIELD_SURFACE_REDACTION);
+      expect(result.addons[0]?.rate?.cents).toBe(12000);
+    });
+
+    it("still strips addon COST — the margin is never a tech's business", () => {
+      const result = redactMoneyForTech(makeDto(), false, FIELD_SURFACE_REDACTION);
+      expect(result.addons[0]?.cost).toBeNull();
+    });
+
+    it("changes nothing else: job lines and the total stay hidden", () => {
+      const result = redactMoneyForTech(makeDto(), false, FIELD_SURFACE_REDACTION);
+      expect(result.lines[0]?.rate).toBeNull();
+      expect(result.lines[0]?.cost).toBeNull();
       expect(result.total).toBeNull();
     });
   });
