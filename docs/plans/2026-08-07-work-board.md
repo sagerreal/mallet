@@ -537,7 +537,9 @@ CSS (append near `.kcard` block, tokens only):
 
 - [ ] **Step 7: Commit** — `git commit -m "feat: work board columns and cards with on-card reminder sends"`
 
----### Task 7: Dashboard integration — hard swap (no flag)
+---
+
+### Task 7: Dashboard integration — hard swap (no flag)
 
 **Files:**
 - Modify: `app/(office)/dashboard/page.tsx` (TodayPane), `features/home/handoff-note.tsx` (one copy line)
