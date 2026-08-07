@@ -93,6 +93,20 @@ const ASSIGNED = sql`${jobVisits.assigneeUserId} IS NOT NULL`;
 export const PLACED = and(DATED, ASSIGNED) as SQL;
 
 /**
+ * OUTSTANDING — placed, and not finished yet. What every dispatch band actually wants to know.
+ *
+ * PLACED alone answers "has a trip ever been booked", and a job whose first trip is DONE answers
+ * yes forever. That was survivable while a second visit was something only the office created;
+ * once a technician can book a return from the field it becomes the normal shape, and the bands
+ * read it wrong in both directions: the job stays out of "Needs a slot" (a placed visit exists)
+ * and falls into "This week" (that visit is dated in the past, and week includes overdue). The
+ * one job on the screen that genuinely needs a date is filed as work already going out.
+ *
+ * A finished visit is history. The bands are asking about the trip that has not happened.
+ */
+const OUTSTANDING = and(PLACED, ne(jobVisits.status, "complete")) as SQL;
+
+/**
  * Jobs with a live visit landing in [from, to], inclusive — the dispatch board's window.
  *
  * Not one of the named views: those are relative to today, and the board navigates to any day or
@@ -189,13 +203,15 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
   // "no crew on it either", a dated, crewless visit would have satisfied BOTH bands and broken the
   // mutual exclusivity the counts depend on. They also mean the right thing this way round: a day
   // with nobody assigned to it is not work that is going out today.
-  const onToday = visitWhere(tx, and(PLACED, eq(jobVisits.scheduledDate, p.today)) as SQL);
-  const byWeekEnd = visitWhere(tx, and(PLACED, lte(jobVisits.scheduledDate, weekEnd)) as SQL);
+  const onToday = visitWhere(tx, and(OUTSTANDING, eq(jobVisits.scheduledDate, p.today)) as SQL);
+  const byWeekEnd = visitWhere(tx, and(OUTSTANDING, lte(jobVisits.scheduledDate, weekEnd)) as SQL);
 
   switch (view) {
     case "needsSlot":
-      // Open, and nothing has been put on a day WITH A CREW yet — sold work going nowhere.
-      return and(open, sql`NOT ${visitWhere(tx, PLACED)}`) as SQL;
+      // Open, and no UNFINISHED trip is on a day with a crew — sold work going nowhere. Covers
+      // both the job nobody has scheduled yet and the job whose remaining visit is a follow-up
+      // booked from the field with no date on it.
+      return and(open, sql`NOT ${visitWhere(tx, OUTSTANDING)}`) as SQL;
     case "today":
       return and(open, onToday) as SQL;
     case "week":
@@ -204,7 +220,7 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
     case "upcoming":
       return and(
         open,
-        visitWhere(tx, and(PLACED, gt(jobVisits.scheduledDate, weekEnd)) as SQL),
+        visitWhere(tx, and(OUTSTANDING, gt(jobVisits.scheduledDate, weekEnd)) as SQL),
         sql`NOT ${byWeekEnd}`,
       ) as SQL;
     case "needsInvoice":

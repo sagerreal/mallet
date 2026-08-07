@@ -119,6 +119,10 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       // the org first tries to cascade into jobs/users while those rows are still referenced.
       // Clearing hours first is also what proves the wiring ran at all.
       await admin`delete from time_entries where org_id = ${orgId}`;
+      // And visits before the org, for the same reason one layer down: job_visits_assignee_fk has
+      // no ON DELETE action, so a crew row cannot go while a visit still points at it. Harmless
+      // before this suite had crewed visits; required now that the multi-visit cases create them.
+      await admin`delete from job_visits where org_id = ${orgId}`;
       await admin`delete from orgs where id = ${orgId}`;
     }
     await admin.end({ timeout: 5 });
@@ -160,6 +164,129 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
     const completed = await caller.v1.field.complete({ jobId: j!.id });
     expect(completed.status).toBe("complete");
+  });
+
+  /**
+   * THE TWO DONES, reconciled.
+   *
+   * The sheet's foot was already right: it runs `setVisitStatus`, and SetVisitStatusUseCase
+   * derives job status from the visit set, so finishing visit 1 of 2 leaves the job open. My
+   * day's ✓ Complete went to CompleteJobUseCase, which reads no visits at all — it completed the
+   * job, emitted `job.completed` (→ ensure-an-invoice), and left visit 2 sitting `pending` on a
+   * `complete` job. Same intent, two entry points, opposite answers, and the wrong one bills a
+   * job that finishes next week.
+   */
+  it("completing from My day finishes the VISIT, not a job with a trip still to run", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, ${"JOB-TA-MULTI-" + randomUUID().slice(0, 8)}, 'scheduled', 0, ${techAId})
+      returning id`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position)
+      values (${orgId}, ${j!.id}, current_date, ${techAId}, 120, 'pending', 1)`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position)
+      values (${orgId}, ${j!.id}, current_date + 2, ${techAId}, 120, 'pending', 2)`;
+
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    const after = await caller.v1.field.complete({ jobId: j!.id });
+
+    expect(after.status).not.toBe("complete");
+
+    const rows = await admin<{ status: string; position: number }[]>`
+      select status, position from job_visits where job_id = ${j!.id} order by position`;
+    expect(rows.map((r) => r.status)).toEqual(["complete", "pending"]);
+
+    // And the job row itself, read back rather than taken from the DTO.
+    const [job] = await admin<{ status: string; completed_at: string | null }[]>`
+      select status, completed_at from jobs where id = ${j!.id}`;
+    expect(job!.status).not.toBe("complete");
+    expect(job!.completed_at).toBeNull();
+  });
+
+  it("the SECOND completion closes the job — the cascade still finishes what it should", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, ${"JOB-TA-MULTI2-" + randomUUID().slice(0, 8)}, 'scheduled', 0, ${techAId})
+      returning id`;
+    for (const pos of [1, 2]) {
+      await admin`
+        insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position)
+        values (${orgId}, ${j!.id}, current_date, ${techAId}, 120, 'pending', ${pos})`;
+    }
+
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    await caller.v1.field.complete({ jobId: j!.id });
+    const after = await caller.v1.field.complete({ jobId: j!.id });
+
+    expect(after.status).toBe("complete");
+    const rows = await admin<{ status: string }[]>`
+      select status from job_visits where job_id = ${j!.id}`;
+    expect(rows.every((r) => r.status === "complete")).toBe(true);
+  });
+
+  /**
+   * BOOKING THE RETURN TRIP FROM THE DOOR.
+   *
+   * The commitment is made at the customer's kitchen table whether or not the software records
+   * it — and a technician could not record it: every procedure in visit-router.ts is
+   * ownerOrOffice. Since #389 he can even sign a customer for found work and then have no way to
+   * book the trip that performs it.
+   *
+   * What he creates is UNPLACED on purpose. He records that a return is needed and why; the
+   * office picks the slot, because parts arrival and the rest of the week's load are not things
+   * he can see from the doorstep.
+   */
+  it("a tech on the job books an unplaced follow-up, and the job stays open", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, ${"JOB-TA-FU-" + randomUUID().slice(0, 8)}, 'in_progress', 0, ${techAId})
+      returning id`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position)
+      values (${orgId}, ${j!.id}, current_date, ${techAId}, 120, 'complete', 1)`;
+
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    const after = await caller.v1.field.addFollowUpVisit({
+      jobId: j!.id,
+      reason: "Waiting on the 40-gal tank — back once it lands",
+    });
+
+    expect(after.status).not.toBe("complete");
+    expect(after.visits).toHaveLength(2);
+
+    const [added] = await admin<
+      { scheduled_date: string | null; assignee_user_id: string | null; status: string; notes: string | null; position: number }[]
+    >`select scheduled_date, assignee_user_id, status, notes, position
+        from job_visits where job_id = ${j!.id} and position = 2`;
+
+    expect(added!.scheduled_date).toBeNull();
+    expect(added!.assignee_user_id).toBeNull();
+    expect(added!.status).toBe("pending");
+    expect(added!.notes).toBe("Waiting on the 40-gal tank — back once it lands");
+  });
+
+  it("an off-job tech cannot book a visit on it", async () => {
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    await expect(
+      caller.v1.field.addFollowUpVisit({ jobId: jobBId, reason: "not my job" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+    const rows = await admin<{ n: string }[]>`
+      select count(*) as n from job_visits where job_id = ${jobBId}`;
+    expect(Number(rows[0]!.n)).toBe(0);
+  });
+
+  it("a closed job takes a Reopen, not a new visit", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, ${"JOB-TA-FUX-" + randomUUID().slice(0, 8)}, 'complete', 0, ${techAId})
+      returning id`;
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    await expect(
+      caller.v1.field.addFollowUpVisit({ jobId: j!.id, reason: "too late" }),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("tech gets FORBIDDEN on someone else's job", async () => {

@@ -189,10 +189,88 @@ describe("footActions — the invariants", () => {
     for (const status of states) {
       const on = handlers();
       const foot = footActions(facts({ actVisit: visit({ id: "v9", status }) }), on);
-      const finish = foot.primary.label === "Finish job →" ? foot.primary : foot.quiet;
+      const finish = foot.primary.label.startsWith("Finish") ? foot.primary : foot.quiet;
       expect(finish?.label).toBe("Finish job →");
       finish?.run();
       expect(on.calls).toEqual(["status:v9:done"]);
     }
+  });
+});
+
+/**
+ * The label has to name what the tap actually finishes.
+ *
+ * The WRITE was already right: SetVisitStatusUseCase derives job status from the visit set, so
+ * finishing visit 1 of 2 leaves the job open. Only the sentence was wrong — it said "Finish job"
+ * while finishing a visit, which is the one screen a technician reads before telling a customer
+ * whether they are coming back.
+ */
+describe("footActions — a job with more than one visit", () => {
+  const twoVisits = (over: Partial<Visit> = {}) =>
+    job({ visits: [visit({ id: "v1", ...over }), visit({ id: "v2", status: "scheduled" })] });
+
+  it("names the VISIT while another active visit remains", () => {
+    const on = handlers();
+    const foot = footActions(
+      facts({ job: twoVisits({ status: "onsite" }), actVisit: visit({ id: "v1", status: "onsite" }) }),
+      on,
+    );
+
+    expect(foot.primary.label).toBe("Finish visit →");
+    foot.primary.run();
+    // Same write as before — only the sentence changed.
+    expect(on.calls).toEqual(["status:v1:done"]);
+  });
+
+  it("names the visit on the quiet button too, from an earlier step", () => {
+    const foot = footActions(
+      facts({ job: twoVisits({ status: "scheduled" }), actVisit: visit({ id: "v1", status: "scheduled" }) }),
+      handlers(),
+    );
+
+    expect(foot.primary.label).toBe("Start driving →");
+    expect(foot.quiet?.label).toBe("Finish visit →");
+  });
+
+  it("names the JOB again once every other visit is done — this tap really does close it", () => {
+    const foot = footActions(
+      facts({
+        job: job({ visits: [visit({ id: "v1", status: "onsite" }), visit({ id: "v2", status: "done" })] }),
+        actVisit: visit({ id: "v1", status: "onsite" }),
+      }),
+      handlers(),
+    );
+
+    expect(foot.primary.label).toBe("Finish job →");
+  });
+
+  it("names the job on a single-visit job — the common case is untouched", () => {
+    const foot = footActions(
+      facts({
+        job: job({ visits: [visit({ id: "v1", status: "onsite" })] }),
+        actVisit: visit({ id: "v1", status: "onsite" }),
+      }),
+      handlers(),
+    );
+
+    expect(foot.primary.label).toBe("Finish job →");
+  });
+
+  it("an UNPLACED follow-up visit counts — that is the whole point of booking one", () => {
+    const foot = footActions(
+      facts({
+        job: job({
+          visits: [
+            visit({ id: "v1", status: "onsite" }),
+            // What field.addFollowUpVisit writes: no date, no tech, waiting on the office.
+            visit({ id: "v2", status: "scheduled", date: undefined, start: undefined, techId: undefined }),
+          ],
+        }),
+        actVisit: visit({ id: "v1", status: "onsite" }),
+      }),
+      handlers(),
+    );
+
+    expect(foot.primary.label).toBe("Finish visit →");
   });
 });

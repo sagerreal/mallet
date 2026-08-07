@@ -31,6 +31,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import {
   useActiveModal,
   usePushModal,
@@ -101,6 +102,7 @@ export function TechJobModalContent() {
   // identity across renders; selecting them here avoids re-subscribing the
   // parent when only the job object changes).
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
+  const addFollowUpVisit = useAppStore((s) => s.addFollowUpVisit);
   const updateJob = useAppStore((s) => s.updateJob);
   const recordPayment = useAppStore((s) => s.recordPayment);
   // Money in the tech view is gated by this permission toggle (a scalar — safe
@@ -140,6 +142,10 @@ export function TechJobModalContent() {
   // The tech only sees PLACED visits — never "Invalid Date" rows in the field.
   const placed = (job?.visits ?? []).filter(vPlaced);
   const curVisit = currentVisit(placed);
+  // Return trips booked from the field: still to run, no slot yet. Shown rather than filtered out
+  // with the other unplaced rows — this technician created them, and a booking that vanished off
+  // the sheet reads as a tap that did nothing.
+  const awaitingSlot = (job?.visits ?? []).filter((v) => !vPlaced(v) && v.status !== STORE_VISIT_STATUS.DONE);
   // Guarded, null-safe re-derivation of isUnpricedEstimate for use BEFORE the early return
   // below (hooks must run unconditionally) — the fee-fetch effect needs to know whether a
   // scoping visit's handoff will actually need the org's fee. `scoping` below (after the
@@ -297,6 +303,19 @@ export function TechJobModalContent() {
    * step nor the finish — the server refuses both, so a live-looking button would just error.
    */
   const actVisit = !done ? (myVisit ?? (isOffice ? curVisit : undefined)) : undefined;
+
+  /**
+   * Booking a return trip. Job-level, matching the server's gate (assertOnJobIfTech) — the person
+   * who walked the site books the return, whichever visit carried them there.
+   *
+   * Not offered on a finished job: the server refuses it (a closed job takes a Reopen, not a new
+   * visit), and a control that always errors is worse than no control.
+   */
+  const canBookFollowUp = !done && (isOffice || assignedToMe);
+  const bookFollowUp = useCallback(
+    (reason: string) => addFollowUpVisit(job!.id, reason),
+    [addFollowUpVisit, job],
+  );
 
   // The foot — sheet grammar: ONE loud primary, and a quiet Finish under it whenever the primary
   // is something else. The branch is a pure view model; see tech-job-foot.ts for the four rules.
@@ -476,10 +495,12 @@ export function TechJobModalContent() {
           contact row for that reason; the work order is reference material beneath it. */}
       <VisitsSec
         placed={placed}
+        awaiting={awaitingSlot}
         curVisit={curVisit}
         done={done}
         isOffice={isOffice}
         onStatus={onVisitStatus}
+        onAddFollowUp={canBookFollowUp ? bookFollowUp : undefined}
       />
 
       {/* 5a. Work order — ONE gate: is there anything to show?

@@ -108,6 +108,42 @@ suite("jobs scoped views", () => {
     await admin`
       insert into job_lines (org_id, job_id, description, quantity, rate_cents, cost_cents, position)
       values (${orgId}, ${signed!.id}, 'Water heater swap', 1, 90000, 0, 0)`;
+
+    // THE FOLLOW-UP SHAPE. First trip done, part on order, second visit booked from the field
+    // with no date and nobody on it — exactly what field.addFollowUpVisit writes. The job is
+    // still open (the visit cascade only completes a job when every active visit is complete),
+    // so this row is outstanding work that has to reach somebody's screen.
+    const followUp = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents)
+      values (${orgId}, ${leadId}, 'V-FOLLOWUP', 'in_progress', 50000) returning id`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position)
+      values (${orgId}, ${followUp[0]!.id}, '2026-08-04', ${crewUserId}, 120, 'complete', 1)`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position, notes)
+      values (${orgId}, ${followUp[0]!.id}, null, null, 60, 'pending', 2, 'Waiting on the 40-gal tank')`;
+  });
+
+  /**
+   * A job whose only PLACED visit is already finished still needs a slot.
+   *
+   * `needsSlot` asked "is any visit placed", which a completed first trip answers yes to — so the
+   * follow-up fell through to `week` (its finished visit is dated in the past, and week includes
+   * overdue) and read as work going out this week. Letting a technician book a return trip makes
+   * this the normal shape rather than a corner, so the bands have to read OUTSTANDING placement:
+   * placed AND not yet complete.
+   */
+  it("a finished first visit plus an unplaced follow-up needs a slot, not a week band", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+
+    const slot = await caller.v1.jobs.list({ view: "needsSlot", today: TODAY, limit: 50 });
+    expect(slot.items.map((j) => j.num)).toContain("V-FOLLOWUP");
+
+    // And only once — landing in two bands breaks the mutual exclusivity the counts depend on.
+    for (const view of ["today", "week", "upcoming"] as const) {
+      const page = await caller.v1.jobs.list({ view, today: TODAY, limit: 50 });
+      expect(page.items.map((j) => j.num)).not.toContain("V-FOLLOWUP");
+    }
   });
 
   afterAll(async () => {
@@ -124,7 +160,8 @@ suite("jobs scoped views", () => {
   it("counts each view correctly", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const { counts: c } = await caller.v1.jobs.viewCounts({ today: TODAY });
-    expect(c.needsSlot).toBe(2);
+    // 2 never scheduled + V-FOLLOWUP, whose only dated visit is already finished.
+    expect(c.needsSlot).toBe(3);
     expect(c.today).toBe(3);
     expect(c.week).toBe(3);        // 2 within 7 days + 1 overdue
     expect(c.upcoming).toBe(1);
@@ -207,7 +244,7 @@ suite("jobs scoped views", () => {
   it("needsSlot means no date placed, not 'no visit row'", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const page = await caller.v1.jobs.list({ view: "needsSlot", today: TODAY, limit: 50 });
-    expect(page.items.map((j) => j.num).sort()).toEqual(["V-SLOT1", "V-SLOT2"]);
+    expect(page.items.map((j) => j.num).sort()).toEqual(["V-FOLLOWUP", "V-SLOT1", "V-SLOT2"]);
   });
 
   it("separates finished work by whether it was billed", async () => {
