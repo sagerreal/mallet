@@ -424,6 +424,8 @@
   .frs-sub{color:var(--ink-2);font-size:var(--type-md);margin:0}
   .frs-paths{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4);width:100%;max-width:560px}
   .frs-paths[data-count="1"]{grid-template-columns:minmax(0,360px);justify-content:center}
+  /* three ways in (the work board's setup brief) sit as one row of three, not two-and-an-orphan */
+  .frs-paths[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr));max-width:840px}
   .frs-path{display:flex;flex-direction:column;gap:var(--space-2);text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-6) var(--space-5);box-shadow:var(--shadow-sm)}
   .frs-path-primary{border-color:var(--ink);border-width:1.6px}
   .frs-path-title{font-size:var(--type-md);font-weight:800;margin:0}
@@ -807,6 +809,19 @@
   /* board skeleton bars — the card face's two lines, at the width they resolve to. */
   .kcard .sk-nm{width:56%;height:14px;margin-bottom:var(--space-2)}
   .kcard .sk-job{width:78%;height:11px}
+
+  /* ---- first-run EXAMPLE cards ----
+     A brand-new shop's four columns are empty, so each one is DRAWN with a single example card.
+     Dashed + dimmed is the whole message: this is the shape of the thing, not the thing. The card
+     is aria-hidden and handler-free in the markup, so the look must not offer an affordance the
+     markup won't honour — the pointer, the hover lift and the press tint are all taken back here
+     (.kcard's own :hover/:active are unqualified, and .kcard:active lands later in this file, so
+     each override is stated at the specificity that beats it rather than relying on order). */
+  .kcard.ghosted{background:transparent;border-style:dashed;border-color:var(--manila-line);opacity:.6;cursor:default}
+  .kcard.ghosted:hover{border-color:var(--manila-line);box-shadow:none}
+  .kcard.ghosted:active{background:transparent;transform:none}
+  /* the EXAMPLE tag reuses the board's caption look; it heads the card, so it drops the leading pad */
+  .kcard.ghosted .kgrp{padding:0 0 var(--space-1)}
 
   /* ---- Jobs page: THE LEDGER SHEET — one white sheet on the cream desk ----
      Scoped warm palette (jobs-only, no global blast radius). Figure/ground from

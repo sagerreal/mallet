@@ -11,7 +11,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { WorkBoard, WorkBoardSkeleton, boardGroups } from "./work-board";
 import { UNDO_WINDOW_MS } from "./use-board-sends";
-import type { BoardColumn, BoardItem, WorkBoardData } from "./types";
+import { GHOST_CARDS } from "./ghosts";
+import type { BoardColumn, BoardColumnId, BoardItem, WorkBoardData } from "./types";
 import type { OkItem } from "@/features/home/derive";
 import type { Estimate, Lead } from "@/lib/store/types";
 
@@ -79,6 +80,19 @@ const fixtureBoard: WorkBoardData = {
     }),
   ],
   needsYou: { count: 2, valueDollars: 3290, textsReady: 0 },
+  isFetched: true,
+  isError: false,
+};
+
+/** A brand-new shop: every source read, nothing open, nothing wrong. */
+const emptyBoard: WorkBoardData = {
+  columns: [
+    column({ id: "requests", title: "New requests" }),
+    column({ id: "quoting", title: "Estimates & quotes" }),
+    column({ id: "jobs", title: "Jobs" }),
+    column({ id: "billing", title: "Billing" }),
+  ],
+  needsYou: { count: 0, valueDollars: 0, textsReady: 0 },
   isFetched: true,
   isError: false,
 };
@@ -165,9 +179,81 @@ describe("WorkBoard", () => {
     expect(onOpen).toHaveBeenCalledWith(expect.objectContaining({ key: "bj-j1" }));
   });
 
-  it("defers the first-run board to the setup brief that owns it", () => {
+});
+
+/**
+ * THE FIRST-RUN BOARD. A brand-new shop's four columns are empty, and four empty columns teach
+ * nothing — worse, they read as a board that failed to load. So each column shows ONE dimmed,
+ * dashed EXAMPLE card: the shape the work will take, drawn rather than seeded.
+ *
+ * These are a DRAWING, not records, and every assertion below defends that distinction. A ghost
+ * that carried a dollar figure would put an invented number on a shop's first screen; a ghost the
+ * screen reader announced, or that a click could open, would be a record that doesn't exist.
+ */
+describe("WorkBoard — the first-run board", () => {
+  it("renders one EXAMPLE ghost per column and no live cards", () => {
+    const { container } = render(<WorkBoard data={emptyBoard} firstRun onOpen={vi.fn()} ctx={{}} />);
+
+    expect(screen.getAllByText("Example")).toHaveLength(4);
+    expect(container.querySelectorAll(".kcard.ghosted")).toHaveLength(4);
+    // Nothing live: no un-ghosted card, and nothing to press anywhere on the board.
+    expect(container.querySelectorAll(".kcard:not(.ghosted)")).toHaveLength(0);
+    expect(container.querySelectorAll("button")).toHaveLength(0);
+    expect(screen.queryByRole("button", { name: /send/i })).toBeNull();
+  });
+
+  it("ghosts never show dollars", () => {
+    const { container } = render(<WorkBoard data={emptyBoard} firstRun onOpen={vi.fn()} ctx={{}} />);
+    expect(screen.queryByText(/\$/)).toBeNull();
+    expect(container.textContent).not.toContain("$");
+  });
+
+  it("draws the four columns the live board uses, each stated at 0", () => {
+    const { container } = render(<WorkBoard data={emptyBoard} firstRun onOpen={vi.fn()} ctx={{}} />);
+
+    expect(screen.getAllByRole("region", { name: /column/i })).toHaveLength(4);
+    expect(Array.from(container.querySelectorAll(".col-head .sum")).map((el) => el.textContent))
+      .toEqual(["0", "0", "0", "0"]);
+  });
+
+  it("teaches the shape with the mockup's own four examples", () => {
+    render(<WorkBoard data={emptyBoard} firstRun onOpen={vi.fn()} ctx={{}} />);
+
+    const examples: readonly (readonly [string, string])[] = [
+      ["Dana Ruiz", "Water heater leaking"],
+      ["Marcus Lee", "Primary bath remodel"],
+      ["Kim Patel", "Main drain cleaning"],
+      ["Alex Moro", "Kitchen faucet repair"],
+    ];
+    for (const [name, service] of examples) {
+      expect(screen.getByText(name)).toBeTruthy();
+      expect(screen.getByText(service)).toBeTruthy();
+    }
+  });
+
+  it("keeps every ghost out of the accessibility tree and out of reach", () => {
+    const { container } = render(<WorkBoard data={emptyBoard} firstRun onOpen={vi.fn()} ctx={{}} />);
+
+    const ghosts = Array.from(container.querySelectorAll(".kcard.ghosted"));
+    expect(ghosts).toHaveLength(4);
+    for (const ghost of ghosts) {
+      expect(ghost.getAttribute("aria-hidden")).toBe("true");
+      // Inert by construction: nothing focusable, nothing to click.
+      expect(ghost.querySelector("button, a, [tabindex], [role=button]")).toBeNull();
+    }
+    // …and the names are drawings, not records the keyboard can open.
+    expect(screen.queryByRole("button", { name: "Dana Ruiz" })).toBeNull();
+  });
+
+  it("shows the drawing and never the data, even if handed rows", () => {
+    // Defensive: `firstRun` is the caller's verdict, but the first-run board renders ghosts only.
+    // A stray live card here would leak a real customer's money onto the teaching screen.
     const { container } = render(<WorkBoard data={fixtureBoard} firstRun onOpen={vi.fn()} ctx={{}} />);
-    expect(container.querySelector(".board")).toBeNull();
+
+    expect(container.querySelectorAll(".kcard.ghosted")).toHaveLength(4);
+    expect(container.querySelectorAll(".kcard:not(.ghosted)")).toHaveLength(0);
+    expect(screen.queryByText("Maria Ortiz")).toBeNull();
+    expect(container.textContent).not.toContain("$");
   });
 });
 
@@ -295,6 +381,16 @@ describe("boardGroups", () => {
 
   it("has nothing to say about an empty column", () => {
     expect(boardGroups(column({ id: "requests", title: "New requests" }))).toEqual([]);
+  });
+});
+
+describe("GHOST_CARDS", () => {
+  it("covers all four columns and carries no money at the source", () => {
+    const ids: BoardColumnId[] = ["requests", "quoting", "jobs", "billing"];
+    expect(Object.keys(GHOST_CARDS).sort()).toEqual([...ids].sort());
+    // The no-dollars rule is enforced in the fixture as well as the render: a ghost with a price
+    // in its copy would sail past a CSS-level guard.
+    expect(JSON.stringify(GHOST_CARDS)).not.toContain("$");
   });
 });
 

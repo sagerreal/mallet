@@ -11,12 +11,26 @@ interface Store {
 }
 let storeState: Store;
 
-/** What useWorkBoard reports — the three states the Today pane branches on. */
-let boardState: { needsYou: { count: number; valueDollars: number; textsReady: number }; isFetched: boolean; isError: boolean };
+/** What useWorkBoard reports — the states the Today pane branches on, plus the per-column counts
+ *  the first-run verdict is summed from. */
+let boardState: {
+  columns: { id: string; count: number }[];
+  needsYou: { count: number; valueDollars: number; textsReady: number };
+  isFetched: boolean;
+  isError: boolean;
+};
+
+/** Four columns with `n` open items between them — the only board fact first-run reads. */
+const columnsHolding = (n: number) => [
+  { id: "requests", count: n }, { id: "quoting", count: 0 },
+  { id: "jobs", count: 0 }, { id: "billing", count: 0 },
+];
 
 const openModal = vi.fn();
 /** The pane's own card→modal mapping, captured off the board it hands it to. */
 let onOpen: (item: { kind: string; refId: string }) => void;
+/** Whether the pane told the board it is a brand-new shop. */
+let boardFirstRun: boolean | undefined;
 /** What the pane tells the hero — `loading` above all, which must never disagree with the board. */
 let handoff: { queueCount: number; queueValue: number; textsReady?: number; loading?: boolean };
 
@@ -45,8 +59,9 @@ vi.mock("@/features/board/use-work-board", () => ({
   useWorkBoard: () => boardState,
 }));
 vi.mock("@/features/board/work-board", () => ({
-  WorkBoard: (props: { onOpen: typeof onOpen }) => {
+  WorkBoard: (props: { onOpen: typeof onOpen; firstRun: boolean }) => {
     onOpen = props.onOpen;
+    boardFirstRun = props.firstRun;
     return <div data-testid="board" />;
   },
   WorkBoardSkeleton: () => <div data-testid="board-skeleton" />,
@@ -63,7 +78,9 @@ describe("Office page — one tab bar, four panes", () => {
       toggles: { frontDesk: true }, services: [{ id: "s1" }], checklists: [],
       leads: [], estimates: [], jobs: [],
     };
-    boardState = { needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: false };
+    // The default board is a WORKING shop with rows — first-run is the exception, asserted below.
+    boardState = { columns: columnsHolding(3), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: false };
+    boardFirstRun = undefined;
     openModal.mockClear();
     window.history.replaceState(null, "", "/dashboard");
   });
@@ -135,7 +152,7 @@ describe("Office page — one tab bar, four panes", () => {
   // the day." immediately above "Couldn't load your board." — the app contradicting itself, most
   // confidently in the sentence that was wrong.
   it("a SETTLED error keeps the hero loading — no zero-state above the load-failed panel", () => {
-    boardState = { needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: true };
+    boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: true };
     render(<OfficePage />);
     expect(handoff.loading).toBe(true);
     expect(screen.getByTestId("handoff-loading")).toBeTruthy();
@@ -144,8 +161,88 @@ describe("Office page — one tab bar, four panes", () => {
   });
 
   it("a settled, healthy board hands the hero its own figures and stops loading", () => {
-    boardState = { needsYou: { count: 35, valueDollars: 5310, textsReady: 6 }, isFetched: true, isError: false };
+    boardState = { columns: columnsHolding(35), needsYou: { count: 35, valueDollars: 5310, textsReady: 6 }, isFetched: true, isError: false };
     render(<OfficePage />);
     expect(handoff).toMatchObject({ queueCount: 35, queueValue: 5310, textsReady: 6, loading: false });
+  });
+});
+
+/**
+ * THE BRAND-NEW SHOP. A handoff note over an empty board says "Nothing's waiting on you" to
+ * somebody who has never had anything waiting — a true sentence that teaches nothing. So when
+ * every source has been read, none failed, and the four columns hold zero between them, the note
+ * is REPLACED by the setup brief: three ways in, each one wired to something that actually opens.
+ */
+describe("Office Today — the first-run setup brief", () => {
+  beforeEach(() => {
+    storeState = {
+      toggles: { frontDesk: false }, services: [], checklists: [],
+      leads: [], estimates: [], jobs: [],
+    };
+    boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: false };
+    boardFirstRun = undefined;
+    openModal.mockClear();
+    window.history.replaceState(null, "", "/dashboard");
+  });
+
+  it("replaces the handoff note with the brief, and greets the owner by name", () => {
+    render(<OfficePage />);
+    expect(screen.queryByTestId("handoff")).toBeNull();
+    expect(screen.queryByTestId("handoff-loading")).toBeNull();
+    expect(screen.getByRole("heading", { name: "Welcome, Owen." })).toBeTruthy();
+    expect(screen.getByText(/board fills itself as work comes in/i)).toBeTruthy();
+  });
+
+  it("keeps the board — it is the columns, drawn — and tells it that it is first-run", () => {
+    render(<OfficePage />);
+    expect(screen.getByTestId("board")).toBeTruthy();
+    expect(boardFirstRun).toBe(true);
+  });
+
+  it("no dollar figure reaches a shop that has never billed anyone", () => {
+    const { container } = render(<OfficePage />);
+    expect(container.textContent).not.toContain("$");
+  });
+
+  it("Import opens the customer import", () => {
+    render(<OfficePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Import" }));
+    expect(openModal).toHaveBeenCalledWith("import-customers");
+  });
+
+  it("Add job opens the new-job modal", () => {
+    render(<OfficePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Add job" }));
+    expect(openModal).toHaveBeenCalledWith("new-job");
+  });
+
+  it("Set up switches to the Front Desk tab rather than opening a modal", async () => {
+    render(<OfficePage />);
+    fireEvent.click(screen.getByRole("button", { name: "Set up" }));
+    expect(await screen.findByTestId("fd-pane")).toBeTruthy();
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("a shop with ONE open item gets its board, not the brief", () => {
+    boardState = { ...boardState, columns: columnsHolding(1) };
+    render(<OfficePage />);
+    expect(screen.getByTestId("handoff")).toBeTruthy();
+    expect(boardFirstRun).toBe(false);
+    expect(screen.queryByRole("heading", { name: /^Welcome,/ })).toBeNull();
+  });
+
+  it("a board still loading shows the skeleton, never a flash of the brief", () => {
+    boardState = { ...boardState, isFetched: false };
+    render(<OfficePage />);
+    expect(screen.getByTestId("board-skeleton")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: /^Welcome,/ })).toBeNull();
+  });
+
+  it("a board that FAILED shows the failure — an empty read is not the same as no work", () => {
+    boardState = { ...boardState, isError: true };
+    render(<OfficePage />);
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByTestId("board")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^Welcome,/ })).toBeNull();
   });
 });

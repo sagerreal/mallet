@@ -16,9 +16,11 @@
 
 import { Fragment } from "react";
 import { fmt$ } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
 import { useSmsGate, type SmsGate } from "@/features/a2p/use-sms-ready";
 import type { DraftContext } from "@/features/home/drafts";
-import { BoardCard } from "./board-card";
+import { BADGE_TONE, BoardCard } from "./board-card";
+import { GHOST_CARDS, GHOST_TAG } from "./ghosts";
 import { cardSendOf, useBoardSends, type BoardSends } from "./use-board-sends";
 import type { BoardColumn, BoardColumnId, BoardItem, WorkBoardData } from "./types";
 
@@ -125,29 +127,76 @@ function BoardColumnView({
   );
 }
 
-export function WorkBoard({
+/**
+ * ONE DRAWN CARD. Every property that keeps this a drawing rather than a record is in this one
+ * element and none of them is decorative:
+ *
+ * - `aria-hidden` — a screen reader that read these out would be reading out four customers who do
+ *   not exist. The column heading and its 0 carry the whole meaning without them.
+ * - no button, no link, no tabindex, no onClick — nothing to open, and nothing the keyboard can
+ *   land on. Inertness lives in the MARKUP, not in a disabled handler; `.ghosted` then removes the
+ *   pointer and hover so the look cannot promise what the markup won't do.
+ * - no money — see ghosts.ts.
+ */
+function GhostCardView({ column }: { column: BoardColumnId }) {
+  const ghost = GHOST_CARDS[column];
+  return (
+    <div className="kcard ghosted" aria-hidden="true">
+      <div className="kgrp">{GHOST_TAG}</div>
+      <div className="nm">
+        <span className="cname">{ghost.name}</span>
+      </div>
+      <div className="kjob">{ghost.service}</div>
+      <div className="ktrace kmeta">
+        <Badge tone={BADGE_TONE[ghost.tone]}>{ghost.badge}</Badge>
+        <span className="fig">{ghost.state}</span>
+      </div>
+    </div>
+  );
+}
+
+/** A first-run column: its real title, a hard 0, and the one card that shows what lands here. */
+function GhostColumnView({ column }: { column: BoardColumn }) {
+  return (
+    <section className="col" aria-label={`${column.title} column`}>
+      <div className="col-head">
+        <span>{column.title}</span>
+        {/* A literal 0, not `headFigure` — this branch renders no real work, so it must not state
+            a figure it has no card to back, and it can never print a price. */}
+        <span className="sum fig">0</span>
+      </div>
+      <GhostCardView column={column.id} />
+    </section>
+  );
+}
+
+/**
+ * The board a shop meets on day one: the same four columns, drawn. The live board's data is not
+ * consulted beyond the column titles — no items, no counts, no money — so nothing real can leak
+ * onto the teaching screen even if the caller's verdict and the data disagree.
+ */
+function FirstRunBoard({ columns }: { columns: WorkBoardData["columns"] }) {
+  return (
+    <div className="board">
+      {columns.map((column) => (
+        <GhostColumnView key={column.id} column={column} />
+      ))}
+    </div>
+  );
+}
+
+/** The board with the shop's real work on it. Holds the send ledger and the carrier gate. */
+function LiveBoard({
   data,
-  firstRun,
   onOpen,
   ctx,
 }: {
   data: WorkBoardData;
-  /** A shop with nothing in it yet gets the setup brief instead. */
-  firstRun: boolean;
   onOpen(item: BoardItem): void;
-  /**
-   * The org/owner names the on-card drafts sign off with. REQUIRED, not defaulted: the fallback
-   * signs every reminder "us here", which is a worse text than a compile error is a bug. The
-   * dashboard already computes both (app/(office)/dashboard/page.tsx).
-   */
   ctx: DraftContext;
 }) {
   const gate = useSmsGate();
   const sends = useBoardSends();
-
-  // Task 9 owns the first-run board (the setup brief + ghost cards). Rendering an empty
-  // four-column skeleton in the meantime would teach a brand-new shop that its board is broken.
-  if (firstRun) return null;
 
   return (
     <div className="board">
@@ -163,6 +212,31 @@ export function WorkBoard({
       ))}
     </div>
   );
+}
+
+export function WorkBoard({
+  data,
+  firstRun,
+  onOpen,
+  ctx,
+}: {
+  data: WorkBoardData;
+  /** A shop with nothing open yet gets the four columns DRAWN — see FirstRunBoard. The setup
+   *  brief that goes above them belongs to the page, which owns the modals and the tabs. */
+  firstRun: boolean;
+  onOpen(item: BoardItem): void;
+  /**
+   * The org/owner names the on-card drafts sign off with. REQUIRED, not defaulted: the fallback
+   * signs every reminder "us here", which is a worse text than a compile error is a bug. The
+   * dashboard already computes both (app/(office)/dashboard/page.tsx).
+   */
+  ctx: DraftContext;
+}) {
+  // Two components rather than one branch inside the board: the first-run path then holds no send
+  // ledger and no carrier gate at all, so "a ghost cannot send a text" is true by construction
+  // rather than by review.
+  if (firstRun) return <FirstRunBoard columns={data.columns} />;
+  return <LiveBoard data={data} onOpen={onOpen} ctx={ctx} />;
 }
 
 /** The board's shape while the first read is in flight — one skeleton, one reveal. */
