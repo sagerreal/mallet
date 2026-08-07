@@ -47,6 +47,12 @@ const TIME_STYLE: CSSProperties = {
 interface VisitStepperProps {
   visit: Visit;
   /**
+   * The list's accessible name. A two-visit sheet renders two of these, and both announcing
+   * "Visit progress" leaves a screen-reader user with the same "which one is this?" the visible
+   * caption fixes for everyone else. Defaults to the unnumbered name for a lone stepper.
+   */
+  label?: string;
+  /**
    * Move the visit forward to `status`. Omitted when this viewer may not move this visit — a
    * technician looking at a colleague's stop, or a finished visit, where the only way back is the
    * office's ↩ Reopen. Without it every node is inert, which is what this component always was.
@@ -54,11 +60,11 @@ interface VisitStepperProps {
   onJump?: (status: string) => void;
 }
 
-export function VisitStepper({ visit, onJump }: VisitStepperProps) {
+export function VisitStepper({ visit, label, onJump }: VisitStepperProps) {
   const steps = visitSteps(visit);
 
   return (
-    <ol className="vstep" aria-label="Visit progress">
+    <ol className="vstep" aria-label={label ?? "Visit progress"}>
       {steps.map((s) => {
         const jumpTo = onJump && s.jumpTo ? s.jumpTo : null;
         const body = (

@@ -1889,6 +1889,16 @@
   /* The "when" line under the stepper — the one big figure in this section. */
   .vwhen b{display:block;font-size:var(--type-lg);font-weight:800;letter-spacing:-.01em}
   .vwhen span{display:block;font-size:var(--type-sm);color:var(--ink-2)}
+  /* The visits list. Rows used to end in --space-2xs (2px), so on a two-visit job a stepper, a
+     date and a ↩ Reopen abutted the NEXT visit's stepper — one continuous block in which the
+     first visit's control read as the second visit's. Separation is the CONTAINER's, on adjacent
+     siblings, so a placed visit, an awaiting-slot row and the follow-up ask all separate from one
+     another without any row knowing what follows it. A hairline and real space: the same register
+     every other repeated row in this app separates on (.nrow, .trow), not a card and not a box. */
+  .vlist > * + *{margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--line-2)}
+  /* WHICH stop this is — "Visit 1 of 2". One tier quieter than the section head above it and not
+     shouting in caps at it: the row's record is the content, this is only its index. */
+  .vseq{font-size:var(--type-sm);font-weight:700;color:var(--ink-3);margin-bottom:var(--space-2)}
   /* the job address IS the navigate action — a prominent tappable row, never a faint grey line */
   .jaddr{display:flex;align-items:center;gap:var(--space-3);width:100%;text-align:left;border:1.5px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);background:var(--card);color:var(--ink);font-family:inherit;font-size:var(--type-md);font-weight:600;cursor:pointer;margin:var(--space-3) 0 var(--space-1);transition:border-color .12s,background .12s}
   .jaddr:hover{border-color:var(--ink-3);background:var(--green-50)}
