@@ -10,6 +10,10 @@ const VARIANT = {
   primary: "primary",
   quiet: "ghost",
   danger: "danger",
+  // The amber "one click and it's real" action — an approved outbound text on a card. It was
+  // already a prototype variant (.btn.approve) reached by hand-writing the class; naming it here
+  // is what lets the send surfaces compose the primitive instead of hand-rolling a <button>.
+  approve: "approve",
 } as const;
 
 const SIZE = {

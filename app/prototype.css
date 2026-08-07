@@ -792,7 +792,32 @@
   .cardghost{border-radius:var(--radius) 12px 12px 4px;background:var(--paper);padding:var(--space-2) var(--space-3);font-size:var(--type-sm);line-height:1.5;color:color-mix(in srgb,var(--ink) 66%,var(--paper));margin-top:var(--space-2)}
   .cardghost-edit{width:100%;box-sizing:border-box;margin-top:var(--space-2);border:1.5px solid var(--accent);border-radius:var(--radius) 12px 12px 4px;padding:var(--space-2) var(--space-3);font-family:inherit;font-size:var(--type-sm);line-height:1.5;background:var(--card);color:var(--ink)}
   .cardacts{display:flex;gap:var(--space-2);align-items:center;margin-top:var(--space-2)}
+  /* There is deliberately no global .btn:disabled rule (it would move every visual baseline), so
+     a blocked Send is scoped here — invisible-disabled is the bug this prevents. */
+  .cardacts .btn:disabled{opacity:.55;cursor:not-allowed}
+  /* .btn:hover would repaint a disabled button as if it were live — restate the resting look. */
+  .cardacts .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none;filter:none}
+  .cardacts .btn.approve:disabled:hover{background:var(--amber);border-color:var(--amber)}
   .cardsent{font-size:var(--type-sm);color:var(--ink-2);margin-top:var(--space-2)}
+
+  /* ---- the work board: group headers, the card meta line, the page foot ----
+     .kgrp is the board's small mono caption. It heads each group of cards inside a column
+     ("NEEDS ACTION 3" / "AWAITING PAYMENT 2") and, on a card, captions the drafted text — one
+     caption look, two jobs, rather than a second class that reads the same. */
+  .kgrp{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-2xs) var(--space-2xs);
+        font-family:var(--font-mono);font-weight:700;font-size:var(--type-xs);line-height:1.3;
+        letter-spacing:.075em;text-transform:uppercase;color:var(--ink-3)}
+  /* Amber is earned: it means the shop owes the next move. */
+  .kgrp.on{color:var(--amber)}
+  .kgrp .kdot{width:6px;height:6px;flex:0 0 auto;border-radius:50%;background:currentcolor}
+  .kgrp .kcount{margin-left:auto}
+  /* state badge + age on one line — the card's "where it stands, and for how long". */
+  .kcard .kmeta{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  /* "Showing first 100" — the column is a capped page and says so. */
+  .kfoot{padding:var(--space-2) var(--space-2xs) 0;font-size:var(--type-xs);color:var(--ink-3)}
+  /* board skeleton bars — the card face's two lines, at the width they resolve to. */
+  .kcard .sk-nm{width:56%;height:14px;margin-bottom:var(--space-2)}
+  .kcard .sk-job{width:78%;height:11px}
   .qfootbar{display:flex;justify-content:flex-end;gap:var(--space-4);padding:var(--space-3) var(--space-2) 0}
   .qdelta{font-size:var(--type-base);color:var(--manila-ink);opacity:.62;margin-top:var(--space-1)}
   /* the dot: size = dollars; amber is earned — breath = live, halo = needs-you */
