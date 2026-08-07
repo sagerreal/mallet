@@ -187,6 +187,78 @@ describe("QuoteTab — the customer-choices row", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Adding a SECOND line. Pricing a doorstep repair is mostly a run of one-off
+// items, and every one of them meant going back out to the "Custom item" card in
+// the kind picker. The list now carries its own append control at its foot; the
+// picker keeps the other three kinds.
+// ---------------------------------------------------------------------------
+
+describe("QuoteTab — + Add another line", () => {
+  const ADD_LINE = { name: "+ Add another line" };
+  const oneLine = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
+
+  it("appends an empty line without a trip back through the kind picker", () => {
+    const job = oneLine();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    expect(screen.getAllByLabelText("Price")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", ADD_LINE));
+
+    expect(screen.getAllByLabelText("Price")).toHaveLength(2);
+    // The picker was never involved — its tiles are not on screen.
+    expect(screen.queryByText("Custom item")).toBeNull();
+  });
+
+  it("the appended line is a real editable line that reaches the total", () => {
+    const job = oneLine();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    fireEvent.click(screen.getByRole("button", ADD_LINE));
+
+    const prices = screen.getAllByLabelText("Price");
+    fireEvent.change(prices[1]!, { target: { value: "50" } });
+
+    expect(screen.getByText("$235")).toBeTruthy();
+  });
+
+  it("adds one line per tap — a third line is one tap away, not four", () => {
+    const job = oneLine();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    fireEvent.click(screen.getByRole("button", ADD_LINE));
+    fireEvent.click(screen.getByRole("button", ADD_LINE));
+    expect(screen.getAllByLabelText("Price")).toHaveLength(3);
+  });
+
+  it("carries a doorstep-sized tap target", () => {
+    const job = oneLine();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    expect((screen.getByRole("button", ADD_LINE) as HTMLButtonElement).style.minHeight).toBe("44px");
+  });
+
+  it("is absent while there is no list to append to — the picker owns the first line", () => {
+    const job = makeJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    expect(screen.queryByRole("button", ADD_LINE)).toBeNull();
+    expect(screen.getByText("Custom item")).toBeTruthy();
+  });
+
+  it("keeps the kind picker for the other three kinds", () => {
+    const job = oneLine();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add a line" }));
+    expect(screen.getByText("Pricebook")).toBeTruthy();
+    expect(screen.getByText("Custom item")).toBeTruthy();
+    expect(screen.getByText("Labor")).toBeTruthy();
+    expect(screen.getByText("Custom labor")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Where a signed quote lands. The tab used to hand the builder `close`, so the
 // customer's signature dismissed the technician out of the job — and in the flow
 // this exists for (walk through, price at the door, sign, then DO the work) that
