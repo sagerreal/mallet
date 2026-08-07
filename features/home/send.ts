@@ -8,6 +8,7 @@
 
 import { useAppStore } from "@/lib/store/app-store";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { localToday } from "@/features/jobs/use-jobs-query";
 import type { OkItem } from "./derive";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -17,16 +18,26 @@ const KEY_MIN = 8;
 const KEY_MAX = 64;
 
 /**
- * The dedupe key for an approved reminder: THE RECORD PLUS THE FOLLOW-UP IT IS.
+ * The dedupe key for an approved reminder: THE RECORD PLUS THE DAY.
  *
- * Two clicks on the same card produce the same key, and `messaging.send` collapses them into one
- * text. A reminder sent AFTER the record advanced a stage is a different follow-up and gets a
- * different key, so it goes out. (A failed claim is reclaimable server-side, so retrying the same
- * key after an error re-sends rather than silently succeeding — see modules/messaging.)
+ * WHY NOT THE FOLLOW-UP STAGE. The obvious key is `<record>-fu<stage>`, and it is wrong here: a
+ * queue item's estimate is a query-built STUB (`use-ok-queue.ts` casts `{id, num, cachedTotal,
+ * lines}` to an Estimate) and `fu` is not a persisted column at all — so the stage read `0` on
+ * every item forever. Every reminder about the same quote would have carried the SAME key for the
+ * rest of that quote's life, and the second one would have deduped against the first: a "✓ sent"
+ * over a text that was never sent. Silent, and exactly the failure the ledger exists to prevent.
+ *
+ * The day is the salt because the day is what actually distinguishes two honest reminders. What
+ * this buys, in the three cases that matter:
+ *   - double-click, same day     → same key → the server returns the prior row. One text.
+ *   - retry after a FAILED send  → same key → a failed claim is reclaimable, so it really re-sends.
+ *   - a nudge on a later day     → new key  → it goes out.
+ *
+ * The shop's OWN day (`localToday`, the browser's timezone) — never `toISOString()`, which is UTC
+ * and would roll the key over mid-evening for a west-coast shop.
  */
 export function okSendKey(item: OkItem): string {
-  const stage = item.estimate?.fu.stage ?? item.invoice?.fu?.stage ?? 0;
-  return `${item.key}-fu${stage + 1}`;
+  return `${item.key}-d${localToday().replaceAll("-", "")}`;
 }
 
 /**
@@ -72,6 +83,13 @@ export function clockNow(): string {
  * kind-specific record advance (fu bump / unread clear / stage move).
  * Does NOT touch dismissal: callers own when the item leaves their surface.
  * Returns the exact inverse.
+ *
+ * THE FOLLOW-UP BUMP IS CONDITIONAL, and that is not defensive padding: a queue item's estimate
+ * is a stub built from `quoting.followUps` and carries no `fu` at all, so `item.estimate.fu.stage`
+ * threw a TypeError on every real quote reminder — before the text was ever dispatched. Where
+ * there is no follow-up state there is nothing to advance and nothing to undo; the NOTE is the
+ * commit, and it still happens. An invented `{on:true,stage:0}` "previous" value would be worse
+ * than skipping: undo would write state the record never had.
  */
 export function commitOkSend(item: OkItem, text: string): () => void {
   const s = useAppStore.getState();
@@ -83,13 +101,13 @@ export function commitOkSend(item: OkItem, text: string): () => void {
   });
 
   let revertKind: () => void = () => {};
-  if (item.kind === "quote-viewed" && item.estimate) {
+  if (item.kind === "quote-viewed" && item.estimate?.fu) {
     const prevFu = item.estimate.fu;
     const estId = item.estimate.id;
     s.updateEstimate(estId, { fu: { on: true, stage: prevFu.stage + 1 } });
     revertKind = () => useAppStore.getState().updateEstimate(estId, { fu: prevFu });
-  } else if (item.kind === "invoice-overdue" && item.invoice) {
-    const prevFu = item.invoice.fu ?? { on: true, stage: 0 };
+  } else if (item.kind === "invoice-overdue" && item.invoice?.fu) {
+    const prevFu = item.invoice.fu;
     const invId = item.invoice.id;
     s.updateInvoice(invId, { fu: { on: true, stage: prevFu.stage + 1 } });
     revertKind = () => useAppStore.getState().updateInvoice(invId, { fu: prevFu });

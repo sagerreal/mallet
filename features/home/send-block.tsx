@@ -25,6 +25,51 @@ import type { OkItem } from "./derive";
 
 const UNDO_MS = 30_000;
 
+/**
+ * "8:47pm ✓ sent · Undo · 26s" — the witnessed line a sent text leaves behind.
+ *
+ * Shared, because two surfaces own this state at different LEVELS: the pipeline card keeps it
+ * itself, and the work board keeps it above the card (the card's draft vanishes the moment the
+ * item leaves the queue, taking any local state with it). Same line either way.
+ */
+export function SentRow({
+  when,
+  secondsLeft,
+  onUndo,
+}: {
+  when: string;
+  secondsLeft: number;
+  onUndo(): void;
+}) {
+  return (
+    <div className="cardsent fig" onClick={(e) => e.stopPropagation()}>
+      {when} ✓ sent
+      {secondsLeft > 0 && (
+        <>
+          {" · "}
+          <button type="button" className="linklike" onClick={onUndo}>
+            Undo · {secondsLeft}s
+          </button>
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Who owns what happens AFTER the commit.
+ *
+ * Present ⇒ board mode: the caller owns the confirmation row, the undo window and the dismissal
+ * that makes the item leave its queue. SendBlock keeps only the part that must never fork —
+ * commit, dispatch, roll back on failure.
+ */
+export interface SendLedger {
+  /** Committed and in flight. Handed the exact inverse, for the caller's Undo. */
+  onSent(undo: () => void): void;
+  /** It never left. SendBlock has already run the inverse and announced why. */
+  onFailed(): void;
+}
+
 export function SendBlock({
   item,
   fallback,
@@ -32,6 +77,7 @@ export function SendBlock({
   label,
   secondary,
   blockedReason,
+  ledger,
 }: {
   /** OK-queue item to commit through (fu bump etc.), or null for a plain text. */
   item: OkItem | null;
@@ -48,6 +94,8 @@ export function SendBlock({
    * fact to make a limitation less visible.
    */
   blockedReason?: string;
+  /** Set ⇒ the caller owns the sent state and the dismissal. See SendLedger. */
+  ledger?: SendLedger;
 }) {
   const dismissAttention = useAppStore((s) => s.dismissAttention);
   const undismissAttention = useAppStore((s) => s.undismissAttention);
@@ -74,10 +122,30 @@ export function SendBlock({
     reportWriteError("sendText", err);
   }
 
+  /**
+   * BOARD MODE. Nothing is dismissed here: dismissing on click makes the item leave the OK queue
+   * in the same paint, which strips the card's draft, unmounts this component with its local
+   * "✓ sent" state, and jumps the card into another group under the owner's cursor. The caller
+   * holds the ledger above the card and dismisses when the undo window closes.
+   */
+  function sendThroughLedger(owner: SendLedger, queued: OkItem, body: string) {
+    const undoSend = commitOkSend(queued, body);
+    owner.onSent(undoSend);
+    dispatchOkSend(queued.lead.id, body, okSendKey(queued)).catch((err: unknown) => {
+      undoSend();
+      owner.onFailed();
+      reportWriteError("sendText", err);
+    });
+  }
+
   function send(e: React.MouseEvent) {
     e.stopPropagation();
     const body = text.trim();
     if (item) {
+      if (ledger) {
+        sendThroughLedger(ledger, item, body);
+        return;
+      }
       const undoSend = commitOkSend(item, body);
       dismissAttention(item.key);
       const revert = () => {
@@ -85,8 +153,8 @@ export function SendBlock({
         undismissAttention(item.key);
       };
       setSent({ when: clockNow(), undo: revert, expiresAt: Date.now() + UNDO_MS });
-      // REAL dispatch (v1.messaging.send), keyed on the record and the follow-up this send IS —
-      // two clicks are one text, a genuine second nudge is a second one (okSendKey).
+      // REAL dispatch (v1.messaging.send), keyed on the record and the day (okSendKey) — two
+      // clicks are one text, a genuine reminder on a later day is a second one.
       dispatchOkSend(item.lead.id, body, okSendKey(item)).catch((err: unknown) => rollBack(revert, err));
       return;
     }
@@ -105,24 +173,14 @@ export function SendBlock({
 
   if (sent) {
     return (
-      <div className="cardsent fig" onClick={(e) => e.stopPropagation()}>
-        {sent.when} ✓ sent
-        {secs > 0 && (
-          <>
-            {" · "}
-            <button
-              type="button"
-              className="linklike"
-              onClick={() => {
-                sent.undo();
-                setSent(null);
-              }}
-            >
-              Undo · {secs}s
-            </button>
-          </>
-        )}
-      </div>
+      <SentRow
+        when={sent.when}
+        secondsLeft={secs}
+        onUndo={() => {
+          sent.undo();
+          setSent(null);
+        }}
+      />
     );
   }
 

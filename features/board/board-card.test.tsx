@@ -123,6 +123,62 @@ describe("BoardCard — the prepared text", () => {
     expect(send.title).toMatch(/A2P|texting/i);
   });
 
+  it("states the caller's own reason — 'still checking' is not 'not set up'", () => {
+    render(
+      <BoardCard
+        item={reminderItem}
+        smsReady={false}
+        smsBlockedReason="Checking texting setup…"
+        onOpen={vi.fn()}
+      />,
+    );
+    const send = screen.getByRole("button", { name: /^send$/i }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    expect(send.title).toBe("Checking texting setup…");
+  });
+
+  it("shows the board's ✓ line instead of Send while the undo window is open", async () => {
+    const user = userEvent.setup();
+    const onUndo = vi.fn();
+    render(
+      <BoardCard
+        item={reminderItem}
+        smsReady
+        onOpen={vi.fn()}
+        send={{
+          sent: { when: "8:47pm", secondsLeft: 26 },
+          onSent: vi.fn(),
+          onFailed: vi.fn(),
+          onUndo,
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("button", { name: /^send$/i })).toBeNull();
+    expect(screen.getByText(/✓ sent/)).toBeTruthy();
+    await user.click(screen.getByRole("button", { name: /undo · 26s/i }));
+    expect(onUndo).toHaveBeenCalledTimes(1);
+  });
+
+  it("hands the commit's inverse to the board's ledger instead of dismissing itself", async () => {
+    const user = userEvent.setup();
+    const onSent = vi.fn();
+    render(
+      <BoardCard
+        item={reminderItem}
+        smsReady
+        onOpen={vi.fn()}
+        send={{ sent: null, onSent, onFailed: vi.fn(), onUndo: vi.fn() }}
+      />,
+    );
+
+    await user.click(screen.getByRole("button", { name: /^send$/i }));
+    expect(onSent).toHaveBeenCalledTimes(1);
+    expect(onSent.mock.calls[0]?.[0]).toBeTypeOf("function");
+    // The board owns when the item leaves; the card must not pull it out from under itself.
+    expect(spies.dismiss).not.toHaveBeenCalled();
+  });
+
   it("keeps the draft visible when Send is blocked — the words are still the answer", () => {
     render(<BoardCard item={reminderItem} smsReady={false} onOpen={vi.fn()} />);
     expect(screen.getByText(/Hi Maria/)).toBeTruthy();

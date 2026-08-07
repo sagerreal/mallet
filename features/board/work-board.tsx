@@ -16,9 +16,10 @@
 
 import { Fragment } from "react";
 import { fmt$ } from "@/lib/format";
-import { useSmsReady } from "@/features/a2p/use-sms-ready";
+import { useSmsGate, type SmsGate } from "@/features/a2p/use-sms-ready";
 import type { DraftContext } from "@/features/home/drafts";
 import { BoardCard } from "./board-card";
+import { cardSendOf, useBoardSends, type BoardSends } from "./use-board-sends";
 import type { BoardColumn, BoardColumnId, BoardItem, WorkBoardData } from "./types";
 
 /** The three shapes a column's work comes in, in the order an owner should meet them. */
@@ -77,12 +78,14 @@ function headFigure(column: BoardColumn): string {
 
 function BoardColumnView({
   column,
-  smsReady,
+  gate,
+  sends,
   onOpen,
   ctx,
 }: {
   column: BoardColumn;
-  smsReady: boolean;
+  gate: SmsGate;
+  sends: BoardSends;
   onOpen(item: BoardItem): void;
   ctx: DraftContext;
 }) {
@@ -102,7 +105,15 @@ function BoardColumnView({
             <span className="kcount fig">{group.items.length}</span>
           </div>
           {group.items.map((item) => (
-            <BoardCard key={item.key} item={item} smsReady={smsReady} onOpen={onOpen} ctx={ctx} />
+            <BoardCard
+              key={item.key}
+              item={item}
+              smsReady={gate.ready}
+              smsBlockedReason={gate.reason ?? undefined}
+              onOpen={onOpen}
+              ctx={ctx}
+              send={item.ok ? cardSendOf(sends, item.key, item.ok.key) : undefined}
+            />
           ))}
         </Fragment>
       ))}
@@ -118,16 +129,21 @@ export function WorkBoard({
   data,
   firstRun,
   onOpen,
-  ctx = {},
+  ctx,
 }: {
   data: WorkBoardData;
   /** A shop with nothing in it yet gets the setup brief instead. */
   firstRun: boolean;
   onOpen(item: BoardItem): void;
-  /** The org/owner names the on-card drafts sign off with. */
-  ctx?: DraftContext;
+  /**
+   * The org/owner names the on-card drafts sign off with. REQUIRED, not defaulted: the fallback
+   * signs every reminder "us here", which is a worse text than a compile error is a bug. The
+   * dashboard already computes both (app/(office)/dashboard/page.tsx).
+   */
+  ctx: DraftContext;
 }) {
-  const smsReady = useSmsReady();
+  const gate = useSmsGate();
+  const sends = useBoardSends();
 
   // Task 9 owns the first-run board (the setup brief + ghost cards). Rendering an empty
   // four-column skeleton in the meantime would teach a brand-new shop that its board is broken.
@@ -136,7 +152,14 @@ export function WorkBoard({
   return (
     <div className="board">
       {data.columns.map((column) => (
-        <BoardColumnView key={column.id} column={column} smsReady={smsReady} onOpen={onOpen} ctx={ctx} />
+        <BoardColumnView
+          key={column.id}
+          column={column}
+          gate={gate}
+          sends={sends}
+          onOpen={onOpen}
+          ctx={ctx}
+        />
       ))}
     </div>
   );

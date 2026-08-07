@@ -33,8 +33,9 @@ export class DrizzleMessageRepository implements MessageRepository {
   // second text.
   //
   // A FAILED row is RECLAIMABLE: nothing reached the customer, and the board's keys are
-  // deterministic ("<okItemKey>-fu<stage>"), so refusing to reuse one would strand that follow-up
-  // forever. The reclaim reuses the same row (same id) and re-stamps body/to/from, because the
+  // deterministic ("<okItemKey>-d<YYYYMMDD>", the record plus the shop's own day — see
+  // features/home/send.ts okSendKey), so refusing to reuse one would strand that reminder for the
+  // rest of the day. The reclaim reuses the same row (same id) and re-stamps body/to/from, because the
   // office may have fixed the number or reworded the text before retrying. Any other status means
   // a send is in flight or already landed — that is a duplicate, and the caller must not send.
   async claimOutbound(cmd: ClaimOutboundCmd): Promise<{ message: Message; created: boolean }> {

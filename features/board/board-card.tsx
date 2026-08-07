@@ -15,8 +15,9 @@ import { fmt$ } from "@/lib/format";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { firstName } from "@/features/home/derive";
 import { draftFor, type DraftContext } from "@/features/home/drafts";
-import { SendBlock } from "@/features/home/send-block";
+import { SendBlock, SentRow } from "@/features/home/send-block";
 import { SMS_NOT_READY_REASON } from "@/features/a2p/use-sms-ready";
+import type { CardSend } from "./use-board-sends";
 import type { BoardItem, BoardTone } from "./types";
 
 /**
@@ -39,6 +40,8 @@ export function BoardCard({
   smsReady,
   onOpen,
   ctx = {},
+  smsBlockedReason = SMS_NOT_READY_REASON,
+  send,
 }: {
   item: BoardItem;
   /** false ⇒ Send is disabled with its reason. The draft still renders. */
@@ -46,6 +49,14 @@ export function BoardCard({
   onOpen(item: BoardItem): void;
   /** The org/owner names the drafts sign off with — the dashboard already computes them. */
   ctx?: DraftContext;
+  /** Why Send is blocked. "Still checking" and "not registered" are different sentences. */
+  smsBlockedReason?: string;
+  /**
+   * The board's ledger for THIS card. With it the card holds its place after a send and shows the
+   * ✓ line with its Undo, and the item is only dismissed when that window closes. Without it the
+   * send block keeps its own confirmation, as it does on the pipeline board.
+   */
+  send?: CardSend;
 }) {
   const open = () => onOpen(item);
 
@@ -70,17 +81,24 @@ export function BoardCard({
         {item.ageLabel !== "" && <span className="fig">{item.ageLabel}</span>}
       </div>
 
-      {item.ok && (
-        <SendBlock
-          item={item.ok}
-          fallback={{ leadId: item.ok.lead.id, first: firstName(item.ok.lead.name), age: item.ok.lead.age }}
-          initial={draftFor(item.ok, ctx)}
-          label={DRAFT_LABEL}
-          // "Change" opens the RECORD, not an inline editor: on this board the words are a
-          // by-product of the quote or the bill, and changing them usually means changing that.
-          secondary={{ label: "Change", onClick: open }}
-          blockedReason={smsReady ? undefined : SMS_NOT_READY_REASON}
-        />
+      {/* The ✓ line outranks the draft: while the undo window is open this card has already said
+          its piece, and re-offering Send would invite a second text. */}
+      {send?.sent ? (
+        <SentRow when={send.sent.when} secondsLeft={send.sent.secondsLeft} onUndo={send.onUndo} />
+      ) : (
+        item.ok && (
+          <SendBlock
+            item={item.ok}
+            fallback={{ leadId: item.ok.lead.id, first: firstName(item.ok.lead.name), age: item.ok.lead.age }}
+            initial={draftFor(item.ok, ctx)}
+            label={DRAFT_LABEL}
+            // "Change" opens the RECORD, not an inline editor: on this board the words are a
+            // by-product of the quote or the bill, and changing them usually means changing that.
+            secondary={{ label: "Change", onClick: open }}
+            blockedReason={smsReady ? undefined : smsBlockedReason}
+            ledger={send && { onSent: send.onSent, onFailed: send.onFailed }}
+          />
+        )
       )}
     </div>
   );
