@@ -30,11 +30,35 @@ export class DrizzleMessageRepository implements MessageRepository {
 
   // Claim-first: the row is written BEFORE Twilio is called, so the unique index on
   // (org_id, idempotency_key) — not application logic — is what stops a double-click becoming a
-  // second text. ON CONFLICT DO NOTHING returns no row when the key is taken; the follow-up
-  // select then reads back whoever claimed it first (that transaction has committed by the time
-  // this one is unblocked, because the index entry it holds is what we waited on).
+  // second text.
+  //
+  // A FAILED row is RECLAIMABLE: nothing reached the customer, and the board's keys are
+  // deterministic ("<okItemKey>-fu<stage>"), so refusing to reuse one would strand that follow-up
+  // forever. The reclaim reuses the same row (same id) and re-stamps body/to/from, because the
+  // office may have fixed the number or reworded the text before retrying. Any other status means
+  // a send is in flight or already landed — that is a duplicate, and the caller must not send.
   async claimOutbound(cmd: ClaimOutboundCmd): Promise<{ message: Message; created: boolean }> {
-    const inserted = await this.tx
+    const inserted = await this.insertClaim(cmd);
+    if (inserted) return { message: inserted, created: true };
+
+    const existing = await this.findByKey(cmd.idempotencyKey);
+    // Nothing inserted and nothing found means the conflict came from somewhere other than the
+    // idempotency index — surface it rather than pretending a message exists.
+    if (!existing) throw new Error("message claim was rejected and no prior claim exists");
+    if (!existing.isFailed) return { message: existing, created: false };
+
+    const reclaimed = await this.reclaimFailed(existing.props.id, cmd);
+    if (reclaimed) return { message: reclaimed, created: true };
+
+    // Lost the race: a concurrent request reclaimed the same failed row first (the update below
+    // is guarded on status='failed', so exactly one caller can win). That request owns the send.
+    const current = await this.findByKey(cmd.idempotencyKey);
+    if (!current) throw new Error("reclaimed message disappeared mid-claim");
+    return { message: current, created: false };
+  }
+
+  private async insertClaim(cmd: ClaimOutboundCmd): Promise<Message | null> {
+    const rows = await this.tx
       .insert(messages)
       .values({
         id: cmd.id,
@@ -57,39 +81,65 @@ export class DrizzleMessageRepository implements MessageRepository {
         where: sql`${messages.idempotencyKey} is not null`,
       })
       .returning();
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
 
-    const claimed = inserted[0];
-    if (claimed) return { message: toDomain(claimed), created: true };
-
-    const existing = await this.tx
+  private async findByKey(idempotencyKey: string): Promise<Message | null> {
+    // Deliberately NOT filtered on deleted_at: a soft-deleted row still occupies the unique
+    // index, so it must still answer the claim — filtering it out would report "no prior claim"
+    // for a key that cannot be inserted again.
+    const rows = await this.tx
       .select()
       .from(messages)
-      .where(
-        and(
-          eq(messages.orgId, this.orgId),
-          eq(messages.idempotencyKey, cmd.idempotencyKey),
-        ),
-      )
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.idempotencyKey, idempotencyKey)))
       .limit(1);
-    const row = existing[0];
-    // Nothing inserted and nothing found means the conflict came from somewhere other than the
-    // idempotency index — surface it rather than pretending a message exists.
-    if (!row) throw new Error("message claim was rejected and no prior claim exists");
-    return { message: toDomain(row), created: false };
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+  // Guarded on status='failed' so two concurrent reclaims cannot both win: the loser's update
+  // matches 0 rows (its predicate is re-evaluated after the winner commits) and it dedupes.
+  private async reclaimFailed(id: string, cmd: ClaimOutboundCmd): Promise<Message | null> {
+    const rows = await this.tx
+      .update(messages)
+      .set({
+        status: "queued",
+        body: cmd.body,
+        fromNumber: cmd.from,
+        toNumber: cmd.to,
+        // The previous attempt's SID and carrier code describe an attempt that is over. Keeping
+        // them would attach this row to a message it is no longer reporting on.
+        providerSid: null,
+        errorCode: null,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(eq(messages.orgId, this.orgId), eq(messages.id, id), eq(messages.status, "failed")),
+      )
+      .returning();
+    const row = rows[0];
+    return row ? toDomain(row) : null;
   }
 
   async markSent(id: string, providerSid: string | null): Promise<void> {
-    await this.tx
+    const rows = await this.tx
       .update(messages)
       .set({ status: "sent", providerSid, updatedAt: sql`now()` })
-      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)));
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)))
+      .returning({ id: messages.id });
+    // A settle that matched nothing means the ledger and the send have diverged — a text went out
+    // with no row saying so. Fail loudly; a silent no-op here is the exact bug this task removes.
+    if (rows.length === 0) throw new Error(`markSent matched no message row: ${id}`);
   }
 
   async markFailed(id: string, errorCode: string | null): Promise<void> {
-    await this.tx
+    const rows = await this.tx
       .update(messages)
       .set({ status: "failed", errorCode, updatedAt: sql`now()` })
-      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)));
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)))
+      .returning({ id: messages.id });
+    if (rows.length === 0) throw new Error(`markFailed matched no message row: ${id}`);
   }
 
   async recordInbound(input: RecordInboundInput): Promise<Message> {

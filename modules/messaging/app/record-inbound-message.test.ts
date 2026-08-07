@@ -46,7 +46,6 @@ function makeMessage(input: RecordInboundInput): Message {
 function makeRepo(): MessageRepository {
   return {
     recordInbound: vi.fn().mockImplementation(async (input: RecordInboundInput) => makeMessage(input)),
-    recordOutbound: vi.fn(),
     listByLead: vi.fn(),
     findById: vi.fn(),
   } as unknown as MessageRepository;

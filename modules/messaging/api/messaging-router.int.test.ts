@@ -277,6 +277,54 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("a failed claim is reclaimed in place — same row, still one row for the key", async () => {
+    const orgA = asOrgId(orgAId);
+    const key = `okq-int-${randomUUID()}-fu1`;
+    const claimCmd = {
+      leadId: asLeadId(leadAId),
+      from: "+15005550006",
+      to: "+15555550199",
+      body: "follow-up",
+      idempotencyKey: key,
+    };
+
+    const first = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({ ...claimCmd, id: randomUUID() }),
+    );
+    await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).markFailed(first.message.props.id, "30034"),
+    );
+
+    // The retry: a deterministic follow-up key must not be spent by an attempt that failed.
+    const retry = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        ...claimCmd,
+        id: randomUUID(),
+        body: "follow-up, corrected",
+        to: "+15555550188",
+      }),
+    );
+
+    expect(retry.created).toBe(true);
+    expect(retry.message.props.id).toBe(first.message.props.id);
+    expect(retry.message.props.status).toBe("queued");
+    // Re-stamped from the retry, and the dead attempt's carrier code cleared.
+    expect(retry.message.props.body).toBe("follow-up, corrected");
+    expect(retry.message.props.toNumber).toBe("+15555550188");
+    expect(retry.message.props.errorCode).toBeNull();
+
+    const rows = await admin<{ id: string }[]>`
+      select id from messages where org_id = ${orgAId} and idempotency_key = ${key}`;
+    expect(rows).toHaveLength(1);
+  });
+
+  it("settling a message that does not exist throws rather than passing silently", async () => {
+    const orgA = asOrgId(orgAId);
+    await expect(
+      withTenant(orgA, (tx) => new DrizzleMessageRepository(tx, orgA).markSent(randomUUID(), "SM_x")),
+    ).rejects.toThrow(/matched no message row/);
+  });
+
   it("markSent and markFailed settle a claim in place", async () => {
     const orgA = asOrgId(orgAId);
     const key = `okq-int-${randomUUID()}-fu2`;

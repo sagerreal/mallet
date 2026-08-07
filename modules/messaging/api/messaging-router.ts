@@ -5,7 +5,6 @@ import { router, ownerOrOffice } from "@/trpc/init";
 import { loadConfig } from "@mallet/shared/config";
 import { orgs, leads, a2pRegistrations } from "@mallet/shared/db/schema";
 import { asLeadId, Phone } from "@mallet/shared/types";
-import type { AppError } from "@mallet/shared/types";
 import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
 import { SendMessageUseCase } from "../app/send-message";
 import { ListThreadUseCase } from "../app/list-thread";
@@ -49,12 +48,6 @@ const sendInput = z.object({
   // send goes out — an ad-hoc text from the inbox is never deduped against an earlier one.
   idempotencyKey: z.string().min(8).max(64).optional(),
 });
-
-// A conflict is a domain refusal (the key was already claimed by a send that failed), not a
-// provider outage — and CONFLICT is one of the codes the client passes through verbatim, so the
-// shop reads the actual reason instead of "the assistant is unavailable, try again shortly".
-const sendErrorCode = (error: AppError): "CONFLICT" | "BAD_GATEWAY" =>
-  error.kind === "conflict" ? "CONFLICT" : "BAD_GATEWAY";
 
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -169,7 +162,9 @@ export const createMessagingRouter = () =>
         });
 
         if (!result.ok) {
-          throw new TRPCError({ code: sendErrorCode(result.error), message: result.error.message });
+          // Every domain refusal (no number, campaign not approved) is caught by the
+          // preconditions above, so what reaches here is a provider failure.
+          throw new TRPCError({ code: "BAD_GATEWAY", message: result.error.message });
         }
 
         return toMessageDTO(result.value);

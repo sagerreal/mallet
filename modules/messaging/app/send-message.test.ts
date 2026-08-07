@@ -54,9 +54,26 @@ function makeMessage(cmd: ClaimOutboundCmd): Message {
 
 // In-memory stand-in for the messages ledger. The Map keyed by idempotency key IS the unique
 // index: a second claim on the same key returns the stored row with created:false, exactly as
-// `insert ... on conflict do nothing` + the follow-up select does in Postgres.
+// `insert ... on conflict do nothing` + the follow-up select does in Postgres — except for a
+// FAILED row, which is reclaimed in place (same id, re-stamped) and reported as created.
 function makeRepo(): MessageRepository {
   const byKey = new Map<string, Message>();
+
+  // The reclaim: same row, this command's body/to/from, and the dead attempt's SID/code cleared.
+  const requeue = (prior: Message, cmd: ClaimOutboundCmd): Message => {
+    const next = Message.create({
+      ...prior.props,
+      status: "queued",
+      body: cmd.body,
+      fromNumber: cmd.from,
+      toNumber: cmd.to,
+      providerSid: null,
+      errorCode: null,
+      updatedAt: new Date(),
+    });
+    if (!next.ok) throw new Error(next.error.message);
+    return next.value;
+  };
 
   const replace = (id: string, next: (m: Message) => Message): void => {
     for (const [key, m] of byKey) {
@@ -71,8 +88,8 @@ function makeRepo(): MessageRepository {
   return {
     claimOutbound: vi.fn().mockImplementation(async (cmd: ClaimOutboundCmd) => {
       const existing = byKey.get(cmd.idempotencyKey);
-      if (existing) return { message: existing, created: false };
-      const message = makeMessage(cmd);
+      if (existing && !existing.isFailed) return { message: existing, created: false };
+      const message = existing ? requeue(existing, cmd) : makeMessage(cmd);
       byKey.set(cmd.idempotencyKey, message);
       return { message, created: true };
     }),
@@ -240,7 +257,7 @@ describe("SendMessageUseCase", () => {
 
   // ── Idempotency ──────────────────────────────────────────────────────────────
 
-  it("sends once for the same idempotency key", async () => {
+  it("sends once for the same idempotency key — the duplicate returns the original message", async () => {
     const transport: SmsTransport = vi.fn().mockResolvedValue({ sid: FAKE_SID });
     const uc = new SendMessageUseCase(repo, makeSmsDeps(transport), makeIds());
     const cmd = { ...BASE_CMD, idempotencyKey: "okq-e1-fu1" };
@@ -249,26 +266,34 @@ describe("SendMessageUseCase", () => {
     const second = await uc.exec(cmd);
 
     expect(transport).toHaveBeenCalledOnce();
+    // A duplicate is a silent no-op that reports the message, never an error.
+    expect(second.ok).toBe(true);
     expect(second.ok && second.value.props.id).toBe(first.ok && first.value.props.id);
     expect(second.ok && second.value.props.status).toBe("sent");
+    expect(second.ok && second.value.props.providerSid).toBe(FAKE_SID);
   });
 
-  it("marks the claim failed when Twilio rejects, and does not resend on retry", async () => {
-    const transport: SmsTransport = vi.fn().mockRejectedValue(
-      Object.assign(new Error("twilio rejection"), { status: 400, code: 21211 }),
-    );
+  it("a failed claim is reclaimable — the same key sends again, on the same row", async () => {
+    // Deterministic follow-up keys ("<okItemKey>-fu<stage>") must survive a carrier rejection: if
+    // a failure burnt the key, that follow-up could never be sent at all.
+    const transport: SmsTransport = vi
+      .fn()
+      .mockRejectedValueOnce(Object.assign(new Error("twilio rejection"), { status: 400, code: 21211 }))
+      .mockResolvedValue({ sid: FAKE_SID });
     const uc = new SendMessageUseCase(repo, makeSmsDeps(transport), makeIds());
     const cmd = { ...BASE_CMD, idempotencyKey: "okq-e1-fu1" };
 
     const first = await uc.exec(cmd);
     expect(first.ok).toBe(false);
+    const failedRowId = vi.mocked(repo.markFailed).mock.calls[0]![0];
 
-    // Same key: the claim is already settled as failed, so nothing goes to Twilio a second time.
     const second = await uc.exec(cmd);
 
-    expect(transport).toHaveBeenCalledOnce();
-    expect(second.ok).toBe(false);
-    expect((second as { ok: false; error: AppError }).error.kind).toBe("conflict");
+    expect(transport).toHaveBeenCalledTimes(2);
+    expect(second.ok).toBe(true);
+    // Reclaimed in place: same row, now sent — not a second message row.
+    expect(second.ok && second.value.props.id).toBe(failedRowId);
+    expect(second.ok && second.value.props.status).toBe("sent");
   });
 
   it("keyless sends are independent — each one gets its own generated key and goes out", async () => {

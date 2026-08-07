@@ -48,15 +48,26 @@ export interface ConversationRow {
 // Port for the messages persistence surface. All implementations are org-scoped.
 export interface MessageRepository {
   /**
-   * Claim the right to send. Inserts a `queued` outbound row for `(org, idempotencyKey)`; when
-   * that pair is already taken, nothing is written and the EXISTING row comes back with
-   * `created: false`. The caller must only reach the provider when `created` is true — that is
-   * the whole double-send guard.
+   * Claim the right to send. Inserts a `queued` outbound row for `(org, idempotencyKey)`.
+   *
+   * When that pair is already taken:
+   *   - a FAILED row is reclaimed — the same row flips back to `queued` (re-stamped with this
+   *     command's body/to/from, since the office may have fixed them) and comes back with
+   *     `created: true`, because nothing reached the customer and a deterministic follow-up key
+   *     must not be spent by an attempt that failed;
+   *   - a row in any other status is a real duplicate: it comes back untouched with
+   *     `created: false`.
+   *
+   * The caller must only reach the provider when `created` is true — that is the whole
+   * double-send guard.
    */
   claimOutbound(cmd: ClaimOutboundCmd): Promise<{ message: Message; created: boolean }>;
-  /** Settle a claim the provider accepted. */
+  /** Settle a claim the provider accepted. Throws if no row matched. */
   markSent(id: string, providerSid: string | null): Promise<void>;
-  /** Settle a claim the provider refused. `errorCode` is the CARRIER's code when we have one. */
+  /**
+   * Settle a claim the provider refused. `errorCode` is the CARRIER's code when we have one.
+   * Throws if no row matched.
+   */
   markFailed(id: string, errorCode: string | null): Promise<void>;
   recordInbound(input: RecordInboundInput): Promise<Message>;
   listByLead(leadId: LeadId, page: { limit: number; offset: number }): Promise<Message[]>;

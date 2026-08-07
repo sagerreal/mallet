@@ -52,13 +52,26 @@ export interface SendMessageCmd {
 // point for dynamic from-numbers.
 //
 // CLAIM-FIRST (same shape as SendNotificationUseCase): the ledger row is written before Twilio is
-// called, so the unique index on (org_id, idempotency_key) is what makes a double-click one text
-// instead of two — the customer never receives the duplicate. Every precondition is checked BEFORE
-// the claim, so an org that has no number yet, or no approved campaign, never burns its key.
+// called, so the unique index on (org_id, idempotency_key) is what decides whether a send happens.
 //
-// A rejected submission returns err() and settles the claim as failed — the explicit error is the
-// visibility signal; nothing is silently swallowed. A retry of an already-failed key returns a
-// conflict rather than re-sending: the row is settled, and re-driving it is a new message.
+// WHAT THE KEY GUARANTEES, EXACTLY:
+//   • A duplicate of a SUCCESSFUL send can never send again. The row committed with the key, and
+//     any later claim on it returns that row untouched — the customer never gets the second text.
+//     This is the double-click case the key exists for.
+//   • A duplicate of an IN-FLIGHT send (a concurrent request) is deduped the same way: the second
+//     claim sees a queued row and returns it without calling Twilio.
+//   • A FAILED send deliberately leaves the key reusable. Nothing reached the customer, and the
+//     board's keys are deterministic ("<okItemKey>-fu<stage>"), so a burnt key would strand that
+//     follow-up permanently. The claim reclaims the same row and sends again.
+//   • An UNKNOWN outcome is the accepted gap. Twilio can accept a message and still fail us — a
+//     10s timeout, a 5xx, an open breaker — and that request rolls back (the orgTx middleware
+//     re-throws inside the tx), releasing the key. A user who then retries manually can produce a
+//     second text. Accepted at pilot scale: it needs a timeout AND a manual retry, and the
+//     alternative (claiming on a connection outside the request tx) buys little at this volume.
+//
+// Every precondition is checked BEFORE the claim, so an org that has no number yet, or no approved
+// campaign, never burns its key. A rejected submission returns err() and settles the claim as
+// failed — the explicit error is the visibility signal; nothing is silently swallowed.
 export class SendMessageUseCase {
   constructor(
     private readonly repo: MessageRepository,
@@ -84,8 +97,9 @@ export class SendMessageUseCase {
     // No caller key → a fresh key per call, so keyless sends stay independent (today's behaviour).
     const idempotencyKey = cmd.idempotencyKey ?? `msg-${id}`;
 
-    // Claim BEFORE sending. `created: false` means this exact send already happened (or is
-    // committed by a concurrent request) — return that row instead of texting the customer twice.
+    // Claim BEFORE sending. `created: false` means this exact send already happened, or is in
+    // flight in a concurrent request — return that row instead of texting the customer twice.
+    // Never an error: a duplicate is a no-op that reports the message the caller asked about.
     const claim = await this.repo.claimOutbound({
       id,
       leadId: cmd.leadId,
@@ -95,14 +109,7 @@ export class SendMessageUseCase {
       idempotencyKey,
     });
 
-    if (!claim.created) {
-      if (claim.message.isFailed) {
-        // The prior attempt is settled as failed (Twilio refused it, or a carrier callback later
-        // said so). Re-driving the same key would be a lie about which attempt is being reported.
-        return err(conflict("that text already failed — send it again as a new message"));
-      }
-      return ok(claim.message);
-    }
+    if (!claim.created) return ok(claim.message);
 
     // Construct a sender with the org's from-number. TwilioSmsSender is the ONLY file that
     // imports the Twilio SDK; reusing it means circuit-breaking and logging come for free.
@@ -130,7 +137,19 @@ export class SendMessageUseCase {
     });
 
     if (!receipt.ok) {
-      logger.warn({ kind: "two_way_sms" }, "outbound sms send rejected");
+      // Identifiers and flags only — never the body or the destination number. The provider's
+      // own numeric code/status is logged by TwilioSmsSender at the point it is known; it is not
+      // carried on the AppError, so it cannot be restated here.
+      logger.warn(
+        {
+          kind: "two_way_sms",
+          orgId: cmd.orgId,
+          messageId: claim.message.props.id,
+          service: receipt.error.service,
+          retryable: receipt.error.retryable,
+        },
+        "outbound sms send rejected",
+      );
       // errorCode holds the CARRIER's numeric code, and a submission Twilio refused has none yet
       // — those arrive on the status callback. null keeps the column honest rather than stamping
       // an app-side label into a carrier field.
