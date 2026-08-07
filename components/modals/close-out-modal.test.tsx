@@ -49,7 +49,11 @@ const mockAddInvoice = vi.fn(() => ({
   persisted: mockCreatePersisted(),
 }));
 const mockAdoptInvoice = vi.fn();
-const mockRecordPayment = vi.fn();
+// recordPayment resolves the SERVER's answer (round 3): it is no longer `=> void`, so a refusal
+// is reachable and the sheet must render it instead of the done step. Default: the server accepted.
+const mockRecordPayment = vi.fn<
+  (id: string, payment: unknown, surface?: InvoiceWriteSurface) => Promise<{ ok: boolean; error?: string }>
+>(() => Promise.resolve({ ok: true }));
 const mockSendInvoice = vi.fn<(id: string) => Promise<{ ok: boolean; error?: string }>>(() =>
   Promise.resolve({ ok: true }),
 );
@@ -548,6 +552,58 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     const sendOrder = mockSendInvoice.mock.invocationCallOrder[0] ?? 0;
     const recordOrder = mockRecordPayment.mock.invocationCallOrder[0] ?? 0;
     expect(sendOrder).toBeLessThan(recordOrder);
+  });
+
+  // -------------------------------------------------------------------------
+  // Fix round 3 — the RECORD'S OWN refusal.
+  //
+  // Rounds 1 and 2 closed the two PRE-conditions (draft-not-sent, already-paid-by-QR). The
+  // record itself stayed unawaited: the store action was typed `=> void`, kicked off the write
+  // and rolled back inside a `.catch`, so approvePayment returned { ok: true } on the very next
+  // line. A voided invoice, a payment that landed concurrently, an offline tech — every one of
+  // them rendered "Approved · $450" for money that was never recorded.
+  // -------------------------------------------------------------------------
+
+  it("the server REFUSING the record blocks Approved: its reason is named on the record step", async () => {
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
+    mockRecordPayment.mockImplementationOnce(() =>
+      Promise.resolve({ ok: false, error: "this invoice is void" }),
+    );
+
+    await clickRecordCash();
+
+    expect(mockRecordPayment).toHaveBeenCalledTimes(1);
+    expect(screen.getByText("this invoice is void")).toBeTruthy();
+    expect(screen.queryByText(/Approved/)).toBeNull();
+    // Still on the record step — the tech can fix it and try again, not a dead end.
+    expect(screen.getByText(/Record cash — paid/)).toBeTruthy();
+  });
+
+  it("a refusal with no sentence still refuses — never a silent Approved", async () => {
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
+    mockRecordPayment.mockImplementationOnce(() => Promise.resolve({ ok: false }));
+
+    await clickRecordCash();
+
+    expect(screen.queryByText(/Approved/)).toBeNull();
+    expect(screen.getByText(/Couldn't record the payment/)).toBeTruthy();
+  });
+
+  it("charge-on-file takes the same refusal path — no Approved on a rejected card record", async () => {
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
+    mockRecordPayment.mockImplementationOnce(() =>
+      Promise.resolve({ ok: false, error: "this invoice is already paid in full" }),
+    );
+
+    mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText(/Charge Visa/));
+    await act(async () => {});
+
+    expect(screen.getByText("this invoice is already paid in full")).toBeTruthy();
+    expect(screen.queryByText(/Approved/)).toBeNull();
   });
 });
 

@@ -194,7 +194,7 @@ export function TechJobModalContent() {
     const card = lead?.card;
     const dueNow = invDue(invoice);
     if (dueNow <= 0 || !card) return;
-    recordPayment(
+    void recordPayment(
       invoice.id,
       { amt: dueNow, when: "Just now", method: "card", onFile: true },
       invoiceSurface,
