@@ -11,6 +11,10 @@
  * office will call to set a time. Never a fabricated date.
  *
  * Expands IN FLOW under its own button — house rule, no popovers, no sheet on top of a sheet.
+ *
+ * IT OWNS NO OUTER MARGIN. It is the last child of the visits section's `.vlist`, whose
+ * adjacent-sibling rule already holds it off the visit record above it. A margin of its own on
+ * top of that would double the gap in one state and not the other.
  */
 
 "use client";
@@ -48,7 +52,7 @@ export function FollowUpAsk({ onBook }: FollowUpAskProps) {
       <button
         type="button"
         className="btn sm ghost"
-        style={{ width: "100%", marginTop: "var(--space-2)" }}
+        style={{ width: "100%" }}
         onClick={() => setOpen(true)}
       >
         Need to come back — add a visit
@@ -57,7 +61,7 @@ export function FollowUpAsk({ onBook }: FollowUpAskProps) {
   }
 
   return (
-    <div style={{ marginTop: "var(--space-2)" }}>
+    <div>
       <textarea
         value={reason}
         onChange={(e) => {

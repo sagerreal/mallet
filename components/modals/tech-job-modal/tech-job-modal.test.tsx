@@ -340,8 +340,12 @@ describe("TechJobModalContent — tech", () => {
     ];
     render(<TechJobModalContent />);
     // Both visits are on the sheet (useful context — "my stop is the second one today"), but
-    // there is exactly one foot and it moves v1, the tech's own.
-    expect(screen.getAllByRole("list", { name: "Visit progress" })).toHaveLength(2);
+    // there is exactly one foot and it moves v1, the tech's own. The two steppers are NUMBERED —
+    // two lists both announcing "Visit progress" left a screen-reader user unable to tell which
+    // stop was which, the same defect the visible "Visit 1 of 2" caption fixes.
+    expect(screen.getByRole("list", { name: "Visit 1 progress" })).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Visit 2 progress" })).toBeTruthy();
+    expect(screen.getByText("Visit 1 of 2")).toBeTruthy();
     fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
