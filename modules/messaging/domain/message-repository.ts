@@ -3,15 +3,22 @@ import type { DeliveryStatus } from "./delivery-status";
 import type { Message } from "./message";
 import type { MessageDirection } from "./message";
 
-export interface RecordOutboundInput {
+/**
+ * An outbound send being CLAIMED before the provider is called.
+ *
+ * `idempotencyKey` is the caller's dedupe token (Task 6 sends `"<okItemKey>-fu<stage>"`); the
+ * repository inserts on `(org_id, idempotency_key)` with ON CONFLICT DO NOTHING, so a second
+ * claim on the same key can never become a second text. `id` comes from the injected id
+ * generator (never the DB default) so the use case can settle the row without a re-read.
+ */
+export interface ClaimOutboundCmd {
   readonly id: string;
-  readonly orgId: OrgId;
   readonly leadId: LeadId | null;
+  /** The org's own Twilio number — the `from` on the wire. */
+  readonly from: string;
+  readonly to: string;
   readonly body: string;
-  readonly fromNumber: string;
-  readonly toNumber: string;
-  readonly providerSid: string | null;
-  readonly status: "queued" | "sent" | "failed";
+  readonly idempotencyKey: string;
 }
 
 export interface RecordInboundInput {
@@ -40,7 +47,17 @@ export interface ConversationRow {
 
 // Port for the messages persistence surface. All implementations are org-scoped.
 export interface MessageRepository {
-  recordOutbound(input: RecordOutboundInput): Promise<Message>;
+  /**
+   * Claim the right to send. Inserts a `queued` outbound row for `(org, idempotencyKey)`; when
+   * that pair is already taken, nothing is written and the EXISTING row comes back with
+   * `created: false`. The caller must only reach the provider when `created` is true — that is
+   * the whole double-send guard.
+   */
+  claimOutbound(cmd: ClaimOutboundCmd): Promise<{ message: Message; created: boolean }>;
+  /** Settle a claim the provider accepted. */
+  markSent(id: string, providerSid: string | null): Promise<void>;
+  /** Settle a claim the provider refused. `errorCode` is the CARRIER's code when we have one. */
+  markFailed(id: string, errorCode: string | null): Promise<void>;
   recordInbound(input: RecordInboundInput): Promise<Message>;
   listByLead(leadId: LeadId, page: { limit: number; offset: number }): Promise<Message[]>;
   findById(id: MessageId): Promise<Message | null>;

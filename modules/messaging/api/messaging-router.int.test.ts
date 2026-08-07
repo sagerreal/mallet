@@ -3,9 +3,11 @@ import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
+import { asOrgId, asUserId, asLeadId, systemClock } from "@mallet/shared/types";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb } from "@mallet/shared/db/client";
+import { withTenant } from "@mallet/shared/db/tx";
+import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
@@ -190,5 +192,117 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     await expect(
       caller.v1.messaging.send({ leadId: leadAId, body: "x".repeat(1601) }),
     ).rejects.toBeInstanceOf(TRPCError);
+  });
+
+  it("send rejects an idempotency key shorter than 8 chars", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.messaging.send({ leadId: leadAId, body: "Hi", idempotencyKey: "short" }),
+    ).rejects.toBeInstanceOf(TRPCError);
+  });
+
+  // ── the claim itself (messages_org_idem_uidx, live) ───────────────────────────
+  // Exercised at the repository rather than through send(): this environment has no Twilio
+  // credentials, so a router send never reaches the claim. What has to hold is the DB contract
+  // the double-send guard rests on — one row per (org_id, idempotency_key), enforced by the
+  // partial unique index and not by application logic.
+
+  it("a second claim on the same (org, key) writes no row and returns the first one", async () => {
+    const orgA = asOrgId(orgAId);
+    const key = `okq-int-${randomUUID()}-fu1`;
+
+    const first = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+    const second = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.message.props.id).toBe(first.message.props.id);
+    expect(first.message.props.status).toBe("queued");
+
+    const rows = await admin<{ id: string }[]>`
+      select id from messages where org_id = ${orgAId} and idempotency_key = ${key}`;
+    expect(rows).toHaveLength(1);
+  });
+
+  it("the same key in a different org is a different message (the index is per-tenant)", async () => {
+    const orgA = asOrgId(orgAId);
+    const orgB = asOrgId(orgBId);
+    const key = `okq-int-${randomUUID()}-fu1`;
+
+    const inA = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+    const inB = await withTenant(orgB, (tx) =>
+      new DrizzleMessageRepository(tx, orgB).claimOutbound({
+        id: randomUUID(),
+        leadId: null,
+        from: "+15005550007",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+
+    expect(inA.created).toBe(true);
+    expect(inB.created).toBe(true);
+    expect(inB.message.props.id).not.toBe(inA.message.props.id);
+
+    const rows = await admin<{ id: string }[]>`
+      select id from messages where idempotency_key = ${key}`;
+    expect(rows).toHaveLength(2);
+  });
+
+  it("markSent and markFailed settle a claim in place", async () => {
+    const orgA = asOrgId(orgAId);
+    const key = `okq-int-${randomUUID()}-fu2`;
+
+    const claim = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+    const id = claim.message.props.id;
+
+    await withTenant(orgA, (tx) => new DrizzleMessageRepository(tx, orgA).markSent(id, "SM_int_sid"));
+    const [sent] = await admin<{ status: string; provider_sid: string | null }[]>`
+      select status, provider_sid from messages where id = ${id}`;
+    expect(sent!.status).toBe("sent");
+    expect(sent!.provider_sid).toBe("SM_int_sid");
+
+    await withTenant(orgA, (tx) => new DrizzleMessageRepository(tx, orgA).markFailed(id, "30034"));
+    const [failed] = await admin<{ status: string; error_code: string | null }[]>`
+      select status, error_code from messages where id = ${id}`;
+    expect(failed!.status).toBe("failed");
+    expect(failed!.error_code).toBe("30034");
   });
 });

@@ -9,7 +9,7 @@ import type { Message } from "../domain/message";
 import type { MessageDirection } from "../domain/message";
 import type {
   MessageRepository,
-  RecordOutboundInput,
+  ClaimOutboundCmd,
   RecordInboundInput,
   OrgByNumberReader,
   LeadByPhoneReader,
@@ -28,25 +28,68 @@ export class DrizzleMessageRepository implements MessageRepository {
     private readonly orgId: OrgId,
   ) {}
 
-  async recordOutbound(input: RecordOutboundInput): Promise<Message> {
-    const rows = await this.tx
+  // Claim-first: the row is written BEFORE Twilio is called, so the unique index on
+  // (org_id, idempotency_key) — not application logic — is what stops a double-click becoming a
+  // second text. ON CONFLICT DO NOTHING returns no row when the key is taken; the follow-up
+  // select then reads back whoever claimed it first (that transaction has committed by the time
+  // this one is unblocked, because the index entry it holds is what we waited on).
+  async claimOutbound(cmd: ClaimOutboundCmd): Promise<{ message: Message; created: boolean }> {
+    const inserted = await this.tx
       .insert(messages)
       .values({
-        id: input.id,
+        id: cmd.id,
         orgId: this.orgId,
-        leadId: input.leadId,
+        leadId: cmd.leadId,
         direction: "outbound",
         channel: "sms",
-        body: input.body,
-        fromNumber: input.fromNumber,
-        toNumber: input.toNumber,
-        providerSid: input.providerSid,
-        status: input.status,
+        body: cmd.body,
+        fromNumber: cmd.from,
+        toNumber: cmd.to,
+        providerSid: null,
+        status: "queued",
+        idempotencyKey: cmd.idempotencyKey,
+      })
+      // The index predicate has to be repeated here: Postgres will not pick a PARTIAL unique
+      // index as the arbiter from the column list alone (42P10, "no unique or exclusion
+      // constraint matching the ON CONFLICT specification").
+      .onConflictDoNothing({
+        target: [messages.orgId, messages.idempotencyKey],
+        where: sql`${messages.idempotencyKey} is not null`,
       })
       .returning();
-    const row = rows[0];
-    if (!row) throw new Error("message insert returned no row");
-    return toDomain(row);
+
+    const claimed = inserted[0];
+    if (claimed) return { message: toDomain(claimed), created: true };
+
+    const existing = await this.tx
+      .select()
+      .from(messages)
+      .where(
+        and(
+          eq(messages.orgId, this.orgId),
+          eq(messages.idempotencyKey, cmd.idempotencyKey),
+        ),
+      )
+      .limit(1);
+    const row = existing[0];
+    // Nothing inserted and nothing found means the conflict came from somewhere other than the
+    // idempotency index — surface it rather than pretending a message exists.
+    if (!row) throw new Error("message claim was rejected and no prior claim exists");
+    return { message: toDomain(row), created: false };
+  }
+
+  async markSent(id: string, providerSid: string | null): Promise<void> {
+    await this.tx
+      .update(messages)
+      .set({ status: "sent", providerSid, updatedAt: sql`now()` })
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)));
+  }
+
+  async markFailed(id: string, errorCode: string | null): Promise<void> {
+    await this.tx
+      .update(messages)
+      .set({ status: "failed", errorCode, updatedAt: sql`now()` })
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)));
   }
 
   async recordInbound(input: RecordInboundInput): Promise<Message> {

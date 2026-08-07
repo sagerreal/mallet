@@ -58,4 +58,23 @@ export class Message {
   get props(): MessageProps {
     return this.p;
   }
+
+  /** True once the row is settled — a duplicate claim on a failed message must not re-send. */
+  get isFailed(): boolean {
+    return this.p.status === "failed";
+  }
+
+  /**
+   * The provider accepted the submission. Returns a NEW instance — never mutates. `sent` is
+   * deliberately not `delivered`: the carrier has not said a handset got it yet, and only the
+   * status callback can say that.
+   */
+  markSent(providerSid: string | null, at: Date): Message {
+    return new Message({ ...this.p, status: "sent", providerSid, updatedAt: at });
+  }
+
+  /** The provider refused the submission. Returns a NEW instance — never mutates. */
+  markFailed(errorCode: string | null, at: Date): Message {
+    return new Message({ ...this.p, status: "failed", errorCode, updatedAt: at });
+  }
 }

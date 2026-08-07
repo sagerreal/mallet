@@ -1009,6 +1009,13 @@
       "when": 1786121880937,
       "tag": "0143_fancy_frightful_four",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1786122756466,
+      "tag": "0144_eager_shadow_king",
+      "breakpoints": true
     }
   ]
 }

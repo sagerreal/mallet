@@ -38,14 +38,27 @@ export interface SendMessageCmd {
   readonly leadId: LeadId;
   readonly leadPhone: string; // E.164 from leads.phone_e164
   readonly body: string;
+  /**
+   * The caller's dedupe token. Two sends carrying the same key produce ONE text — the second gets
+   * the first one's row back. Absent (an ad-hoc text typed in the inbox), a unique key is
+   * generated per call, which is exactly the pre-existing behaviour: every send goes out.
+   */
+  readonly idempotencyKey?: string;
 }
 
 // Send an outbound SMS to a lead. Uses the org's own provisioned Twilio number as the `from`
 // (per-org texting identity). Constructs a TwilioSmsSender per call so the `from` number is
 // the org's number — the constructor-arg seam in TwilioSmsSender is the designed extension
-// point for dynamic from-numbers. A rejected submission (Twilio refused to accept the message)
-// returns err() and records NO row — the explicit error is the visibility signal; nothing is
-// silently swallowed.
+// point for dynamic from-numbers.
+//
+// CLAIM-FIRST (same shape as SendNotificationUseCase): the ledger row is written before Twilio is
+// called, so the unique index on (org_id, idempotency_key) is what makes a double-click one text
+// instead of two — the customer never receives the duplicate. Every precondition is checked BEFORE
+// the claim, so an org that has no number yet, or no approved campaign, never burns its key.
+//
+// A rejected submission returns err() and settles the claim as failed — the explicit error is the
+// visibility signal; nothing is silently swallowed. A retry of an already-failed key returns a
+// conflict rather than re-sending: the row is settled, and re-driving it is a new message.
 export class SendMessageUseCase {
   constructor(
     private readonly repo: MessageRepository,
@@ -68,6 +81,28 @@ export class SendMessageUseCase {
     }
 
     const id = this.ids.newId();
+    // No caller key → a fresh key per call, so keyless sends stay independent (today's behaviour).
+    const idempotencyKey = cmd.idempotencyKey ?? `msg-${id}`;
+
+    // Claim BEFORE sending. `created: false` means this exact send already happened (or is
+    // committed by a concurrent request) — return that row instead of texting the customer twice.
+    const claim = await this.repo.claimOutbound({
+      id,
+      leadId: cmd.leadId,
+      from: cmd.orgTwilioNumber,
+      to: cmd.leadPhone,
+      body: cmd.body,
+      idempotencyKey,
+    });
+
+    if (!claim.created) {
+      if (claim.message.isFailed) {
+        // The prior attempt is settled as failed (Twilio refused it, or a carrier callback later
+        // said so). Re-driving the same key would be a lie about which attempt is being reported.
+        return err(conflict("that text already failed — send it again as a new message"));
+      }
+      return ok(claim.message);
+    }
 
     // Construct a sender with the org's from-number. TwilioSmsSender is the ONLY file that
     // imports the Twilio SDK; reusing it means circuit-breaking and logging come for free.
@@ -91,25 +126,20 @@ export class SendMessageUseCase {
       to: cmd.leadPhone,
       body: cmd.body,
       kind: "two_way_sms",
-      idempotencyKey: `msg-${id}`,
+      idempotencyKey,
     });
 
     if (!receipt.ok) {
       logger.warn({ kind: "two_way_sms" }, "outbound sms send rejected");
+      // errorCode holds the CARRIER's numeric code, and a submission Twilio refused has none yet
+      // — those arrive on the status callback. null keeps the column honest rather than stamping
+      // an app-side label into a carrier field.
+      await this.repo.markFailed(claim.message.props.id, null);
       return err(receipt.error);
     }
 
-    const message = await this.repo.recordOutbound({
-      id,
-      orgId: cmd.orgId,
-      leadId: cmd.leadId,
-      body: cmd.body,
-      fromNumber: cmd.orgTwilioNumber,
-      toNumber: cmd.leadPhone,
-      providerSid: receipt.value.externalId ?? null,
-      status: "sent",
-    });
-
-    return ok(message);
+    const providerSid = receipt.value.externalId ?? null;
+    await this.repo.markSent(claim.message.props.id, providerSid);
+    return ok(claim.message.markSent(providerSid, this.smsDeps.clock.now()));
   }
 }

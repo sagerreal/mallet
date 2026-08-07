@@ -44,7 +44,9 @@ function makeRepo(conversations: ConversationRow[] = []): MessageRepository {
     listConversations: vi.fn().mockResolvedValue(conversations),
     listByLead: vi.fn(),
     recordInbound: vi.fn(),
-    recordOutbound: vi.fn(),
+    claimOutbound: vi.fn(),
+    markSent: vi.fn(),
+    markFailed: vi.fn(),
     findById: vi.fn(),
   } as unknown as MessageRepository;
 }
