@@ -1989,6 +1989,12 @@
   .md-stop:last-child{border-bottom:none}
   .md-stop:hover{background:var(--manila-2)}
   .md-time{flex:0 0 64px;font-family:var(--font-mono);font-size:var(--type-sm);font-weight:700;color:var(--ink);padding-top:var(--space-2xs);letter-spacing:-.02em}
+  /* The DAY, above the time, on any row that is not today. My day carries all open work plus what
+     was finished today and sorts earliest-first, so a job carried over from yesterday lands at the
+     TOP — without this the first row read as this morning's first stop. Quieter than the time
+     beneath it: the hour is what you act on, the day is what disambiguates it. */
+  .md-day{display:block;font-size:var(--type-xs);font-weight:700;color:var(--ink-2);letter-spacing:0}
+  .md-hh{display:block}
   .md-body{flex:1;min-width:0}
   .md-line1{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
   .md-line1 b{font-size:var(--type-md)}

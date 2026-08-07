@@ -23,6 +23,7 @@ import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { useMyDayInput } from "@/features/field/my-day-input";
+import { colLabel } from "@/components/modals/tech-job-modal/helpers";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -47,24 +48,58 @@ function timeLabel(hhmm: string | null): string {
 }
 
 /**
- * When this stop happens: the earliest LIVE visit's start.
+ * When this stop happens: the earliest LIVE visit's DATE and start.
  *
  * It used to read `job.scheduledStart` — the jobs table's own column, which no live path writes
  * (see modules/jobs/infra/job-sorts.ts). Every card in the agenda therefore printed "—". The
  * server orders the day by exactly this key, so the column and the order now agree.
+ *
+ * It also used to return the time ALONE, throwing the date away — which is what made yesterday's
+ * 8:30a and today's 8:30a render identically on a list that deliberately carries both (see the
+ * heading note below). The date comes back out with it.
  */
-function agendaTime(job: JobSummary): string {
+function agendaWhen(job: JobSummary): { day: string | null; time: string } {
   let earliestAt: string | null = null;
+  let earliestDay: string | null = null;
   let earliestStart: string | null = null;
   for (const v of job.visits) {
     if (v.status === "canceled" || !v.scheduledDate) continue;
     const at = `${v.scheduledDate}T${v.scheduledStart ?? "00:00"}`;
     if (earliestAt === null || at < earliestAt) {
       earliestAt = at;
+      earliestDay = v.scheduledDate;
       earliestStart = v.scheduledStart;
     }
   }
-  return timeLabel(earliestStart);
+  return { day: earliestDay, time: timeLabel(earliestStart) };
+}
+
+/**
+ * The left-hand "when" column.
+ *
+ * TODAY PRINTS THE TIME ALONE — that is the overwhelming majority of rows and a "Today" label on
+ * every one of them is noise. Anything else prints the DAY above it, because this list is not
+ * today's list: `v1.field.myDay` returns all of the caller's open work plus what they finished
+ * today (deliberately — see modules/jobs/domain/job-repository.ts), and it sorts earliest-first,
+ * so a job carried over from yesterday lands at the TOP. Without the day, the first row of the
+ * agenda was indistinguishable from this morning's first stop. The same label covers the other
+ * direction the predicate allows and nobody had considered: work the office has scheduled AHEAD.
+ *
+ * `colLabel` is the sheet header's own grammar ("Today" / "Wed 3" / "Not scheduled"), so the row
+ * and the job sheet it opens can never disagree about which day this is.
+ */
+function AgendaWhen({ job }: { job: JobSummary }) {
+  const { day, time } = agendaWhen(job);
+  const dayLabel = colLabel(day);
+  // No dated visit: there is no time to print either, and "Not scheduled" says the actual thing
+  // where a bare "—" said nothing at all.
+  if (!day) return <div className="md-time">{dayLabel}</div>;
+  return (
+    <div className="md-time">
+      {dayLabel === "Today" ? null : <span className="md-day">{dayLabel}</span>}
+      <span className="md-hh">{time}</span>
+    </div>
+  );
 }
 
 function statusLabel(status: string): { l: string; c: string; bg: string } {
@@ -143,7 +178,7 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
     // nested-interactive), while the focusable title button below carries the keyboard path.
     // cursor:pointer, :hover and :active all live on .md-stop already — don't re-declare them here.
     <div className="md-stop" onClick={() => onOpen(job.id)}>
-      <div className="md-time">{agendaTime(job)}</div>
+      <AgendaWhen job={job} />
       <div className="md-body">
         <div className="md-line1">
           {/* Focusable open control — keyboard access without the row being a button
@@ -295,7 +330,7 @@ export default function MyDayPage() {
   return (
     <>
       <h1>My day</h1>
-      <div className="sub">{"Today's jobs."}</div>
+      <div className="sub">Your open jobs, and what you finished today.</div>
 
       {/* The day clock owns its own queries — it must not wait on the agenda, and the agenda's
           loading state must not blank the row that says whether he is being paid. Today's jobs go
@@ -333,7 +368,7 @@ export default function MyDayPage() {
               />
             ))
           ) : (
-            <div className="empty-att">No jobs assigned to you today.</div>
+            <div className="empty-att">No open jobs assigned to you.</div>
           )}
         </div>
       )}
