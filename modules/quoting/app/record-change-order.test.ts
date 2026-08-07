@@ -167,7 +167,7 @@ describe("RecordChangeOrderUseCase", () => {
 
   it("announces the acceptance so the addendum counts as won work", async () => {
     await useCase.exec(command());
-    const accepted = bus.events.filter((e) => e.name === "estimate.accepted");
+    const accepted = bus.recorded.filter((e) => e.name === "estimate.accepted");
     expect(accepted).toHaveLength(1);
     expect(accepted[0]?.payload).toMatchObject({ leadId: LEAD, totalCents: 24_000 });
   });
