@@ -352,7 +352,15 @@ export function TechJobModalContent() {
         /* The Quote tab owns its whole body AND its sticky foot (the builder's
            "Present to customer →" is the sheet's one primary while it shows). */
         <div role="tabpanel" id="tj-panel-quote" aria-labelledby="tj-tab-quote">
-          <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+          {/* Signing does not end the visit — in the walkthrough-then-do-it flow it STARTS the
+              work. Land back on the Job tab with the sold work order showing, rather than
+              dismissing the technician out of the job he has just been told to perform. */}
+          <QuoteTab
+            job={job}
+            scopeVisit={scopeVisit}
+            readOnly={done}
+            onSigned={() => setTab("job")}
+          />
         </div>
       ) : (
         <div role="tabpanel" id="tj-panel-job" aria-labelledby="tj-tab-job">

@@ -43,6 +43,7 @@ import {
   type BuildLine,
   type LaborRate,
   type PricebookItem,
+  AddLineRow,
   AddMenu,
   LineRow,
   custLabel,
@@ -574,6 +575,13 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
               onRemove={() => removeLine(i)}
             />
           ))}
+          {/* The list's own append. Pricing a repair at the door is mostly a run of one-off
+              items, and each one used to cost a trip back out to the picker's "Custom item"
+              card. This adds the next blank line in place — in flow at the foot of the list it
+              belongs to, above the Total, which stays the list's last word. The picker below
+              still owns the pricebook, the labor rates and the first line of an empty quote.
+              Full width and 44px tall: this is a technician's tablet on a doorstep. */}
+          <AddLineRow onAdd={addCustom} />
           <div
             style={{
               display: "flex",
