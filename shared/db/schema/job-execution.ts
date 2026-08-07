@@ -15,6 +15,7 @@ import {
 // Tenant safety comes from the composite FK to jobs (org_id, job_id) → jobs_org_id_uq,
 // and jobs.org_id already FKs to orgs — so no direct orgs FK is needed here.
 import { jobs } from "./jobs";
+import { estimates } from "./estimates";
 
 // Job execution data — the field-captured tail of a job. Every table carries its own org_id
 // (stamped on insert) and is isolated independently by RLS (same model as job_visits, migration
@@ -69,6 +70,29 @@ export const jobAddons = pgTable(
     isOptional: boolean("is_optional").notNull().default(false),
     invoiceSkip: boolean("invoice_skip").notNull().default(false),
     status: text("status").notNull().default("proposed"),
+    /**
+     * WHO approved this, WHEN, and WHAT THEY SIGNED. Three columns because "approved" as a bare
+     * status word is not evidence: it says the shop believes the customer agreed, and cannot say
+     * who was asked, when, or what number was in front of them. A found-work add-on is money added
+     * to a bill the customer already signed for, so the one thing the record must survive is
+     * "I never agreed to that".
+     *
+     *   approvedByUserId — the staff member whose device took the approval (the in-person witness,
+     *     same role signedByUserId plays on the job). Deliberately NOT the customer: the customer
+     *     is not a user of this system. No FK, mirroring jobs.signed_by_user_id.
+     *   approvedAt       — when. Set in the same statement as the status, so a row can never be
+     *     approved at no particular time.
+     *   approvalEstimateId — the SIGNED ADDENDUM this approval belongs to: a change-order estimate
+     *     (estimates.change_order_for_job_id = this job) carrying the customer's name, mark and
+     *     frozen snapshot. Pointed at rather than copied — a second home for a signed amount is a
+     *     second place for it to drift, and an evidence trail cannot survive two versions of the
+     *     number. Composite FK so the addendum can never belong to another tenant.
+     *
+     * All nullable: a proposed or declined add-on has nothing to record.
+     */
+    approvedByUserId: uuid("approved_by_user_id"),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    approvalEstimateId: uuid("approval_estimate_id"),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
@@ -80,6 +104,12 @@ export const jobAddons = pgTable(
       columns: [t.orgId, t.jobId],
       foreignColumns: [jobs.orgId, jobs.id],
     }).onDelete("cascade"),
+    // Tenant-safe reference to the signed addendum (same shape as jobs_source_estimate_fk).
+    foreignKey({
+      name: "job_addons_approval_estimate_fk",
+      columns: [t.orgId, t.approvalEstimateId],
+      foreignColumns: [estimates.orgId, estimates.id],
+    }),
     index("job_addons_org_job_idx").on(t.orgId, t.jobId),
     check("job_addons_qty_check", sql`${t.quantity} >= 0`),
     check("job_addons_rate_check", sql`${t.rateCents} >= 0`),
