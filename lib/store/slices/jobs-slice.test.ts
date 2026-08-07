@@ -1070,6 +1070,151 @@ describe("visit-status merge guard (a stale snapshot cannot revert a just-tapped
   });
 });
 
+// ---------------------------------------------------------------------------
+// TWO TAPS, ONE VISIT — the guard against the PREDECESSOR's own reconcile.
+//
+// The guard above stops a stale HYDRATOR snapshot reverting a just-tapped step. It did not stop
+// the write that armed it: "Start driving" and "On site" a second apart left op1 in flight when
+// op2 armed the same map entry, and op1's `.then` deleted that entry unconditionally before
+// reconciling its OWN dto — `pending` + a departure stamp, which maps back to "enroute". The
+// sheet fell from On site to On the way and sat there for op2's whole round trip.
+//
+// Every existing two-tap test keeps BOTH mutations permanently pending, so none of them ever let
+// the first op's reconcile resolve after the second tap. That is why it shipped.
+// ---------------------------------------------------------------------------
+
+describe("two taps on one visit (the in-flight predecessor's own reconcile)", () => {
+  const ENROUTE_STAMP = "2026-07-15T08:40:00.000Z";
+
+  /** A distinct visit id per test — the per-visit op chain is module state. */
+  const scheduledVisit = (suffix: string) => ({
+    id: `aaaaaaaa-0000-0000-0000-0000000000${suffix}`,
+    date: null,
+    techId: null,
+    start: null,
+    dur: 2,
+    status: "scheduled",
+  });
+
+  beforeEach(() => {
+    mockFieldSetVisitStatus.mockReset();
+    mockFieldSetVisitEnroute.mockReset();
+    mockUpdate.mockReset();
+  });
+
+  it("keeps On site when the still-in-flight On my way reconciles after it", async () => {
+    const visit = scheduledVisit("b1");
+    const drive = deferred<unknown>();
+    mockFieldSetVisitEnroute.mockReturnValue(drive.promise);
+    mockFieldSetVisitStatus.mockReturnValue(new Promise(() => {})); // op2 never settles
+    const { get } = makeStore();
+    seedDbJob(get, "j-two", [visit]);
+
+    get().setVisitStatus("j-two", visit.id, "enroute", "field"); // t0
+    get().setVisitStatus("j-two", visit.id, "onsite", "field"); // t1 — op1 still in flight
+    expect(get().jobs[0]!.visits[0]!.status).toBe("onsite");
+
+    // t2 — op1's own answer lands: pending + a departure stamp, i.e. "enroute".
+    drive.resolve(
+      makeJobDTO("j-two", {
+        visits: [makeVisitDTO(visit.id, { status: "pending", enrouteAt: ENROUTE_STAMP })],
+      }),
+    );
+    await flush();
+
+    const v = get().jobs[0]!.visits[0]!;
+    expect(v.status).toBe("onsite");
+    expect(v.startedAt).toBeTruthy();
+    // The server's departure stamp is still the authority for the step op1 owns.
+    expect(v.enrouteAt).toBe(ENROUTE_STAMP);
+  });
+
+  it("a stale snapshot after the predecessor's reconcile still cannot revert the newer tap", async () => {
+    const visit = scheduledVisit("b2");
+    const drive = deferred<unknown>();
+    mockFieldSetVisitEnroute.mockReturnValue(drive.promise);
+    mockFieldSetVisitStatus.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDbJob(get, "j-two", [visit]);
+
+    get().setVisitStatus("j-two", visit.id, "enroute", "field");
+    get().setVisitStatus("j-two", visit.id, "onsite", "field");
+    drive.resolve(
+      makeJobDTO("j-two", {
+        visits: [makeVisitDTO(visit.id, { status: "pending", enrouteAt: ENROUTE_STAMP })],
+      }),
+    );
+    await flush();
+
+    // The refetch op1's reconcile dispatched resolves — a read taken before either tap.
+    get().setJobs([{ ...draft, id: "j-two", origin: "db" as const, visits: [visit] }]);
+    expect(get().jobs[0]!.visits[0]!.status).toBe("onsite");
+  });
+
+  it("a FAILED On my way discards neither the newer tap nor the work saved since", async () => {
+    const visit = scheduledVisit("b3");
+    const drive = deferred<unknown>();
+    mockFieldSetVisitEnroute.mockReturnValue(drive.promise);
+    mockFieldSetVisitStatus.mockReturnValue(new Promise(() => {}));
+    mockUpdate.mockReturnValue(new Promise(() => {})); // the note stays optimistic
+    const { get } = makeStore();
+    seedDbJob(get, "j-two", [visit]);
+
+    get().setVisitStatus("j-two", visit.id, "enroute", "field"); // t0
+    get().setVisitStatus("j-two", visit.id, "onsite", "field"); // t1
+    void get().updateJob("j-two", { notes: "shut-off is behind the dryer" }); // t1.5
+
+    drive.reject(new Error("offline")); // t2 — op1 fails
+    await flush();
+
+    const j = get().jobs[0]!;
+    // The whole-job snapshot op1 took at t0 predates BOTH: restoring it wiped the newer step
+    // and the note with it.
+    expect(j.visits[0]!.status).toBe("onsite");
+    expect(j.visits[0]!.startedAt).toBeTruthy();
+    expect(j.notes).toBe("shut-off is behind the dryer");
+  });
+
+  it("rolls a lone failed step back to what the server last confirmed", async () => {
+    const visit = scheduledVisit("b4");
+    mockFieldSetVisitEnroute.mockRejectedValue(new Error("offline"));
+    const { get } = makeStore();
+    seedDbJob(get, "j-two", [visit]);
+
+    get().setVisitStatus("j-two", visit.id, "enroute", "field");
+    await flush();
+
+    const v = get().jobs[0]!.visits[0]!;
+    expect(v.status).toBe("scheduled");
+    expect(v.enrouteAt ?? null).toBeNull();
+  });
+
+  it("rolls a failed SECOND tap back to the first tap's confirmed step, not past it", async () => {
+    const visit = scheduledVisit("b5");
+    const drive = deferred<unknown>();
+    mockFieldSetVisitEnroute.mockReturnValue(drive.promise);
+    mockFieldSetVisitStatus.mockRejectedValue(new Error("offline"));
+    const { get } = makeStore();
+    seedDbJob(get, "j-two", [visit]);
+
+    get().setVisitStatus("j-two", visit.id, "enroute", "field");
+    get().setVisitStatus("j-two", visit.id, "onsite", "field");
+    drive.resolve(
+      makeJobDTO("j-two", {
+        visits: [makeVisitDTO(visit.id, { status: "pending", enrouteAt: ENROUTE_STAMP })],
+      }),
+    );
+    await flush();
+
+    // The drive COMMITTED; only the arrival failed. Rolling back to the pre-drive snapshot would
+    // deny a departure the server is holding.
+    const v = get().jobs[0]!.visits[0]!;
+    expect(v.status).toBe("enroute");
+    expect(v.enrouteAt).toBe(ENROUTE_STAMP);
+    expect(v.startedAt ?? null).toBeNull();
+  });
+});
+
 describe("updateVisit duration debounce", () => {
   beforeEach(() => {
     mockCreateVisit.mockReset();
