@@ -25,6 +25,22 @@ function countWord(n: number): string {
   return COUNT_WORDS[n] ?? String(n);
 }
 
+/**
+ * What is waiting, as one clause.
+ *
+ * The board counts two different things — open pieces of work that need the SHOP (`queueCount`)
+ * and how many of those already carry a prepared text (`textsReady`) — so when a caller knows
+ * both, the sentence states both. A caller that only has a queue keeps the original wording;
+ * nothing about it moved.
+ */
+function queueClause(queueCount: number, textsReady?: number): string {
+  if (textsReady === undefined) {
+    return `${countWord(queueCount)} ${queueCount === 1 ? "text" : "texts"} below, ready to send.`;
+  }
+  const items = `${queueCount} ${queueCount === 1 ? "item" : "items"}`;
+  return `${items} · ${textsReady} ${textsReady === 1 ? "text" : "texts"} ready to send.`;
+}
+
 /** The night, as one factual clause. */
 function nightClause(r: ShiftReport, frontDeskOn: boolean): React.ReactNode {
   if (!frontDeskOn) {
@@ -67,6 +83,12 @@ interface HandoffNoteProps {
   queueCount: number;
   queueValue: number;
   /**
+   * How many of the waiting items already have a text written. Optional: callers that don't know
+   * (anything but the board) keep the original "N texts below, ready to send" sentence, so adding
+   * the board's figure changed no existing copy.
+   */
+  textsReady?: number;
+  /**
    * Cold reload: the report/queue derive from not-yet-hydrated store slices. While true, the
    * thesis line renders as a skeleton — a derived-from-nothing "Quiet night" or "Nothing's
    * waiting on you" would be a statement the app can't yet stand behind. Identity (org name,
@@ -83,6 +105,7 @@ export function HandoffNote({
   report,
   queueCount,
   queueValue,
+  textsReady,
   loading = false,
 }: HandoffNoteProps) {
   const shown = useAnimatedNumber(queueValue);
@@ -125,8 +148,7 @@ export function HandoffNote({
           )}
           <div className="thesis" style={{ maxWidth: 680, marginTop: queueValue > 0 ? 4 : undefined }}>
             {queueValue > 0 ? "is waiting on your OK — " : "Waiting on your OK: "}
-            {countWord(queueCount)} {queueCount === 1 ? "text" : "texts"} below, ready to send.{" "}
-            {nightClause(report, frontDeskOn)}
+            {queueClause(queueCount, textsReady)} {nightClause(report, frontDeskOn)}
           </div>
         </>
       ) : (

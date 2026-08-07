@@ -5,8 +5,8 @@
  * wasn't given. Plain words a plumber would actually text.
  *
  * orgName and ownerFirst are real org data threaded from the caller (dashboard
- * page → OkQueue → OkCard → draftFor). Both have safe fallbacks so callers that
- * cannot yet supply them still produce coherent copy.
+ * page → WorkBoard → BoardCard → draftFor). Both have safe fallbacks so callers
+ * that cannot yet supply them still produce coherent copy.
  */
 
 import { fmt$ } from "@/lib/format";

@@ -93,7 +93,7 @@ function toRailRow(est: Estimate, leads: Lead[], customerName?: string | null): 
   return {
     est,
     // The server's name first. Falling back to the store's copy keeps the in-memory callers
-    // (features/home/pipe.ts) working unchanged; "—" is the last resort, not the normal case.
+    // working unchanged; "—" is the last resort, not the normal case.
     customerName: customerName ?? lead?.name ?? "—",
     lead,
     total: estTotal(est),

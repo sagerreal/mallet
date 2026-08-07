@@ -13,7 +13,7 @@
  * in a column, and derive.ts owns how a card reads.
  *
  * WHY THE QUERY ARGS ARE COPIED, NOT INVENTED. Every read below repeats an existing caller's key
- * and options verbatim (the /pipeline page's intake read, useHomePipe's counts, useOkQueue's
+ * and options verbatim (the /pipeline page's intake read, the view-count endpoints, useOkQueue's
  * overdue read), so React Query serves both callers from ONE fetch. A near-miss variant — a
  * different limit, a different sort — is not a smaller change than a new endpoint; it is a second
  * copy of the same rows in the cache, refetching on its own schedule.

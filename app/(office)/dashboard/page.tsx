@@ -11,16 +11,15 @@
 
 import { useState, useEffect } from "react";
 import { todayISO } from "@/lib/clock";
-import { useAppStore } from "@/lib/store/app-store";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import { deriveShiftReport } from "@/features/home/derive";
-import { useOkQueue } from "@/features/home/use-ok-queue";
-import { useHomePipe } from "@/features/home/use-home-pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
-import { HomePipe, HomePipeSkeleton } from "@/features/home/home-pipe";
+import { useWorkBoard } from "@/features/board/use-work-board";
+import { WorkBoard, WorkBoardSkeleton } from "@/features/board/work-board";
+import type { BoardItem } from "@/features/board/types";
 import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { isFirstLoad } from "@/lib/first-run";
-import { OkQueue } from "@/features/home/ok-queue";
+import { LoadFailed } from "@/components/shared/load-failed";
 import dynamic from "next/dynamic";
 import { useMe } from "@/features/identity/hooks";
 import { ListLoading } from "@/components/shared/list-loading";
@@ -91,12 +90,16 @@ export default function OfficePage() {
   );
 }
 
+/**
+ * Today = the handoff note over THE BOARD. The flow strip and the OK queue are gone: a strip of
+ * six tiles stated figures the owner could not act on, and the queue showed only the five records
+ * that happened to carry a prepared text. The board shows EVERY open piece of work in the four
+ * columns it moves through, and carries those same texts on the cards they belong to.
+ */
 function TodayPane() {
   const leads = useAppStore((s) => s.leads);
   const estimates = useAppStore((s) => s.estimates);
-  const invoices = useAppStore((s) => s.invoices);
   const jobs = useAppStore((s) => s.jobs);
-  const techs = useAppStore((s) => s.techs);
   const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
 
   // ---- real identity — org name + owner's first name from the DB -----------
@@ -108,49 +111,59 @@ function TodayPane() {
     "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);
-  // The queue comes from the DATABASE. It used to derive from the browser's loaded page, so on a
-  // shop with 239 open invoices not one overdue bill reached it — $67,790 of late money missing
-  // from the screen whose whole job is to surface what needs chasing. See useOkQueue.
-  const okQueue = useOkQueue();
-  const queue = okQueue.items;
-  const queueValue = okQueue.value;
-  // Every tile is computed where its data lives now. It used to add these up from the store —
-  // one page per collection, and three of the six were joins ACROSS two capped collections — so
-  // the first screen of the app stated money derived from whatever happened to be cached.
-  const pipe = useHomePipe();
+  // EVERY open piece of work, from the database — one composed read (features/board/use-work-board).
+  const board = useWorkBoard();
+  const openModal = useOpenModal();
+  const utils = api.useUtils();
+  const [retrying, setRetrying] = useState(false);
 
-  // Cold reload: the tiles derive from four store slices that hydrate client-side. Until every
-  // hydrator's FIRST load lands, the derived figures are zeros-from-an-empty-store — rendering
-  // them would state "$0 to bill" as fact for a beat (Owen saw exactly this in the iOS shell).
-  // Same query keys + options as the hydrators, so React Query dedupes — no extra fetches; we
-  // only read load state. Skeletons keep the exact tile metrics, so nothing shifts on arrival.
-  const leadsQ = api.v1.customers.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const jobsQ = api.v1.jobs.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const estimatesQ = api.v1.quoting.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const invoicesQ = api.v1.invoicing.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const loading =
-    isFirstLoad({ isFetched: leadsQ.isFetched, isError: leadsQ.isError, count: leads.length }) ||
-    isFirstLoad({ isFetched: jobsQ.isFetched, isError: jobsQ.isError, count: jobs.length }) ||
-    isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length }) ||
-    isFirstLoad({ isFetched: invoicesQ.isFetched, isError: invoicesQ.isError, count: invoices.length });
+  // A card opens the record it IS. The board settled `kind` and `refId` upstream, so the card and
+  // the modal behind it can never disagree about which record was clicked.
+  function openItem(item: BoardItem) {
+    if (item.kind === "lead") openModal(MODAL.LEAD, { leadId: item.refId });
+    else if (item.kind === "estimate") openModal(MODAL.EST, { estId: item.refId });
+    else if (item.kind === "job") openModal(MODAL.JOB, { jobId: item.refId });
+    else openModal(MODAL.INVOICE, { invoiceId: item.refId });
+  }
+
+  // The board composes eleven reads and holds no refetch of its own, so retry invalidates the
+  // whole v1 cache — every column comes back, and so does anything else the page shows.
+  async function retry() {
+    setRetrying(true);
+    try {
+      await utils.v1.invalidate();
+    } catch {
+      // Not swallowed: a still-failing refetch leaves `board.isError` set, so this screen keeps
+      // saying so. The catch exists only to put the button back rather than strand it on "Retrying…".
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <div>
-
       <HandoffNote
         orgName={orgName}
         ownerFirst={ownerFirst}
         dateLabel={dateLabel()}
         frontDeskOn={frontDeskOn}
         report={report}
-        queueCount={queue.length}
-        queueValue={queueValue}
-        loading={loading || !okQueue.isFetched}
+        queueCount={board.needsYou.count}
+        queueValue={board.needsYou.valueDollars}
+        textsReady={board.needsYou.textsReady}
+        loading={!board.isFetched}
       />
 
-      {loading || pipe.isLoading ? <HomePipeSkeleton /> : <HomePipe stages={pipe.stages} />}
-
-      {!loading && okQueue.isFetched && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
+      {!board.isFetched && !board.isError ? (
+        <WorkBoardSkeleton />
+      ) : board.isError ? (
+        // Errored with nothing cached. Four empty columns would read as "nothing open today" —
+        // the one thing this screen must never say when it doesn't know.
+        <LoadFailed noun="board" onRetry={() => void retry()} retrying={retrying} />
+      ) : (
+        // Task 9 wires this (the first-run setup brief + ghost cards).
+        <WorkBoard data={board} firstRun={false} onOpen={openItem} ctx={{ orgName, ownerFirst }} />
+      )}
     </div>
   );
 }
