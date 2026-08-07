@@ -3,15 +3,15 @@
  * THE ON-CARD SEND — a drafted text sitting on the face of a card, one amber Send from real, with
  * a 30s undo after it goes.
  *
- * Extracted from features/pipeline/board-cards.tsx so more than one board can carry it: the rail's
- * cards and the work board's cards are the same gesture, and a second copy would be a second
- * answer to "what does Send do here". The commit itself stays in send.ts (commitOkSend) — this is
- * only the surface.
+ * Lives here rather than inside a card file so any surface that needs the gesture gets the SAME
+ * answer to "what does Send do here" — a second copy would be a second answer. The work board's
+ * cards are its one caller today (the retired /pipeline board was the other); the commit itself
+ * stays in send.ts (commitOkSend) and this is only the surface.
  *
- * The three optional props exist because the two boards disagree about exactly one thing each:
- * the work board captions the draft, sends "Change" to the record instead of an inline editor, and
- * has a carrier registration to answer to. Everything that MATTERS — one commit, one dispatch, one
- * undo, one failure path — is shared, which is the whole point of the extraction.
+ * The optional props exist because a caller may own the confirmation at a different LEVEL than the
+ * card: pass `send` and the owner holds the ✓ line and its Undo, omit it and this block holds them
+ * itself. Everything that MATTERS — one commit, one dispatch, one undo, one failure path — is
+ * shared either way, which is the whole point of the extraction.
  */
 
 "use client";
@@ -28,8 +28,8 @@ const UNDO_MS = 30_000;
 /**
  * "8:47pm ✓ sent · Undo · 26s" — the witnessed line a sent text leaves behind.
  *
- * Shared, because two surfaces own this state at different LEVELS: the pipeline card keeps it
- * itself, and the work board keeps it above the card (the card's draft vanishes the moment the
+ * Exported, because this state can be owned at two different LEVELS: SendBlock keeps it itself by
+ * default, while the work board keeps it ABOVE the card (the card's draft vanishes the moment the
  * item leaves the queue, taking any local state with it). Same line either way.
  */
 export function SentRow({

@@ -4,7 +4,7 @@
  * cannot.
  *
  * On a phone the tab bar is the ONLY navigation, and it reaches nine routes. Every
- * other route — /pipeline, /tasks, /composer, /settings, /jobs/:id, /money/:id — was
+ * other route — /tasks, /composer, /settings, /jobs/:id, /money/:id — was
  * a dead end: no back affordance existed anywhere in the app, and inside a WKWebView
  * there is no browser chrome to fall back on. Tapping a tab escaped but threw away
  * where you were.

@@ -1,5 +1,5 @@
 /**
- * features/pipeline/working.test.ts
+ * features/board/working.test.ts
  * The scoped row must carry its walkthrough JOB — that id is what "quote it ›" hands the
  * composer (&job=), and the composer's draft points the quote back at the job so accepting it
  * CONVERTS the walkthrough into the sold work instead of minting a duplicate.

@@ -76,7 +76,7 @@ const MoreIcon = () => (
 );
 
 // Routes that belong to the Customers group (so its tab stays lit on sub-pages).
-const CUSTOMER_AREA = ["/customers", "/pipeline", "/tasks"];
+const CUSTOMER_AREA = ["/customers", "/tasks"];
 // The field/tech surfaces — these get the field tab set, not the office one.
 const FIELD_ROUTES = ["/my-day", "/my-hours", "/messages", "/account"];
 

@@ -5,11 +5,11 @@ import { api } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { dtoEstimateSummaryToStore } from "@/lib/store/dto-mapper";
 import { railRowsFor, wonRowsFor, deltaOf, type RailRow, type WonRow } from "@/features/quotes/derive";
-import { deriveGetting, type GettingRow } from "@/features/pipeline/working";
+import { deriveGetting, type GettingRow } from "@/features/board/working";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 
 /**
- * The Pipeline's Out and Won columns, fetched for those columns.
+ * The work board's Out and Won columns, fetched for those columns.
  *
  * WHAT WAS WRONG. Both columns were built by taking the loaded quotes and looking each one's
  * customer up in the loaded customers. Both collections are capped at one page, so a quote whose

@@ -17,7 +17,7 @@ import {
 import type { BoardItem } from "./types";
 import type { OkItem } from "@/features/home/derive";
 import type { RailRow } from "@/features/quotes/derive";
-import type { GettingRow } from "@/features/pipeline/working";
+import type { GettingRow } from "@/features/board/working";
 import type { Estimate, Invoice, Job, Lead, Visit } from "@/lib/store/types";
 
 // ---- fixtures ---------------------------------------------------------------

@@ -32,7 +32,6 @@ const ROUTES: ReadonlyArray<{ path: string; name: string; ceiling: number }> = [
   { path: "/dashboard?tab=pricebook", name: "office-pricebook", ceiling: 95 },  // 60
   { path: "/dashboard?tab=checklists", name: "office-checklists", ceiling: 50 },// 27
   { path: "/customers", name: "customers", ceiling: 85 },                       // 52
-  { path: "/pipeline", name: "pipeline", ceiling: 100 },                        // 64
   { path: "/tasks", name: "tasks", ceiling: 45 },                               // 19
   { path: "/jobs", name: "jobs", ceiling: 70 },                                 // 41
   { path: "/money", name: "money", ceiling: 90 },                              // 57

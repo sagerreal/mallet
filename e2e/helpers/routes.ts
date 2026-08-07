@@ -6,7 +6,7 @@
  *
  * Excluded on purpose: token-gated public pages (/q/[token], /f/[token]) and
  * Stripe return pages (/pay/*), which need live tokens; and the redirect-only
- * routes /frontdesk, /pricebook and /quotes, whose destinations are covered here
+ * routes /frontdesk, /pricebook, /quotes and /pipeline, whose destinations are covered here
  * directly (redirects also never settle into a stable screenshot).
  */
 
@@ -35,7 +35,6 @@ export const ROUTES: readonly RouteDef[] = [
   { path: "/dashboard?tab=pricebook", name: "office-pricebook", audience: "office", mobile: true },
   { path: "/dashboard?tab=checklists", name: "office-checklists", audience: "office" },
   { path: "/customers", name: "customers", audience: "office", mobile: true },
-  { path: "/pipeline", name: "pipeline", audience: "office", mobile: true },
   { path: "/tasks", name: "tasks", audience: "office", mobile: true },
   { path: "/jobs", name: "jobs", audience: "office", mobile: true },
   { path: "/jobs?tab=schedule", name: "jobs-schedule", audience: "office" },

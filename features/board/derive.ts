@@ -17,7 +17,7 @@ import { estTotal } from "@/lib/estimates";
 import { daysSince } from "@/lib/clock";
 import { isVisitPlaced } from "@/lib/store/visit-placement";
 import { visitLabel, type OkItem } from "@/features/home/derive";
-import { intakeRowOf, type GettingRow } from "@/features/pipeline/working";
+import { intakeRowOf, type GettingRow } from "@/features/board/working";
 import type { RailRow } from "@/features/quotes/derive";
 import { invDue, invStatusKey } from "@/features/money/money-derive";
 import { jobDoneDate, jobTotal } from "@/features/jobs/today-derive";

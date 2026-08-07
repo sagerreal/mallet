@@ -2,7 +2,7 @@
  * components/shell/tab-roots.test.ts
  *
  * The bottom tab bar is the only navigation on a phone, and it reaches 9 routes.
- * Everything else — /pipeline, /tasks, /composer, /settings, /jobs/:id, /money/:id —
+ * Everything else — /tasks, /composer, /settings, /jobs/:id, /money/:id —
  * is a DEAD END: no back affordance existed anywhere in the app (`router.back()`
  * appeared zero times), and in a WKWebView there is no browser chrome to fall back
  * on. Tapping a tab escapes but loses your place.
@@ -35,7 +35,7 @@ describe("isTabRoot", () => {
   });
 
   it("treats the dead-end routes as non-roots (back control shown)", () => {
-    for (const route of ["/pipeline", "/tasks", "/composer", "/settings", "/more"]) {
+    for (const route of ["/tasks", "/composer", "/settings", "/more"]) {
       expect(isTabRoot(route), route).toBe(false);
     }
   });
@@ -57,7 +57,6 @@ describe("parentRouteOf", () => {
   });
 
   it("sends a flat office route to the office home", () => {
-    expect(parentRouteOf("/pipeline")).toBe("/dashboard");
     expect(parentRouteOf("/tasks")).toBe("/dashboard");
     expect(parentRouteOf("/composer")).toBe("/dashboard");
   });
@@ -67,7 +66,7 @@ describe("parentRouteOf", () => {
   });
 
   it("never returns the route it was given, which would be a no-op back", () => {
-    for (const route of ["/pipeline", "/tasks", "/composer", "/settings", "/jobs/x", "/money/y"]) {
+    for (const route of ["/tasks", "/composer", "/settings", "/jobs/x", "/money/y"]) {
       expect(parentRouteOf(route), route).not.toBe(route);
     }
   });

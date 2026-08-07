@@ -54,7 +54,7 @@ export function BoardCard({
   /**
    * The board's ledger for THIS card. With it the card holds its place after a send and shows the
    * ✓ line with its Undo, and the item is only dismissed when that window closes. Without it the
-   * send block keeps its own confirmation, as it does on the pipeline board.
+   * send block keeps its own confirmation instead.
    */
   send?: CardSend;
 }) {

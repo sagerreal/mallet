@@ -4,7 +4,7 @@
  * components/shell/section-tabs.tsx
  * Second-level navigation — a top tab bar under the app bar for the sub-views of
  * a section, so a phone can reach them (the bottom bar only carries level-one
- * sections). Customers → Customers · Pipeline · Tasks; Jobs → Jobs · Schedule ·
+ * sections). Customers → Customers · Tasks; Jobs → Jobs · Schedule ·
  * Timesheets. Mobile-only (CSS hides it on desktop, where the sidebar carries the
  * sub-nav). Route-driven — nothing renders on sections without sub-views.
  */
@@ -28,7 +28,7 @@ interface SecTab {
 }
 
 // The customer area's routes are separate pages grouped under "Customers".
-const CUSTOMER_AREA = ["/customers", "/pipeline", "/tasks"];
+const CUSTOMER_AREA = ["/customers", "/tasks"];
 
 export function SectionTabs() {
   const pathname = usePathname();
@@ -51,7 +51,6 @@ export function SectionTabs() {
   if (inCustomers) {
     tabs = [
       { href: "/customers", label: "Customers", active: pathname.startsWith("/customers"), count: customerCount },
-      { href: "/pipeline", label: "Pipeline", active: pathname.startsWith("/pipeline") },
       { href: "/tasks", label: "Tasks", active: pathname.startsWith("/tasks"), count: openTasks },
     ];
   } else if (inJobs) {

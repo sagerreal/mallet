@@ -1,6 +1,6 @@
 /**
- * features/pipeline/working.ts
- * Pure derivations for the board's first two columns. WORKING ITSELF = intake
+ * features/board/working.ts
+ * Pure derivations for the work board's lead columns. WORKING ITSELF = intake
  * the AI has in hand. GETTING THE NUMBER = the three routes a deal takes to a
  * price: a visit came back with scope notes (office owes the quote), a
  * walkthrough is on the books, or paper is being built in the shop — including
@@ -9,8 +9,8 @@
  */
 
 import { todayISO } from "@/lib/clock";
-import { isCooling, traceOf } from "./pipeline-lanes";
-import { scopedEstimateVisitWithJob, pendingEstimateVisit } from "./pipeline-utils";
+import { isCooling, traceOf } from "@/features/pipeline/pipeline-lanes";
+import { scopedEstimateVisitWithJob, pendingEstimateVisit } from "@/features/pipeline/pipeline-utils";
 import type { Estimate, Job, Lead } from "@/lib/store/types";
 
 export interface IntakeRow {

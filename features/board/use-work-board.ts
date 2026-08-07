@@ -5,7 +5,7 @@
  * EVERY OPEN PIECE OF WORK, IN ONE READ — the board's only data source.
  *
  * Composition, not a new endpoint. Each column is already answered by a worklist the app ships:
- * the Pipeline's server-selected quoting/out columns (useRailColumns), the morning queue's
+ * the server-selected quoting/out columns (useRailColumns), the morning queue's
  * prepared reminders (useOkQueue), the customers intake view, the jobs list and its scoped
  * needs-invoice view, and the invoice ledger's status bands. This hook fetches those, maps the
  * rows through the SAME store mappers every other screen uses, and hands them to the pure
@@ -13,7 +13,7 @@
  * in a column, and derive.ts owns how a card reads.
  *
  * WHY THE QUERY ARGS ARE COPIED, NOT INVENTED. Every read below repeats an existing caller's key
- * and options verbatim (the /pipeline page's intake read, the view-count endpoints, useOkQueue's
+ * and options verbatim (the customers intake read, the view-count endpoints, useOkQueue's
  * overdue read), so React Query serves both callers from ONE fetch. A near-miss variant — a
  * different limit, a different sort — is not a smaller change than a new endpoint; it is a second
  * copy of the same rows in the cache, refetching on its own schedule.
@@ -33,12 +33,12 @@ import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { toStoreJob } from "@/features/jobs/jobs-hydrator";
 import { dtoInvoiceSummaryToStore } from "@/lib/store/dto-mapper";
 import { invDue, invStatusKey } from "@/features/money/money-derive";
-import { useRailColumns } from "@/features/pipeline/use-rail-columns";
+import { useRailColumns } from "@/features/board/use-rail-columns";
 import { useOkQueue } from "@/features/home/use-ok-queue";
 import { billingItems, columnOf, jobItem, needsYouOf, quotingItems, requestItem } from "./derive";
 import type { OkItem } from "@/features/home/derive";
 import type { RailRow } from "@/features/quotes/derive";
-import type { GettingRow } from "@/features/pipeline/working";
+import type { GettingRow } from "@/features/board/working";
 import type { Invoice, Job, Lead } from "@/lib/store/types";
 import type { BoardColumn, BoardColumnId, WorkBoardData } from "./types";
 
