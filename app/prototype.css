@@ -1860,11 +1860,23 @@
   .tjf .tjcaret{display:inline-block;transition:transform .15s ease;font-size:var(--type-xs);color:var(--ink-3)}
   .tjf.open .tjcaret{transform:rotate(90deg)}
   .tjf-h:hover{color:var(--ink-2)}
-  /* Visit stepper (tech job sheet) — Scheduled → On the way → On site as a READOUT, never a
-     control (see components/modals/tech-job-modal/visit-steps.ts). The connector is drawn on the
-     node rather than between nodes so the three thirds stay equal at any width. */
+  /* Visit stepper (tech job sheet) — Scheduled → On the way → On site. A readout of what was
+     recorded, plus a FORWARD jump on the nodes still ahead of the visit (see
+     components/modals/tech-job-modal/visit-steps.ts). The connector is drawn on the node rather
+     than between nodes so the three thirds stay equal at any width. */
   .vstep{display:flex;align-items:flex-start;list-style:none;margin:0 0 var(--space-4);padding:0}
   .vstep-n{flex:1;text-align:center;position:relative;min-width:0}
+  /* One box for every node, button or not, so the geometry cannot depend on who is looking.
+     44px is the tap floor — the readout-only argument was right that three ~30px targets is the
+     worst thing you can hand a gloved thumb, so the live nodes do not get 30px. */
+  .vstep-body{display:block;width:100%;min-height:44px;background:none;border:none;padding:0;font-family:inherit;color:inherit;text-align:center}
+  button.vstep-body{cursor:pointer}
+  button.vstep-body:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:var(--radius-2xs)}
+  /* A live node reads as reachable, not as reached: the dot keeps its unfilled pending look and
+     only the label leaves the greyed-out tier. */
+  .vstep-n.jumpable .vstep-lab{color:var(--ink-2)}
+  .vstep-n.jumpable button.vstep-body:hover .vstep-lab{color:var(--ink)}
+  .vstep-n.jumpable button.vstep-body:hover .vstep-dot{border-color:var(--ink-3)}
   .vstep-n::before{content:"";position:absolute;top:6px;left:-50%;width:100%;height:2px;background:var(--line)}
   .vstep-n:first-child::before{display:none}
   .vstep-n.reached::before,.vstep-n.current::before{background:var(--ink)}

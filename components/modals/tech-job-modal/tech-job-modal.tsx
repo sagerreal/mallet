@@ -479,6 +479,9 @@ export function TechJobModalContent() {
         curVisit={curVisit}
         done={done}
         isOffice={isOffice}
+        // The stepper's forward jumps follow the FOOT's rule exactly — same visit, same viewer,
+        // so the two can never offer different moves.
+        stepVisitId={actVisit?.id}
         onStatus={onVisitStatus}
       />
 

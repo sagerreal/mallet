@@ -30,10 +30,15 @@ interface VisitsSecProps {
   done: boolean;
   /** Owner/office. ↩ Reopen writes a VISIT status, which has no field endpoint. */
   isOffice: boolean;
+  /**
+   * The one visit this viewer may move forward — the sheet's `actVisit`, the same visit the foot's
+   * primary steps. Only that row's stepper has live nodes; on every other row it stays a readout.
+   */
+  stepVisitId: string | undefined;
   onStatus: (visitId: string, status: string) => void;
 }
 
-export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: VisitsSecProps) {
+export function VisitsSec({ placed, curVisit, done, isOffice, stepVisitId, onStatus }: VisitsSecProps) {
   return (
     <div className="fsec">
       <div className="fsec-h">
@@ -75,7 +80,13 @@ export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: Visits
         </>
       ) : placed.length ? (
         placed.map((v) => (
-          <VisitRow key={v.id} visit={v} canReopen={isOffice} onStatus={(status) => onStatus(v.id, status)} />
+          <VisitRow
+            key={v.id}
+            visit={v}
+            canReopen={isOffice}
+            canStep={v.id === stepVisitId}
+            onStatus={(status) => onStatus(v.id, status)}
+          />
         ))
       ) : (
         <div className="empty-att" style={{ marginBottom: "0" }}>

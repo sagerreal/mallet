@@ -623,7 +623,8 @@ describe("TechJobModalContent — counted rows", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The visit stepper — a readout of what was recorded, never a control.
+// The visit stepper — a readout of what was recorded, plus a forward jump on the steps still
+// ahead of the visit (the owner's request: he forgot to tap Start driving and was at the door).
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — visit stepper", () => {
@@ -634,20 +635,28 @@ describe("TechJobModalContent — visit stepper", () => {
     expect(list).toBeTruthy();
     expect(nodes.map((n) => n.textContent)).toEqual([
       "Scheduled, current step",
-      "On the way, not yet",
-      "On site, not yet",
+      // A live node says what tapping it does rather than only that it has not happened.
+      "On the way, not yet — tap to move the visit here",
+      "On site, not yet — tap to move the visit here",
     ]);
     expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
   });
 
-  // The nodes are deliberately not buttons: three ~30px targets is the worst tap geometry for a
-  // gloved thumb, and the server refuses every backwards transition, so tappable nodes would look
-  // live and refuse. The foot primary is the one big target.
-  it("draws no tappable node — the stepper reads, the foot advances", () => {
+  // THE OWNER'S REQUEST, end to end through the real sheet. The foot's ladder offers
+  // "I've arrived →" only from enroute, so this is the only route from scheduled to on site.
+  it("tapping On site from scheduled writes in_progress — the skipped-departure shortcut", () => {
     render(<TechJobModalContent />);
-    for (const name of ["Scheduled", "On the way", "On site"]) {
-      expect(screen.queryByRole("button", { name })).toBeNull();
-    }
+    fireEvent.click(screen.getByRole("button", { name: /On site/ }));
+    // Default viewer in this file is the owner, so the write names the OFFICE surface — same
+    // routing the foot's own taps take (see the owner/office describe above).
+    expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "onsite", "office");
+  });
+
+  // Forward only. Behind the cursor there is no control at all — going back is the office's
+  // ↩ Reopen, because un-finishing rewrites hours somebody may already have been paid for.
+  it("draws no node behind the visit — Scheduled is never tappable", () => {
+    render(<TechJobModalContent />);
+    expect(screen.queryByRole("button", { name: /Scheduled/ })).toBeNull();
   });
 
   // THE RULE: skipped stays skipped. No backfilled arrival, in the record or on the glass.
