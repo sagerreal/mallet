@@ -91,6 +91,16 @@ export default function OfficePage() {
 }
 
 /**
+ * A BoardItemKind with no modal behind it. The `never` parameter makes adding a fifth kind a
+ * COMPILE error at the one call site that has to map it, rather than a card that quietly opens the
+ * wrong record. The throw is unreachable by construction — it exists so the mapping has no return
+ * path that guesses. (Same idiom as modules/calls/infra/outbound-call-mapper.ts's unknownTransport.)
+ */
+function unknownBoardKind(kind: never): never {
+  throw new Error(`work board: no modal for item kind ${String(kind)}`);
+}
+
+/**
  * Today = the handoff note over THE BOARD. The flow strip and the OK queue are gone: a strip of
  * six tiles stated figures the owner could not act on, and the queue showed only the five records
  * that happened to carry a prepared text. The board shows EVERY open piece of work in the four
@@ -118,12 +128,26 @@ function TodayPane() {
   const [retrying, setRetrying] = useState(false);
 
   // A card opens the record it IS. The board settled `kind` and `refId` upstream, so the card and
-  // the modal behind it can never disagree about which record was clicked.
-  function openItem(item: BoardItem) {
-    if (item.kind === "lead") openModal(MODAL.LEAD, { leadId: item.refId });
-    else if (item.kind === "estimate") openModal(MODAL.EST, { estId: item.refId });
-    else if (item.kind === "job") openModal(MODAL.JOB, { jobId: item.refId });
-    else openModal(MODAL.INVOICE, { invoiceId: item.refId });
+  // the modal behind it can never disagree about which record was clicked. Exhaustive on purpose:
+  // a catch-all `else` would open the INVOICE modal for a fifth kind added later — silently
+  // sending the owner to somebody else's record. See unknownBoardKind.
+  function openItem(item: BoardItem): void {
+    switch (item.kind) {
+      case "lead":
+        openModal(MODAL.LEAD, { leadId: item.refId });
+        break;
+      case "estimate":
+        openModal(MODAL.EST, { estId: item.refId });
+        break;
+      case "job":
+        openModal(MODAL.JOB, { jobId: item.refId });
+        break;
+      case "invoice":
+        openModal(MODAL.INVOICE, { invoiceId: item.refId });
+        break;
+      default:
+        unknownBoardKind(item.kind);
+    }
   }
 
   // The board composes eleven reads and holds no refetch of its own, so retry invalidates the
@@ -151,7 +175,11 @@ function TodayPane() {
         queueCount={board.needsYou.count}
         queueValue={board.needsYou.valueDollars}
         textsReady={board.needsYou.textsReady}
-        loading={!board.isFetched}
+        // `|| isError` is load-bearing, not belt-and-braces. Once a failed source SETTLES both
+        // flags are true, and on `!isFetched` alone the hero would drop its skeleton and print
+        // "Nothing's waiting on you. Go run the day." — derived from an empty board — directly
+        // above "Couldn't load your board." Two contradicting statements, the confident one first.
+        loading={!board.isFetched || board.isError}
       />
 
       {!board.isFetched && !board.isError ? (

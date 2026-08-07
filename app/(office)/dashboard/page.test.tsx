@@ -2,12 +2,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 
+/** Only what the page actually selects: the tab counts, the Front Desk dot, and the shift report. */
 interface Store {
   toggles: { frontDesk: boolean };
   services: unknown[];
   checklists: unknown[];
-  leads: unknown[]; estimates: unknown[]; invoices: unknown[]; jobs: unknown[]; techs: unknown[];
-  dismissedAttention: unknown[];
+  leads: unknown[]; estimates: unknown[]; jobs: unknown[];
 }
 let storeState: Store;
 
@@ -17,14 +17,23 @@ let boardState: { needsYou: { count: number; valueDollars: number; textsReady: n
 const openModal = vi.fn();
 /** The pane's own card→modal mapping, captured off the board it hands it to. */
 let onOpen: (item: { kind: string; refId: string }) => void;
+/** What the pane tells the hero — `loading` above all, which must never disagree with the board. */
+let handoff: { queueCount: number; queueValue: number; textsReady?: number; loading?: boolean };
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),
   useOpenModal: () => openModal,
 }));
 vi.mock("@/features/identity/hooks", () => ({ useMe: () => ({ data: { orgName: "Rivera Plumbing", name: "Owen D", email: "o@x.com" } }) }));
-vi.mock("@/features/home/derive", () => ({ deriveShiftReport: () => ({}), deriveOkQueue: () => [] }));
-vi.mock("@/features/home/handoff-note", () => ({ HandoffNote: () => <div data-testid="handoff" /> }));
+vi.mock("@/features/home/derive", () => ({ deriveShiftReport: () => ({}) }));
+// Kept as a stub, but one that reports its own gate: the testid says which branch the REAL
+// component would take, so "the hero is loading" is asserted rather than assumed.
+vi.mock("@/features/home/handoff-note", () => ({
+  HandoffNote: (props: typeof handoff) => {
+    handoff = props;
+    return <div data-testid={props.loading ? "handoff-loading" : "handoff"} />;
+  },
+}));
 // The pane's only remaining tRPC use is the retry's cache invalidation — these tests are about
 // the tab shell, so it's a no-op.
 vi.mock("@/lib/trpc/client", () => ({
@@ -52,7 +61,7 @@ describe("Office page — one tab bar, four panes", () => {
   beforeEach(() => {
     storeState = {
       toggles: { frontDesk: true }, services: [{ id: "s1" }], checklists: [],
-      leads: [], estimates: [], invoices: [], jobs: [], techs: [], dismissedAttention: [],
+      leads: [], estimates: [], jobs: [],
     };
     boardState = { needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: false };
     openModal.mockClear();
@@ -119,5 +128,24 @@ describe("Office page — one tab bar, four panes", () => {
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.queryByTestId("board")).toBeNull();
     expect(screen.queryByTestId("board-skeleton")).toBeNull();
+  });
+
+  // A SETTLED failure reports isFetched AND isError together, with zeros in `needsYou`. Gating the
+  // hero on `!isFetched` alone let it drop its skeleton and print "Nothing's waiting on you. Go run
+  // the day." immediately above "Couldn't load your board." — the app contradicting itself, most
+  // confidently in the sentence that was wrong.
+  it("a SETTLED error keeps the hero loading — no zero-state above the load-failed panel", () => {
+    boardState = { needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: true };
+    render(<OfficePage />);
+    expect(handoff.loading).toBe(true);
+    expect(screen.getByTestId("handoff-loading")).toBeTruthy();
+    expect(screen.queryByTestId("handoff")).toBeNull();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+
+  it("a settled, healthy board hands the hero its own figures and stops loading", () => {
+    boardState = { needsYou: { count: 35, valueDollars: 5310, textsReady: 6 }, isFetched: true, isError: false };
+    render(<OfficePage />);
+    expect(handoff).toMatchObject({ queueCount: 35, queueValue: 5310, textsReady: 6, loading: false });
   });
 });

@@ -33,11 +33,14 @@ function countWord(n: number): string {
  * both, the sentence states both. A caller that only has a queue keeps the original wording;
  * nothing about it moved.
  */
-function queueClause(queueCount: number, textsReady?: number): string {
+export function queueClause(queueCount: number, textsReady?: number): string {
   if (textsReady === undefined) {
     return `${countWord(queueCount)} ${queueCount === 1 ? "text" : "texts"} below, ready to send.`;
   }
   const items = `${queueCount} ${queueCount === 1 ? "item" : "items"}`;
+  // No drafts is not a fact worth a clause. "· 0 texts ready to send" states a negative nobody
+  // asked about and reads as a failure; the item count alone is the whole truth here.
+  if (textsReady === 0) return `${items}.`;
   return `${items} · ${textsReady} ${textsReady === 1 ? "text" : "texts"} ready to send.`;
 }
 
@@ -89,10 +92,18 @@ interface HandoffNoteProps {
    */
   textsReady?: number;
   /**
-   * Cold reload: the report/queue derive from not-yet-hydrated store slices. While true, the
-   * thesis line renders as a skeleton — a derived-from-nothing "Quiet night" or "Nothing's
-   * waiting on you" would be a statement the app can't yet stand behind. Identity (org name,
-   * greeting) is server-seeded and stays.
+   * The caller does not yet know what is waiting. While true the thesis line renders as a
+   * skeleton, because every sentence it could write — "Nothing's waiting on you. Go run the day."
+   * most of all — would be derived from figures the app hasn't got. Identity (org name, greeting)
+   * is server-seeded and stays.
+   *
+   * The dashboard sets this on `!board.isFetched || board.isError`: an ERRORED board settles with
+   * `isFetched` true and zeros in hand, so gating on "not fetched" alone would print the confident
+   * zero-state directly above the load-failed panel.
+   *
+   * `report` is deliberately NOT gated by this. It derives from local-only acts that are never
+   * hydrated, so an empty one means "no data" and `nightClause` returns "" rather than claiming a
+   * quiet night — there is no false statement to suppress.
    */
   loading?: boolean;
 }
