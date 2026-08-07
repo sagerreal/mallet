@@ -33,6 +33,10 @@ import { toStoreLead } from "@/features/customers/leads-hydrator";
 /** Past this many, a column is a backlog rather than a worklist, and the header says so. */
 const COLUMN_CAP = 200;
 
+/** Every read has answered at least once, empty or not — see RailColumns.hasData. */
+const landed = (...reads: { data: unknown }[]): boolean =>
+  reads.every((read) => read.data !== undefined);
+
 export interface RailColumns {
   /** The Quoting column — customers with a price being built, chosen by the database. */
   readonly getting: GettingRow[];
@@ -47,6 +51,14 @@ export interface RailColumns {
   readonly delta: string | null;
   readonly isFetched: boolean;
   readonly isError: boolean;
+  /**
+   * Every read has answered at least once, empty or not.
+   *
+   * Distinct from `out.length > 0`, which a caller cannot use in its place: a shop with nothing
+   * out on quotes has answered reads and no rows, and treating that as "no data" makes one
+   * failed refetch look like a broken screen.
+   */
+  readonly hasData: boolean;
 }
 
 export function useRailColumns(): RailColumns {
@@ -123,5 +135,6 @@ export function useRailColumns(): RailColumns {
     wonTruncated: (acceptedItems?.length ?? 0) >= COLUMN_CAP,
     isFetched: sent.isFetched && accepted.isFetched && quotingLeads.isFetched && drafts.isFetched,
     isError: sent.isError || accepted.isError || quotingLeads.isError || drafts.isError,
+    hasData: landed(sent, accepted, quotingLeads, drafts),
   };
 }

@@ -18,8 +18,12 @@
  * different limit, a different sort — is not a smaller change than a new endpoint; it is a second
  * copy of the same rows in the cache, refetching on its own schedule.
  *
- * The React wrapper holds queries and one memo. Everything that decides what an owner sees lives
- * in `assembleBoard`, which is pure and tested on its own.
+ * `today` is the CLIENT's local date: there is no org timezone column, and jobs.list rejects a
+ * date-relative view without one (modules/jobs/infra/job-views.ts).
+ *
+ * The React wrapper holds queries and one memo. Every rule — column order, what a header states,
+ * which rows are excluded, which page is truncated — lives in an exported pure function below and
+ * is unit-tested there.
  */
 
 import { useMemo } from "react";
@@ -28,7 +32,7 @@ import { localToday } from "@/features/jobs/use-jobs-query";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { toStoreJob } from "@/features/jobs/jobs-hydrator";
 import { dtoInvoiceSummaryToStore } from "@/lib/store/dto-mapper";
-import { invStatusKey } from "@/features/money/money-derive";
+import { invDue, invStatusKey } from "@/features/money/money-derive";
 import { useRailColumns } from "@/features/pipeline/use-rail-columns";
 import { useOkQueue } from "@/features/home/use-ok-queue";
 import { billingItems, columnOf, jobItem, needsYouOf, quotingItems, requestItem } from "./derive";
@@ -57,6 +61,13 @@ const COLUMN_TITLES: Record<BoardColumnId, string> = {
 
 /** Worklists refetch when the owner comes back to the tab — the convention every column read uses. */
 const WORKLIST = { refetchOnWindowFocus: true } as const;
+
+/** The list shapes this hook maps from. Derived from the routers, so they cannot drift. */
+type LeadRow = RouterOutputs["v1"]["customers"]["list"]["items"][number];
+type JobRow = RouterOutputs["v1"]["jobs"]["list"]["items"][number];
+type InvoiceRow = RouterOutputs["v1"]["invoicing"]["list"]["items"][number];
+/** Any list row carrying the DTO's own customer name — jobs and invoices both do. */
+type NamedRow = { id: string; customerName: string | null };
 
 // ---- pure composition ---------------------------------------------------------
 
@@ -111,9 +122,16 @@ export interface WorkBoardInputs {
 /** Cents → dollars, once, where the count endpoints' figures enter the board. */
 const dollars = (cents: number): number => cents / 100;
 
+/** A figure only counts if it IS one — a NaN must never reach a header. */
+const finite = (n: number): number => (Number.isFinite(n) ? n : 0);
+
 /** Both figures or neither: half a server total is not a smaller lie than none. */
 const sumBoth = (a: number | undefined, b: number | undefined): number | undefined =>
   a === undefined || b === undefined ? undefined : a + b;
+
+/** The page's own contribution on top of a book-wide figure — silent when there isn't one. */
+const plus = (total: number | undefined, extra: number): number | undefined =>
+  total === undefined ? undefined : total + extra;
 
 /**
  * A walkthrough is not a job on the board — it is a route to a price, and it already has a card in
@@ -121,6 +139,9 @@ const sumBoth = (a: number | undefined, b: number | undefined): number | undefin
  * silently vanishing from the one screen that is meant to hold every open piece of work.
  */
 const isWorkJob = (job: Job): boolean => job.kind !== "estimate";
+
+/** A capped read that came back full is a page of a longer list, and the column must say so. */
+const atCap = (rows: readonly unknown[], cap: number): boolean => rows.length >= cap;
 
 /** The prepared reminders, keyed by the record each one is about. */
 function okMap(
@@ -138,12 +159,64 @@ function okMap(
 }
 
 /**
- * One card per bill.
+ * The list DTO's own customer names, merged across every page that carries them.
  *
- * The four bands are mutually exclusive in SQL (invoice-views.ts), but they are four separate
- * reads: a bill that crosses its due date between two of them is in both pages for as long as the
- * older one is cached. Two cards for one invoice would double it in the needs-you figure and
- * collide on `bi-<id>`, so the first band that reported it wins.
+ * Variadic because the jobs half of the board is TWO reads — open work and finished-unbilled work
+ * — feeding ONE map: `jobItem` and `billingItems` are handed the same `jobCustomerNames`, so a
+ * name resolved by either page names its card. Blank is not a name; the hydrator writes "".
+ */
+export function namesById(...rowSets: readonly NamedRow[][]): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const rows of rowSets) {
+    for (const row of rows) if (row.customerName) map.set(row.id, row.customerName);
+  }
+  return map;
+}
+
+/**
+ * The four bill bands, in invStatusKey's own priority order.
+ *
+ * The order is load-bearing, not cosmetic: the bands are four separate reads, so a bill that
+ * crosses its due date between two of them is in both pages at once and `dedupeById` keeps the
+ * FIRST copy. Draft → over → partial → sent means the surviving card is the one from the band
+ * that needs the most attention — the order the ledger itself ranks by (invoice-sorts.ts).
+ */
+export function billBands(pages: {
+  readonly draft: InvoiceRow[];
+  readonly over: InvoiceRow[];
+  readonly partial: InvoiceRow[];
+  readonly sent: InvoiceRow[];
+}): InvoiceRow[][] {
+  return [pages.draft, pages.over, pages.partial, pages.sent];
+}
+
+/**
+ * Which columns are showing a page of a longer list.
+ *
+ * Quoting does not compute one: its `out` half reports its own cap from the rail, and its
+ * `getting` half is fetched at a cap of 200 the rail does not report at all. Billing is the odd
+ * one — five reads feed it (finished work plus the four bill bands), and any one of them hitting
+ * its cap means the column is a page.
+ */
+export function boardTruncation(pages: {
+  readonly requests: readonly unknown[];
+  readonly jobs: readonly unknown[];
+  readonly needsInvoice: readonly unknown[];
+  readonly bills: readonly (readonly unknown[])[];
+  readonly quoting: boolean;
+}): BoardTruncation {
+  return {
+    requests: atCap(pages.requests, REQUEST_CAP),
+    quoting: pages.quoting,
+    jobs: atCap(pages.jobs, JOB_CAP),
+    billing:
+      atCap(pages.needsInvoice, BILL_CAP) || pages.bills.some((rows) => atCap(rows, BILL_CAP)),
+  };
+}
+
+/**
+ * One card per bill. See billBands for why the input can contain the same invoice twice, and why
+ * the first copy is the right one to keep.
  */
 function dedupeById(invoices: Invoice[]): Invoice[] {
   const seen = new Set<string>();
@@ -157,25 +230,25 @@ function dedupeById(invoices: Invoice[]): Invoice[] {
 }
 
 /**
- * The billing header's figures.
+ * The billing header: the whole book, plus the drafts the book's own totals leave out.
  *
- * jobs.viewCounts counts finished, unbilled work and invoicing.totals counts every open bill — but
- * `totals()` excludes drafts by construction (drizzle-invoice-repository.ts:277) and this column
- * shows drafts. So the book-wide figures describe the whole column only while no draft is on it;
- * with one there, the column states its own cards instead. A header that silently omits a card
- * underneath it is the disagreement the rail columns were rebuilt to remove.
+ * `jobs.viewCounts` counts finished, unbilled work and `invoicing.totals` counts every open bill —
+ * but `totals()` excludes drafts by construction (`ne(status,'draft')`,
+ * drizzle-invoice-repository.ts:277), and this column shows drafts. The three sets are disjoint,
+ * so the loaded draft cards ADD to the book-wide figures rather than replacing them. Exact up to
+ * the draft page's own cap, where `truncated` already states that the column is a page.
  */
 function billingFigures(
   invoices: Invoice[],
   server: BoardServerFigures,
 ): { serverCount?: number; serverDollars?: number } {
-  if (invoices.some((inv) => invStatusKey(inv) === "draft")) return {};
+  // The drafts actually ON the board — the same set billingItems renders (isOpenBill).
+  const drafts = invoices.filter((inv) => !inv.archived && invStatusKey(inv) === "draft");
+  const draftDollars = drafts.reduce((sum, inv) => sum + finite(invDue(inv)), 0);
+  const bookCents = sumBoth(server.needsInvoiceCents, server.openInvoiceCents);
   return {
-    serverCount: sumBoth(server.needsInvoiceCount, server.openInvoiceCount),
-    serverDollars: sumBoth(
-      server.needsInvoiceCents === undefined ? undefined : dollars(server.needsInvoiceCents),
-      server.openInvoiceCents === undefined ? undefined : dollars(server.openInvoiceCents),
-    ),
+    serverCount: plus(sumBoth(server.needsInvoiceCount, server.openInvoiceCount), drafts.length),
+    serverDollars: plus(bookCents === undefined ? undefined : dollars(bookCents), draftDollars),
   };
 }
 
@@ -239,22 +312,8 @@ export function assembleBoard(input: WorkBoardInputs): WorkBoardData {
 
 // ---- the hook -----------------------------------------------------------------
 
-type LeadRow = RouterOutputs["v1"]["customers"]["list"]["items"][number];
-type JobRow = RouterOutputs["v1"]["jobs"]["list"]["items"][number];
-type InvoiceRow = RouterOutputs["v1"]["invoicing"]["list"]["items"][number];
-
-/** The list DTO's own name, kept where the store mapper cannot carry it. Blank is not a name. */
-function namesById(rows: readonly { id: string; customerName: string | null }[]): Map<string, string> {
-  const map = new Map<string, string>();
-  for (const row of rows) if (row.customerName) map.set(row.id, row.customerName);
-  return map;
-}
-
 /** A list read's rows, or none — the page shape every list endpoint returns. */
 const pageRows = <T,>(page: { items: T[] } | undefined): T[] => page?.items ?? [];
-
-/** A capped read that came back full is a page of a longer list, and the column must say so. */
-const atCap = (rows: readonly unknown[], cap: number): boolean => rows.length >= cap;
 
 /** The book-wide figures the three count endpoints answer, in the units they report them in. */
 function serverFiguresFrom(
@@ -281,15 +340,11 @@ const sourceOf = (q: { isFetched: boolean; isError: boolean; data: unknown }): B
 });
 
 export function useWorkBoard(): WorkBoardData {
-  // The CLIENT's local date — there is no org timezone column (modules/jobs/infra/job-views.ts).
   const today = useMemo(localToday, []);
   const rail = useRailColumns();
   const ok = useOkQueue();
 
-  const intake = api.v1.customers.list.useQuery(
-    { view: "intake", limit: REQUEST_CAP, sort: "created" },
-    WORKLIST,
-  );
+  const intake = api.v1.customers.list.useQuery({ view: "intake", limit: REQUEST_CAP, sort: "created" }, WORKLIST);
   const leadCounts = api.v1.customers.viewCounts.useQuery(undefined, WORKLIST);
   const active = api.v1.jobs.list.useQuery({ activeOnly: true, limit: JOB_CAP }, WORKLIST);
   const ready = api.v1.jobs.list.useQuery({ view: "needsInvoice", today, limit: BILL_CAP }, WORKLIST);
@@ -297,52 +352,37 @@ export function useWorkBoard(): WorkBoardData {
   const draft = api.v1.invoicing.list.useQuery({ view: "draft", limit: BILL_CAP }, WORKLIST);
   const partial = api.v1.invoicing.list.useQuery({ view: "partial", limit: BILL_CAP }, WORKLIST);
   const sent = api.v1.invoicing.list.useQuery({ view: "sent", limit: BILL_CAP }, WORKLIST);
-  // The ok queue's own overdue read, key for key — one fetch feeds both the cards and their texts.
-  const over = api.v1.invoicing.list.useQuery(
-    { view: "over", limit: BILL_CAP, sort: "oldestUnpaid" },
-    WORKLIST,
-  );
+  // The ok queue's own overdue read, key for key — one fetch feeds the cards and their texts.
+  const over = api.v1.invoicing.list.useQuery({ view: "over", limit: BILL_CAP, sort: "oldestUnpaid" }, WORKLIST);
   const totals = api.v1.invoicing.totals.useQuery(undefined, WORKLIST);
 
+  // rail and ok report {isFetched, isError, hasData} themselves — one BoardSource each.
   const load = boardLoadState([
     sourceOf(intake), sourceOf(leadCounts), sourceOf(active), sourceOf(ready), sourceOf(jobCounts),
-    sourceOf(draft), sourceOf(partial), sourceOf(sent), sourceOf(over), sourceOf(totals),
-    { isFetched: rail.isFetched, isError: rail.isError, hasData: rail.out.length > 0 || rail.getting.length > 0 },
-    { isFetched: ok.isFetched, isError: ok.isError, hasData: ok.items.length > 0 },
+    sourceOf(draft), sourceOf(partial), sourceOf(sent), sourceOf(over), sourceOf(totals), rail, ok,
   ]);
 
   return useMemo(() => {
-    const intakeRows: LeadRow[] = pageRows(intake.data);
-    const activeRows: JobRow[] = pageRows(active.data);
-    const readyRows: JobRow[] = pageRows(ready.data);
-    // Band order = invStatusKey's priority order, so the surviving copy of a bill caught mid-move
-    // is the one from the band that needs the most attention.
-    const bills: InvoiceRow[][] = [
-      pageRows(draft.data),
-      pageRows(over.data),
-      pageRows(partial.data),
-      pageRows(sent.data),
-    ];
-    const billRows = bills.flat();
-
+    const requests: LeadRow[] = pageRows(intake.data);
+    const jobs: JobRow[] = pageRows(active.data);
+    const needsInvoice: JobRow[] = pageRows(ready.data);
+    const bills = billBands({
+      draft: pageRows(draft.data), over: pageRows(over.data),
+      partial: pageRows(partial.data), sent: pageRows(sent.data),
+    });
+    const billRows: InvoiceRow[] = bills.flat();
     return assembleBoard({
-      requests: intakeRows.map(toStoreLead),
+      requests: requests.map(toStoreLead),
       getting: rail.getting,
       out: rail.out,
-      jobs: activeRows.map(toStoreJob),
-      needsInvoiceJobs: readyRows.map(toStoreJob),
+      jobs: jobs.map(toStoreJob),
+      needsInvoiceJobs: needsInvoice.map(toStoreJob),
       invoices: billRows.map((row) => dtoInvoiceSummaryToStore(row, NO_CONTACT)),
-      jobCustomerNames: namesById([...activeRows, ...readyRows]),
+      jobCustomerNames: namesById(jobs, needsInvoice),
       invCustomerNames: namesById(billRows),
       oks: ok.items,
       server: serverFiguresFrom(leadCounts.data, jobCounts.data, totals.data),
-      truncated: {
-        requests: atCap(intakeRows, REQUEST_CAP),
-        // The rail reports its own cap; its quoting half is fetched at a cap of 200 and reports none.
-        quoting: rail.outTruncated,
-        jobs: atCap(activeRows, JOB_CAP),
-        billing: atCap(readyRows, BILL_CAP) || bills.some((rows) => atCap(rows, BILL_CAP)),
-      },
+      truncated: boardTruncation({ requests, jobs, needsInvoice, bills, quoting: rail.outTruncated }),
       isFetched: load.isFetched,
       isError: load.isError,
     });

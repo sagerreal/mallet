@@ -10,7 +10,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { assembleBoard, boardLoadState, type WorkBoardInputs } from "./use-work-board";
+import {
+  assembleBoard,
+  billBands,
+  boardLoadState,
+  boardTruncation,
+  namesById,
+  type WorkBoardInputs,
+} from "./use-work-board";
 import type { OkItem } from "@/features/home/derive";
 import type { RailRow } from "@/features/quotes/derive";
 import type { GettingRow } from "@/features/pipeline/working";
@@ -39,10 +46,15 @@ const job = (over: Partial<Job> = {}): Job => ({
   addons: [], photos: [], notes: "", acts: [], visits: [visit()], ...over,
 });
 
+/**
+ * A LIST-hydrated bill, exactly as `dtoInvoiceSummaryToStore` builds one: `partial: true` with the
+ * server's own `due`/`paidTotal`, which is the branch `invDue` actually takes on this board.
+ */
 const invoice = (over: Partial<Invoice> = {}): Invoice => ({
   id: "i1", num: "INV-2001", jobId: "j1", leadId: "l1", cust: "Maria Ortiz",
   phone: "555-0100", title: "Water heater replacement", lines: [], total: 1325,
-  depPaid: 0, payments: [], status: "sent", age: 30, archived: false, ...over,
+  depPaid: 0, payments: [], status: "sent", age: 30, archived: false,
+  partial: true, due: 1325, paidTotal: 0, ...over,
 });
 
 /** Past the date the customer agreed to — the "over" band of invStatusKey, clock pinned 2026-07-01. */
@@ -139,6 +151,27 @@ describe("assembleBoard", () => {
     expect(board.columns[3].items[0]?.name).toBe("Dana Whitfield");
   });
 
+  it("keeps a shop draft in the quoting column and never as a sent quote", () => {
+    const board = assembleBoard(
+      inputs({
+        getting: [
+          gettingRow({ kind: "shop", est: estimate({ id: "e9", status: "draft", cachedTotal: 1200 }) }),
+          gettingRow({ kind: "visit", lead: lead({ id: "l4", name: "Ana Reyes" }), stamp: "walkthrough Friday" }),
+        ],
+        out: [railRow()],
+      }),
+    );
+    // The draft is the office's move and opens the QUOTE; the walkthrough is passive and has no
+    // paper yet, so it opens the customer. Only the rail's own row can read as out with a customer.
+    expect(board.columns[1].items.map((i) => [i.key, i.stateLabel])).toEqual([
+      ["be-e9", "Draft in progress"],
+      ["be-e1", "Awaiting customer"],
+      ["bl-l4", "Walkthrough booked"],
+    ]);
+    const keys = board.columns.flatMap((c) => c.items.map((i) => i.key));
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
   it("attaches a prepared text to the record it is about", () => {
     const board = assembleBoard(loadedBoard());
     const quoteCard = board.columns[1].items.find((i) => i.refId === "e1");
@@ -147,11 +180,12 @@ describe("assembleBoard", () => {
     expect(billCard).toMatchObject({ stateLabel: "Overdue", ok: invoiceOk });
   });
 
-  it("shows a bill returned by two views once", () => {
+  it("shows a bill returned by two views once, keeping the higher-priority copy", () => {
     // The four invoice views are mutually exclusive server-side, but they are four separate reads:
-    // a bill that crosses its due date between two of them lands in both pages at once.
+    // a bill that crosses its due date between two of them lands in both pages at once. billBands
+    // hands them over overdue-before-sent, so the card that survives is the one to chase.
     const board = assembleBoard(inputs({ invoices: [overdueInvoice, invoice({ dueAt: null })] }));
-    expect(board.columns[3].items.map((i) => i.key)).toEqual(["bi-i1"]);
+    expect(board.columns[3].items.map((i) => [i.key, i.stateLabel])).toEqual([["bi-i1", "Overdue"]]);
   });
 
   it("prefers the server's intake count over the loaded page", () => {
@@ -160,35 +194,42 @@ describe("assembleBoard", () => {
     expect(board.columns[0].items).toHaveLength(1);
   });
 
-  it("states the whole book in the billing header while no draft is on the board", () => {
+  const BOOK = {
+    needsInvoiceCount: 7, needsInvoiceCents: 250_000,
+    openInvoiceCount: 12, openInvoiceCents: 890_000,
+  };
+
+  it("states the whole book in the billing header", () => {
     const board = assembleBoard(
       inputs({
         needsInvoiceJobs: [job({ status: "done", visits: [visit({ date: "2026-06-28", status: "done" })] })],
         invoices: [invoice()],
-        server: {
-          needsInvoiceCount: 7, needsInvoiceCents: 250_000,
-          openInvoiceCount: 12, openInvoiceCents: 890_000,
-        },
+        server: BOOK,
       }),
     );
     expect(board.columns[3].count).toBe(19);
     expect(board.columns[3].valueDollars).toBe(11_400);
   });
 
-  it("states its own cards in the billing header once a draft is on it", () => {
-    // totals() excludes drafts by construction, so the book-wide figures no longer describe this
-    // column — a header that silently omits a card underneath it is worse than a page-scoped one.
+  it("adds the drafts the book's own totals leave out", () => {
+    // invoicing.totals() excludes drafts by construction, and needsInvoice counts jobs — so the
+    // draft cards are disjoint from both and ADD to the figures rather than replacing them.
     const board = assembleBoard(
       inputs({
-        invoices: [invoice({ id: "d1", status: "draft" }), invoice()],
-        server: {
-          needsInvoiceCount: 7, needsInvoiceCents: 250_000,
-          openInvoiceCount: 12, openInvoiceCents: 890_000,
-        },
+        invoices: [invoice({ id: "d1", status: "draft", due: 900 }), invoice()],
+        server: BOOK,
       }),
     );
-    expect(board.columns[3].count).toBe(2);
-    expect(board.columns[3].valueDollars).toBe(2650);
+    expect(board.columns[3].count).toBe(20);
+    expect(board.columns[3].valueDollars).toBe(12_300);
+  });
+
+  it("falls back to its own cards when a book figure has not landed", () => {
+    const board = assembleBoard(
+      inputs({ invoices: [invoice()], server: { needsInvoiceCount: 7, needsInvoiceCents: 250_000 } }),
+    );
+    expect(board.columns[3].count).toBe(1);
+    expect(board.columns[3].valueDollars).toBe(1325);
   });
 
   it("carries each column's truncation flag through", () => {
@@ -225,5 +266,62 @@ describe("boardLoadState", () => {
 
   it("an empty board with no sources is fetched and unbroken", () => {
     expect(boardLoadState([])).toEqual({ isFetched: true, isError: false });
+  });
+});
+
+// ---- namesById / billBands / boardTruncation ----------------------------------
+
+describe("namesById", () => {
+  it("merges the name seams of every page it is given", () => {
+    // The jobs half of the board is two reads — open work and finished-unbilled work — feeding
+    // ONE map, because jobItem and billingItems are handed the same one.
+    const map = namesById(
+      [{ id: "j1", customerName: "Maria Ortiz" }],
+      [{ id: "j2", customerName: "Dana Whitfield" }],
+    );
+    expect([...map]).toEqual([["j1", "Maria Ortiz"], ["j2", "Dana Whitfield"]]);
+  });
+
+  it("keeps no entry for a row the server could not name", () => {
+    expect(namesById([{ id: "j1", customerName: null }]).has("j1")).toBe(false);
+  });
+});
+
+describe("billBands", () => {
+  /** Only the id matters to the ordering rule; the full invoice DTO does not. */
+  const bandRow = (id: string) => ({ id }) as never;
+
+  it("orders the bands the way invStatusKey ranks them", () => {
+    // Load-bearing: dedupeById keeps the FIRST copy, so this order decides which card an owner
+    // sees for a bill that two reads caught in different bands.
+    const bands = billBands({
+      draft: [bandRow("d")], over: [bandRow("o")], partial: [bandRow("p")], sent: [bandRow("s")],
+    });
+    expect(bands.flat().map((r: { id: string }) => r.id)).toEqual(["d", "o", "p", "s"]);
+  });
+});
+
+describe("boardTruncation", () => {
+  const rows = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const base = { requests: [], jobs: [], needsInvoice: [], bills: [[], [], [], []], quoting: false };
+
+  it("flags a column whose page came back at its cap", () => {
+    expect(boardTruncation({ ...base, requests: rows(100), jobs: rows(100) })).toEqual({
+      requests: true, quoting: false, jobs: true, billing: false,
+    });
+  });
+
+  it("leaves a column below its cap alone", () => {
+    expect(boardTruncation({ ...base, requests: rows(99), jobs: rows(99) }).requests).toBe(false);
+  });
+
+  it("flags billing when ANY of its five reads is a page", () => {
+    expect(boardTruncation({ ...base, needsInvoice: rows(50) }).billing).toBe(true);
+    expect(boardTruncation({ ...base, bills: [[], [], rows(50), []] }).billing).toBe(true);
+    expect(boardTruncation({ ...base, bills: [rows(49), [], [], []] }).billing).toBe(false);
+  });
+
+  it("takes the quoting column's answer from the rail, which owns that cap", () => {
+    expect(boardTruncation({ ...base, quoting: true }).quoting).toBe(true);
   });
 });
