@@ -405,6 +405,12 @@ export interface JobsSlice {
    */
   setVisitNotes: (jobId: string, visitId: string, notes: string) => Promise<{ ok: boolean; error?: string }>;
   /**
+   * Book the return trip from the field. SERVER-FIRST, deliberately: the row's id and position are
+   * minted server-side, and an optimistic visit carrying a client-invented id would collide with
+   * the reconcile the mutation's own DTO performs a moment later.
+   */
+  addFollowUpVisit: (jobId: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
    * Local-only append of an already-persisted photo path (the field Scope strip uploads via
    * uploadFieldPhoto, which writes the DB row itself — this just keeps the store in step).
    */
@@ -1276,6 +1282,31 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
         }
         reportWriteError("setVisitNotes", err);
+        return { ok: false, error: userMessage(err) };
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // addFollowUpVisit — "I need to come back". No optimistic row: see the interface note.
+  // ---------------------------------------------------------------------------
+  addFollowUpVisit: (jobId, reason) => {
+    const trimmed = reason.trim();
+    if (!trimmed) return Promise.resolve({ ok: false, error: "Say why you need to come back." });
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) {
+      return Promise.resolve({ ok: false, error: "This job isn't saved yet." });
+    }
+
+    return trpcVanilla.v1.field.addFollowUpVisit
+      .mutate({ jobId, reason: trimmed })
+      .then((dto) => {
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        reportWriteError("addFollowUpVisit", err);
         return { ok: false, error: userMessage(err) };
       });
   },

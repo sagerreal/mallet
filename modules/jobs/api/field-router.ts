@@ -21,6 +21,7 @@ import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
+import { CreateVisitUseCase } from "../app/create-visit";
 import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
 import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
@@ -29,6 +30,7 @@ import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO
 import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 import { byAgenda } from "./my-day-order";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
+import { visitToClose } from "./visit-to-close";
 
 /**
  * Just enough of a customer for the field surface to name and reach them: who this job is for and
@@ -108,6 +110,22 @@ const fieldSetVisitNotesInput = z.object({
   jobId: z.string().uuid(),
   visitId: z.string().uuid(),
   notes: z.string().max(2000),
+});
+
+/**
+ * Booking the return trip. A REASON, not a date.
+ *
+ * The reason is required and it is the whole value of the row: "waiting on the 40-gal tank" is
+ * what lets the office pick a sensible day and what the customer gets told when they ring. An
+ * unexplained second visit is a mystery the office has to phone the technician about.
+ *
+ * `durationHours` defaults to one hour — an honest placeholder the office adjusts when it places
+ * the visit, and the only durable record of length on a row with no start/end window.
+ */
+const fieldAddFollowUpVisitInput = z.object({
+  jobId: z.string().uuid(),
+  reason: z.string().trim().min(1, "say why you need to come back").max(2000),
+  durationHours: z.number().positive().max(24).default(1),
 });
 
 const fieldAddAddonInput = z.object({
@@ -330,9 +348,46 @@ export const createFieldRouter = () =>
       // announces as "that was under a minute"). Finishing without arriving records no job
       // minutes — the same honest outcome the visit path already produces, and the same one the
       // stepper reports by showing those steps as skipped.
+      // AND IT MUST NOT CLOSE A JOB WITH A TRIP STILL TO RUN.
+      //
+      // That was the other half of the same disagreement, and the damaging half. The sheet's
+      // foot runs setVisitStatus, and SetVisitStatusUseCase derives the job from the visit set —
+      // finishing visit 1 of 2 correctly leaves the job open. This endpoint went straight to
+      // CompleteJobUseCase, which reads no visits at all: it completed the job, emitted
+      // `job.completed` (→ ensure-an-invoice), and left visit 2 sitting `pending` underneath a
+      // `complete` job. A technician closing out Tuesday's trip billed a job that finishes
+      // Thursday. So when the job HAS visits, this now takes the same road the sheet takes and
+      // lets the cascade decide; CompleteJobUseCase is kept only for a job with no visits at
+      // all, where there is no cascade to run and My day must still be able to close it.
+      //
       // assertOnJobIfTech already loaded and returned this job for a tech caller — that is what it
       // returns it FOR. Only owner/office (for whom it returns null) still owe a read.
       const before = techJob ?? (await repo.findById(jobId));
+      const closing = before ? visitToClose(before, ctx.principal) : null;
+
+      if (closing) {
+        const job = orThrow(
+          await new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({
+            jobId,
+            visitId: closing,
+            status: "complete",
+          }),
+        );
+        const tap = await runVisitClockTap(
+          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
+          "done",
+          jobId,
+          // VISIT-level, matching setVisitStatus: an owner clearing a colleague's visit is
+          // dispatching and takes none of the hours.
+          job.isAssignedToVisit(ctx.principal.userId, closing),
+        );
+        const cascaded = await toJobDTOWithExecution(repo, job);
+        const notice = noticeFor(tap);
+        if (ctx.principal.role !== "tech") return { ...cascaded, clockNotice: notice };
+        const techSeesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return { ...redactMoneyForTech(cascaded, techSeesPrice, FIELD_SURFACE_REDACTION), clockNotice: notice };
+      }
+
       if (before?.canStart()) {
         orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
       }
@@ -351,6 +406,63 @@ export const createFieldRouter = () =>
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
       return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
     }),
+
+    /**
+     * "Need to come back" — the return trip, booked from the doorstep.
+     *
+     * A technician could not create a visit at all: every procedure in visit-router.ts is
+     * ownerOrOffice. So the commitment made at the customer's kitchen table — and it IS made,
+     * software or no software — lived in his head until he remembered to tell the office. Since
+     * found work started billing (#389) it got worse: he can sign a customer for extra work and
+     * then have no way to book the trip that performs it.
+     *
+     * WHAT HE CREATES IS UNPLACED, AND THAT IS THE DESIGN. He records that a return is needed and
+     * why; the office picks the slot. Choosing a time is a shop-level decision — when the part
+     * lands, who else is out, whose week has room — and none of it is visible from a doorstep.
+     * Letting him commit the shop to a date he cannot verify is how a customer gets stood up.
+     *
+     * The row lands in "Needs a slot" (see OUTSTANDING in job-views.ts, which had to learn that a
+     * finished first trip does not count as placement). Without that it would have been a black
+     * hole — an open job reading as done, which is worse than the office forgetting to call.
+     *
+     * Job-level assignment gate, matching signQuote: the person who walked the site books the
+     * return, whichever of the job's visits carried them there. No clock tap — booking a trip is
+     * not working time.
+     */
+    addFollowUpVisit: anyRole
+      .input(fieldAddFollowUpVisitInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const before = techJob ?? (await repo.findById(jobId));
+        if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found." });
+        // Guarded here rather than left to withVisits' terminal refusal, so the sheet can say why.
+        if (before.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
+        }
+
+        const job = orThrow(
+          await new CreateVisitUseCase(repo, ctx.deps.clock, ctx.deps.ids).exec({
+            jobId,
+            assigneeUserId: null,
+            scheduledDate: null,
+            scheduledStart: null,
+            durationHours: input.durationHours,
+            notes: input.reason,
+          }),
+        );
+
+        logger.info(
+          { jobId: input.jobId, orgId: ctx.principal.orgId },
+          "job_visit.follow_up_created",
+        );
+        const dto = await toJobDTOWithExecution(repo, job);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+      }),
 
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
     // endpoint (v1.visits.setVisitStatus stays ownerOrOffice and is NOT loosened); this is a

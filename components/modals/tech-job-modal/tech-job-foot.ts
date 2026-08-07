@@ -78,6 +78,25 @@ export interface FootHandlers {
   readonly dismiss: () => void;
 }
 
+/**
+ * Does finishing THIS visit finish the job?
+ *
+ * The write never needed to ask — `SetVisitStatusUseCase` derives job status from the visit set,
+ * so completing visit 1 of 2 already leaves the job open. The LABEL needed to ask, because it was
+ * saying "Finish job" while doing no such thing, on the one screen a technician reads before
+ * telling a customer whether anyone is coming back.
+ *
+ * An unplaced visit counts. A follow-up booked from the field has no date and no assignee yet —
+ * that is exactly what makes it outstanding, and skipping it here would restore the lie for the
+ * one case this branch exists to serve.
+ */
+function finishLabel(facts: FootFacts): string {
+  const others = (facts.job.visits ?? []).filter(
+    (v) => v.id !== facts.actVisit?.id && v.status !== STORE_VISIT_STATUS.DONE,
+  );
+  return others.length > 0 ? "Finish visit →" : "Finish job →";
+}
+
 /** The step the primary advances to, or null when the visit is past stepping. */
 function nextStepAction(actVisit: Visit, on: FootHandlers): FootAction | null {
   if (actVisit.status === STORE_VISIT_STATUS.SCHEDULED) {
@@ -125,7 +144,7 @@ export function footActions(facts: FootFacts, on: FootHandlers): FootActions {
   const { actVisit } = facts;
   const finish: FootAction | null = actVisit
     ? {
-        label: "Finish job →",
+        label: finishLabel(facts),
         run: () => on.setVisitStatus(actVisit.id, STORE_VISIT_STATUS.DONE),
       }
     : null;
