@@ -89,6 +89,8 @@ export interface BoardSource {
 export interface BoardServerFigures {
   /** Leads in the intake view — customers.viewCounts. */
   readonly requestCount?: number;
+  /** Leads in the won view — customers.viewCounts, for first-run guard. */
+  readonly wonCount?: number;
   /** Finished work nobody has billed — jobs.viewCounts. */
   readonly needsInvoiceCount?: number;
   readonly needsInvoiceCents?: number;
@@ -305,6 +307,7 @@ export function assembleBoard(input: WorkBoardInputs): WorkBoardData {
   return {
     columns,
     needsYou: needsYouOf(columns),
+    wonCount: input.server.wonCount ?? 0,
     isFetched: input.isFetched,
     isError: input.isError,
   };
@@ -323,6 +326,7 @@ function serverFiguresFrom(
 ): BoardServerFigures {
   return {
     requestCount: leads?.intake,
+    wonCount: leads?.won,
     needsInvoiceCount: jobs?.counts.needsInvoice,
     needsInvoiceCents: jobs?.needsInvoiceCents,
     openInvoiceCount: money?.openCount,

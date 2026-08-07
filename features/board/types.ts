@@ -56,6 +56,8 @@ export interface BoardColumn {
 export interface WorkBoardData {
   columns: [BoardColumn, BoardColumn, BoardColumn, BoardColumn];
   needsYou: { count: number; valueDollars: number; textsReady: number };
+  /** won-view lead count — history guard so a cleared board on an established shop is not first-run */
+  wonCount: number;
   isFetched: boolean;
   isError: boolean;
 }

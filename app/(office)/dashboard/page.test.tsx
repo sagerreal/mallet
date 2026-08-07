@@ -16,6 +16,7 @@ let storeState: Store;
 let boardState: {
   columns: { id: string; count: number }[];
   needsYou: { count: number; valueDollars: number; textsReady: number };
+  wonCount: number;
   isFetched: boolean;
   isError: boolean;
 };
@@ -79,7 +80,7 @@ describe("Office page — one tab bar, four panes", () => {
       leads: [], estimates: [], jobs: [],
     };
     // The default board is a WORKING shop with rows — first-run is the exception, asserted below.
-    boardState = { columns: columnsHolding(3), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: false };
+    boardState = { columns: columnsHolding(3), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, wonCount: 0, isFetched: true, isError: false };
     boardFirstRun = undefined;
     openModal.mockClear();
     window.history.replaceState(null, "", "/dashboard");
@@ -152,7 +153,7 @@ describe("Office page — one tab bar, four panes", () => {
   // the day." immediately above "Couldn't load your board." — the app contradicting itself, most
   // confidently in the sentence that was wrong.
   it("a SETTLED error keeps the hero loading — no zero-state above the load-failed panel", () => {
-    boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: true };
+    boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, wonCount: 0, isFetched: true, isError: true };
     render(<OfficePage />);
     expect(handoff.loading).toBe(true);
     expect(screen.getByTestId("handoff-loading")).toBeTruthy();
@@ -161,7 +162,7 @@ describe("Office page — one tab bar, four panes", () => {
   });
 
   it("a settled, healthy board hands the hero its own figures and stops loading", () => {
-    boardState = { columns: columnsHolding(35), needsYou: { count: 35, valueDollars: 5310, textsReady: 6 }, isFetched: true, isError: false };
+    boardState = { columns: columnsHolding(35), needsYou: { count: 35, valueDollars: 5310, textsReady: 6 }, wonCount: 0, isFetched: true, isError: false };
     render(<OfficePage />);
     expect(handoff).toMatchObject({ queueCount: 35, queueValue: 5310, textsReady: 6, loading: false });
   });
@@ -179,7 +180,7 @@ describe("Office Today — the first-run setup brief", () => {
       toggles: { frontDesk: false }, services: [], checklists: [],
       leads: [], estimates: [], jobs: [],
     };
-    boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, isFetched: true, isError: false };
+    boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, wonCount: 0, isFetched: true, isError: false };
     boardFirstRun = undefined;
     openModal.mockClear();
     window.history.replaceState(null, "", "/dashboard");
@@ -243,6 +244,21 @@ describe("Office Today — the first-run setup brief", () => {
     render(<OfficePage />);
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
     expect(screen.queryByTestId("board")).toBeNull();
+    expect(screen.queryByRole("heading", { name: /^Welcome,/ })).toBeNull();
+  });
+
+  it("totalOpen 0 + wonCount 0 → first-run (brand-new shop)", () => {
+    boardState = { ...boardState, columns: columnsHolding(0), wonCount: 0 };
+    render(<OfficePage />);
+    expect(boardFirstRun).toBe(true);
+    expect(screen.getByRole("heading", { name: /^Welcome,/ })).toBeTruthy();
+  });
+
+  it("totalOpen 0 + wonCount > 0 → NOT first-run (established shop, cleared board)", () => {
+    boardState = { ...boardState, columns: columnsHolding(0), wonCount: 5 };
+    render(<OfficePage />);
+    expect(boardFirstRun).toBe(false);
+    expect(screen.getByTestId("handoff")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: /^Welcome,/ })).toBeNull();
   });
 });

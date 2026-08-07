@@ -176,12 +176,13 @@ function TodayPane({ onFrontDesk }: { onFrontDesk: () => void }) {
   // source settled, none failed, and the four columns hold nothing between them. `count` is each
   // column's SERVER count where it has one, so a shop whose page happens to be empty still isn't
   // first-run. A shop with history but nothing open IS first-run on this board, correctly — the
-  // board only ever showed open work, and there is none.
+  // board only ever showed open work, and there is none. Add wonCount to guard against treating a
+  // cleared board on an established shop as first-run.
   const totalOpen = board.columns.reduce((sum, column) => sum + column.count, 0);
   const firstRun = shouldShowFirstRun({
     isFetched: board.isFetched,
     isError: board.isError,
-    count: totalOpen,
+    count: totalOpen + board.wonCount,
   });
 
   const openModal = useOpenModal();

@@ -80,6 +80,7 @@ const fixtureBoard: WorkBoardData = {
     }),
   ],
   needsYou: { count: 2, valueDollars: 3290, textsReady: 0 },
+  wonCount: 0,
   isFetched: true,
   isError: false,
 };
@@ -93,6 +94,7 @@ const emptyBoard: WorkBoardData = {
     column({ id: "billing", title: "Billing" }),
   ],
   needsYou: { count: 0, valueDollars: 0, textsReady: 0 },
+  wonCount: 0,
   isFetched: true,
   isError: false,
 };
@@ -122,6 +124,7 @@ const boardWithDraft: WorkBoardData = {
     fixtureBoard.columns[2],
     fixtureBoard.columns[3],
   ],
+  wonCount: fixtureBoard.wonCount,
 };
 
 const sendButton = (): HTMLElement => screen.getByRole("button", { name: /^send$/i });
@@ -391,6 +394,37 @@ describe("GHOST_CARDS", () => {
     // The no-dollars rule is enforced in the fixture as well as the render: a ghost with a price
     // in its copy would sail past a CSS-level guard.
     expect(JSON.stringify(GHOST_CARDS)).not.toContain("$");
+  });
+
+  it("pins the four example fixtures to their approved literals", () => {
+    expect(GHOST_CARDS.requests).toEqual({
+      name: "Dana Ruiz",
+      service: "Water heater leaking",
+      badge: "Needs response",
+      tone: "attention",
+      state: "Called 5m ago",
+    });
+    expect(GHOST_CARDS.quoting).toEqual({
+      name: "Marcus Lee",
+      service: "Primary bath remodel",
+      badge: "Quote in progress",
+      tone: "attention",
+      state: "Draft · unsent",
+    });
+    expect(GHOST_CARDS.jobs).toEqual({
+      name: "Kim Patel",
+      service: "Main drain cleaning",
+      badge: "Scheduled",
+      tone: "waiting",
+      state: "Fri · 9:00 AM",
+    });
+    expect(GHOST_CARDS.billing).toEqual({
+      name: "Alex Moro",
+      service: "Kitchen faucet repair",
+      badge: "Ready to bill",
+      tone: "attention",
+      state: "Done today",
+    });
   });
 });
 

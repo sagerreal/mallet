@@ -58,6 +58,30 @@ function groupLabel(key: BoardGroupKey, column: BoardColumnId): string {
 }
 
 /**
+ * The column shell — title, header, and body container. Both the live and first-run boards render
+ * identical markup here; they differ only in what fills the body.
+ */
+function ColumnShell({
+  column,
+  figure,
+  children,
+}: {
+  column: BoardColumn | { id: BoardColumnId; title: string };
+  figure: string | number;
+  children: React.ReactNode;
+}) {
+  return (
+    <section className="col" aria-label={`${column.title} column`}>
+      <div className="col-head">
+        <span>{column.title}</span>
+        <span className="sum fig">{figure}</span>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/**
  * A column's cards, partitioned and labelled. Empty groups are dropped — a header over nothing is
  * a fact about a shape, not about the business. Order inside a group is the order it arrived in,
  * which is `rankItems`' total order.
@@ -92,13 +116,7 @@ function BoardColumnView({
   ctx: DraftContext;
 }) {
   return (
-    // A named <section> IS a region — the role is implicit, and stating it is an a11y lint error.
-    <section className="col" aria-label={`${column.title} column`}>
-      <div className="col-head">
-        <span>{column.title}</span>
-        <span className="sum fig">{headFigure(column)}</span>
-      </div>
-
+    <ColumnShell column={column} figure={headFigure(column)}>
       {boardGroups(column).map((group) => (
         <Fragment key={group.key}>
           <div className={`kgrp${group.attention ? " on" : ""}`}>
@@ -123,7 +141,7 @@ function BoardColumnView({
       {/* A page of a longer list, stated as a fact. The column is capped on purpose; an apology
           would suggest something went wrong. */}
       {column.truncated && <div className="kfoot">Showing first {column.items.length}</div>}
-    </section>
+    </ColumnShell>
   );
 }
 
@@ -158,15 +176,9 @@ function GhostCardView({ column }: { column: BoardColumnId }) {
 /** A first-run column: its real title, a hard 0, and the one card that shows what lands here. */
 function GhostColumnView({ column }: { column: BoardColumn }) {
   return (
-    <section className="col" aria-label={`${column.title} column`}>
-      <div className="col-head">
-        <span>{column.title}</span>
-        {/* A literal 0, not `headFigure` — this branch renders no real work, so it must not state
-            a figure it has no card to back, and it can never print a price. */}
-        <span className="sum fig">0</span>
-      </div>
+    <ColumnShell column={column} figure={0}>
       <GhostCardView column={column.id} />
-    </section>
+    </ColumnShell>
   );
 }
 

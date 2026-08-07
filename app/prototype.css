@@ -431,7 +431,7 @@
   .frs-path-title{font-size:var(--type-md);font-weight:800;margin:0}
   .frs-path-desc{color:var(--ink-2);font-size:var(--type-base);line-height:1.45;margin:0;flex:1}
   .frs-path .btn{align-self:flex-start;margin-top:var(--space-1)}
-  @media (max-width:640px){.frs{padding:var(--space-10) var(--space-4) var(--space-10)}.frs-paths{grid-template-columns:1fr}}
+  @media (max-width:640px){.frs{padding:var(--space-10) var(--space-4) var(--space-10)}.frs-paths{grid-template-columns:1fr}.frs-paths[data-count="3"]{grid-template-columns:1fr}}
   /* Tasks — a clean, tight checklist (checkbox left · due right), not a sparse table */
   .tasklist{display:flex;flex-direction:column}
   .tsec{font-size:var(--type-xs);text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:800;padding:var(--space-4) var(--space-2xs) var(--space-1)}
@@ -817,7 +817,7 @@
      markup won't honour — the pointer, the hover lift and the press tint are all taken back here
      (.kcard's own :hover/:active are unqualified, and .kcard:active lands later in this file, so
      each override is stated at the specificity that beats it rather than relying on order). */
-  .kcard.ghosted{background:transparent;border-style:dashed;border-color:var(--manila-line);opacity:.6;cursor:default}
+  .kcard.ghosted{background:transparent;border-style:dashed;border-color:var(--manila-line);cursor:default}
   .kcard.ghosted:hover{border-color:var(--manila-line);box-shadow:none}
   .kcard.ghosted:active{background:transparent;transform:none}
   /* the EXAMPLE tag reuses the board's caption look; it heads the card, so it drops the leading pad */
