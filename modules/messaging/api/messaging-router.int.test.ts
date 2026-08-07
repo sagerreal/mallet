@@ -50,6 +50,8 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
   let orgAId = "";
   let orgBId = "";
   let leadAId = "";
+  // Orgs minted by the per-org rate-limit tests below (each needs its own limiter window).
+  const rateLimitOrgIds: string[] = [];
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
@@ -88,6 +90,9 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       await admin`delete from messages where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from a2p_registrations where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    }
+    if (rateLimitOrgIds.length > 0) {
+      await admin`delete from orgs where id = any(${rateLimitOrgIds})`;
     }
     await admin.end({ timeout: 5 });
     await closeDb();
@@ -199,6 +204,55 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     await expect(
       caller.v1.messaging.send({ leadId: leadAId, body: "Hi", idempotencyKey: "short" }),
     ).rejects.toBeInstanceOf(TRPCError);
+  });
+
+  // ── send: per-org rate limit ──────────────────────────────────────────────────
+  // The limiter is a module-level singleton keyed by orgId, so every test here uses its OWN
+  // fresh org — reusing orgAId would let earlier tests' send() calls in this file count against
+  // the same window. Each org is created with NO twilioNumber, so any call that gets PAST the
+  // limiter always fails on the (DB-backed) "no business number provisioned" precondition —
+  // which is what lets these tests prove the limiter runs before that DB work, not because of it.
+
+  async function makeRateLimitOrg(): Promise<string> {
+    const [org] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('MsgApi RateLimit ' || gen_random_uuid()) returning id`;
+    const id = org!.id;
+    rateLimitOrgIds.push(id);
+    return id;
+  }
+
+  it("rate limits the 31st send in a minute per org, without affecting a different org's window", async () => {
+    const orgId = await makeRateLimitOrg();
+    const otherOrgId = await makeRateLimitOrg();
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const otherCaller = appRouter.createCaller(ctxFor(otherOrgId, "owner"));
+    const fakeLeadId = randomUUID();
+
+    for (let i = 0; i < 30; i++) {
+      await caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }).catch(() => {});
+    }
+    await expect(
+      caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }),
+    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+
+    // otherOrgId has never sent in this window — still well under the limit, proving the two
+    // orgs' windows are independent rather than sharing one global counter.
+    await expect(
+      otherCaller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  it("the 30th send in the window still reaches the DB precondition, not the limiter", async () => {
+    const orgId = await makeRateLimitOrg();
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const fakeLeadId = randomUUID();
+
+    for (let i = 0; i < 29; i++) {
+      await caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }).catch(() => {});
+    }
+    await expect(
+      caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
   });
 
   // ── the claim itself (messages_org_idem_uidx, live) ───────────────────────────

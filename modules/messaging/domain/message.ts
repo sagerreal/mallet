@@ -59,7 +59,11 @@ export class Message {
     return this.p;
   }
 
-  /** True once the row is settled — a duplicate claim on a failed message must not re-send. */
+  /**
+   * True once the row is settled as failed. A failed message is RECLAIMABLE — nothing reached
+   * the customer, so a duplicate claim on it re-sends in place rather than being refused (see
+   * DrizzleMessageRepository.claimOutbound / reclaimFailed for the contract).
+   */
   get isFailed(): boolean {
     return this.p.status === "failed";
   }

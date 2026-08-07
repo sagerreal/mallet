@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { loadConfig } from "@mallet/shared/config";
+import { logger } from "@mallet/shared/observability";
+import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { orgs, leads, a2pRegistrations } from "@mallet/shared/db/schema";
 import { asLeadId, Phone } from "@mallet/shared/types";
 import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
@@ -11,6 +13,15 @@ import { ListThreadUseCase } from "../app/list-thread";
 import { ListConversationsUseCase } from "../app/list-conversations";
 import { messageDTO, toMessageDTO } from "./message-dto";
 import type { ConversationRow } from "../domain/message-repository";
+
+// One-click sends from board cards have no human pacing them, so a runaway client (a stuck
+// retry loop, a buggy automation) could otherwise burn through Twilio spend and carrier
+// reputation with no ceiling. Per-org, per-warm-instance fixed window — same damping model as
+// the public quote/invoice routes (see FixedWindowLimiter's own doc comment): a hard global cap
+// isn't the goal here, a sane ceiling on one org's send rate is.
+const SEND_LIMIT_PER_MIN = 30;
+const SEND_LIMIT_WINDOW_MS = 60_000;
+const sendLimiter = new FixedWindowLimiter({ limit: SEND_LIMIT_PER_MIN, windowMs: SEND_LIMIT_WINDOW_MS });
 
 // Wire DTO for the conversations-list endpoint. One entry per lead thread, sorted newest-first.
 const conversationDTO = z.object({
@@ -66,6 +77,16 @@ export const createMessagingRouter = () =>
       .output(messageDTO)
       .mutation(async ({ ctx, input }) => {
         const orgId = ctx.principal.orgId;
+
+        // Rate limit FIRST — before any precondition check or DB/tx work runs.
+        if (!sendLimiter.allow(orgId)) {
+          logger.warn({ orgId }, "messaging.send rate limited");
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "too many texts sent from this org — try again in a minute",
+          });
+        }
+
         const tx = ctx.tx;
 
         // Resolve the org's outbound Twilio number (null if not provisioned yet).
