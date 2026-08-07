@@ -1009,6 +1009,13 @@
       "when": 1786080594129,
       "tag": "0143_daffy_mordo",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1786140685941,
+      "tag": "0144_majestic_the_fury",
+      "breakpoints": true
     }
   ]
 }
