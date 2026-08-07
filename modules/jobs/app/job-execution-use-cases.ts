@@ -28,7 +28,9 @@ export interface JobWithExecution {
 }
 
 // Load the job (fail-closed not_found) + its execution collections for the return value.
-async function loadOrThrow(
+// Exported so sibling use-cases in this module (ApproveFoundWorkUseCase) return the SAME shape
+// through the SAME read rather than assembling a second, slightly different one.
+export async function loadOrThrow(
   repo: JobRepository,
   jobId: JobId,
 ): Promise<Result<JobWithExecution, AppError>> {
