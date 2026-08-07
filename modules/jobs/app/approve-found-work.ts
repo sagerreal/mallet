@@ -1,4 +1,4 @@
-import type { JobId, LeadId, OrgId, Result, AppError, Clock } from "@mallet/shared/types";
+import type { JobId, OrgId, Result, AppError, Clock } from "@mallet/shared/types";
 import { notFound, conflict, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -75,7 +75,7 @@ export class ApproveFoundWorkUseCase {
     //    on the job has moved keeps the rollback shallow.
     const recorded = await this.changeOrders.record({
       orgId,
-      leadId: job.props.leadId as LeadId,
+      leadId: job.props.leadId,
       jobId: cmd.jobId,
       jobTitle: job.props.title,
       lines: chosen.value.map(toChangeOrderLine),
