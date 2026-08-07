@@ -172,9 +172,3 @@ export function deltaOf(out: RailRow[]): string | null {
     ? `${first} read it twice — ${last.when}`
     : `${first} read it — ${last.when}`;
 }
-
-
-/** Dot diameter from dollars — a figure rendered as shape (√ scale, 10–17px). */
-export function dotSize(total: number): number {
-  return Math.round(Math.min(17, Math.max(10, 6 + Math.sqrt(total) / 9)));
-}

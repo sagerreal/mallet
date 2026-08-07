@@ -1,7 +1,7 @@
 /**
  * features/pipeline/pipeline-lanes.ts
- * Per-CARD language for the board: is this lead cooling, what did the AI do to
- * it overnight, and the drafted nudge. Board MEMBERSHIP and the board-level
+ * Per-CARD language for the board: is this lead cooling, and what did the AI do
+ * to it overnight. Board MEMBERSHIP and the board-level
  * figures live in SQL (leadViewCondition / server counts) — the old whole-board
  * derivations that summed one browser page of the store are gone.
  */
@@ -49,18 +49,4 @@ export function traceOf(lead: Lead): TraceLine | null {
     return { when: act.when, text: "Front Desk texted a booking link" };
   }
   return { when: act.when, text: act.t ?? "worked by the Front Desk" };
-}
-
-// ---- the drafted next move (Needs-you lane) ---------------------------------
-
-const JOB_SHORT = (job: string) => job.replace(/\s*[—-].*$/, "").toLowerCase().trim();
-
-/** A ready-to-send nudge for a lead that's gone quiet — the exact words, drafted for you. */
-export function draftNudge(lead: Lead): string {
-  const first = FIRST(lead.name);
-  const job = JOB_SHORT(lead.job || "the job");
-  if (lead.stage === "Quote Sent") {
-    return `Hi ${first}, still want us to handle the ${job}? Happy to hold a spot this week.`;
-  }
-  return `Hi ${first} — following up on the ${job}. Want to get you on the schedule?`;
 }

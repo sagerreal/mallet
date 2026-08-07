@@ -2101,8 +2101,8 @@
        and only a user with the OS setting on ever sees it.
        This is deliberately blanket: reduced-motion is a request to stop moving, not a request
        to stop moving in the places we remembered. The specific blocks above stay, because
-       several also restore a STATIC appearance (e.g. .cl-caret drops to a dimmed rest state,
-       .kcard.leaving holds its folded-away opacity) which a bare kill cannot do. Skeletons lose their shimmer and become plain blocks —
+       several also restore a STATIC appearance (e.g. .cl-caret drops to a dimmed rest
+       state) which a bare kill cannot do. Skeletons lose their shimmer and become plain blocks —
        correct: they still convey structure, and a pulsing placeholder is exactly the motion
        this setting exists to remove. */
     *{animation:none!important} }

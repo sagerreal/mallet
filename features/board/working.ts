@@ -66,11 +66,6 @@ export function intakeRowOf(lead: Lead): IntakeRow {
   return { lead, stalled, stamp };
 }
 
-/** Stalled first, then oldest — the order the column is worked in. */
-export const byStalledThenAge = (a: IntakeRow, b: IntakeRow): number =>
-  Number(b.stalled) - Number(a.stalled) || b.lead.age - a.lead.age;
-
-
 /** Deals with an active route to a price — scoped / walkthrough booked / in the shop. */
 export function deriveGetting(leads: Lead[], estimates: Estimate[], jobs: Job[]): GettingRow[] {
   const rows: GettingRow[] = [];
