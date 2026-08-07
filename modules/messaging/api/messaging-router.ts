@@ -16,9 +16,18 @@ import type { ConversationRow } from "../domain/message-repository";
 
 // One-click sends from board cards have no human pacing them, so a runaway client (a stuck
 // retry loop, a buggy automation) could otherwise burn through Twilio spend and carrier
-// reputation with no ceiling. Per-org, per-warm-instance fixed window — same damping model as
-// the public quote/invoice routes (see FixedWindowLimiter's own doc comment): a hard global cap
-// isn't the goal here, a sane ceiling on one org's send rate is.
+// reputation with no ceiling. Per-org, per-warm-instance fixed window (see FixedWindowLimiter's
+// own doc comment) — a hard global cap isn't the goal here, a sane ceiling on one org's send
+// rate is.
+//
+// Narrower than the public quote/invoice routes' use of the same limiter: those run it before
+// ANY DB work, because their routes open no transaction of their own. Here `ownerOrOffice`
+// already opens the org's tenant transaction (withTenant's set_config round trip) before this
+// resolver body ever runs — that is a pre-existing characteristic of the procedure and out of
+// scope to change here. What this check DOES guarantee: it is the first statement in the
+// resolver, so it shields every resolver-level query (org lookup, A2P lookup, lead lookup) and
+// the Twilio call itself — a rejected request still costs the one tx-open the middleware already
+// paid for, but never reaches this module's own DB reads or the provider call.
 const SEND_LIMIT_PER_MIN = 30;
 const SEND_LIMIT_WINDOW_MS = 60_000;
 const sendLimiter = new FixedWindowLimiter({ limit: SEND_LIMIT_PER_MIN, windowMs: SEND_LIMIT_WINDOW_MS });
