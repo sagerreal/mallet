@@ -62,6 +62,8 @@ export const leads = pgTable(
     index("leads_org_updated_idx").on(t.orgId, t.updatedAt.desc(), t.id.desc()),
     index("leads_org_name_idx").on(t.orgId, t.name, t.id),
     index("leads_org_value_idx").on(t.orgId, t.valueCents.desc(), t.id.desc()),
+    // Backs lead views filtered by pipeline stage without a sequential scan over the tenant.
+    index("leads_org_stage_idx").on(t.orgId, t.stage),
     // Partial keyset index: same order but only over non-deleted rows (active-list query perf).
     index("leads_org_created_active_idx")
       .on(t.orgId, t.createdAt.desc(), t.id.desc())
