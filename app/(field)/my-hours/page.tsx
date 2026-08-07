@@ -29,6 +29,7 @@ import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { Button } from "@/components/ui/button";
 import {
   weekStart,
+  weekDates,
   weekEntries,
   rollup,
   shortDayLabel,
@@ -38,6 +39,8 @@ import {
 } from "@/features/field/my-hours-derive";
 import { openEntryOf, suggestEndTime } from "@/features/field/my-hours-edit";
 import { MyHoursWeek } from "@/features/field/my-hours-entries";
+import { UnreportedDayCard } from "@/features/field/unreported-day-card";
+import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { StillOpenBanner } from "@/features/field/my-hours-still-open";
 import { AddBlockForm } from "@/features/field/my-hours-add-block";
 import { useMyHoursWrites } from "@/features/field/use-my-hours-writes";
@@ -116,10 +119,14 @@ interface WeekViewProps {
   readonly suggestEndFor: (entry: MyHoursEntry) => string | null;
   /** The add-a-block affordance, owned by the page because the first-run screen opens it too. */
   readonly addSlot: ReactNode;
+  /** Days with visits stamped and no hours submitted — see UnreportedDayCard. */
+  readonly unreported: readonly { userId: string; date: string; visits: number; firstAt: string | null; lastAt: string | null }[];
+  readonly onAcceptDay: (date: string, startTime: string, endTime: string) => void;
+  readonly onEnterOwn: (date: string) => void;
 }
 
 /** The populated surface. Owns which week is shown and which row is open — nothing else needs it. */
-function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addSlot }: WeekViewProps) {
+function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addSlot, unreported, onAcceptDay, onEnterOwn }: WeekViewProps) {
   const [weekStartISO, setWeekStartISO] = useState(() => weekStart(today));
   const [editingId, setEditingId] = useState<string | null>(null);
   const week = rollup(entries, weekStartISO);
@@ -143,6 +150,23 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         onNav={(weeks) => setWeekStartISO((prev) => addDaysISO(prev, weeks * DAYS_PER_WEEK))}
         onThisWeek={() => setWeekStartISO(weekStart(today))}
       />
+      {/* Above the week, not inside it: a day with NO rows has no group to sit under, and this is
+          the one thing on the screen that costs money to ignore. Scoped to the week on show, so
+          navigating away from it does not carry somebody else's Wednesday along. */}
+      {unreported
+        .filter((d) => weekDates(weekStartISO).includes(d.date))
+        .map((d) => (
+          <UnreportedDayCard
+            key={d.date}
+            date={d.date}
+            visits={d.visits}
+            firstAt={d.firstAt}
+            lastAt={d.lastAt}
+            busy={writes.adding}
+            onAccept={(start, end) => onAcceptDay(d.date, start, end)}
+            onEnterOwn={onEnterOwn}
+          />
+        ))}
       <MyHoursWeek
         entries={weekEntries(entries, weekStartISO)}
         weekStartISO={weekStartISO}
@@ -175,6 +199,27 @@ export default function MyHoursPage() {
   });
   const writes = useMyHoursWrites();
   const [addOpen, setAddOpen] = useState(false);
+  const hasClock = useTimesheetClock();
+
+  /**
+   * Days he evidently worked and sent nothing in. Its own query rather than derived from the rows
+   * above, because the whole point is days that have NO rows — there is nothing here to derive it
+   * from. Scoped server-side to the caller (a tech is forced to their own id).
+   */
+  const unreportedQ = api.v1.timesheets.unreportedDays.useQuery(
+    { fromDate: addDaysISO(weekStart(today), -DAYS_PER_WEEK), toDate: addDaysISO(weekStart(today), DAYS_PER_WEEK) },
+    { enabled: Boolean(myUserId), refetchOnWindowFocus: false },
+  );
+  const unreported = unreportedQ.data?.items ?? [];
+
+  /** Accept the suggested window. Written as ONE worked block, exactly as if he had typed it. */
+  const acceptDay = (date: string, startTime: string, endTime: string): void => {
+    if (!myUserId) return;
+    writes.addBlock(
+      { techUserId: myUserId, workDate: date, kind: "shop", startTime, endTime, note: "" },
+      () => void unreportedQ.refetch(),
+    );
+  };
 
   const entries = query.data?.items ?? [];
   const listState = { isFetched: query.isFetched, isError: query.isError, count: entries.length };
@@ -226,13 +271,19 @@ export default function MyHoursPage() {
         writes={writes}
         openEntry={openEntryOf(entries, myUserId, new Date())}
         suggestEndFor={suggestEndFor}
+        unreported={unreported}
+        onAcceptDay={acceptDay}
+        onEnterOwn={() => setAddOpen(true)}
         addSlot={
           addOpen ? (
             addBlock
           ) : (
             <div className="mh-acts">
-              <Button variant="quiet" onClick={() => setAddOpen(true)}>
-                Add hours you already worked
+              {/* In a SHEET shop this is not a correction path, it is the only way hours ever get
+                  recorded — so it leads rather than sits quietly at the bottom, and it says what
+                  it does rather than apologising for being after the fact. */}
+              <Button variant={hasClock ? "quiet" : "primary"} onClick={() => setAddOpen(true)}>
+                {hasClock ? "Add hours you already worked" : "Add a day"}
               </Button>
             </div>
           )

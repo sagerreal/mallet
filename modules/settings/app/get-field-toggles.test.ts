@@ -47,10 +47,22 @@ describe("GetFieldTogglesUseCase", () => {
    * on the settings aggregate, this use-case hands back exactly one key. Anything added here
    * becomes readable by every technician in the org, so the shape is the contract.
    */
-  it("returns ONE field — no office configuration can leak through it", async () => {
+  it("returns exactly the allow-listed fields — no office configuration can leak through it", async () => {
     const result = await new GetFieldTogglesUseCase(repo).exec(ORG);
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
-    expect(Object.keys(result.value)).toEqual(["measurementEstimating"]);
+
+    /**
+     * THE ALLOW-LIST, and adding to it is a decision this test exists to force.
+     *
+     * `timesheetClock` joined it deliberately: it says whether the shop punches a clock, which is
+     * a working practice every technician in the org already knows from using the app each
+     * morning, and the field surface cannot render correctly without it (`v1.settings.get` is
+     * ownerOrOffice and always will be). It is not money, not a credential, and not a permission.
+     *
+     * The bar for the next one is the same: would a technician learn something from it they could
+     * not learn by doing their job? If yes, it does not belong here.
+     */
+    expect(Object.keys(result.value).sort()).toEqual(["measurementEstimating", "timesheetClock"]);
   });
 });

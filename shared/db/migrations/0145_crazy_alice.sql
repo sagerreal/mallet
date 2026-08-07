@@ -1,0 +1,1 @@
+ALTER TABLE "org_settings" ADD COLUMN "timesheet_clock" boolean DEFAULT true NOT NULL;

@@ -28,6 +28,8 @@ vi.mock("@/lib/trpc/client", () => ({
       timesheets: {
         list: { useQuery: () => ({ ...q, data: { items: [] } }) },
         count: { useQuery: () => ({ ...q, data: { total: everTotal } }) },
+        // Days with visits stamped and no hours sent in — the approver's exceptions strip.
+        unreportedDays: { useQuery: () => ({ data: { items: [] } }) },
       },
     },
   },

@@ -24,6 +24,8 @@ import { defaultBooking } from "./default-booking";
  */
 export interface FieldToggles {
   readonly measurementEstimating: boolean;
+  /** False = a sheet shop: no punch clock, the crew types their week. */
+  readonly timesheetClock: boolean;
 }
 
 export class GetFieldTogglesUseCase {
@@ -31,6 +33,9 @@ export class GetFieldTogglesUseCase {
 
   async exec(orgId: string): Promise<Result<FieldToggles, AppError>> {
     const config = await this.repo.getConfig(orgId, defaultBooking);
-    return ok({ measurementEstimating: config.props.measurementEstimating });
+    return ok({
+      measurementEstimating: config.props.measurementEstimating,
+      timesheetClock: config.props.timesheetClock,
+    });
   }
 }

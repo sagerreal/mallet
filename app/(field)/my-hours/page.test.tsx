@@ -36,6 +36,7 @@ let updateMutate: ReturnType<typeof vi.fn>;
 let createMutate: ReturnType<typeof vi.fn>;
 let updateError: { message: string } | null;
 let meUserId: string | undefined;
+let unreportedQuery: { data?: { items: unknown[] }; refetch: () => void };
 
 vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({ data: meUserId === undefined ? undefined : { userId: meUserId } }),
@@ -45,12 +46,17 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     useUtils: () => ({ v1: { timesheets: { list: { invalidate: vi.fn() } } } }),
     v1: {
+      // The field surface's only settings read — punch clock vs sheet. Defaults on.
+      settings: { fieldToggles: { useQuery: () => ({ data: { timesheetClock: true } }) } },
       field: {
         // The editor offers the caller's own jobs so a shop row can be re-filed as a job.
         myJobs: { useQuery: () => ({ data: { items: [{ id: "job-9", num: "JOB-9", title: "boiler" }] }, isLoading: false }) },
       },
       timesheets: {
         list: { useQuery: () => listQuery },
+        // Days with visits stamped and no hours sent in. Its own query because the whole point is
+        // days with NO rows — there is nothing in `list` to derive it from.
+        unreportedDays: { useQuery: () => unreportedQuery },
         update: {
           useMutation: () => ({ mutate: updateMutate, error: updateError, isPending: false }),
         },
@@ -79,6 +85,7 @@ beforeEach(() => {
   updateMutate = vi.fn();
   createMutate = vi.fn();
   updateError = null;
+  unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
   meUserId = ME;
   withEntries([]);
 });

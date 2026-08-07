@@ -292,7 +292,7 @@ describe("settings-slice persistence", () => {
       booking: store.get().booking,
       markup: 40,
       trade: "hvac",
-      toggles: { techSeesPrice: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
+      toggles: { techSeesPrice: false, timesheetClock: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);

@@ -75,6 +75,7 @@ const updateConfigInput = z.object({
   visitScopeMinutes: z.number().int().min(0).max(1440).optional(),
   visitRepairMinutes: z.number().int().min(0).max(1440).optional(),
   visitInstallMinutes: z.number().int().min(0).max(1440).optional(),
+  timesheetClock: z.boolean().optional(),
   techSeesPrice: z.boolean().optional(),
   techTexts: z.boolean().optional(),
   frontDesk: z.boolean().optional(),

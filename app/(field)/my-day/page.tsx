@@ -19,6 +19,7 @@ import type { RouterOutputs } from "@/lib/trpc/client";
 import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DayClock } from "@/features/field/day-clock";
+import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -320,6 +321,7 @@ export default function MyDayPage() {
   }
 
   const items = data?.items ?? [];
+  const hasClock = useTimesheetClock();
 
   // A dead fetch is not a free afternoon. Until now ANY myDay error fell through to
   // `data?.items ?? []` and rendered "No jobs assigned to you today" — indistinguishable from a
@@ -336,7 +338,10 @@ export default function MyDayPage() {
           loading state must not blank the row that says whether he is being paid. Today's jobs go
           IN so its expanded panel can name a job segment ("#JOB-2541 Delgado") off data this page
           already holds, instead of asking the server the same question twice. */}
-      <DayClock jobs={items} />
+      {/* A sheet shop has no punch clock — its crew type their week on My hours instead. Hiding
+          the control rather than leaving it inert: a clock nobody is meant to use, sitting at the
+          top of the day, is the surface that teaches people the app does not know their shop. */}
+      {hasClock ? <DayClock jobs={items} /> : null}
 
       {isLoading ? (
         <div className="card agenda">

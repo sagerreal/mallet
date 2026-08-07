@@ -12,6 +12,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
+import { api } from "@/lib/trpc/client";
 import { useTimesheetsWeek } from "@/features/timesheets/use-timesheets-week";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
@@ -28,6 +29,7 @@ import {
 import { type TsPick } from "./timesheets-entries";
 import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
 import { JobCostingView } from "./job-costing-view";
+import { TimesheetExceptions } from "./timesheet-exceptions";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 
@@ -90,6 +92,20 @@ export function TimesheetsPanel() {
   // fetched a flat, unscoped page of the newest 500 entries and this panel filtered it down — so
   // any week older than that window rendered empty, indistinguishable from "nobody logged hours".
   const week = useTimesheetsWeek({ weekStart });
+
+  /**
+   * Days somebody worked and sent no hours for. Its own query, not derived from the rows below:
+   * the whole point is days that have NO rows, so there is nothing here to derive it from.
+   */
+  const exceptionsQ = api.v1.timesheets.unreportedDays.useQuery(
+    { fromDate: weekStart, toDate: tsAddDays(weekStart, 6) },
+    { refetchOnWindowFocus: false },
+  );
+  const exceptions = exceptionsQ.data?.items ?? [];
+  const toFix = exceptions.reduce<Record<string, number>>((acc, x) => {
+    acc[x.userId] = (acc[x.userId] ?? 0) + 1;
+    return acc;
+  }, {});
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [editId, setEditId] = useState<string | null>(null);
   const [pick, setPick] = useState<TsPick>(null);
@@ -310,6 +326,12 @@ export function TimesheetsPanel() {
         </div>
       ) : (
       <div id="ts-panel-timesheet" role="tabpanel" aria-labelledby="ts-tab-timesheet">
+      <TimesheetExceptions
+        items={exceptions}
+        nameOf={(id) => techById(techs, id)?.name ?? "Crew"}
+        onReview={(id) => handleSelect(id)}
+      />
+
       <TsCrewChips
         techs={techs}
         totals={totals}
@@ -317,6 +339,7 @@ export function TimesheetsPanel() {
         crewQ={crewQ}
         onCrewQ={setCrewQ}
         onSelect={handleSelect}
+        toFix={toFix}
       />
 
       {selTech &&

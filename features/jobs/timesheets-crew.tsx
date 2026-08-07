@@ -19,10 +19,12 @@ export interface TsCrewChipsProps {
   crewQ: string;
   onCrewQ: (q: string) => void;
   onSelect: (id: string) => void;
+  /** How many days each crew member worked and sent in no hours for, keyed by user id. */
+  toFix?: Readonly<Record<string, number>>;
 }
 
 /** The crew chips — one per tech, showing their paid hours + approval state. */
-export function TsCrewChips({ techs, totals, selId, crewQ, onCrewQ, onSelect }: TsCrewChipsProps) {
+export function TsCrewChips({ techs, totals, selId, crewQ, onCrewQ, onSelect, toFix }: TsCrewChipsProps) {
   const crewFilter = crewQ.toLowerCase().trim();
   return (
     <>
@@ -51,6 +53,11 @@ export function TsCrewChips({ techs, totals, selId, crewQ, onCrewQ, onSelect }: 
                 <b style={{ fontSize: "var(--type-base)", color: "var(--ink)" }}>{t.name.split(" ")[0]}</b>
                 <span className="muted" style={{ fontSize: "var(--type-xs)" }}>
                   {r && r.count ? `${r.paid.toFixed(1)}h${r.approved ? " · ✓" : " · draft"}` : "—"}
+                  {/* The count rides the chip so the approver can see WHO needs attention without
+                      selecting each person in turn. Amber, matching the strip it points at. */}
+                  {toFix?.[t.id] ? (
+                    <span style={{ color: "var(--amber)" }}> · {toFix[t.id]} to fix</span>
+                  ) : null}
                 </span>
               </span>
             </button>
