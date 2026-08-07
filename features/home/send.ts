@@ -12,6 +12,31 @@ import type { OkItem } from "./derive";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** The server's own bounds for an idempotency key (messaging-router sendInput). */
+const KEY_MIN = 8;
+const KEY_MAX = 64;
+
+/**
+ * The dedupe key for an approved reminder: THE RECORD PLUS THE FOLLOW-UP IT IS.
+ *
+ * Two clicks on the same card produce the same key, and `messaging.send` collapses them into one
+ * text. A reminder sent AFTER the record advanced a stage is a different follow-up and gets a
+ * different key, so it goes out. (A failed claim is reclaimable server-side, so retrying the same
+ * key after an error re-sends rather than silently succeeding — see modules/messaging.)
+ */
+export function okSendKey(item: OkItem): string {
+  const stage = item.estimate?.fu.stage ?? item.invoice?.fu?.stage ?? 0;
+  return `${item.key}-fu${stage + 1}`;
+}
+
+/**
+ * A key the server will accept, or none. Out-of-bounds is not a send-blocking condition: without a
+ * key the server mints its own (`msg-<id>`), so the text still goes — it just isn't deduped. The
+ * alternative is a request rejected by input validation, which would roll back a real send.
+ */
+const usableKey = (key: string | undefined): string | undefined =>
+  key && key.length >= KEY_MIN && key.length <= KEY_MAX ? key : undefined;
+
 /**
  * The REAL outbound dispatch behind every approved Send. Until Jul 30 2026 the
  * primitive below only wrote a note into browser memory — "✓ sent" with no
@@ -20,12 +45,18 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * the thread modal and estimate modal use — so the text persists to the thread
  * and goes out through Twilio. Rejects with the server's reason on failure so
  * surfaces can show it and roll the local note back.
+ *
+ * `idempotencyKey` is optional and every caller that HAS a record to key on should pass one (see
+ * okSendKey). Callers without one — a free-typed nudge at a lead with no queue item behind it —
+ * keep the un-keyed path.
  */
-export function dispatchOkSend(leadId: string, body: string): Promise<void> {
+export function dispatchOkSend(leadId: string, body: string, idempotencyKey?: string): Promise<void> {
   // Store-local leads (non-uuid ids, never persisted) have no thread to send
   // through — the local note is all there is. Skip the wire, succeed locally.
   if (!UUID_RE.test(leadId)) return Promise.resolve();
-  return trpcVanilla.v1.messaging.send.mutate({ leadId, body }).then(() => undefined);
+  return trpcVanilla.v1.messaging.send
+    .mutate({ leadId, body, idempotencyKey: usableKey(idempotencyKey) })
+    .then(() => undefined);
 }
 
 /** "8:47pm" — matches the ledger's act-timestamp format exactly. One voice. */

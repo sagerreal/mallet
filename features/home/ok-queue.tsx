@@ -16,7 +16,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { PhoneGate } from "@/lib/phone";
 import { firstName, type OkItem } from "./derive";
 import { draftFor, softDraftFor, type DraftContext } from "./drafts";
-import { clockNow, commitOkSend, dispatchOkSend } from "./send";
+import { clockNow, commitOkSend, dispatchOkSend, okSendKey } from "./send";
 
 const UNDO_MS = 30_000;
 /** Bubble inks in (180ms) → card folds (260ms, delayed 180ms) → dismiss. */
@@ -203,7 +203,7 @@ export function OkQueue({ items, ctx = {} }: { items: OkItem[]; ctx?: DraftConte
     // REAL dispatch (v1.messaging.send) — the local commit above is the queue's
     // bookkeeping; this is the actual message. On failure the commit reverts and
     // the card returns to the queue (same rollback contract as store writes).
-    dispatchOkSend(item.lead.id, text).catch(() => {
+    dispatchOkSend(item.lead.id, text, okSendKey(item)).catch(() => {
       undoSend();
       undismissAttention(item.key);
       setSent((prev) => prev.filter((e) => e.key !== item.key));

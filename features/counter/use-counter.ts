@@ -13,7 +13,7 @@ import { useRouter } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { firstName } from "@/features/home/derive";
-import { clockNow, commitOkSend, dispatchOkSend } from "@/features/home/send";
+import { clockNow, commitOkSend, dispatchOkSend, okSendKey } from "@/features/home/send";
 import { useOkQueue } from "@/features/home/use-ok-queue";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { STAGE_ORDER } from "@/features/pipeline/pipeline-constants";
@@ -142,7 +142,7 @@ export function useCounter() {
         useAppStore.getState().undismissAttention(key);
       };
       // REAL dispatch; failure reverts the commit (store rollback contract).
-      dispatchOkSend(gate.item.lead.id, text).catch(revert);
+      dispatchOkSend(gate.item.lead.id, text, okSendKey(gate.item)).catch(revert);
       return revert;
     }
     if (gate.kind === "quote-send") {

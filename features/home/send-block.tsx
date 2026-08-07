@@ -15,7 +15,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { userMessage } from "@/lib/trpc/error-map";
-import { clockNow, commitOkSend, dispatchOkSend } from "./send";
+import { clockNow, commitOkSend, dispatchOkSend, okSendKey } from "./send";
 import type { OkItem } from "./derive";
 
 const UNDO_MS = 30_000;
@@ -63,7 +63,7 @@ export function SendBlock({
       setSent({ when: clockNow(), undo: revert, expiresAt: Date.now() + UNDO_MS });
       // REAL dispatch (v1.messaging.send). On failure: revert the local commit, bring
       // the card back, and name the reason — never leave a "✓ sent" that sent nothing.
-      dispatchOkSend(item.lead.id, body).catch((err: unknown) => {
+      dispatchOkSend(item.lead.id, body, okSendKey(item)).catch((err: unknown) => {
         revert();
         setSent(null);
         setSendErr(userMessage(err, "Couldn't send — check your connection and try again."));
