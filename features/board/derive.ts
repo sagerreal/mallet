@@ -9,12 +9,12 @@
  * to the same question, and the board would disagree with the screen the card opens.
  *
  * TONE follows one rule with two exceptions: work the shop owes reads `attention`, work somebody
- * else owes reads `waiting`; a crew actually on site reads `active`, and a bill past the date the
- * customer agreed to reads `overdue`.
+ * else owes reads `waiting`; a crew already moving on it (en route or on site) reads `active`,
+ * and a bill past the date the customer agreed to reads `overdue`.
  */
 
 import { estTotal } from "@/lib/estimates";
-import { colLabel } from "@/lib/time";
+import { daysSince } from "@/lib/clock";
 import { isVisitPlaced } from "@/lib/store/visit-placement";
 import { visitLabel, type OkItem } from "@/features/home/derive";
 import { intakeRowOf, type GettingRow } from "@/features/pipeline/working";
@@ -26,17 +26,40 @@ import type { Estimate, Invoice, Job, Lead, Visit } from "@/lib/store/types";
 import type { BoardColumn, BoardColumnId, BoardItem, BoardTone, WorkBoardData } from "./types";
 
 /**
- * What a card says when no customer name reached it.
+ * What a card says when no customer name reached it — the Rail's existing convention.
  *
- * The store's `Job` carries no customer name (the summary DTO's `customerName` is dropped by the
- * hydrator's mapper), so callers pass it in. Same word the money ledger already uses for the same
- * gap — a card that cannot name its customer says so plainly rather than printing an id or "—".
+ * Neither record carries one. The store's `Job` drops the summary DTO's `customerName` in its
+ * mapper, and the invoices hydrator hard-codes `cust: ""` on every list row
+ * (`features/money/invoices-hydrator.tsx:63`). So the name is passed IN, and both seams are
+ * REQUIRED arguments: a caller that forgets one is a compile error, not a board full of dashes.
  */
-export const UNNAMED_CUSTOMER = "Customer";
+export const UNNAMED_CUSTOMER = "—";
+
+/** The first name anybody actually resolved. Blank is not a name — the hydrator writes "". */
+function nameOr(...candidates: (string | null | undefined)[]): string {
+  for (const c of candidates) if (c && c.trim() !== "") return c;
+  return UNNAMED_CUSTOMER;
+}
 
 /** Dollars, defensively: an absent or non-finite figure is 0 (= unpriced), never NaN in a sum. */
 const money = (n: number | null | undefined): number =>
   typeof n === "number" && Number.isFinite(n) ? n : 0;
+
+/** A server figure only wins if it IS one — a NaN must never reach a column header. */
+const finiteOr = (n: number | null | undefined, fallback: number): number =>
+  typeof n === "number" && Number.isFinite(n) ? n : fallback;
+
+/**
+ * "3d ago" / "today" for an ISO date or timestamp.
+ *
+ * `daysSince` is the shared, clock-mocked rule (lib/clock.ts). Bare `YYYY-MM-DD` values are
+ * anchored at local noon first: `new Date("2026-06-28")` is UTC midnight, which reads as the
+ * previous day west of Greenwich and would age every done job by one.
+ */
+function agoLabel(prefix: string, iso: string): string {
+  const days = daysSince(iso.includes("T") ? iso : `${iso}T12:00:00`);
+  return days > 0 ? `${prefix} ${days}d ago` : `${prefix} today`;
+}
 
 /** The one tone rule; the two exceptions are set explicitly at their call sites. */
 const toneFor = (needsAction: boolean): BoardTone => (needsAction ? "attention" : "waiting");
@@ -128,9 +151,22 @@ export function quotingItems(
 
 // ---- jobs --------------------------------------------------------------------
 
-/** A crew is standing on the job right now — the store's word for it is the visit's status. */
-const onsiteVisit = (job: Job): Visit | undefined =>
-  (job.visits ?? []).find((v) => v.status === "onsite");
+/**
+ * A crew is MOVING on this job right now — the store's word for it is the visit's own status.
+ * On site outranks the trip, the same precedence the visit mapper uses (arrival beats en route).
+ */
+const ACTIVE_VISIT_STATES: readonly { status: string; label: string }[] = [
+  { status: "onsite", label: "On site" },
+  { status: "enroute", label: "En route" },
+];
+
+function activeVisit(job: Job): { visit: Visit; label: string } | null {
+  for (const state of ACTIVE_VISIT_STATES) {
+    const visit = (job.visits ?? []).find((v) => v.status === state.status);
+    if (visit) return { visit, label: state.label };
+  }
+  return null;
+}
 
 /**
  * NOT ON A DAY WITH A CREW — the client twin of the server's `needsSlot` view.
@@ -142,7 +178,8 @@ const onsiteVisit = (job: Job): Visit | undefined =>
 const needsSlot = (job: Job): boolean => !(job.visits ?? []).some(isVisitPlaced);
 
 function jobState(job: Job): StateView {
-  if (onsiteVisit(job)) return { stateLabel: "On site", tone: "active", needsAction: false };
+  const active = activeVisit(job);
+  if (active) return { stateLabel: active.label, tone: "active", needsAction: false };
   if (needsSlot(job)) return { stateLabel: "Needs scheduling", tone: "attention", needsAction: true };
   return { stateLabel: "Scheduled", tone: "waiting", needsAction: false };
 }
@@ -153,8 +190,8 @@ function jobState(job: Job): StateView {
  * is honest, and "Needs scheduling" has already said it.
  */
 function jobAgeLabel(job: Job): string {
-  const onsite = onsiteVisit(job);
-  if (onsite) return visitLabel(onsite);
+  const active = activeVisit(job);
+  if (active) return visitLabel(active.visit);
   const next = jobNextVisit(job);
   if (next) return visitLabel(next);
   const half = jobDatedUnassignedVisit(job);
@@ -162,17 +199,18 @@ function jobAgeLabel(job: Job): string {
 }
 
 /**
- * One work-kind job. The caller filters (estimate-kind jobs surface as GettingRows) and supplies
+ * One work-kind job. The caller filters (estimate-kind jobs surface as GettingRows) and MUST pass
  * `customerName` from the list DTO — see UNNAMED_CUSTOMER for why it cannot come off the record.
+ * `null` is the honest value when the DTO's own name is null; it is not an opt-out.
  */
-export function jobItem(job: Job, customerName?: string): BoardItem {
+export function jobItem(job: Job, customerName: string | null): BoardItem {
   return {
     key: `bj-${job.id}`,
     kind: "job",
     column: "jobs",
     refId: job.id,
     leadId: job.leadId,
-    name: customerName ?? UNNAMED_CUSTOMER,
+    name: nameOr(customerName),
     service: job.title,
     valueDollars: money(jobTotal(job)),
     ...jobState(job),
@@ -183,7 +221,7 @@ export function jobItem(job: Job, customerName?: string): BoardItem {
 // ---- billing -----------------------------------------------------------------
 
 /** Work that is finished and not yet billed — the money leak the column exists to close. */
-function readyToBillItem(job: Job, customerName?: string): BoardItem {
+function readyToBillItem(job: Job, customerName: string | undefined): BoardItem {
   const done = jobDoneDate(job);
   return {
     key: `bj-${job.id}`,
@@ -191,13 +229,15 @@ function readyToBillItem(job: Job, customerName?: string): BoardItem {
     column: "billing",
     refId: job.id,
     leadId: job.leadId,
-    name: customerName ?? UNNAMED_CUSTOMER,
+    name: nameOr(customerName),
     service: job.title,
     valueDollars: money(jobTotal(job)),
     stateLabel: "Ready to bill",
     tone: "attention",
     needsAction: true,
-    ageLabel: done ? `Done ${colLabel(done)}` : "",
+    // HOW LONG the money has been sitting there, which is the whole point of the card — a bare
+    // weekday ("Done Thu") cannot tell last Thursday from the one three weeks ago.
+    ageLabel: done ? agoLabel("Done", done) : "",
   };
 }
 
@@ -208,18 +248,29 @@ function invoiceState(statusKey: string): StateView {
   return { stateLabel: "Awaiting payment", tone: "waiting", needsAction: false };
 }
 
-function invoiceItem(inv: Invoice, ok: OkItem | undefined): BoardItem {
+/**
+ * The age fact a bill is judged by. An OVERDUE one is late against the date the customer agreed
+ * to, so it counts from `dueAt` — "Raised 30d ago" on a net-30 invoice says nothing about whether
+ * anybody is late. Every other row states when the bill was raised, which is what `age` means.
+ */
+function invoiceAgeLabel(inv: Invoice, statusKey: string): string {
+  if (statusKey === "over" && inv.dueAt) return agoLabel("Due", inv.dueAt);
+  return inv.age > 0 ? `Raised ${inv.age}d ago` : "Raised today";
+}
+
+function invoiceItem(inv: Invoice, customerName: string | undefined, ok: OkItem | undefined): BoardItem {
+  const statusKey = invStatusKey(inv);
   return {
     key: `bi-${inv.id}`,
     kind: "invoice",
     column: "billing",
     refId: inv.id,
     leadId: inv.leadId,
-    name: inv.cust || UNNAMED_CUSTOMER,
+    name: nameOr(customerName, inv.cust),
     service: inv.title,
     valueDollars: money(invDue(inv)),
-    ...invoiceState(invStatusKey(inv)),
-    ageLabel: inv.age > 0 ? `Raised ${inv.age}d ago` : "Raised today",
+    ...invoiceState(statusKey),
+    ageLabel: invoiceAgeLabel(inv, statusKey),
     ...(ok ? { ok } : {}),
   };
 }
@@ -232,11 +283,15 @@ export function billingItems(
   invoices: Invoice[],
   oksByInvId: Map<string, OkItem>,
   /** Job id → customer name, from the list DTO the store's Job drops. See UNNAMED_CUSTOMER. */
-  jobCustomerNames?: ReadonlyMap<string, string>,
+  jobCustomerNames: ReadonlyMap<string, string>,
+  /** Invoice id → customer name, from the list DTO the invoices hydrator blanks. Same reason. */
+  invCustomerNames: ReadonlyMap<string, string>,
 ): BoardItem[] {
   return [
-    ...needsInvoiceJobs.map((job) => readyToBillItem(job, jobCustomerNames?.get(job.id))),
-    ...invoices.filter(isOpenBill).map((inv) => invoiceItem(inv, oksByInvId.get(inv.id))),
+    ...needsInvoiceJobs.map((job) => readyToBillItem(job, jobCustomerNames.get(job.id))),
+    ...invoices
+      .filter(isOpenBill)
+      .map((inv) => invoiceItem(inv, invCustomerNames.get(inv.id), oksByInvId.get(inv.id))),
   ];
 }
 
@@ -269,10 +324,14 @@ export function columnOf(
     id,
     title,
     items: ranked,
-    // The server counted the whole book; the items are one capped page of it. Where it has an
-    // answer it wins, so a header cannot read "5" over a column that holds thirty.
-    count: opts?.serverCount ?? ranked.length,
-    valueDollars: opts?.serverDollars ?? ranked.reduce((sum, i) => sum + money(i.valueDollars), 0),
+    // The server counted the whole book; the items are one capped page of it. Where it has a
+    // REAL answer it wins, so a header cannot read "5" over a column that holds thirty — but a
+    // missing or non-finite figure falls back to the page rather than printing NaN.
+    count: finiteOr(opts?.serverCount, ranked.length),
+    valueDollars: finiteOr(
+      opts?.serverDollars,
+      ranked.reduce((sum, i) => sum + money(i.valueDollars), 0),
+    ),
     truncated: opts?.truncated ?? false,
   };
 }

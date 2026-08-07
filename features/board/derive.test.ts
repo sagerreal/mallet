@@ -55,8 +55,18 @@ const invoice = (over: Partial<Invoice> = {}): Invoice => ({
   depPaid: 0, payments: [], status: "sent", age: 30, archived: false, ...over,
 });
 
-/** Past its due date and still owed — the "over" branch of invStatusKey. */
-const overdueInvoiceFixture = invoice({ dueAt: "2026-01-05" });
+/**
+ * Past its due date and still owed — the "over" branch of invStatusKey. Local-noon anchored so
+ * the day count is the same in every timezone; the clock mock pins "today" to 2026-07-01.
+ */
+const overdueInvoiceFixture = invoice({ dueAt: "2026-06-01T12:00:00" });
+
+/** A LIST-hydrated bill: the hydrator blanks `cust`, and the balance comes from the server. */
+const listRowInvoice = invoice({
+  id: "i2", cust: "", partial: true, due: 400, paidTotal: 925, dueAt: null, status: "partial",
+});
+
+const NO_NAMES: ReadonlyMap<string, string> = new Map();
 
 const okFor = (key: string, value: number): OkItem =>
   ({ key, kind: "invoice-overdue", value } as OkItem);
@@ -113,6 +123,19 @@ describe("columnOf", () => {
     expect(col.truncated).toBe(false);
     expect(col.id).toBe("jobs");
     expect(col.title).toBe("Jobs");
+  });
+
+  it("passes a capped column's truncated flag through", () => {
+    expect(columnOf("jobs", "Jobs", [item({})], { truncated: true }).truncated).toBe(true);
+  });
+
+  it("falls back to the page when a server figure is not a number", () => {
+    const col = columnOf("jobs", "Jobs", [item({ valueDollars: 250 })], {
+      serverCount: Number.NaN,
+      serverDollars: Number.NaN,
+    });
+    expect(col.count).toBe(1);
+    expect(col.valueDollars).toBe(250);
   });
 });
 
@@ -220,13 +243,23 @@ describe("jobItem", () => {
     expect(row.ageLabel).toBe("Mon 8:00 AM");
   });
 
-  it("a crew on site reads as active work, not a task", () => {
-    const row = jobItem(job({ visits: [visit({ status: "onsite" })] }), "Maria Ortiz");
-    expect(row).toMatchObject({ stateLabel: "On site", tone: "active", needsAction: false });
+  it("a crew on the way and a crew on site both read as active work, not a task", () => {
+    const enroute = jobItem(job({ visits: [visit({ status: "enroute" })] }), "Maria Ortiz");
+    expect(enroute).toMatchObject({ stateLabel: "En route", tone: "active", needsAction: false });
+    const onsite = jobItem(job({ visits: [visit({ status: "onsite" })] }), "Maria Ortiz");
+    expect(onsite).toMatchObject({ stateLabel: "On site", tone: "active", needsAction: false });
   });
 
-  it("names the customer generically when no name was resolved", () => {
-    expect(jobItem(job()).name).toBe("Customer");
+  it("arrival outranks the trip when both stamps are on the job", () => {
+    const row = jobItem(
+      job({ visits: [visit({ id: "v1", status: "enroute" }), visit({ id: "v2", status: "onsite" })] }),
+      "Maria Ortiz",
+    );
+    expect(row.stateLabel).toBe("On site");
+  });
+
+  it("says so plainly when the DTO resolved no name", () => {
+    expect(jobItem(job(), null).name).toBe("—");
   });
 });
 
@@ -235,17 +268,40 @@ describe("jobItem", () => {
 describe("billingItems", () => {
   it("overdue invoices carry their OkItem and count as texts ready", () => {
     const ok = okFor("oki-i1", 1325);
-    const items = billingItems([], [overdueInvoiceFixture], new Map([["i1", ok]]));
+    const items = billingItems([], [overdueInvoiceFixture], new Map([["i1", ok]]), NO_NAMES, NO_NAMES);
     expect(items[0]).toMatchObject({ tone: "overdue", needsAction: true, ok });
     expect(needsYouOf([columnOf("billing", "Billing", items)]).textsReady).toBe(1);
   });
 
-  it("a done, unbilled job is ready to bill", () => {
-    const done = job({ status: "done", visits: [visit({ status: "done" })] });
-    const [row] = billingItems([done], [], new Map(), new Map([["j1", "Maria Ortiz"]]));
+  it("an overdue bill is aged against its DUE date, not the day it was raised", () => {
+    const [row] = billingItems([], [overdueInvoiceFixture], new Map(), NO_NAMES, NO_NAMES);
+    // Pinned clock: 2026-07-01. Due 2026-06-01. `age: 30` is deliberately a different number.
+    expect(row?.ageLabel).toBe("Due 30d ago");
+  });
+
+  it("every other bill states when it was raised", () => {
+    const [row] = billingItems(
+      [], [invoice({ id: "d1", status: "draft", age: 0 })], new Map(), NO_NAMES, NO_NAMES,
+    );
+    expect(row?.ageLabel).toBe("Raised today");
+  });
+
+  it("fills a list-hydrated bill's blank name from the invoice name seam", () => {
+    const named = new Map([["i2", "Dana Whitfield"]]);
+    const [row] = billingItems([], [listRowInvoice], new Map(), NO_NAMES, named);
+    expect(row).toMatchObject({ key: "bi-i2", name: "Dana Whitfield", valueDollars: 400 });
+    // Without the seam there is nothing to print — the hydrator wrote "".
+    const [bare] = billingItems([], [listRowInvoice], new Map(), NO_NAMES, NO_NAMES);
+    expect(bare?.name).toBe("—");
+  });
+
+  it("a done, unbilled job is ready to bill, aged by how long the money has sat", () => {
+    const done = job({ status: "done", visits: [visit({ date: "2026-06-28", status: "done" })] });
+    const [row] = billingItems([done], [], new Map(), new Map([["j1", "Maria Ortiz"]]), NO_NAMES);
     expect(row).toMatchObject({
       key: "bj-j1", kind: "job", column: "billing", refId: "j1", name: "Maria Ortiz",
       valueDollars: 1800, stateLabel: "Ready to bill", tone: "attention", needsAction: true,
+      ageLabel: "Done 3d ago",
     });
   });
 
@@ -259,6 +315,8 @@ describe("billingItems", () => {
         invoice({ id: "paid1", status: "paid", total: 500, paidTotal: 500 }),
       ],
       new Map(),
+      NO_NAMES,
+      NO_NAMES,
     );
     expect(items.map((i) => [i.refId, i.stateLabel, i.needsAction, i.valueDollars])).toEqual([
       ["d1", "Draft invoice", true, 1325],
@@ -269,6 +327,6 @@ describe("billingItems", () => {
   });
 
   it("skips archived invoices", () => {
-    expect(billingItems([], [invoice({ archived: true })], new Map())).toEqual([]);
+    expect(billingItems([], [invoice({ archived: true })], new Map(), NO_NAMES, NO_NAMES)).toEqual([]);
   });
 });
