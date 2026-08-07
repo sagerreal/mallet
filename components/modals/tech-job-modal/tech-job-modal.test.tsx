@@ -40,6 +40,12 @@ let mockCanText = true;
 
 const noop = vi.fn();
 const mockOpenModal = vi.fn();
+// Dismissing the sheet, kept separate from `noop` so a test can assert the tech was NOT thrown
+// out of the job. Resolves { ok: true } for the on-glass sign.
+const mockCloseModal = vi.fn();
+const mockSignJobQuote = vi.fn(
+  (): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
+);
 const mockUpdateJob = vi.fn();
 const mockSetVisitStatus = vi.fn();
 const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
@@ -85,7 +91,7 @@ function mockStoreState(): Record<string, unknown> {
     brand: { name: "E2E Plumbing" },
     setVisitNotes: mockSetVisitNotes2,
     adoptJobPhotoPath: noop,
-    signJobQuote: noop,
+    signJobQuote: mockSignJobQuote,
   };
 }
 
@@ -107,7 +113,7 @@ vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
   useOpenModal: () => mockOpenModal,
   usePushModal: () => mockOpenModal,
-  useCloseModal: () => noop,
+  useCloseModal: () => mockCloseModal,
   useAppStore: useAppStoreMock,
 }));
 
@@ -190,6 +196,8 @@ beforeEach(() => {
   mockAddInvoice.mockClear();
   mockSendInvoice.mockClear();
   mockRaiseVisitFee.mockClear();
+  mockCloseModal.mockClear();
+  mockSignJobQuote.mockClear();
 });
 
 // ---------------------------------------------------------------------------
@@ -936,6 +944,34 @@ describe("TechJobModalContent — tabs", () => {
     // The old "Scoping visit — the office builds the quote" copy is gone for techs.
     expect(screen.queryByText(/Scoping visit/)).toBeNull();
   });
+
+  // The owner's own run: an ESTIMATE job walked through, priced at the door, signed on the
+  // tablet — and then performed on the same visit. Signing dismissed him out of the job, so the
+  // work he had just sold was two taps away again. Signing is not leaving; it is the start of
+  // the work. The host lands it back on the Job tab, where the sold work order is.
+  for (const role of ["owner", "tech"] as const) {
+    it(`${role}: signing on site lands back on the Job tab, not out of the sheet`, async () => {
+      mockRole = role;
+      mockJobs = [makeJob({ svc: "estimate", lines: [{ d: "Flat rate repair", q: 1, r: 185 }] })];
+      render(<TechJobModalContent />);
+
+      fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+      fireEvent.click(screen.getByText("Present to customer →"));
+      fireEvent.change(screen.getByLabelText(/full name/), { target: { value: "Dana Alvarez" } });
+      await act(async () => {
+        fireEvent.click(screen.getByText(/^Accept & sign/));
+      });
+
+      expect(mockSignJobQuote).toHaveBeenCalled();
+      // Back on the Job tab…
+      expect(screen.getByRole("tab", { name: "Job" }).getAttribute("aria-selected")).toBe("true");
+      expect(screen.getByRole("tab", { name: "Quote" }).getAttribute("aria-selected")).toBe("false");
+      // …with the sold work order — the work to do — on screen, and the sheet still open.
+      expect(screen.getByText("Work order")).toBeTruthy();
+      expect(screen.getByText("Flat rate repair")).toBeTruthy();
+      expect(mockCloseModal).not.toHaveBeenCalled();
+    });
+  }
 
   it("tech: the Quote tab's scope save reaches setVisitNotes with the tech's own visit", async () => {
     mockRole = "tech";
