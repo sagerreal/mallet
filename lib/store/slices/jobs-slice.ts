@@ -422,7 +422,8 @@ export interface JobsSlice {
   addAddon: (jobId: string, draft: { d: string; r: number; c?: number }) => Addon | null;
   /**
    * Tech-surface found-work write. Calls v1.field.addAddon (anyRole, assignment-gated,
-   * proposed-only, rate-zeroed when !seesPrice). The copilot card uses this action; the
+   * proposed-only). The rate is stored as sent regardless of techSeesPrice — the customer reads
+   * the found-work price off this device and signs for it. The copilot card uses this action; the
    * existing office FoundWorkSec keeps addAddon unchanged.
    *
    * Returns the optimistic Addon synchronously (null when description is blank).
@@ -1414,8 +1415,9 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // addAddonField — tech-surface found-work write via v1.field.addAddon.
   // Same optimistic pattern as addAddon but routes to the field endpoint which:
   //   • enforces assignment + non-terminal gates server-side
-  //   • forces status:"proposed" (never accepted from the field)
-  //   • zeroes rateCents when the org's techSeesPrice is off
+  //   • forces status:"proposed" (never accepted from the field — approval is the customer's
+  //     signature via v1.field.approveFoundWork, or the office OK-pill)
+  //   • stores rateCents as sent, whatever techSeesPrice says (the customer signs for it here)
   // The copilot card calls this; office FoundWorkSec continues to use addAddon.
   // ---------------------------------------------------------------------------
   addAddonField: (jobId, draft) => {

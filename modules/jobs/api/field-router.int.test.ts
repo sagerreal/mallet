@@ -479,8 +479,11 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       const mine = day.items.find((i) => i.id === pricedJobId);
       expect(mine?.lines[0]?.rate).toBeNull();
       expect(mine?.lines[0]?.cost).toBeNull();
-      expect(mine?.addons[0]?.rate).toBeNull();
-      // Aggregate total is also redacted — the money-leak fix.
+      // Found work is the ONE exemption: the customer reads that price off this device and signs
+      // for it, so the technician's own screens keep it whatever techSeesPrice says. Cost still goes.
+      expect(mine?.addons[0]?.rate?.cents).toBe(12000);
+      expect(mine?.addons[0]?.cost).toBeNull();
+      // Aggregate total is still redacted — the money-leak fix.
       expect(mine?.total).toBeNull();
 
       // setVerifyAnswer's returned jobDTO is redacted the same way for techs.
@@ -521,7 +524,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     });
   });
 
-  // ── v1.field.addAddon — proposed-only, rate-redacted tech found-work write ────
+  // ── v1.field.addAddon — proposed-only tech found-work write (rate NOT redacted) ────
 
   describe("field addAddon endpoint", () => {
     let addonTechId = "";
@@ -581,39 +584,44 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       await admin`update org_settings set tech_sees_price = true where org_id = ${orgId}`;
     });
 
-    it("assigned tech adds an addon → DB row is proposed + response is redacted", async () => {
+    // FOUND WORK IS THE EXEMPTION to techSeesPrice, and these two tests are where it is pinned.
+    // The rate used to be forced to 0 on write and nulled on read for a !seesPrice tech. Both were
+    // wrong for the same reason: the CUSTOMER is asked to sign for found work on this device, so a
+    // shop that hides margins from its techs would have produced a $0 addendum for real work and
+    // then billed nothing. Cost is still stripped — that is the margin.
+    it("assigned tech adds an addon → DB row is proposed and carries the price the customer will sign", async () => {
       const caller = appRouter.createCaller(ctxFor(addonTechId, orgId, "tech"));
       const dto = await caller.v1.field.addAddon({
         jobId: addonJobId,
         description: "Extra shutoff valve",
-        rateCents: 9999, // !seesPrice → must be stored as 0
+        rateCents: 9999,
       });
 
-      // Response: rate is null (redacted) because seesPrice is off for this org.
       const added = dto.addons.find((a) => a.description === "Extra shutoff valve");
       expect(added).toBeDefined();
       expect(added!.status).toBe("proposed");
-      expect(added!.rate).toBeNull();
+      expect(added!.rate?.cents).toBe(9999);
       expect(added!.cost).toBeNull();
 
-      // DB row: rate_cents must be 0 (not 9999) — the money contract.
       const [row] = await admin<{ status: string; rate_cents: number }[]>`
         select status, rate_cents from job_addons where job_id = ${addonJobId} and description = 'Extra shutoff valve'`;
       expect(row!.status).toBe("proposed");
-      expect(row!.rate_cents).toBe(0);
+      expect(row!.rate_cents).toBe(9999);
     });
 
-    it("!seesPrice tech sending rateCents 9999 → stored 0 in the DB", async () => {
-      // Explicit DB assertion from a second add call (distinct description).
+    it("the JOB's own prices stay hidden from that same tech — the exemption is add-ons only", async () => {
       const caller = appRouter.createCaller(ctxFor(addonTechId, orgId, "tech"));
-      await caller.v1.field.addAddon({
+      const dto = await caller.v1.field.addAddon({
         jobId: addonJobId,
         description: "Pressure reducer check",
         rateCents: 9999,
       });
+      expect(dto.total).toBeNull();
+      for (const l of dto.lines) expect(l.rate).toBeNull();
+
       const [row] = await admin<{ rate_cents: number }[]>`
         select rate_cents from job_addons where job_id = ${addonJobId} and description = 'Pressure reducer check'`;
-      expect(row!.rate_cents).toBe(0);
+      expect(row!.rate_cents).toBe(9999);
     });
 
     it("seesPrice tech's rate is preserved in the DB", async () => {

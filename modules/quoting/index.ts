@@ -16,6 +16,11 @@ export { ListEstimatesUseCase } from "./app/list-estimates";
 // estimate through this seam, in the same tenant tx as the job's own line/signature write.
 export { RecordFieldSaleUseCase } from "./app/record-field-sale";
 export type { RecordFieldSaleCommand, FieldSaleOutcome, FieldSaleLineInput } from "./app/record-field-sale";
+// The signed-addendum recorder — the jobs module's found-work approval writes the customer's
+// signature through this seam as a change-order estimate, in the same tenant tx as the add-on
+// status flip and the job-line append.
+export { RecordChangeOrderUseCase } from "./app/record-change-order";
+export type { RecordChangeOrderCommand, ChangeOrderLineInput } from "./app/record-change-order";
 export type { EstimateOrigin } from "./domain/estimate";
 export { isEstimateOrigin } from "./domain/estimate";
 // Public (unauthenticated) quote functions — used by the customer-facing quote page routes.
