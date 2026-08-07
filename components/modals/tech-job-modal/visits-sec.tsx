@@ -112,13 +112,19 @@ export function VisitsSec({
 }
 
 /**
- * A return trip with no date on it yet.
+ * A visit that is still to run but has nowhere to sit on the board yet.
  *
  * No stepper and no controls — there is nothing to step through and nothing here to move. What it
  * carries is the reason, because that is the whole content of the row and the thing that stops
  * the office having to ring the technician to ask what the second visit is for.
+ *
+ * IT NAMES WHAT IS ACTUALLY MISSING. Two different rows land here — a return trip with no date at
+ * all, and the office's half-planned shape (a day with nobody on it, isVisitDatedUnassigned).
+ * Telling a technician a dated visit is "waiting on a time" is a small lie he can disprove by
+ * looking at the schedule, and small lies are how a screen stops being trusted.
  */
 function AwaitingSlotRow({ visit }: { visit: Visit }) {
+  const dated = Boolean(visit.date);
   return (
     <div
       style={{
@@ -128,7 +134,9 @@ function AwaitingSlotRow({ visit }: { visit: Visit }) {
         paddingTop: "var(--space-2)",
       }}
     >
-      <b style={{ fontSize: "var(--type-base)" }}>Return trip — waiting on a time</b>
+      <b style={{ fontSize: "var(--type-base)" }}>
+        {dated ? `${colLabel(visit.date)} — waiting on a tech` : "Return trip — waiting on a time"}
+      </b>
       {visit.scopeNotes ? (
         <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
           {visit.scopeNotes}
