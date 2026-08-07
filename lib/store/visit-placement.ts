@@ -43,3 +43,35 @@ export function isVisitPlaced(v: VisitPlacement): boolean {
 export function isVisitDatedUnassigned(v: VisitPlacement): boolean {
   return Boolean(v.date) && v.techId == null;
 }
+
+/** A visit, as this module needs to see it: where it sits, and whether it has happened. */
+export interface VisitPlacementWithStatus extends VisitPlacement {
+  readonly status: string;
+}
+
+const DONE = "done";
+
+/**
+ * How a job READS from its visit set — the client twin of the dispatch bands in
+ * `modules/jobs/infra/job-views.ts`. This was two identical copies (dto-mapper's
+ * `recalcJobStatus` and jobs-hydrator's `recalcStatus`) and both were wrong the same way, which
+ * is exactly the drift this file exists to stop.
+ *
+ * The rule is about OUTSTANDING placement, not placement. Asking "is any visit placed" lets a
+ * FINISHED first trip answer yes forever, so a job whose only remaining work is a follow-up with
+ * no date on it read as `done` — the one job on the screen that genuinely needs a date, filed as
+ * finished. The server band had the same hole (`needsSlot` tested `PLACED`, now `OUTSTANDING`).
+ *
+ *   scheduled   — a placed visit has yet to run
+ *   done        — every visit is finished
+ *   unscheduled — work is left, and none of it is on a day with a crew
+ *
+ * Callers still let a TERMINAL backend job status win over this; see the call sites.
+ */
+export function recalcJobPlacement(visits: readonly VisitPlacementWithStatus[]): string {
+  const left = visits.filter((v) => v.status !== DONE);
+  if (left.some(isVisitPlaced)) return "scheduled";
+  // Nothing placed is still to run. Either the job is finished, or what is left has no slot.
+  if (left.length === 0 && visits.length > 0) return DONE;
+  return "unscheduled";
+}

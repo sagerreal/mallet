@@ -231,9 +231,17 @@ export interface QuoteTabProps {
   scopeVisit: Visit | undefined;
   /** The job is closed — scope and price become read-only (server refuses writes anyway). */
   readOnly: boolean;
+  /**
+   * Called after the customer signs, and by nothing else — passed straight through to the
+   * builder, whose whole contract is that the HOST decides where a sold quote lands. This tab
+   * used to hand it `close`, which dismissed the technician out of the job at the exact moment
+   * the work became his to do. Not the same action as the fallback Done below, which really does
+   * mean "leave".
+   */
+  onSigned: () => void;
 }
 
-export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
+export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps) {
   const setVisitNotes = useAppStore((s) => s.setVisitNotes);
   const measurementGate = useMeasurementGate();
   const pushModal = usePushModal();
@@ -405,7 +413,7 @@ export function QuoteTab({ job, scopeVisit, readOnly }: QuoteTabProps) {
             jobId={job.id}
             embedded
             onModeChange={setBuilderMode}
-            onSigned={close}
+            onSigned={onSigned}
           />
         </>
       )}

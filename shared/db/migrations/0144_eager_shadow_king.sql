@@ -1,2 +1,0 @@
-ALTER TABLE "messages" ADD COLUMN "idempotency_key" text;--> statement-breakpoint
-CREATE UNIQUE INDEX "messages_org_idem_uidx" ON "messages" USING btree ("org_id","idempotency_key") WHERE "messages"."idempotency_key" is not null;

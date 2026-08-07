@@ -21,12 +21,16 @@ import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
+import { CreateVisitUseCase } from "../app/create-visit";
+import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
+import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
-import { redactMoneyForTech } from "./money-redaction";
+import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 import { byAgenda } from "./my-day-order";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
+import { visitToClose } from "./visit-to-close";
 
 /**
  * Just enough of a customer for the field surface to name and reach them: who this job is for and
@@ -108,11 +112,48 @@ const fieldSetVisitNotesInput = z.object({
   notes: z.string().max(2000),
 });
 
+/**
+ * Booking the return trip. A REASON, not a date.
+ *
+ * The reason is required and it is the whole value of the row: "waiting on the 40-gal tank" is
+ * what lets the office pick a sensible day and what the customer gets told when they ring. An
+ * unexplained second visit is a mystery the office has to phone the technician about.
+ *
+ * `durationHours` defaults to one hour — an honest placeholder the office adjusts when it places
+ * the visit, and the only durable record of length on a row with no start/end window.
+ */
+const fieldAddFollowUpVisitInput = z.object({
+  jobId: z.string().uuid(),
+  reason: z.string().trim().min(1, "say why you need to come back").max(2000),
+  durationHours: z.number().positive().max(24).default(1),
+});
+
 const fieldAddAddonInput = z.object({
   jobId: z.string().uuid(),
   id: z.string().uuid().optional(),
   description: z.string().trim().min(1, "description is required").max(200, "description must be 200 characters or fewer"),
   rateCents: z.number().int().min(0).optional(),
+});
+
+/**
+ * The customer's signature on found work — the addendum to a job they already signed.
+ *
+ * Only the chosen items, the name and the mark come from the client. The PRICES are not sent: they
+ * are read from the add-on rows the tech already recorded, so a tablet cannot sign the customer up
+ * at one number and bill at another. The shop name, the authorisation sentence, the snapshot and
+ * the timestamp are all assembled server-side, exactly as on signQuote.
+ */
+const fieldApproveFoundWorkInput = z.object({
+  jobId: z.string().uuid(),
+  addonIds: z
+    .array(z.string().uuid())
+    .min(1, "choose at least one item of found work to approve")
+    // Bounded like the sign-quote line list — a sheet a customer can read, not a bulk operation.
+    .max(200),
+  signerName: z.string().trim().min(1, "type the customer's name to sign").max(120),
+  // Optional for the same reason as on signQuote: a typed name IS the signature, and requiring a
+  // drawing would gate approval on the weakest evidence and lock out anyone who cannot draw.
+  signatureSvg: z.string().trim().max(100_000).optional(),
 });
 
 // The tech-facing surface. Assignment is the authorization boundary for techs: a tech may act only
@@ -226,7 +267,7 @@ export const createFieldRouter = () =>
         : true;
       const items = ordered.map((j) => {
         const dto = toJobSummaryDTO(j, executionByJob.get(j.props.id));
-        return isTech ? redactMoneyForTech(dto, seesPrice) : dto;
+        return isTech ? redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) : dto;
       });
       // The customers on THESE jobs, and no others — the technician's reach is their own work.
       // Without this the field shell has no name or number for anyone, which is why its Call
@@ -282,7 +323,7 @@ export const createFieldRouter = () =>
       const clockNotice = noticeFor(outcome);
       if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return { ...redactMoneyForTech(dto, seesPrice), clockNotice };
+      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
     }),
 
     complete: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
@@ -307,9 +348,46 @@ export const createFieldRouter = () =>
       // announces as "that was under a minute"). Finishing without arriving records no job
       // minutes — the same honest outcome the visit path already produces, and the same one the
       // stepper reports by showing those steps as skipped.
+      // AND IT MUST NOT CLOSE A JOB WITH A TRIP STILL TO RUN.
+      //
+      // That was the other half of the same disagreement, and the damaging half. The sheet's
+      // foot runs setVisitStatus, and SetVisitStatusUseCase derives the job from the visit set —
+      // finishing visit 1 of 2 correctly leaves the job open. This endpoint went straight to
+      // CompleteJobUseCase, which reads no visits at all: it completed the job, emitted
+      // `job.completed` (→ ensure-an-invoice), and left visit 2 sitting `pending` underneath a
+      // `complete` job. A technician closing out Tuesday's trip billed a job that finishes
+      // Thursday. So when the job HAS visits, this now takes the same road the sheet takes and
+      // lets the cascade decide; CompleteJobUseCase is kept only for a job with no visits at
+      // all, where there is no cascade to run and My day must still be able to close it.
+      //
       // assertOnJobIfTech already loaded and returned this job for a tech caller — that is what it
       // returns it FOR. Only owner/office (for whom it returns null) still owe a read.
       const before = techJob ?? (await repo.findById(jobId));
+      const closing = before ? visitToClose(before, ctx.principal) : null;
+
+      if (closing) {
+        const job = orThrow(
+          await new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({
+            jobId,
+            visitId: closing,
+            status: "complete",
+          }),
+        );
+        const tap = await runVisitClockTap(
+          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
+          "done",
+          jobId,
+          // VISIT-level, matching setVisitStatus: an owner clearing a colleague's visit is
+          // dispatching and takes none of the hours.
+          job.isAssignedToVisit(ctx.principal.userId, closing),
+        );
+        const cascaded = await toJobDTOWithExecution(repo, job);
+        const notice = noticeFor(tap);
+        if (ctx.principal.role !== "tech") return { ...cascaded, clockNotice: notice };
+        const techSeesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return { ...redactMoneyForTech(cascaded, techSeesPrice, FIELD_SURFACE_REDACTION), clockNotice: notice };
+      }
+
       if (before?.canStart()) {
         orThrow(await new StartJobUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ jobId }));
       }
@@ -326,8 +404,65 @@ export const createFieldRouter = () =>
       const clockNotice = noticeFor(outcome);
       if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return { ...redactMoneyForTech(dto, seesPrice), clockNotice };
+      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
     }),
+
+    /**
+     * "Need to come back" — the return trip, booked from the doorstep.
+     *
+     * A technician could not create a visit at all: every procedure in visit-router.ts is
+     * ownerOrOffice. So the commitment made at the customer's kitchen table — and it IS made,
+     * software or no software — lived in his head until he remembered to tell the office. Since
+     * found work started billing (#389) it got worse: he can sign a customer for extra work and
+     * then have no way to book the trip that performs it.
+     *
+     * WHAT HE CREATES IS UNPLACED, AND THAT IS THE DESIGN. He records that a return is needed and
+     * why; the office picks the slot. Choosing a time is a shop-level decision — when the part
+     * lands, who else is out, whose week has room — and none of it is visible from a doorstep.
+     * Letting him commit the shop to a date he cannot verify is how a customer gets stood up.
+     *
+     * The row lands in "Needs a slot" (see OUTSTANDING in job-views.ts, which had to learn that a
+     * finished first trip does not count as placement). Without that it would have been a black
+     * hole — an open job reading as done, which is worse than the office forgetting to call.
+     *
+     * Job-level assignment gate, matching signQuote: the person who walked the site books the
+     * return, whichever of the job's visits carried them there. No clock tap — booking a trip is
+     * not working time.
+     */
+    addFollowUpVisit: anyRole
+      .input(fieldAddFollowUpVisitInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const before = techJob ?? (await repo.findById(jobId));
+        if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found." });
+        // Guarded here rather than left to withVisits' terminal refusal, so the sheet can say why.
+        if (before.isTerminal()) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
+        }
+
+        const job = orThrow(
+          await new CreateVisitUseCase(repo, ctx.deps.clock, ctx.deps.ids).exec({
+            jobId,
+            assigneeUserId: null,
+            scheduledDate: null,
+            scheduledStart: null,
+            durationHours: input.durationHours,
+            notes: input.reason,
+          }),
+        );
+
+        logger.info(
+          { jobId: input.jobId, orgId: ctx.principal.orgId },
+          "job_visit.follow_up_created",
+        );
+        const dto = await toJobDTOWithExecution(repo, job);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+      }),
 
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
     // endpoint (v1.visits.setVisitStatus stays ownerOrOffice and is NOT loosened); this is a
@@ -366,7 +501,7 @@ export const createFieldRouter = () =>
         const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // "On my way" from the technician's own visit row. A STAMP, not a status change — the visit
@@ -404,7 +539,7 @@ export const createFieldRouter = () =>
         const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // Scope notes from the job site. JOB-level assignment gate (same as signQuote): the person
@@ -448,7 +583,7 @@ export const createFieldRouter = () =>
         const dto = await toJobDTOWithExecution(repo, job);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // Mint a signed upload URL for a job photo from the field surface. Any role may call this
@@ -516,20 +651,9 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
-    // Field-surface found-work write. Open to all roles (anyRole) but techs are assignment-gated
-    // and non-terminal-gated like every other field write. The money contract is strict:
-    //   • status is ALWAYS "proposed" — the office OK-pill is the approval gate; a tech may never
-    //     land an accepted addon.
-    //   • For tech callers with !techSeesPrice: IGNORE the client's rateCents entirely → store 0.
-    //     seesPrice techs may pass a rate; owner/office callers behave like the office endpoint.
-    //   • org from principal (never from client input).
-    //   • response is redacted for techs (B1 pattern — same as setVerifyAnswer / addPhoto).
-    //   • quantity and costCents are forced to the office defaults (1, 0) — techs don't author
-    //     cost; office callers should use the office addAddon endpoint for full control.
-    //   • isOptional follows the office default (false) for field-created found work.
     signQuote: anyRole
       .input(fieldSignQuoteInput)
       .output(jobDTO)
@@ -631,6 +755,85 @@ export const createFieldRouter = () =>
         return toJobDTO(r.job, r.execution);
       }),
 
+    /**
+     * The customer signs for FOUND WORK, and the found work starts billing.
+     *
+     * The sentence they already signed on this job says "Work beyond what is listed above is not
+     * included and needs my approval before it is done." A technician tapping "approved" is not
+     * that approval, and until now it was also not money: the status flipped and nothing else
+     * happened, because the invoice bills from the job's LINES and has never read add-ons.
+     *
+     * One call, one transaction, three writes — the addendum, the approval stamp and the job
+     * lines. Same shape as signQuote above, for the same reasons: the assignment gate, the org
+     * name read from the DATABASE (a client-supplied counterparty on a signed document is a
+     * hole), the terminal-job guard, and a throw anywhere rolling the whole thing back.
+     */
+    approveFoundWork: anyRole
+      .input(fieldApproveFoundWorkInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const job = techJob ?? (await repo.findById(jobId));
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        if (job.isTerminal()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This job is closed — ask the office to change it.",
+          });
+        }
+
+        // The customer must exist to own the addendum. findById excludes archived leads, so
+        // approving against an archived customer's job fails LOUDLY rather than writing a signed
+        // document nobody owns.
+        const lead = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findById(job.props.leadId);
+        if (!lead) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "This job's customer is missing or archived — restore the customer, then approve again.",
+          });
+        }
+
+        const orgName = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getOrgName();
+
+        const useCase = new ApproveFoundWorkUseCase(
+          repo,
+          new QuotingChangeOrderRecorder(ctx.tx, ctx.principal.orgId, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const r = orThrow(
+          await useCase.exec(
+            {
+              jobId,
+              addonIds: input.addonIds,
+              signerName: input.signerName,
+              signatureSvg: input.signatureSvg ?? "",
+              orgName,
+              approvedByUserId: ctx.principal.userId,
+            },
+            ctx.principal.orgId,
+          ),
+        );
+
+        const dto = toJobDTO(r.job, r.execution);
+        if (ctx.principal.role !== "tech") return dto;
+        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+      }),
+
+    // Field-surface found-work write. Open to all roles (anyRole) but techs are assignment-gated
+    // and non-terminal-gated like every other field write. The money contract is strict:
+    //   • status is ALWAYS "proposed" — a tech may never land an accepted add-on. Approval is the
+    //     CUSTOMER's signature (v1.field.approveFoundWork) or the office OK-pill, never a tap here.
+    //   • rateCents is stored as sent, whatever techSeesPrice says — see the note in the body.
+    //   • org from principal (never from client input).
+    //   • response is redacted for techs (B1 pattern — same as setVerifyAnswer / addPhoto).
+    //   • quantity and costCents are forced to the office defaults (1, 0) — techs don't author
+    //     cost; office callers should use the office addAddon endpoint for full control.
+    //   • isOptional follows the office default (false) for field-created found work.
     addAddon: anyRole
       .input(fieldAddAddonInput)
       .output(jobDTO)
@@ -653,14 +856,15 @@ export const createFieldRouter = () =>
         }
 
         const isTech = ctx.principal.role === "tech";
-        let rateCents: number;
-        if (isTech) {
-          const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-          // Money contract: !seesPrice → force 0 regardless of what the client sent.
-          rateCents = seesPrice ? (input.rateCents ?? 0) : 0;
-        } else {
-          rateCents = input.rateCents ?? 0;
-        }
+        // Found work carries the rate the caller sent, whatever techSeesPrice says.
+        //
+        // This USED to be forced to 0 for a !seesPrice tech, which is the write-side half of the
+        // same hole as the read-side redaction: the customer is asked to sign for found work on
+        // this device, so a shop that hides margins from its techs would have produced a $0
+        // addendum for real work and then billed nothing for it. The setting keeps a technician
+        // out of the shop's pricing on the JOB; it cannot be allowed to zero out the price the
+        // customer is agreeing to. Cost stays server-forced to 0 — that is the margin.
+        const rateCents = input.rateCents ?? 0;
 
         const useCase = new AddJobAddonUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
@@ -680,7 +884,7 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (!isTech) return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 
     // Crew checklist capture: write one verify answer (pass/override/clear) from the job site.
@@ -711,6 +915,6 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice);
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
   });

@@ -1,5 +1,5 @@
-import { and, desc, eq, exists, gte, ilike, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
-import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos, leads } from "@mallet/shared/db/schema";
+import { and, desc, eq, exists, getTableColumns, gte, ilike, inArray, isNotNull, isNull, lt, ne, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { jobs, jobVisits, jobLines, jobAddons, jobVerifyAnswers, jobPhotos, leads, estimates } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
@@ -23,7 +23,7 @@ import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPa
 import { flipScopeVisitJob, appendPendingVisit } from "./job-convert";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
-import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRow, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
+import { lineToDomain, addonToDomain, verifyToDomain, photoToDomain, type JobLineRow, type JobAddonRowWithSigner, type JobVerifyAnswerRow, type JobPhotoRow } from "./job-execution-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
 // RLS appends org_id = current_org_id() to every statement — this class never filters by org
@@ -457,6 +457,29 @@ export class DrizzleJobRepository implements JobRepository {
 
   // ── job execution data (Phase 5) ─────────────────────────────────────────
 
+  /**
+   * Add-on columns plus the name on the addendum the customer signed.
+   *
+   * LEFT JOIN, not inner: almost every add-on has no approval estimate (proposed, declined, or
+   * approved before the evidence columns existed), and an inner join would drop them from the
+   * job entirely — found work vanishing off a sheet is the exact failure this whole flow is
+   * about. The signer is READ rather than copied onto job_addons so the signed amount and the
+   * name it belongs to stay in one place.
+   */
+  private addonSelection() {
+    return this.tx
+      .select({ ...getTableColumns(jobAddons), approvalSignerName: estimates.signerName })
+      .from(jobAddons)
+      .leftJoin(
+        estimates,
+        and(
+          eq(estimates.orgId, jobAddons.orgId),
+          eq(estimates.id, jobAddons.approvalEstimateId),
+          isNull(estimates.deletedAt),
+        ),
+      );
+  }
+
   async listExecution(jobId: JobId): Promise<{
     lines: JobLine[];
     addons: JobAddon[];
@@ -469,9 +492,7 @@ export class DrizzleJobRepository implements JobRepository {
         .from(jobLines)
         .where(and(eq(jobLines.jobId, jobId), isNull(jobLines.deletedAt)))
         .orderBy(jobLines.position, jobLines.createdAt),
-      this.tx
-        .select()
-        .from(jobAddons)
+      this.addonSelection()
         .where(and(eq(jobAddons.jobId, jobId), isNull(jobAddons.deletedAt)))
         .orderBy(jobAddons.position, jobAddons.createdAt),
       this.tx
@@ -486,7 +507,7 @@ export class DrizzleJobRepository implements JobRepository {
     ]);
     return {
       lines: (lineRows as JobLineRow[]).map(lineToDomain),
-      addons: (addonRows as JobAddonRow[]).map(addonToDomain),
+      addons: (addonRows as JobAddonRowWithSigner[]).map(addonToDomain),
       verifyAnswers: (answerRows as JobVerifyAnswerRow[]).map(verifyToDomain),
       photos: (photoRows as JobPhotoRow[]).map(photoToDomain),
     };
@@ -508,9 +529,7 @@ export class DrizzleJobRepository implements JobRepository {
         .from(jobLines)
         .where(and(inArray(jobLines.jobId, ids), isNull(jobLines.deletedAt)))
         .orderBy(jobLines.position, jobLines.createdAt),
-      this.tx
-        .select()
-        .from(jobAddons)
+      this.addonSelection()
         .where(and(inArray(jobAddons.jobId, ids), isNull(jobAddons.deletedAt)))
         .orderBy(jobAddons.position, jobAddons.createdAt),
       this.tx
@@ -525,7 +544,7 @@ export class DrizzleJobRepository implements JobRepository {
     ]);
 
     for (const row of lineRows as JobLineRow[]) byJob.get(row.jobId)?.lines.push(lineToDomain(row));
-    for (const row of addonRows as JobAddonRow[]) byJob.get(row.jobId)?.addons.push(addonToDomain(row));
+    for (const row of addonRows as JobAddonRowWithSigner[]) byJob.get(row.jobId)?.addons.push(addonToDomain(row));
     for (const row of answerRows as JobVerifyAnswerRow[]) {
       byJob.get(row.jobId)?.verifyAnswers.push(verifyToDomain(row));
     }
@@ -719,6 +738,38 @@ export class DrizzleJobRepository implements JobRepository {
       createdAt: now,
       updatedAt: now,
     });
+  }
+
+  // See the port doc. `status = 'proposed'` in the WHERE is the guard that keeps a declined or
+  // already-signed add-on out of a fresh signature; the returned ids let the caller check that
+  // every line it just had signed for actually moved.
+  async approveAddons(
+    jobId: JobId,
+    addonIds: readonly string[],
+    approval: { byUserId: string | null; estimateId: string; at: Date },
+    now: Date,
+  ): Promise<string[]> {
+    if (addonIds.length === 0) return [];
+    const rows = await this.tx
+      .update(jobAddons)
+      .set({
+        status: "approved",
+        approvedByUserId: approval.byUserId,
+        approvedAt: approval.at,
+        approvalEstimateId: approval.estimateId,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          inArray(jobAddons.id, [...addonIds]),
+          eq(jobAddons.jobId, jobId),
+          eq(jobAddons.orgId, this.orgId),
+          eq(jobAddons.status, "proposed"),
+          isNull(jobAddons.deletedAt),
+        ),
+      )
+      .returning({ id: jobAddons.id });
+    return rows.map((r) => r.id);
   }
 
   async setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number> {

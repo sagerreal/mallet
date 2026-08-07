@@ -213,7 +213,7 @@ export function MoneyLedger() {
       }
       const i = money.invoiceRows.find((x) => x.id === id);
       if (!i) return;
-      recordPayment(id, { amt: invDue(i), when: "Just now", method: "card", onFile: true });
+      void recordPayment(id, { amt: invDue(i), when: "Just now", method: "card", onFile: true });
       setArmedCharge(null);
     },
   };

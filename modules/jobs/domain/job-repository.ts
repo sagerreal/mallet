@@ -209,6 +209,23 @@ export interface JobRepository {
     now: Date,
   ): Promise<void>;
   addAddon(addon: JobAddon, now: Date): Promise<void>;
+  /**
+   * Approve a set of found-work add-ons AND stamp the evidence, in ONE statement.
+   *
+   * One statement rather than a loop over setAddonStatus because the approvals share a single
+   * signature: partial success would leave the customer having signed for three items and the
+   * shop holding two. The WHERE clause requires `status = 'proposed'`, so a declined or
+   * already-approved row is never swept into somebody else's signature.
+   *
+   * Returns the ids actually moved — the caller compares them against what it asked for and
+   * refuses the whole write on a mismatch rather than silently under-billing.
+   */
+  approveAddons(
+    jobId: JobId,
+    addonIds: readonly string[],
+    approval: { byUserId: string | null; estimateId: string; at: Date },
+    now: Date,
+  ): Promise<string[]>;
   setAddonStatus(jobId: JobId, addonId: string, status: AddonStatus, now: Date): Promise<number>;
   setAddonInvoiceSkip(jobId: JobId, addonId: string, invoiceSkip: boolean, now: Date): Promise<number>;
   upsertVerifyAnswer(answer: JobVerifyAnswer, now: Date): Promise<void>;

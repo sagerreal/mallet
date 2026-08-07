@@ -770,7 +770,10 @@ export function InvoiceModalContent() {
 
   function record(amt: number, method: RecordMethod) {
     if (!invoice) return;
-    recordPayment(invoice.id, { amt, when: "Just now", method });
+    // Fire-and-forget on the desk: the store's optimistic write IS the feedback here and a
+    // failure surfaces through WriteErrorToast (see the slice's rollback). The close-out sheet
+    // is the caller that must await the resolved outcome.
+    void recordPayment(invoice.id, { amt, when: "Just now", method });
   }
 
   // Charge a card: mint the Stripe hosted-checkout link for the balance and open it. Because the

@@ -56,6 +56,14 @@
  * snapshot restore when the visit is gone, so a rollback can never resurrect
  * a phantom visit.
  *
+ * VISIT-STATUS GUARD (the "I've arrived" flicker): every step tap reconciles and
+ * invalidates, so the tap BEFORE this one left a myDay refetch in flight whose
+ * database read predates this tap's commit. When it resolves, the snapshot merge
+ * used to revert the visit to the previous step — sheet flickers, then the tap's
+ * own DTO puts it back. A visit whose status was written inside the hydrator
+ * stale window keeps its STORE status and step stamps through snapshot merges;
+ * the write's own reconcile stands the guard down for that one merge.
+ *
  * ADOPTION GUARD: setJobs replaces the job list wholesale. A jobs.list
  * snapshot whose read predates a quoting.accept commit doesn't contain the
  * job the client just adoptJob'd — dropping it re-introduces the "accepted
@@ -158,6 +166,20 @@ const _recentChecklistWrites = new Map<string, number>();
 // authoritative answer for that write) bypasses the guard. Mirrors
 // _recentChecklistWrites. Cleared on write failure or entry expiry.
 const _recentLineWrites = new Map<string, number>();
+
+// VISITS whose status was just written through setVisitStatus, keyed by VISIT id
+// (not job id — a job has several visits and only the tapped one is spoken for)
+// to the write time. This is the "I've arrived" flicker: tapping "Start driving"
+// reconciles and invalidates, which dispatches a myDay refetch; the tech taps
+// "I've arrived" a second later, INSIDE that refetch's flight; the refetch
+// resolves carrying a database read taken before the arrival committed, and the
+// snapshot merge reverts the visit to `enroute` with no `startedAt` until the
+// arrival's own DTO lands. Two states, a second apart, in front of the customer.
+// While an entry is younger than the hydrator stale window, snapshot merges keep
+// the STORE visit's status and step stamps; the write's own reconcile stands the
+// entry down for that one merge (it IS the authoritative answer) and re-arms it.
+// Mirrors _recentLineWrites. Cleared on write failure or entry expiry.
+const _recentVisitStatusWrites = new Map<string, number>();
 
 function chain(visitId: string, fn: () => Promise<unknown>): void {
   const prev = _visitOpChain.get(visitId) ?? Promise.resolve();
@@ -383,6 +405,12 @@ export interface JobsSlice {
    */
   setVisitNotes: (jobId: string, visitId: string, notes: string) => Promise<{ ok: boolean; error?: string }>;
   /**
+   * Book the return trip from the field. SERVER-FIRST, deliberately: the row's id and position are
+   * minted server-side, and an optimistic visit carrying a client-invented id would collide with
+   * the reconcile the mutation's own DTO performs a moment later.
+   */
+  addFollowUpVisit: (jobId: string, reason: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
    * Local-only append of an already-persisted photo path (the field Scope strip uploads via
    * uploadFieldPhoto, which writes the DB row itself — this just keeps the store in step).
    */
@@ -400,7 +428,8 @@ export interface JobsSlice {
   addAddon: (jobId: string, draft: { d: string; r: number; c?: number }) => Addon | null;
   /**
    * Tech-surface found-work write. Calls v1.field.addAddon (anyRole, assignment-gated,
-   * proposed-only, rate-zeroed when !seesPrice). The copilot card uses this action; the
+   * proposed-only). The rate is stored as sent regardless of techSeesPrice — the customer reads
+   * the found-work price off this device and signs for it. The copilot card uses this action; the
    * existing office FoundWorkSec keeps addAddon unchanged.
    *
    * Returns the optimistic Addon synchronously (null when description is blank).
@@ -483,6 +512,51 @@ function withRecentLines(prior: Job, incoming: Job): Job {
   return { ...incoming, lines: prior.lines };
 }
 
+/**
+ * Visit-status merge guard (mirror of withRecentLines, keyed by VISIT): while a setVisitStatus
+ * write on a visit is younger than the hydrator stale window, snapshot merges keep the STORE
+ * visit's step state — the incoming server read may predate the commit.
+ *
+ * Status and the three step stamps move as ONE unit, because the stepper reads them together: a
+ * status with no stamp behind it renders as `skipped` (see lib/store/visit-stamps.ts). Taking the
+ * local status and the server's stamps would produce exactly the fabricated/denied step that
+ * pairing them was introduced to prevent.
+ *
+ * Expired entries are dropped here (same lazy cleanup as the checklist/line/adoption guards).
+ */
+function withRecentVisitStatus(prior: Job, incoming: Job): Job {
+  if (_recentVisitStatusWrites.size === 0) return incoming;
+  const now = Date.now();
+  let held = false;
+  const visits = incoming.visits.map((v) => {
+    const writtenAt = _recentVisitStatusWrites.get(v.id);
+    if (writtenAt === undefined) return v;
+    if (now - writtenAt > HYDRATOR_STALE_MS) {
+      _recentVisitStatusWrites.delete(v.id);
+      return v;
+    }
+    const local = prior.visits.find((pv) => pv.id === v.id);
+    if (!local) return v;
+    if (
+      local.status === v.status &&
+      local.enrouteAt === v.enrouteAt &&
+      local.startedAt === v.startedAt &&
+      local.completedAt === v.completedAt
+    ) {
+      return v;
+    }
+    held = true;
+    return {
+      ...v,
+      status: local.status,
+      enrouteAt: local.enrouteAt,
+      startedAt: local.startedAt,
+      completedAt: local.completedAt,
+    };
+  });
+  return held ? { ...incoming, visits } : incoming;
+}
+
 /** True when a record carries no execution AT ALL — no lines, no add-ons, no photos, no answers. */
 function carriesNoExecution(j: Job): boolean {
   return (
@@ -526,13 +600,18 @@ function withExecution(prior: Job, incoming: Job): Job {
 }
 
 /**
- * Compose every snapshot-merge guard (pending visits + recent checklist + recent lines +
- * execution). Execution is OUTERMOST so it only fires when nothing before it restored the lines.
+ * Compose every snapshot-merge guard (pending visits + recent visit status + recent checklist +
+ * recent lines + execution). Execution is OUTERMOST so it only fires when nothing before it
+ * restored the lines. The visit-status guard sits directly on top of the pending-visit one — both
+ * speak about `visits`, and the status guard must see the set the pending-create guard settled on.
  */
 function mergeIncomingJob(prior: Job, incoming: Job): Job {
   return withExecution(
     prior,
-    withRecentLines(prior, withRecentChecklist(prior, withPendingCreateVisits(prior, incoming))),
+    withRecentLines(
+      prior,
+      withRecentChecklist(prior, withRecentVisitStatus(prior, withPendingCreateVisits(prior, incoming))),
+    ),
   );
 }
 
@@ -1125,18 +1204,32 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const job = get().jobs.find((j) => j.id === jobId);
     if (!job || job.origin !== JOB_ORIGIN.DB) return;
 
+    // Guard the optimistic step against a stale snapshot from now on: the refetch the PREVIOUS
+    // step's reconcile dispatched is still in flight, and its database read predates this tap.
+    _recentVisitStatusWrites.set(visitId, Date.now());
+
     // Serialize behind the visit's own createVisit (and any other in-flight op)
     // so the status write can never race the row's creation or deletion.
     chain(visitId, () => {
       // Execution-time re-check: the visit may have been removed (or its
       // create rolled back) while this op waited in the chain.
-      if (!visitExists(get().jobs, jobId, visitId)) return Promise.resolve();
+      if (!visitExists(get().jobs, jobId, visitId)) {
+        _recentVisitStatusWrites.delete(visitId);
+        return Promise.resolve();
+      }
       return persistVisitStatus(surface, jobId, visitId, status)
         .then((dto) => {
+          // This response is the authoritative answer for THIS visit — the server's stamps, and
+          // whatever it did to the others (↩ Reopen clears them). So the guard stands down for
+          // this one merge and is re-armed immediately after: the refetch dispatched before this
+          // commit can still land later, and must not revert the visit then either.
+          _recentVisitStatusWrites.delete(visitId);
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          _recentVisitStatusWrites.set(visitId, Date.now());
           invalidateJobLists();
         })
         .catch((err: unknown) => {
+          _recentVisitStatusWrites.delete(visitId);
           // Skip the restore when the visit is gone at catch time — the
           // snapshot contains it and restoring would resurrect a phantom.
           if (prior && visitExists(get().jobs, jobId, visitId)) {
@@ -1189,6 +1282,31 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
         }
         reportWriteError("setVisitNotes", err);
+        return { ok: false, error: userMessage(err) };
+      });
+  },
+
+  // ---------------------------------------------------------------------------
+  // addFollowUpVisit — "I need to come back". No optimistic row: see the interface note.
+  // ---------------------------------------------------------------------------
+  addFollowUpVisit: (jobId, reason) => {
+    const trimmed = reason.trim();
+    if (!trimmed) return Promise.resolve({ ok: false, error: "Say why you need to come back." });
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) {
+      return Promise.resolve({ ok: false, error: "This job isn't saved yet." });
+    }
+
+    return trpcVanilla.v1.field.addFollowUpVisit
+      .mutate({ jobId, reason: trimmed })
+      .then((dto) => {
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        reportWriteError("addFollowUpVisit", err);
         return { ok: false, error: userMessage(err) };
       });
   },
@@ -1328,8 +1446,9 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // addAddonField — tech-surface found-work write via v1.field.addAddon.
   // Same optimistic pattern as addAddon but routes to the field endpoint which:
   //   • enforces assignment + non-terminal gates server-side
-  //   • forces status:"proposed" (never accepted from the field)
-  //   • zeroes rateCents when the org's techSeesPrice is off
+  //   • forces status:"proposed" (never accepted from the field — approval is the customer's
+  //     signature via v1.field.approveFoundWork, or the office OK-pill)
+  //   • stores rateCents as sent, whatever techSeesPrice says (the customer signs for it here)
   // The copilot card calls this; office FoundWorkSec continues to use addAddon.
   // ---------------------------------------------------------------------------
   addAddonField: (jobId, draft) => {

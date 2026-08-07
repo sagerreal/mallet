@@ -1,5 +1,5 @@
 {
-  "id": "7a06ea3e-ee2a-4fbf-9e61-c7bfdfba30a5",
+  "id": "c3b0b83e-2232-4a42-8d42-1dd128acb5a9",
   "prevId": "57858e2e-0e19-4ccd-82c7-66d33b128a63",
   "version": "7",
   "dialect": "postgresql",
@@ -615,27 +615,6 @@
           "method": "btree",
           "with": {}
         },
-        "leads_org_stage_idx": {
-          "name": "leads_org_stage_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "stage",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "leads_org_created_active_idx": {
           "name": "leads_org_created_active_idx",
           "columns": [
@@ -1220,27 +1199,6 @@
             },
             {
               "expression": "lead_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "estimates_org_status_idx": {
-          "name": "estimates_org_status_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -5177,6 +5135,24 @@
           "notNull": true,
           "default": "'proposed'"
         },
+        "approved_by_user_id": {
+          "name": "approved_by_user_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approved_at": {
+          "name": "approved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "approval_estimate_id": {
+          "name": "approval_estimate_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
         "position": {
           "name": "position",
           "type": "integer",
@@ -5242,6 +5218,21 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "job_addons_approval_estimate_fk": {
+          "name": "job_addons_approval_estimate_fk",
+          "tableFrom": "job_addons",
+          "tableTo": "estimates",
+          "columnsFrom": [
+            "org_id",
+            "approval_estimate_id"
+          ],
+          "columnsTo": [
+            "org_id",
+            "id"
+          ],
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

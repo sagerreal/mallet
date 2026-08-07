@@ -31,6 +31,7 @@
 "use client";
 
 import { useCallback, useState } from "react";
+import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import {
   useActiveModal,
   usePushModal,
@@ -101,6 +102,7 @@ export function TechJobModalContent() {
   // identity across renders; selecting them here avoids re-subscribing the
   // parent when only the job object changes).
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
+  const addFollowUpVisit = useAppStore((s) => s.addFollowUpVisit);
   const updateJob = useAppStore((s) => s.updateJob);
   const recordPayment = useAppStore((s) => s.recordPayment);
   // Money in the tech view is gated by this permission toggle (a scalar — safe
@@ -140,6 +142,10 @@ export function TechJobModalContent() {
   // The tech only sees PLACED visits — never "Invalid Date" rows in the field.
   const placed = (job?.visits ?? []).filter(vPlaced);
   const curVisit = currentVisit(placed);
+  // Return trips booked from the field: still to run, no slot yet. Shown rather than filtered out
+  // with the other unplaced rows — this technician created them, and a booking that vanished off
+  // the sheet reads as a tap that did nothing.
+  const awaitingSlot = (job?.visits ?? []).filter((v) => !vPlaced(v) && v.status !== STORE_VISIT_STATUS.DONE);
   // Guarded, null-safe re-derivation of isUnpricedEstimate for use BEFORE the early return
   // below (hooks must run unconditionally) — the fee-fetch effect needs to know whether a
   // scoping visit's handoff will actually need the org's fee. `scoping` below (after the
@@ -194,7 +200,7 @@ export function TechJobModalContent() {
     const card = lead?.card;
     const dueNow = invDue(invoice);
     if (dueNow <= 0 || !card) return;
-    recordPayment(
+    void recordPayment(
       invoice.id,
       { amt: dueNow, when: "Just now", method: "card", onFile: true },
       invoiceSurface,
@@ -298,6 +304,19 @@ export function TechJobModalContent() {
    */
   const actVisit = !done ? (myVisit ?? (isOffice ? curVisit : undefined)) : undefined;
 
+  /**
+   * Booking a return trip. Job-level, matching the server's gate (assertOnJobIfTech) — the person
+   * who walked the site books the return, whichever visit carried them there.
+   *
+   * Not offered on a finished job: the server refuses it (a closed job takes a Reopen, not a new
+   * visit), and a control that always errors is worse than no control.
+   */
+  const canBookFollowUp = !done && (isOffice || assignedToMe);
+  const bookFollowUp = useCallback(
+    (reason: string) => addFollowUpVisit(job!.id, reason),
+    [addFollowUpVisit, job],
+  );
+
   // The foot — sheet grammar: ONE loud primary, and a quiet Finish under it whenever the primary
   // is something else. The branch is a pure view model; see tech-job-foot.ts for the four rules.
   const { primary: footPri, quiet: footQuiet } = footActions(
@@ -352,7 +371,15 @@ export function TechJobModalContent() {
         /* The Quote tab owns its whole body AND its sticky foot (the builder's
            "Present to customer →" is the sheet's one primary while it shows). */
         <div role="tabpanel" id="tj-panel-quote" aria-labelledby="tj-tab-quote">
-          <QuoteTab job={job} scopeVisit={scopeVisit} readOnly={done} />
+          {/* Signing does not end the visit — in the walkthrough-then-do-it flow it STARTS the
+              work. Land back on the Job tab with the sold work order showing, rather than
+              dismissing the technician out of the job he has just been told to perform. */}
+          <QuoteTab
+            job={job}
+            scopeVisit={scopeVisit}
+            readOnly={done}
+            onSigned={() => setTab("job")}
+          />
         </div>
       ) : (
         <div role="tabpanel" id="tj-panel-job" aria-labelledby="tj-tab-job">
@@ -468,10 +495,15 @@ export function TechJobModalContent() {
           contact row for that reason; the work order is reference material beneath it. */}
       <VisitsSec
         placed={placed}
+        awaiting={awaitingSlot}
         curVisit={curVisit}
         done={done}
         isOffice={isOffice}
+        // The stepper's forward jumps follow the FOOT's rule exactly — same visit, same viewer,
+        // so the two can never offer different moves.
+        stepVisitId={actVisit?.id}
         onStatus={onVisitStatus}
+        onAddFollowUp={canBookFollowUp ? bookFollowUp : undefined}
       />
 
       {/* 5a. Work order — ONE gate: is there anything to show?
@@ -493,11 +525,18 @@ export function TechJobModalContent() {
         <CopilotSection job={job} addAddonField={addAddonField} />
       )}
 
-      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes). */}
+      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes), and
+          absent entirely on a job with nothing sold. Found work means "extra beyond what was
+          sold"; on an estimate walkthrough nothing has been, so the add form would be a second
+          place to type a price beside the Quote tab's builder — and before a sale only one of
+          them is right. `scoping` is isUnpricedEstimate, which already treats prices WITHHELD
+          from this device as sold rather than unsold. JOB NOTES below is unaffected: a note is
+          always worth having, on either kind of job. */}
       <FoundWorkSec
         job={job}
         seesPrice={seesPrice}
         readOnly={!isOffice}
+        hasSoldWork={!scoping}
         addAddon={addAddon}
         setAddonStatus={setAddonStatus}
       />

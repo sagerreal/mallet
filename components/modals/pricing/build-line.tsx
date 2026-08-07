@@ -311,6 +311,35 @@ const INP: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
+interface AddLineRowProps {
+  onAdd: () => void;
+}
+
+/**
+ * The line list's own append control — the last row of the list, not a floating affordance.
+ *
+ * WHY IT EXISTS SEPARATELY FROM THE ADD MENU. AddMenu asks WHICH KIND of line (pricebook / custom
+ * item / labor rate / custom labor), which is the right question for the first line and the wrong
+ * one for the fifth: a repair priced at the door is mostly a run of one-off items, and each one
+ * cost a trip back out to the "Custom item" tile. This appends the next blank one in place. The
+ * menu keeps the other three kinds.
+ *
+ * Full width and 44px tall because the surface is a technician's tablet held at a doorstep — the
+ * same tap-target floor the sheet feet and the mobile `.btn` rule use.
+ */
+export function AddLineRow({ onAdd }: AddLineRowProps) {
+  return (
+    <button
+      type="button"
+      className="btn ghost"
+      onClick={onAdd}
+      style={{ width: "100%", minHeight: 44, marginTop: "var(--space-2)" }}
+    >
+      + Add another line
+    </button>
+  );
+}
+
 interface LineRowProps {
   line: BuildLine;
   onSet: (patch: Partial<BuildLine>) => void;

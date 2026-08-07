@@ -923,6 +923,153 @@ describe("setVisitStatus — field surface", () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Visit-status merge guard — the "I've arrived" flicker.
+//
+// Tapping "Start driving" reconciles and invalidates, which dispatches a myDay
+// refetch whose DATABASE READ predates nothing yet — but the tech taps "I've
+// arrived" a second later, INSIDE that refetch's flight. The refetch resolves
+// carrying the visit as it was before the arrival committed, setJobs merges it,
+// and the sheet snaps back to "on the way" until the arrival's own DTO lands.
+// Two states, ~a second apart: the flicker.
+//
+// The other three snapshot guards (pending visits, recent checklist, recent
+// lines) already pin their fields against exactly this race. This is the
+// visit's own status and step stamps getting the same protection.
+// ---------------------------------------------------------------------------
+
+describe("visit-status merge guard (a stale snapshot cannot revert a just-tapped step)", () => {
+  const ENROUTE_STAMP = "2026-07-15T08:40:00.000Z";
+  const ARRIVED_AT = "2026-07-15T08:52:00.000Z";
+
+  // A distinct visit id per test: the per-visit op chain is module state, and a test whose
+  // mutation never settles would otherwise park every later test's op behind it forever.
+  const enrouteVisit = (suffix: string) => ({
+    id: `aaaaaaaa-0000-0000-0000-0000000000${suffix}`,
+    date: null,
+    techId: null,
+    start: null,
+    dur: 2,
+    status: "enroute",
+    enrouteAt: ENROUTE_STAMP,
+    startedAt: null,
+  });
+
+  /** The myDay row an in-flight refetch resolves with: still on the way, no arrival stamp. */
+  const staleSnapshot = (visits: Job["visits"]) =>
+    ({ ...draft, id: "j-arrive", origin: "db" as const, visits });
+
+  beforeEach(() => {
+    mockFieldSetVisitStatus.mockReset();
+    mockFieldSetVisitEnroute.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-15T08:52:00Z"));
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("holds the arrival while the pre-commit refetch lands", () => {
+    const visit = enrouteVisit("a1");
+    mockFieldSetVisitStatus.mockReturnValue(new Promise(() => {})); // still in flight
+    const { get } = makeStore();
+    seedDbJob(get, "j-arrive", [visit]);
+
+    get().setVisitStatus("j-arrive", visit.id, "onsite", "field");
+    expect(get().jobs[0]!.visits[0]!.status).toBe("onsite");
+
+    // Refetch #1 — dispatched by the "Start driving" reconcile, read before the arrival
+    // committed — resolves now.
+    get().setJobs([staleSnapshot([visit])]);
+
+    const v = get().jobs[0]!.visits[0]!;
+    expect(v.status).toBe("onsite");
+    expect(v.startedAt).toBeTruthy();
+  });
+
+  it("lets the write's own response through — the server's stamp wins over the device's", async () => {
+    const visit = enrouteVisit("a2");
+    mockFieldSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-arrive", {
+        visits: [makeVisitDTO(visit.id, {
+          status: "in_progress",
+          enrouteAt: ENROUTE_STAMP,
+          startedAt: ARRIVED_AT,
+        })],
+      }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-arrive", [visit]);
+
+    get().setVisitStatus("j-arrive", visit.id, "onsite", "field");
+    await flush();
+
+    const v = get().jobs[0]!.visits[0]!;
+    expect(v.status).toBe("onsite");
+    expect(v.startedAt).toBe(ARRIVED_AT);
+  });
+
+  it("still holds the arrival after its own reconcile — a later stale refetch cannot revert it", async () => {
+    const visit = enrouteVisit("a3");
+    mockFieldSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-arrive", {
+        visits: [makeVisitDTO(visit.id, { status: "in_progress", startedAt: ARRIVED_AT })],
+      }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-arrive", [visit]);
+
+    get().setVisitStatus("j-arrive", visit.id, "onsite", "field");
+    await flush();
+
+    get().setJobs([staleSnapshot([visit])]);
+    expect(get().jobs[0]!.visits[0]!.status).toBe("onsite");
+  });
+
+  it("hands authority back to snapshots after the stale window", () => {
+    const visit = enrouteVisit("a4");
+    mockFieldSetVisitStatus.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDbJob(get, "j-arrive", [visit]);
+
+    get().setVisitStatus("j-arrive", visit.id, "onsite", "field");
+    vi.setSystemTime(new Date("2026-07-15T08:52:31Z")); // > 30 s HYDRATOR_STALE_MS
+    get().setJobs([staleSnapshot([visit])]);
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("enroute");
+  });
+
+  it("a failed write leaves no guard entry behind", async () => {
+    const visit = enrouteVisit("a5");
+    mockFieldSetVisitStatus.mockRejectedValue(new Error("offline"));
+    const { get } = makeStore();
+    seedDbJob(get, "j-arrive", [visit]);
+
+    get().setVisitStatus("j-arrive", visit.id, "onsite", "field");
+    await flush();
+    // Rolled back — and the next snapshot is authoritative again, not pinned to "onsite".
+    expect(get().jobs[0]!.visits[0]!.status).toBe("enroute");
+    get().setJobs([staleSnapshot([{ ...visit, status: "done" }])]);
+    expect(get().jobs[0]!.visits[0]!.status).toBe("done");
+  });
+
+  it("guards only the visit that was written, not its siblings", () => {
+    const visit = enrouteVisit("a6");
+    const sibling = { ...enrouteVisit("a7"), status: "scheduled" };
+    mockFieldSetVisitStatus.mockReturnValue(new Promise(() => {}));
+    const { get } = makeStore();
+    seedDbJob(get, "j-arrive", [visit, sibling]);
+
+    get().setVisitStatus("j-arrive", visit.id, "onsite", "field");
+    // The snapshot knows something new about the SIBLING; only the written visit is pinned.
+    get().setJobs([staleSnapshot([visit, { ...sibling, status: "done" }])]);
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("onsite");
+    expect(get().jobs[0]!.visits[1]!.status).toBe("done");
+  });
+});
+
 describe("updateVisit duration debounce", () => {
   beforeEach(() => {
     mockCreateVisit.mockReset();

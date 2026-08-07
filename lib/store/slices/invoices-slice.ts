@@ -10,6 +10,11 @@
  *      and REPLACE the record in the store (stamps origin: "db").
  *   4. On error, restore the pre-mutation snapshot; log in dev only.
  *
+ *   EXCEPTIONS — addInvoice, sendInvoice, raiseVisitFee and recordPayment ALSO resolve
+ *   { ok, error } (never reject) so an interactive caller can await the real outcome instead of
+ *   assuming success. recordPayment is the one that must: the close-out sheet rendered
+ *   "Approved" off the synchronous return.
+ *
  * origin flag (mirrors jobs "db" | "manual"):
  *   "manual" — created locally; has no DB row yet. Network mutations are
  *              deferred until sendInvoice fires (which drafts + sends in sequence).
@@ -112,16 +117,24 @@ export function buildInvoiceMetadataPayload(
 // ---------------------------------------------------------------------------
 
 /**
- * What a technician is told when they try to send a store-local invoice.
+ * What anyone is told when they try to send — or record money against — a store-local invoice.
  *
  * THE FIELD SURFACE HAS NO DRAFT, deliberately: `invoicing.draft` mints a lead-tied invoice with
  * caller-chosen lines against ANY lead, so it is not job-scoped and no field guard is even
  * expressible for it (see modules/invoicing/api/field-invoice-router.ts). A technician holding a
  * row that never reached the server therefore has nothing to send, and calling the office endpoint
  * from there would be a FORBIDDEN dressed up as a network failure. This says what is actually true.
+ *
+ * recordPayment shares it for the same reason: a "manual" invoice has no DB row and sendInvoice
+ * snapshots LINES, not payments — so money recorded against one is never persisted by anything,
+ * ever. It evaporates on the next refresh (the store has no persist middleware). Reporting that as
+ * recorded is the money lie this whole path exists to prevent.
  */
-const FIELD_CANNOT_DRAFT =
+const NEVER_RAISED_ON_SERVER =
   "This bill was never raised on the server — close this and tap Take payment again.";
+
+/** The record could not even be attempted: this device no longer holds the row. */
+const INVOICE_GONE = "This bill is no longer open on this device — close this and open it again.";
 
 function snapshotInv(invoices: Invoice[], id: string): Invoice | undefined {
   return invoices.find((i) => i.id === id);
@@ -242,7 +255,22 @@ export interface InvoicesSlice {
   };
   updateInvoice: (id: string, patch: Partial<Invoice>) => void;
   setInvoiceLines: (id: string, lines: InvoiceLine[]) => void;
-  recordPayment: (id: string, payment: Payment, surface?: InvoiceWriteSurface) => void;
+  /**
+   * Record money taken outside the app. Resolves { ok, error } once the SERVER has accepted (or
+   * refused) the record, and never rejects — same convention as sendInvoice/setJobLines, so
+   * existing fire-and-forget callers are unaffected while the close-out sheet can await it.
+   *
+   * This used to be `=> void`: it kicked off the write, rolled back inside a `.catch`, and the
+   * close-out sheet rendered "Approved · $1,000" on the next line regardless of what the server
+   * said. A voided invoice, a concurrent payment, or an offline tech all produced a done screen
+   * for money that was never recorded. Every non-success path below — including the two that
+   * never reach the network — now names itself and leaves the store where it found it.
+   */
+  recordPayment: (
+    id: string,
+    payment: Payment,
+    surface?: InvoiceWriteSurface,
+  ) => Promise<{ ok: boolean; error?: string }>;
   /**
    * Resolves { ok, error } once the send genuinely completes (never rejects) so a caller that
    * must not proceed until the invoice is actually sent (e.g. opening a payment sheet on it)
@@ -496,12 +524,18 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
 
     const inv = get().invoices.find((i) => i.id === id);
 
-    // 2. Only persist DB-origin invoices.
-    if (!inv || inv.origin !== "db") return;
+    // 2. Neither of these two can reach the server, so both undo the optimistic credit and name
+    //    the refusal. Leaving it applied while answering "not recorded" would put the sheet and
+    //    the ledger in disagreement — the DueCard would read paid behind an error.
+    if (!inv) return Promise.resolve({ ok: false, error: INVOICE_GONE });
+    if (inv.origin !== "db") {
+      if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
+      return Promise.resolve({ ok: false, error: NEVER_RAISED_ON_SERVER });
+    }
 
     const idempotencyKey = crypto.randomUUID();
 
-    persistRecordPayment(
+    return persistRecordPayment(
       surface,
       {
         invoiceId: id,
@@ -510,15 +544,24 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         idempotencyKey,
       },
       inv,
-    )
-      .then((reconciled) => {
+    ).then(
+      (reconciled) => {
         invalidateLists("invoices", "jobs");
         set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
-      })
-      .catch((err: unknown) => {
+        return { ok: true };
+      },
+      (err: unknown) => {
         if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
         reportWriteError("recordPayment", err);
-      });
+        // The domain refusals here are exactly the ones the person at the door needs verbatim —
+        // "this invoice is void", "this invoice is already paid" — so userMessage passes them
+        // through rather than flattening them to a connection error.
+        return {
+          ok: false,
+          error: userMessage(err, "Couldn't record the payment — check your connection and try again."),
+        };
+      },
+    );
   },
 
   // ---------------------------------------------------------------------------
@@ -550,7 +593,7 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
       // FIELD_CANNOT_DRAFT.
       if (surface === "field") {
         set((s) => ({ invoices: s.invoices.map((i) => (i.id === id ? { ...i, status: "draft" } : i)) }));
-        return Promise.resolve({ ok: false, error: FIELD_CANNOT_DRAFT });
+        return Promise.resolve({ ok: false, error: NEVER_RAISED_ON_SERVER });
       }
       // v1.invoicing.draft requires lines >= 1.
       if (!inv.lines.length || !inv.leadId) {

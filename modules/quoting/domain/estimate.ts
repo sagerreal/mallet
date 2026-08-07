@@ -593,6 +593,15 @@ export class Estimate {
     readonly signature: SignatureDraft;
     readonly orgName: string;
     readonly now: Date;
+    /**
+     * Set when this on-site sale is an ADDENDUM to work already running — found work the customer
+     * signed for at the door. Absent on an ordinary field sale (the whole job was sold on site).
+     *
+     * It is what makes the invoicing module's overage check tell legitimate extra work apart from
+     * work nobody agreed to: `withChangeOrders` folds every SIGNED estimate carrying this pointer
+     * into the job's authorised amount.
+     */
+    readonly changeOrderForJobId?: string | null;
   }): Result<Estimate, ValidationError> {
     const base = Estimate.create({
       id: args.id,
@@ -613,7 +622,7 @@ export class Estimate {
       declineReason: null,
       changeRequestedAt: null,
       changeRequest: null,
-      changeOrderForJobId: null,
+      changeOrderForJobId: args.changeOrderForJobId ?? null,
       // The field-sign transport links job→estimate via jobs.source_estimate_id (setSourceEstimate);
       // this read-side pointer stays null on field sales — there is no convert-at-accept to feed.
       jobId: null,
