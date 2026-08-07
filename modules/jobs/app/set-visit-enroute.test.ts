@@ -79,6 +79,10 @@ class FakeJobRepository implements JobRepository {
   async count(): Promise<number> { return 0; }
   async viewCounts(): Promise<{ counts: Record<string, number>; todayCents: number }> { return { counts: {}, todayCents: 0 } as never; }
   async addAddon() {}
+  async approveAddons(): Promise<string[]> {
+    return [];
+  }
+
   async setAddonStatus() { return 0; }
   async setAddonInvoiceSkip() { return 0; }
   async upsertVerifyAnswer() {}

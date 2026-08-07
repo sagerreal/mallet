@@ -92,6 +92,25 @@ export class JobLine {
 
 // ── JobAddon ──────────────────────────────────────────────────────────────────
 
+/**
+ * The evidence behind an `approved` add-on: who took it, when, and which signed addendum it
+ * belongs to. Null on a proposed or declined add-on, and null on every row approved before this
+ * record existed — legacy approvals stay honestly evidence-free rather than being back-dated.
+ *
+ * `signerName` is RESOLVED at read from the addendum estimate, never written onto job_addons. The
+ * signed amount and the signer live in exactly one place (that estimate's frozen snapshot); a copy
+ * here would be a second version of the number, and an evidence trail cannot survive two.
+ */
+export interface AddonApproval {
+  /** The staff member whose device took the approval — the in-person witness. */
+  readonly byUserId: string | null;
+  readonly at: Date;
+  /** The signed change-order estimate carrying the customer's name, mark and frozen snapshot. */
+  readonly estimateId: string | null;
+  /** The customer who signed, read through `estimateId`. Null when the addendum is unreadable. */
+  readonly signerName: string | null;
+}
+
 /** Props of a found-work add-on discovered on site. */
 export interface JobAddonProps {
   readonly id: string;
@@ -103,6 +122,8 @@ export interface JobAddonProps {
   readonly isOptional: boolean;
   readonly invoiceSkip: boolean;
   readonly status: AddonStatus;
+  /** Set only on an approved add-on — see AddonApproval. */
+  readonly approval: AddonApproval | null;
   readonly position: number;
 }
 
@@ -110,6 +131,11 @@ export interface JobAddonProps {
  * A found-work add-on discovered on site. Status lifecycle: proposed → approved | declined.
  * invoiceSkip keeps an approved add-on off the current invoice without removing it.
  * Mirrors `job_addons` CHECKs: quantity ≥ 0, rate_cents ≥ 0, cost_cents ≥ 0, status ∈ enum.
+ *
+ * NO DB CHECK ties `status = 'approved'` to `approved_at`, deliberately: rows approved before the
+ * evidence columns existed would fail it and the additive migration would abort on live data. The
+ * rule is enforced where approvals are MADE — ApproveFoundWorkUseCase never marks one approved
+ * without a captured customer signature — and a reader tells the two apart by `approval` being null.
  */
 export class JobAddon {
   private constructor(private readonly p: JobAddonProps) {}
@@ -124,6 +150,7 @@ export class JobAddon {
     isOptional: boolean;
     invoiceSkip: boolean;
     status: string;
+    approval?: AddonApproval | null;
     position: number;
   }): Result<JobAddon, ValidationError> {
     const description = input.description.trim();
@@ -153,9 +180,17 @@ export class JobAddon {
         isOptional: input.isOptional,
         invoiceSkip: input.invoiceSkip,
         status: input.status,
+        // Evidence only ever belongs to an approval. A declined row carrying a signature would
+        // read as "they signed for this and we dropped it".
+        approval: input.status === "approved" ? (input.approval ?? null) : null,
         position: input.position,
       }),
     );
+  }
+
+  /** What this add-on adds to the bill, in integer cents — the same rounding the job lines use. */
+  amountCents(): number {
+    return Math.round(this.p.quantity * this.p.rate);
   }
 
   get props(): JobAddonProps {

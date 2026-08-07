@@ -22,7 +22,14 @@ export const lineToDomain = (row: JobLineRow): JobLine => {
   return r.value;
 };
 
-export const addonToDomain = (row: JobAddonRow): JobAddon => {
+/**
+ * A job_addons row plus the one field that is NOT on it: the name on the addendum the customer
+ * signed, joined in from `estimates`. Optional so the plain-row callers still typecheck; absent
+ * reads as "not resolved", which renders as no name rather than as a wrong one.
+ */
+export type JobAddonRowWithSigner = JobAddonRow & { readonly approvalSignerName?: string | null };
+
+export const addonToDomain = (row: JobAddonRowWithSigner): JobAddon => {
   const r = JobAddon.create({
     id: row.id,
     jobId: asJobId(row.jobId),
@@ -33,6 +40,17 @@ export const addonToDomain = (row: JobAddonRow): JobAddon => {
     isOptional: row.isOptional,
     invoiceSkip: row.invoiceSkip,
     status: row.status,
+    // `approved_at` is the presence test, not the status: a row approved before the evidence
+    // columns existed is approved with nothing to show, and must not be dressed up with a
+    // timestamp it never had.
+    approval: row.approvedAt
+      ? {
+          byUserId: row.approvedByUserId,
+          at: row.approvedAt,
+          estimateId: row.approvalEstimateId,
+          signerName: row.approvalSignerName ?? null,
+        }
+      : null,
     position: row.position,
   });
   if (!r.ok) throw new Error(`corrupt job_addon ${row.id}: ${r.error.message}`);
