@@ -33,6 +33,16 @@ const computeEnd = (start: string | null, durationHours: number): string | null 
   return `${String(endH).padStart(2, "0")}:${String(endM).padStart(2, "0")}`;
 };
 
+/**
+ * Where a newly appended visit sits in the running order: after everything already on the job.
+ *
+ * Exported because AddReturnTripUseCase appends too and must land on the same number. It cannot
+ * call this use-case — a return trip on a finished job has to reopen and append in ONE save, and
+ * this one loads and saves for itself — so the arithmetic is shared rather than copied.
+ */
+export const nextVisitPosition = (existing: readonly JobVisit[]): number =>
+  existing.length === 0 ? 1 : Math.max(...existing.map((v) => v.props.position)) + 1;
+
 // Append a new unplaced (or placed, if date+assignee+start provided) visit onto a job.
 // Position = max(existing positions) + 1, or 1 if no visits exist.
 export class CreateVisitUseCase {
@@ -47,7 +57,7 @@ export class CreateVisitUseCase {
     if (!job) return err(notFound("job"));
 
     const existing = job.props.visits;
-    const position = existing.length === 0 ? 1 : Math.max(...existing.map((v) => v.props.position)) + 1;
+    const position = nextVisitPosition(existing);
 
     const scheduledEnd = computeEnd(cmd.scheduledStart, cmd.durationHours);
 
