@@ -21,19 +21,36 @@ import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import { colLabel, hmLabel } from "./helpers";
 import { VisitRow } from "./visit-row";
 import { VisitStepper } from "./visit-stepper";
+import { FollowUpAsk } from "./follow-up-ask";
 
 interface VisitsSecProps {
   /** The job's PLACED visits — the tech never sees an unplaced "Invalid Date" row. */
   placed: readonly Visit[];
+  /**
+   * Unplaced visits still to run — a return trip booked from the field, waiting on the office to
+   * set a time. These are NOT hidden like a half-typed office row would be: this technician
+   * created them, so a booking that vanished from the sheet reads as a tap that did nothing.
+   */
+  awaiting: readonly Visit[];
   /** The job's current visit, if it has one. */
   curVisit: Visit | undefined;
   done: boolean;
   /** Owner/office. ↩ Reopen writes a VISIT status, which has no field endpoint. */
   isOffice: boolean;
   onStatus: (visitId: string, status: string) => void;
+  /** Books a return trip. Absent when this viewer may not (the server refuses off-job callers). */
+  onAddFollowUp?: (reason: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
-export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: VisitsSecProps) {
+export function VisitsSec({
+  placed,
+  awaiting,
+  curVisit,
+  done,
+  isOffice,
+  onStatus,
+  onAddFollowUp,
+}: VisitsSecProps) {
   return (
     <div className="fsec">
       <div className="fsec-h">
@@ -73,15 +90,58 @@ export function VisitsSec({ placed, curVisit, done, isOffice, onStatus }: Visits
             )}
           </div>
         </>
-      ) : placed.length ? (
-        placed.map((v) => (
-          <VisitRow key={v.id} visit={v} canReopen={isOffice} onStatus={(status) => onStatus(v.id, status)} />
-        ))
       ) : (
-        <div className="empty-att" style={{ marginBottom: "0" }}>
-          Not scheduled yet — the office will set the time.
-        </div>
+        <>
+          {placed.length ? (
+            placed.map((v) => (
+              <VisitRow key={v.id} visit={v} canReopen={isOffice} onStatus={(status) => onStatus(v.id, status)} />
+            ))
+          ) : awaiting.length ? null : (
+            <div className="empty-att" style={{ marginBottom: "0" }}>
+              Not scheduled yet — the office will set the time.
+            </div>
+          )}
+          {awaiting.map((v) => (
+            <AwaitingSlotRow key={v.id} visit={v} />
+          ))}
+          {onAddFollowUp ? <FollowUpAsk onBook={onAddFollowUp} /> : null}
+        </>
       )}
+    </div>
+  );
+}
+
+/**
+ * A visit that is still to run but has nowhere to sit on the board yet.
+ *
+ * No stepper and no controls — there is nothing to step through and nothing here to move. What it
+ * carries is the reason, because that is the whole content of the row and the thing that stops
+ * the office having to ring the technician to ask what the second visit is for.
+ *
+ * IT NAMES WHAT IS ACTUALLY MISSING. Two different rows land here — a return trip with no date at
+ * all, and the office's half-planned shape (a day with nobody on it, isVisitDatedUnassigned).
+ * Telling a technician a dated visit is "waiting on a time" is a small lie he can disprove by
+ * looking at the schedule, and small lies are how a screen stops being trusted.
+ */
+function AwaitingSlotRow({ visit }: { visit: Visit }) {
+  const dated = Boolean(visit.date);
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-1)",
+        paddingTop: "var(--space-2)",
+      }}
+    >
+      <b style={{ fontSize: "var(--type-base)" }}>
+        {dated ? `${colLabel(visit.date)} — waiting on a tech` : "Return trip — waiting on a time"}
+      </b>
+      {visit.scopeNotes ? (
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+          {visit.scopeNotes}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -18,7 +18,7 @@
 
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { daysSince } from "@/lib/clock";
-import { isVisitPlaced } from "./visit-placement";
+import { isVisitPlaced, recalcJobPlacement } from "./visit-placement";
 import { shortWhen } from "@/lib/format";
 import type { Addon, Estimate, Invoice, Job, JobLine, LeadNote, TimeEntry, Visit } from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
@@ -208,12 +208,8 @@ export function isTerminalStoreJobStatus(status: string): boolean {
 // DTO → store mappers (public)
 // ---------------------------------------------------------------------------
 
-function recalcJobStatus(visits: Visit[]): string {
-  const placed = visits.filter(isVisitPlaced);
-  if (!placed.length) return "unscheduled";
-  if (placed.every((v) => v.status === "done")) return "done";
-  return "scheduled";
-}
+/** THE rule — see recalcJobPlacement. Kept as a local alias so the call sites below read the same. */
+const recalcJobStatus = (visits: Visit[]): string => recalcJobPlacement(visits);
 
 /**
  * Map a job DTO's checklist (nullable) to the store shape. The DTO carries no
