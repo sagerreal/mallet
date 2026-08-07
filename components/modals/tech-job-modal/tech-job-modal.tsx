@@ -504,11 +504,18 @@ export function TechJobModalContent() {
         <CopilotSection job={job} addAddonField={addAddonField} />
       )}
 
-      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes). */}
+      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes), and
+          absent entirely on a job with nothing sold. Found work means "extra beyond what was
+          sold"; on an estimate walkthrough nothing has been, so the add form would be a second
+          place to type a price beside the Quote tab's builder — and before a sale only one of
+          them is right. `scoping` is isUnpricedEstimate, which already treats prices WITHHELD
+          from this device as sold rather than unsold. JOB NOTES below is unaffected: a note is
+          always worth having, on either kind of job. */}
       <FoundWorkSec
         job={job}
         seesPrice={seesPrice}
         readOnly={!isOffice}
+        hasSoldWork={!scoping}
         addAddon={addAddon}
         setAddonStatus={setAddonStatus}
       />

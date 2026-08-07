@@ -4,6 +4,22 @@
  * addon: bold desc + ($r when techSeesPrice) + a status stpill; proposed rows
  * get "✓ Customer OK'd" / "✕". Below, an add-form with a desc input + (price
  * input when techSeesPrice) + Add. LOCAL controlled inputs.
+ *
+ * TWO GATES ON THE ADD FORM, and they are different questions.
+ *
+ *   `readOnly`     — MAY this viewer write? Add + status call ownerOrOffice endpoints, so a
+ *                    technician gets the list without the controls.
+ *   `hasSoldWork`  — is there anything for found work to be EXTRA TO? Found work means "beyond
+ *                    what was sold". On an estimate walkthrough nothing has been sold yet, so the
+ *                    add form is not clutter, it is a category error: it gives the person holding
+ *                    the phone two places to type a price (here and the Quote tab's builder) and
+ *                    before a sale only one of them is right. A price typed in here on a
+ *                    walkthrough is neither a quote nor billable work — nothing converts it.
+ *
+ * ROWS ARE NEVER HIDDEN, only the form. If an addon already exists on such a job it is real data
+ * and the tech sheet is the only place showing it. The section disappears when — and only when —
+ * there is nothing to read and nothing sensible to write, which is the office job modal's own
+ * emptiness rule for its counted rows (job-modal.tsx's `noteCount > 0`).
  */
 
 "use client";
@@ -45,6 +61,13 @@ export interface FoundWorkSecProps {
   seesPrice: boolean;
   /** Tech role: add + status controls call ownerOrOffice endpoints — list stays read-only. */
   readOnly: boolean;
+  /**
+   * Has this job SOLD anything for found work to be extra to — priced lines, or a quote signed on
+   * site? False on a pure estimate walkthrough, where the add form is a category error (see the
+   * module note). Prices withheld from this device do NOT read as unsold: `isUnpricedEstimate`
+   * carries that third state, which is why the host passes its answer rather than re-deriving one.
+   */
+  hasSoldWork: boolean;
   addAddon: (jobId: string, draft: { d: string; r: number }) => Addon | null;
   setAddonStatus: (jobId: string, addonId: number, status: Addon["status"]) => void;
 }
@@ -55,6 +78,7 @@ export function foundWorkPropsEqual(a: FoundWorkSecProps, b: FoundWorkSecProps):
   return (
     a.seesPrice === b.seesPrice &&
     a.readOnly === b.readOnly &&
+    a.hasSoldWork === b.hasSoldWork &&
     a.addAddon === b.addAddon &&
     a.setAddonStatus === b.setAddonStatus &&
     a.job.id === b.job.id &&
@@ -62,15 +86,26 @@ export function foundWorkPropsEqual(a: FoundWorkSecProps, b: FoundWorkSecProps):
   );
 }
 
-function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: FoundWorkSecProps) {
+function FoundWorkSecFn({
+  job,
+  seesPrice,
+  readOnly,
+  hasSoldWork,
+  addAddon,
+  setAddonStatus,
+}: FoundWorkSecProps) {
   const [desc, setDesc] = useState("");
   const [price, setPrice] = useState("");
 
   const addons = job.addons ?? [];
   const awaiting = addons.filter((a) => a.status === "proposed").length;
 
-  // Read-only with nothing to read = nothing to render (no dead empty section).
-  if (readOnly && addons.length === 0) return null;
+  // May this viewer add found work to THIS job — both gates, for the two different reasons in
+  // the module note.
+  const canWrite = !readOnly && hasSoldWork;
+
+  // Nothing to read and nothing sensible to write = nothing to render (no dead empty section).
+  if (!canWrite && addons.length === 0) return null;
 
   function submit() {
     const d = desc.trim();
@@ -96,7 +131,7 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
             {seesPrice && a.r != null && <span className="muted"> · {fmt$(a.r)}</span>}
           </div>
           <AddonStatusPill status={a.status} />
-          {!readOnly && a.status === "proposed" && (
+          {canWrite && a.status === "proposed" && (
             <>
               <button
                 className="btn sm primary"
@@ -112,7 +147,7 @@ function FoundWorkSecFn({ job, seesPrice, readOnly, addAddon, setAddonStatus }: 
         </div>
       ))}
 
-      {!readOnly && (
+      {canWrite && (
         <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
           <input
             value={desc}
