@@ -29,11 +29,21 @@ const columnsHolding = (n: number) => [
 
 const openModal = vi.fn();
 /** The pane's own card→modal mapping, captured off the board it hands it to. */
-let onOpen: (item: { kind: string; refId: string }) => void;
+let onOpen: (item: {
+  kind: string;
+  refId: string;
+  leadId?: string;
+  scopeVisitJobId?: string;
+  [k: string]: unknown;
+}) => void;
 /** Whether the pane told the board it is a brand-new shop. */
 let boardFirstRun: boolean | undefined;
 /** What the pane tells the hero — `loading` above all, which must never disagree with the board. */
 let handoff: { queueCount: number; queueValue: number; textsReady?: number; loading?: boolean };
+
+// The scoped "quote it ›" card routes to the composer — the page holds a router now.
+const routerPush = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush }) }));
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),
@@ -278,5 +288,47 @@ describe("Office Today — the first-run setup brief", () => {
     expect(boardFirstRun).toBe(false);
     expect(screen.getByTestId("handoff")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: /^Welcome,/ })).toBeNull();
+  });
+});
+
+/**
+ * WHERE A CARD OPENS. A scoped walkthrough's card says "quote it" — so it opens the QUOTE: the
+ * composer, carrying the walkthrough job (?lead=&job=) so the From-the-site card reads the scope
+ * and accept CONVERTS that job instead of minting a twin. Every other lead-kind card still opens
+ * the customer sheet — there is nothing to quote yet.
+ */
+describe("Office Today — where a board card opens", () => {
+  beforeEach(() => {
+    meData = { orgName: "Rivera Plumbing", name: "Owen D", email: "o@x.com" };
+    storeState = {
+      toggles: { frontDesk: true }, services: [], checklists: [],
+      leads: [], estimates: [], jobs: [],
+    };
+    boardState = { columns: columnsHolding(3), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, wonCount: 0, isFetched: true, isError: false };
+    openModal.mockClear();
+    routerPush.mockClear();
+    window.history.replaceState(null, "", "/dashboard");
+  });
+
+  const baseItem = {
+    key: "bl-l1", column: "quoting" as const, refId: "l1", leadId: "l1", name: "Dana",
+    service: "Repipe", valueDollars: 0, stateLabel: "Needs quote", tone: "attention" as const,
+    needsAction: true, ageLabel: "scoped today",
+  };
+
+  it("a SCOPED card routes to the composer with the walkthrough job", () => {
+    render(<OfficePage />);
+    onOpen({ ...baseItem, kind: "lead", scopeVisitJobId: "job-9" });
+
+    expect(routerPush).toHaveBeenCalledWith("/composer?lead=l1&job=job-9");
+    expect(openModal).not.toHaveBeenCalledWith("lead", expect.anything());
+  });
+
+  it("a plain lead card still opens the customer sheet", () => {
+    render(<OfficePage />);
+    onOpen({ ...baseItem, kind: "lead", stateLabel: "Walkthrough booked", needsAction: false });
+
+    expect(openModal).toHaveBeenCalledWith("lead", { leadId: "l1" });
+    expect(routerPush).not.toHaveBeenCalled();
   });
 });

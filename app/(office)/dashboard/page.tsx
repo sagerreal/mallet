@@ -10,6 +10,7 @@
  */
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -133,6 +134,41 @@ const FIRST_RUN = {
  * fourth "explore" that opened nothing would be the dead button the house rules forbid, so the
  * brief carries exactly three. The tab move arrives from the page — this pane does not route.
  */
+/**
+ * Where a board card opens. A SCOPED walkthrough's card says "quote it" — so it opens the QUOTE:
+ * the composer, carrying the walkthrough job (?lead=&job=) so the From-the-site card reads the
+ * scope and accepting the draft CONVERTS that job instead of minting a twin. Every other
+ * lead-kind card (walkthrough booked, plain request) still opens the customer sheet — there is
+ * nothing to quote yet. No catch-all default: an unknown kind must fail loudly, not open
+ * somebody else's record (see unknownBoardKind).
+ */
+function openBoardItem(
+  item: BoardItem,
+  openModal: ReturnType<typeof useOpenModal>,
+  push: (href: string) => void,
+): void {
+  switch (item.kind) {
+    case "lead":
+      if (item.scopeVisitJobId && item.leadId) {
+        push(`/composer?lead=${item.leadId}&job=${item.scopeVisitJobId}`);
+        break;
+      }
+      openModal(MODAL.LEAD, { leadId: item.refId });
+      break;
+    case "estimate":
+      openModal(MODAL.EST, { estId: item.refId });
+      break;
+    case "job":
+      openModal(MODAL.JOB, { jobId: item.refId });
+      break;
+    case "invoice":
+      openModal(MODAL.INVOICE, { invoiceId: item.refId });
+      break;
+    default:
+      unknownBoardKind(item.kind);
+  }
+}
+
 function SetupBrief({ ownerFirst, onFrontDesk }: { ownerFirst: string; onFrontDesk: () => void }) {
   const openModal = useOpenModal();
   return (
@@ -188,6 +224,7 @@ function TodayPane({ onFrontDesk }: { onFrontDesk: () => void }) {
   });
 
   const openModal = useOpenModal();
+  const router = useRouter();
   const utils = api.useUtils();
   const [retrying, setRetrying] = useState(false);
 
@@ -195,24 +232,7 @@ function TodayPane({ onFrontDesk }: { onFrontDesk: () => void }) {
   // the modal behind it can never disagree about which record was clicked. Exhaustive on purpose:
   // a catch-all `else` would open the INVOICE modal for a fifth kind added later — silently
   // sending the owner to somebody else's record. See unknownBoardKind.
-  function openItem(item: BoardItem): void {
-    switch (item.kind) {
-      case "lead":
-        openModal(MODAL.LEAD, { leadId: item.refId });
-        break;
-      case "estimate":
-        openModal(MODAL.EST, { estId: item.refId });
-        break;
-      case "job":
-        openModal(MODAL.JOB, { jobId: item.refId });
-        break;
-      case "invoice":
-        openModal(MODAL.INVOICE, { invoiceId: item.refId });
-        break;
-      default:
-        unknownBoardKind(item.kind);
-    }
-  }
+  const openItem = (item: BoardItem): void => openBoardItem(item, openModal, router.push);
 
   // The board composes eleven reads and holds no refetch of its own, so retry invalidates the
   // whole v1 cache — every column comes back, and so does anything else the page shows.

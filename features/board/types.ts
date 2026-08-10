@@ -39,6 +39,13 @@ export interface BoardItem {
   ageLabel: string;
   /** Present ⇒ a prepared text renders on the card. */
   ok?: OkItem;
+  /**
+   * Present ⇒ this card is a SCOPED walkthrough waiting on its quote, and this is the walkthrough
+   * job. "quote it ›" opens the composer carrying it (?lead=&job=) — the composer's From-the-site
+   * card reads the scope, and the draft's accept CONVERTS this job instead of minting a twin.
+   * Opening the customer sheet instead was a detour that dropped both.
+   */
+  scopeVisitJobId?: string;
 }
 
 export interface BoardColumn {

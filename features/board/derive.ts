@@ -118,6 +118,7 @@ function gettingItem(row: GettingRow): BoardItem {
     valueDollars: est ? money(estTotal(est)) : 0,
     ...GETTING_STATE[row.kind],
     ageLabel: row.stamp,
+    ...(row.scopeVisitJobId ? { scopeVisitJobId: row.scopeVisitJobId } : {}),
   };
 }
 
