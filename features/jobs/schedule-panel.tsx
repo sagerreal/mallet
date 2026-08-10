@@ -72,7 +72,7 @@ function addDaysLocal(iso: string, n: number): string {
  * screen at the moment you pick the card up. Tap-then-tap has none of that problem. It existed
  * already; it was just written on the branch almost nobody sees.
  */
-const PLACE_HINT = "Tap a visit, then a crew & time — or drag it";
+const PLACE_HINT = "Tap this card, then a crew & time — or drag it";
 
 // First-run empty-state copy. Shown when a brand-new shop opens Schedule with nothing to place
 // (no jobs and no estimate visits). Rendered via a full early return that never touches the board.
@@ -630,11 +630,24 @@ export function SchedulePanel() {
               if (unplacedList.length > 1) {
                 const total = unplacedList.reduce((a, v) => a + (v.dur ?? 0), 0);
                 return (
-                  <div key={key} className="railjob" style={{ cursor: "pointer" }} onClick={openRecord}>
+                  <div
+                    key={key}
+                    className="railjob"
+                    style={{ cursor: "pointer" }}
+                    title="Tap to pick up the first stop — or tap a chip below to pick that one"
+                    onClick={onSchedule}
+                  >
                     <button className="rail-addv" onClick={(e) => { e.stopPropagation(); splitTray(card.j); }} title="Add another visit">
                       +
                     </button>
-                    <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
+                    <button
+                      type="button"
+                      className="rowopen"
+                      style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
+                      onClick={(e) => { e.stopPropagation(); openRecord(); }}
+                    >
+                      {name}
+                    </button>
                     <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "var(--space-2)" }}>
                       <span style={{ fontSize: "var(--type-xs)", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>
@@ -690,17 +703,32 @@ export function SchedulePanel() {
                 <div
                   key={key}
                   className={`railjob place${armed ? " arm" : ""}`}
-                  title="Tap to open — set the hours there. Drag onto the board, or tap Schedule then a slot"
+                  title="Tap to pick it up, then tap a crew & time — or drag it onto the board"
                   draggable
                   onDragStart={onDragStart}
                   onDragEnd={() => setDrag(null)}
-                  onClick={openRecord}
+                  /**
+                   * THE CARD IS THE PICK-UP. It used to open the job record, so the only way to
+                   * arm was the small "Place on board" button — and arming is what compacts the
+                   * tray. Until you found that button the tray held 44vh and the board 62vh, which
+                   * is more than a screen: "half the board is cut off". Tapping the card now does
+                   * the thing the card is for, and the board gets its room back on the first tap.
+                   * The record is still one tap away, on the customer's name below.
+                   */
+                  onClick={onSchedule}
                   style={{ cursor: "pointer" }}
                 >
                   <button className="rail-addv" onClick={(e) => { e.stopPropagation(); splitTray(card.j); }} title="Add another visit">
                     +
                   </button>
-                  <b style={{ fontSize: "var(--type-base)" }}>{name}</b>
+                  <button
+                    type="button"
+                    className="rowopen"
+                    style={{ fontSize: "var(--type-base)", fontWeight: 700 }}
+                    onClick={(e) => { e.stopPropagation(); openRecord(); }}
+                  >
+                    {name}
+                  </button>
                   <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2xs) 0 var(--space-3)" }}>{title}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
                     <span style={{ fontSize: "var(--type-xs)", fontWeight: 800, letterSpacing: ".04em", textTransform: "uppercase", color: m.c }}>

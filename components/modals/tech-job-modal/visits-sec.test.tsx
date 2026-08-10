@@ -9,7 +9,7 @@
  * rows separates without any row knowing what follows it. That is what these pin.
  */
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { VisitsSec } from "./visits-sec";
 import type { Visit } from "@/lib/store/types";
 
@@ -91,7 +91,17 @@ describe("VisitsSec — a finished job can still book the return", () => {
   });
 
   it("keeps the finished visit's record above it — the ask is added, not swapped in", () => {
-    const { container } = sec({ done: true, curVisit: visit(), onAddFollowUp: async () => ({ ok: true }) });
+    const { container } = sec({
+      placed: [visit({ status: "done" })],
+      done: true,
+      curVisit: visit({ status: "done" }),
+      onAddFollowUp: async () => ({ ok: true }),
+    });
+    // A finished job has no stop in progress, so no bar is drawn by default — the record is one
+    // tap down on the row's own summary. What must NOT happen is the row vanishing.
+    expect(container.querySelector(".vstep")).toBeNull();
+    expect(screen.getByText(/^Done/)).toBeTruthy();
+    fireEvent.click(screen.getByText("Details"));
     expect(container.querySelector(".vstep")).toBeTruthy();
   });
 

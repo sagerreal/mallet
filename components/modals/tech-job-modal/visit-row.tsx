@@ -18,6 +18,7 @@
 
 "use client";
 
+import { useId, useState } from "react";
 import type { Visit } from "@/lib/store/types";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import { MS_PER_MINUTE, MINUTES_PER_HOUR } from "@/lib/time";
@@ -46,6 +47,17 @@ interface VisitRowProps {
    * gets no live node, because the server would refuse the write anyway.
    */
   canStep: boolean;
+  /**
+   * Is this the visit the sheet is ABOUT — the one being worked right now?
+   *
+   * Only that one draws the stepper. A two-stop job drew two full steppers, a finished job drew
+   * one, and finishing a visit therefore made a progress bar vanish off the sheet: the section
+   * changed shape under the technician at the moment they tapped. The record of a stop that has
+   * already ended is still here, one tap down (see `expanded`), because it is what gets read back
+   * weeks later in an argument about an arrival time — it is just not competing with the stop in
+   * front of them for the top of the sheet.
+   */
+  isCurrent: boolean;
   onStatus: (status: string) => void;
 }
 
@@ -153,7 +165,11 @@ function WhenLine({ visit }: { visit: Visit }) {
   );
 }
 
-export function VisitRow({ visit, seq, canReopen, canStep, onStatus }: VisitRowProps) {
+export function VisitRow({ visit, seq, canReopen, canStep, isCurrent, onStatus }: VisitRowProps) {
+  // A past or future stop opens on demand. Closed is the default because the sheet's job is the
+  // stop the technician is standing in — see the `isCurrent` note above.
+  const [open, setOpen] = useState(false);
+  const bodyId = useId();
   const reopen =
     canReopen && visit.status === STORE_VISIT_STATUS.DONE ? (
       <div style={{ display: "flex", marginTop: "var(--space-3)" }}>
@@ -173,12 +189,65 @@ export function VisitRow({ visit, seq, canReopen, canStep, onStatus }: VisitRowP
   // container. It used to carry `marginBottom: --space-2xs`, which is 2px: two complete visit
   // records abutted, so this row's ↩ Reopen sat directly above the NEXT row's stepper and read as
   // its control.
+  if (isCurrent) {
+    return (
+      <div>
+        <VisitCaption seq={seq} />
+        <VisitStepper visit={visit} label={seqStepperLabel(seq)} onJump={canStep ? onStatus : undefined} />
+        <WhenLine visit={visit} />
+        {reopen}
+      </div>
+    );
+  }
+
+  // NOT the current stop: one line saying what happened and when, and the stepper behind it.
+  // Expanded IN FLOW under its own summary — no popover, no second sheet (house rule).
   return (
     <div>
       <VisitCaption seq={seq} />
-      <VisitStepper visit={visit} label={seqStepperLabel(seq)} onJump={canStep ? onStatus : undefined} />
-      <WhenLine visit={visit} />
+      <button
+        type="button"
+        className="jaddr"
+        aria-expanded={open}
+        aria-controls={open ? bodyId : undefined}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className="jaddr-t">
+          {summaryTitle(visit)}
+          <span className="jaddr-s">{summaryDetail(visit)}</span>
+        </span>
+        <span className="nav">{open ? "Hide" : "Details"}</span>
+      </button>
+      {open ? (
+        <div id={bodyId} style={{ marginTop: "var(--space-3)" }}>
+          <VisitStepper visit={visit} label={seqStepperLabel(seq)} />
+        </div>
+      ) : null}
+      {/* OUTSIDE the collapse, deliberately. Only the STEPPER folds away — ↩ Reopen is the
+          office's way back into a finished visit and it was already on this row before the
+          section was trimmed. Hiding a control behind a disclosure it never used to be behind is
+          how a screen quietly loses a feature. */}
       {reopen}
     </div>
   );
+}
+
+/** "Done 12:19p" / "Due 4p" — what this stop IS, in three words. */
+function summaryTitle(visit: Visit): string {
+  if (visit.status === STORE_VISIT_STATUS.DONE) {
+    const at = stampLabel(visit.completedAt);
+    return at ? `Done ${at}` : "Done";
+  }
+  if (visit.status === STORE_VISIT_STATUS.ONSITE) return "On site";
+  if (visit.status === STORE_VISIT_STATUS.ENROUTE) return "On the way";
+  return `Due ${startTimeStr(visit.start ?? 0)}`;
+}
+
+/** The day, plus how long it actually took when that is a measured fact rather than a booking. */
+function summaryDetail(visit: Visit): string {
+  const day = colLabel(visit.date ?? "");
+  if (visit.status !== STORE_VISIT_STATUS.DONE) return `${day} · about ${hmLabel(visit.dur)} on site`;
+  const hours = onSiteHours(visit);
+  // Absent means nobody recorded it, never zero — the same rule DoneLine follows.
+  return hours === null ? day : `${day} · ${hmLabel(hours)} on site`;
 }

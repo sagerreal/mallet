@@ -27,9 +27,8 @@
 
 import type { Visit } from "@/lib/store/types";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
-import { colLabel, hmLabel } from "./helpers";
+import { colLabel } from "./helpers";
 import { VisitRow } from "./visit-row";
-import { VisitStepper } from "./visit-stepper";
 import { FollowUpAsk } from "./follow-up-ask";
 import { VisitCaption, seqAt, type VisitSeq } from "./visit-seq";
 
@@ -83,6 +82,22 @@ export function VisitsSec({
   onAddFollowUp,
 }: VisitsSecProps) {
   const rows = inTimeOrder(placed);
+  /**
+   * WHICH ROW DRAWS THE BAR. The one this viewer can move (the foot's actVisit), else the job's
+   * current one. On a DONE job neither exists, so every row is a summary — which is right: there
+   * is no stop in progress to put at the top of the sheet, and each finished one is one tap from
+   * its full record.
+   */
+  const currentId = stepVisitId ?? (done ? undefined : curVisit?.id);
+  /**
+   * WHICH FINISHED STOP CARRIES ↩ Reopen — the LAST one, and only it.
+   *
+   * Every done row used to carry its own, so a two-stop job that finished showed two identical
+   * buttons a summary line apart. They are not the same action and neither is wrong, but reopening
+   * stop one while stop two is finished leaves the job in a state nobody asked for; the office's
+   * real intent is "put this back", and that means the most recent stop.
+   */
+  const lastDoneId = [...rows].reverse().find((v) => v.status === STORE_VISIT_STATUS.DONE)?.id;
   // Every visit the section renders — placed and awaiting alike. It is what the heading
   // pluralises on and what the rows count to. Pluralising on `placed` alone said "Visit" while a
   // placed row and a return trip were both on screen.
@@ -96,100 +111,44 @@ export function VisitsSec({
         <span>Visit{total > 1 ? "s" : ""}</span>
         {done && <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>}
       </div>
-      {done ? (
-        <div className="vlist">
-          <FinishedJobVisit curVisit={curVisit} isOffice={isOffice} onStatus={onStatus} />
-          {/* THE MOMENT THIS MATTERS MOST. He taps Done, packs up, and finds the fitting is wrong —
-              and until now this branch rendered the visit he had just finished and nothing else.
-              The endpoint reopens the job and appends the trip; a bill that has been paid, sent or
-              voided refuses, and says which. Same wrapper rule as the open list: `.vlist` puts the
-              hairline on the child, so the ask's own bordered button keeps its edge. */}
-          {onAddFollowUp ? (
-            <div>
-              <FollowUpAsk onBook={onAddFollowUp} />
-            </div>
-          ) : null}
-        </div>
-      ) : (
-        <div className="vlist">
-          {rows.length ? (
-            rows.map((v, i) => (
-              <VisitRow
-                key={v.id}
-                visit={v}
-                seq={seqAt(i, total)}
-                canReopen={isOffice}
-                // Only the sheet's own actVisit gets live stepper nodes — the same visit the foot
-                // steps, so a two-visit job can never offer two places to move a different stop.
-                canStep={v.id === stepVisitId}
-                onStatus={(status) => onStatus(v.id, status)}
-              />
-            ))
-          ) : awaiting.length ? null : (
-            <div className="empty-att" style={{ marginBottom: "0" }}>
-              Not scheduled yet — the office will set the time.
-            </div>
-          )}
-          {awaiting.map((v, i) => (
-            <AwaitingSlotRow key={v.id} visit={v} seq={seqAt(rows.length + i, total)} />
-          ))}
-          {/* Wrapped, not bare: `.vlist`'s rule puts a hairline on each subsequent child, and the
-              ask's own resting state is a full-width bordered button. A border-top landing on the
-              button itself would recolour its own edge instead of separating it from the record
-              above. The wrapper is the row; the button stays the button. */}
-          {onAddFollowUp ? (
-            <div>
-              <FollowUpAsk onBook={onAddFollowUp} />
-            </div>
-          ) : null}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/**
- * The section's other shape: the job is finished, so there is one visit to read back and no list.
- *
- * THE STEPPER STAYS. Which steps were recorded and which were skipped IS the record of the visit,
- * and it is what gets read back weeks later when a customer argues about an arrival time.
- */
-function FinishedJobVisit({
-  curVisit,
-  isOffice,
-  onStatus,
-}: Pick<VisitsSecProps, "curVisit" | "isOffice" | "onStatus">) {
-  return (
-    <>
-      {curVisit ? <VisitStepper visit={curVisit} /> : null}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "var(--space-2)",
-        }}
-      >
-        {/* The DATE only. The booked length ("~1h 30m on site") was noise here: on a finished
-            visit the stepper above already carries the real stamps, and a BOOKED duration
-            sitting under them reads as a measurement of what happened when it is nothing of
-            the kind. */}
-        <span className="muted" style={{ fontSize: "var(--type-base)" }}>
-          {curVisit ? colLabel(curVisit.date) : "Completed"}
-        </span>
-        {/* Office only, and only when there IS a placed visit to move. A job completed
-            straight from My Day has none, and this button took the tap and did nothing. */}
-        {isOffice && curVisit && (
-          <button
-            type="button"
-            className="btn sm ghost"
-            onClick={() => onStatus(curVisit.id, STORE_VISIT_STATUS.SCHEDULED)}
-          >
-            ↩ Reopen
-          </button>
+      <div className="vlist">
+        {rows.length ? (
+          rows.map((v, i) => (
+            <VisitRow
+              key={v.id}
+              visit={v}
+              seq={seqAt(i, total)}
+              canReopen={isOffice && v.id === lastDoneId}
+              // Only the sheet's own actVisit gets live stepper nodes — the same visit the foot
+              // steps, so a two-visit job can never offer two places to move a different stop.
+              canStep={v.id === stepVisitId}
+              // ONE stepper on the sheet, on the stop this sheet is about. Everything else is a
+              // summary line that opens on demand. The section used to draw a full stepper per
+              // placed visit and then, the instant the job completed, swap to a branch that drew
+              // exactly one — so finishing a visit made a progress bar disappear.
+              isCurrent={v.id === currentId}
+              onStatus={(status) => onStatus(v.id, status)}
+            />
+          ))
+        ) : awaiting.length ? null : (
+          <div className="empty-att" style={{ marginBottom: "0" }}>
+            Not scheduled yet — the office will set the time.
+          </div>
         )}
+        {awaiting.map((v, i) => (
+          <AwaitingSlotRow key={v.id} visit={v} seq={seqAt(rows.length + i, total)} />
+        ))}
+        {/* Wrapped, not bare: `.vlist`'s rule puts a hairline on each subsequent child, and the
+            ask's own resting state is a full-width bordered button. A border-top landing on the
+            button itself would recolour its own edge instead of separating it from the record
+            above. The wrapper is the row; the button stays the button. */}
+        {onAddFollowUp ? (
+          <div>
+            <FollowUpAsk onBook={onAddFollowUp} />
+          </div>
+        ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
