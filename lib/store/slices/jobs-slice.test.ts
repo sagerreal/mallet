@@ -1965,3 +1965,57 @@ describe("execution merge guard (a lines-less record cannot un-price a job)", ()
     expect(get().jobs[0]!.lines).toHaveLength(0);
   });
 });
+
+/**
+ * THE OPTIMISTIC STATUS MUST AGREE WITH THE SERVER'S.
+ *
+ * set-visit-status.ts derives the job from EVERY ACTIVE visit: "every active (non-canceled) visit
+ * complete → the job completes". The store's optimistic copy filtered to PLACED visits first, and
+ * a return trip booked from the field has no date, no tech and no start — that is precisely what
+ * makes it outstanding. So finishing the one placed visit made the store call the job done, the
+ * sheet swapped to its close-out branch ("Take payment"), and the server's answer — still open —
+ * swapped it back a moment later. That flash is the whole bug.
+ */
+describe("setVisitStatus — a job with an unplaced return trip stays open", () => {
+  const PLACED = {
+    id: "aaaaaaaa-0000-0000-0000-0000000000c1",
+    date: "2026-08-10",
+    techId: "tech-1",
+    start: 12,
+    dur: 1.5,
+    status: "scheduled",
+  };
+  // What field.addFollowUpVisit writes: no date, no tech, waiting on the office.
+  const RETURN_TRIP = {
+    id: "aaaaaaaa-0000-0000-0000-0000000000c2",
+    date: null,
+    techId: null,
+    start: null,
+    dur: 1,
+    status: "scheduled",
+  };
+
+  beforeEach(() => { mockSetVisitStatus.mockReset(); });
+
+  it("does not flash the job to done when the placed visit finishes", () => {
+    const { get } = makeStore();
+    seedDbJob(get, "j-return", [PLACED, RETURN_TRIP] as Job["visits"]);
+
+    get().setVisitStatus("j-return", PLACED.id, "done", "field");
+
+    // OPTIMISTIC state, read synchronously — before any server answer.
+    expect(get().jobs.find((j) => j.id === "j-return")?.status).toBe("scheduled");
+  });
+
+  it("still completes the job once the return trip is done too", () => {
+    const { get } = makeStore();
+    seedDbJob(get, "j-return-2", [
+      { ...PLACED, status: "done" },
+      RETURN_TRIP,
+    ] as Job["visits"]);
+
+    get().setVisitStatus("j-return-2", RETURN_TRIP.id, "done", "field");
+
+    expect(get().jobs.find((j) => j.id === "j-return-2")?.status).toBe("done");
+  });
+});

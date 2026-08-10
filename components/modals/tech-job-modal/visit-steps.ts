@@ -2,8 +2,16 @@
  * components/modals/tech-job-modal/visit-steps.ts
  * The visit stepper's view model — pure. No React, no store, no `new Date()` read from inside.
  *
- * Three nodes: Scheduled → On the way → On site. Every node is a READOUT of what was recorded;
- * a node still AHEAD of the visit is additionally a forward jump (`jumpTo`).
+ * Four nodes: Scheduled → On the way → On site → Done. Every node is a READOUT of what was
+ * recorded; a node still AHEAD of the visit is additionally a forward jump (`jumpTo`).
+ *
+ * DONE IS A READOUT AND NOTHING ELSE. It stopped at "On site" until Aug 2026, and a finished visit
+ * that skipped the middle two then rendered pixel-identically to a scheduled one — the only thing
+ * on the sheet saying it had ended was the office's ↩ Reopen, which reads as a contradiction
+ * rather than as a control. Finishing is a recorded event with a real stamp, so it belongs on the
+ * line. It is deliberately NOT a forward jump: the foot already carries Finish as a full-width
+ * primary that is always one tap (tech-job-foot.ts, rule 2), and a second finish on a
+ * third-of-the-sheet node would be the smaller, worse one.
  *
  * FORWARD ONLY, AND ONLY AHEAD. A technician who forgot to tap "Start driving" is already on the
  * customer's doorstep, and the foot's ladder offered "I've arrived →" only once the visit was
@@ -46,7 +54,7 @@ import type { Visit } from "@/lib/store/types";
 export type VisitStepState = "reached" | "current" | "skipped" | "pending";
 
 export interface VisitStep {
-  readonly key: "scheduled" | "enroute" | "onsite";
+  readonly key: "scheduled" | "enroute" | "onsite" | "done";
   readonly label: string;
   readonly state: VisitStepState;
   /** The recorded time, or null. Null on every node that is not `reached`. */
@@ -62,6 +70,7 @@ const LABELS = {
   scheduled: "Scheduled",
   enroute: "On the way",
   onsite: "On site",
+  done: "Done",
 } as const;
 
 /**
@@ -72,20 +81,23 @@ const JUMP_TO: Record<VisitStep["key"], string | null> = {
   scheduled: null,
   enroute: STORE_VISIT_STATUS.ENROUTE,
   onsite: STORE_VISIT_STATUS.ONSITE,
+  // Not a jump — see the Done note in the file header. The foot owns finishing.
+  done: null,
 };
 
 /**
- * How far along the visit is, as an index into the three nodes above.
+ * How far along the visit is, as an index into the four nodes above.
  *
- * A DONE visit is past all three, which is why this returns 3 rather than clamping: every node
- * behind the cursor is then judged on whether it has a stamp, and a job finished without an
- * arrival tap correctly shows two skipped nodes rather than two filled ones.
+ * A DONE visit is past ALL FOUR, which is why this returns 4 rather than clamping at the Done
+ * node: every node behind the cursor is then judged on whether it has a stamp, so a job finished
+ * without an arrival tap correctly shows two skipped nodes rather than two filled ones, and the
+ * Done node itself reads `reached` with its completedAt stamp rather than `current` with none.
  */
 function cursor(status: string): number {
   if (status === STORE_VISIT_STATUS.SCHEDULED) return 0;
   if (status === STORE_VISIT_STATUS.ENROUTE) return 1;
   if (status === STORE_VISIT_STATUS.ONSITE) return 2;
-  return 3; // done (or anything unrecognised — treat as finished, not as scheduled)
+  return 4; // done (or anything unrecognised — treat as finished, not as scheduled)
 }
 
 /** An ISO stamp → the app's compact clock ("2:41p"), in the DEVICE's zone. Null stays null. */
@@ -115,6 +127,7 @@ export function visitSteps(visit: Visit): VisitStep[] {
     enroute: stampLabel(visit.enrouteAt),
     // There is no `arrived_at` column: `started_at` IS the arrival stamp.
     onsite: stampLabel(visit.startedAt),
+    done: stampLabel(visit.completedAt),
   };
 
   return (Object.keys(LABELS) as VisitStep["key"][]).map((key, i) => {
@@ -122,9 +135,13 @@ export function visitSteps(visit: Visit): VisitStep[] {
     if (i > at) return { key, label: LABELS[key], state: "pending", time: null, jumpTo: JUMP_TO[key] };
     if (i === at) return { key, label: LABELS[key], state: "current", time: null, jumpTo: null };
     const time = stamps[key];
-    // Behind the cursor with nothing recorded = skipped. Only the planned Scheduled node is
-    // exempt, and only because its stamp comes from the schedule rather than from a tap.
-    if (time == null) return { key, label: LABELS[key], state: "skipped", time: null, jumpTo: null };
+    // Behind the cursor with nothing recorded = skipped. Two nodes are exempt, for the same
+    // reason: their state is known from the RECORD rather than from a tap, so a missing stamp
+    // means "nobody wrote the time down", not "this never happened". Scheduled is planned by the
+    // board; Done is the visit's own status. Calling either skipped would be a false claim.
+    if (time == null && key !== "done") {
+      return { key, label: LABELS[key], state: "skipped", time: null, jumpTo: null };
+    }
     return { key, label: LABELS[key], state: "reached", time, jumpTo: null };
   });
 }

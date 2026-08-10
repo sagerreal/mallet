@@ -333,7 +333,21 @@ function recalcStatus(job: Job, visits: Visit[]): string {
   if (isTerminalStoreJobStatus(job.status)) return job.status;
   const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
-  if (placed.every((v) => v.status === "done")) return "done";
+  /**
+   * DONE ASKS EVERY VISIT, NOT EVERY PLACED ONE — the server's rule, verbatim: "every active
+   * (non-canceled) visit complete → the job completes" (set-visit-status.ts). Canceled visits
+   * never reach the store; both mappers drop them at the boundary, so everything here is active.
+   *
+   * Asking only the PLACED ones is what produced the flash. A return trip booked from the field
+   * has no date, no tech and no start — which is exactly what makes it outstanding — so it fell
+   * out of `placed`, the last placed visit finishing read as "all done", and the store called the
+   * job complete. The sheet swapped to its close-out branch and offered "Take payment" for as long
+   * as the round trip took; then the server answered "still open" and it swapped back.
+   *
+   * `placed` still decides UNSCHEDULED, which is a question about the board and genuinely is
+   * about placement: a job nobody has put on a day is unscheduled however many visits it has.
+   */
+  if (visits.every((v) => v.status === "done")) return "done";
   return "scheduled";
 }
 
@@ -408,6 +422,23 @@ export interface JobsSlice {
       signerName: string;
       signatureSvg?: string;
       /** Discount / sales tax / deposit set at the door, in bps. Omitted reads as none. */
+      discBps?: number;
+      taxBps?: number;
+      depBps?: number;
+    },
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Save the field-built price WITHOUT selling it (v1.field.saveQuoteDraft — anyRole,
+   * assignment-gated). The builder held its lines in local React state and `signJobQuote` was the
+   * only way out, so a technician who priced a repair and backed out lost every line.
+   *
+   * Writes job LINES, exactly as the office's Build the price does. It is NOT a sale: no
+   * signature, no estimate, no won stage. Resolves { ok, error } and never rejects.
+   */
+  saveQuoteDraft: (
+    jobId: string,
+    input: {
+      lines: { description: string; quantity: number; rateCents: number; costCents: number }[];
       discBps?: number;
       taxBps?: number;
       depBps?: number;
@@ -960,6 +991,37 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         reportWriteError("signJobQuote", err);
         // Surface the server's wording. A signature refusal names something the tech can fix on
         // the spot; replacing it with "check your connection" is what sent them home empty.
+        return { ok: false, error: userMessage(err) };
+      });
+  },
+
+  saveQuoteDraft: (jobId, input) => {
+    const prior = snapshot(get().jobs, jobId);
+    // Same optimistic shape as signJobQuote: STORE units (dollars), so the work order behind the
+    // tab reads the new price the instant the tech leaves it rather than a beat later.
+    const optimistic = input.lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100 }));
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: optimistic } : j)) }));
+    _recentLineWrites.set(jobId, Date.now());
+
+    const wire = {
+      jobId,
+      lines: input.lines,
+      ...(input.discBps ? { discBps: input.discBps } : {}),
+      ...(input.taxBps ? { taxBps: input.taxBps } : {}),
+      ...(input.depBps ? { depBps: input.depBps } : {}),
+    };
+    return trpcVanilla.v1.field.saveQuoteDraft
+      .mutate(wire)
+      .then((dto) => {
+        _recentLineWrites.set(jobId, Date.now());
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        _recentLineWrites.delete(jobId);
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        reportWriteError("saveQuoteDraft", err);
         return { ok: false, error: userMessage(err) };
       });
   },

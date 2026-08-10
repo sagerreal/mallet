@@ -47,6 +47,8 @@ const mockSignJobQuote = vi.fn(
   (): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
 );
 const mockUpdateJob = vi.fn();
+// Save-on-leave: the quote builder writes the field draft when it unmounts.
+const mockSaveQuoteDraft = vi.fn(() => Promise.resolve({ ok: true }));
 const mockSetVisitStatus = vi.fn();
 const mockSetVisitNotes2 = vi.fn(() => Promise.resolve({ ok: true }));
 // The store's own paths, which the fee flow must NOT use any more: a client-side draft+send
@@ -92,6 +94,7 @@ function mockStoreState(): Record<string, unknown> {
     setVisitNotes: mockSetVisitNotes2,
     adoptJobPhotoPath: noop,
     signJobQuote: mockSignJobQuote,
+    saveQuoteDraft: mockSaveQuoteDraft,
   };
 }
 
@@ -361,7 +364,9 @@ describe("TechJobModalContent — tech", () => {
     render(<TechJobModalContent />);
     expect(screen.queryByText("Start driving →")).toBeNull();
     expect(screen.queryByText("Finish job →")).toBeNull();
-    expect(screen.getByText("Done")).toBeTruthy();
+    // The FOOT's Done (dismiss) — named by selector, because the stepper's finished node
+    // carries the same word for a different thing.
+    expect(screen.getByText("Done", { selector: "button.sheet-pri" })).toBeTruthy();
   });
 
   it("writes the tech's taps through the FIELD surface (the office API would refuse him)", () => {
@@ -700,7 +705,7 @@ describe("TechJobModalContent — counted rows", () => {
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — visit stepper", () => {
-  it("names the three steps and marks the current one for a screen reader", () => {
+  it("names the four steps and marks the current one for a screen reader", () => {
     render(<TechJobModalContent />);
     const list = screen.getByRole("list", { name: "Visit progress" });
     const nodes = screen.getAllByRole("listitem");
@@ -713,6 +718,8 @@ describe("TechJobModalContent — visit stepper", () => {
       // A live node says what tapping it does rather than only that it has not happened.
       "On the way, not yet — tap to move the visit heretap to record",
       "On site, not yet — tap to move the visit heretap to record",
+      // Done is a readout, so it never carries the "tap to record" affordance line.
+      "Done, not yet",
     ]);
     expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
   });
@@ -1101,7 +1108,7 @@ describe("TechJobModalContent — done estimate is a scope handoff, never billin
       expect(screen.queryByText(/Take payment/)).toBeNull();
       expect(screen.queryByText(/Charge/)).toBeNull();
       // The foot is a plain Done, not a billing action.
-      expect(screen.getByText("Done")).toBeTruthy();
+      expect(screen.getByText("Done", { selector: "button.sheet-pri" })).toBeTruthy();
     });
 
     it(`${role}: an unscoped done estimate names the gap and opens the Quote tab`, () => {
