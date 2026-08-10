@@ -14,8 +14,9 @@ import type { Page, Locator } from "@playwright/test";
 // and a11y run has died at the login step since, with "Email or password is incorrect" — the
 // pre-merge gate for pixels and axe silently down, in a way that reads like a broken app.
 //
-// To run the nets: export E2E_OWNER_PASSWORD with the current value, or reset the account back to
-// the literal below via the admin API with SUPABASE_SERVICE_ROLE_KEY.
+// To run the nets: export E2E_OWNER_PASSWORD with the current value — which also tells
+// `npm run seed:e2e:reset-passwords` to leave this account alone — or, if the rotation was
+// accidental, run that script to put the literal below back.
 export const OWNER = {
   email: process.env.E2E_OWNER_EMAIL ?? "owner@e2e.mallet.test",
   password: process.env.E2E_OWNER_PASSWORD ?? "e2e-password-1",
@@ -25,10 +26,11 @@ export const TECH = {
   password: process.env.E2E_TECH_PASSWORD ?? "e2e-password-1",
 };
 /**
- * The owner of the DELIBERATELY EMPTY org ("E2E Fresh Plumbing"), provisioned by
- * `npm run seed:e2e:empty`. The only account that can see a first-run screen: OWNER's org
- * accumulates a customer, a quote, a job and a bill on every golden-path run, and the first-run
- * board renders only for a shop with nothing open and no won history.
+ * The owner of the DELIBERATELY EMPTY org ("E2E Fresh Plumbing"), provisioned by the standard
+ * `npm run seed:e2e` (and on its own by `npm run seed:e2e:empty`). The only account that can see
+ * a first-run screen: OWNER's org accumulates a customer, a quote, a job and a bill on every
+ * golden-path run, and the first-run board renders only for a shop with nothing open and no won
+ * history.
  */
 export const FRESH_OWNER = {
   email: process.env.E2E_FRESH_EMAIL ?? "owner@e2e-fresh.mallet.test",

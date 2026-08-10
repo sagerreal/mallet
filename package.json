@@ -25,6 +25,7 @@
     "db:studio": "drizzle-kit studio",
     "seed:e2e": "node --env-file=.env.local scripts/seed-e2e.mjs",
     "seed:e2e:empty": "node --env-file=.env.local scripts/seed-e2e.mjs --empty-org",
+    "seed:e2e:reset-passwords": "node --env-file=.env.local scripts/seed-e2e.mjs --reset-passwords",
     "test:e2e": "playwright test",
     "test:visual": "E2E_VISUAL=1 playwright test e2e/visual.spec.ts",
     "test:visual:update": "E2E_VISUAL=1 playwright test e2e/visual.spec.ts --update-snapshots",
