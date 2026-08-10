@@ -1,5 +1,5 @@
-import type { JobId, Result, AppError, Clock } from "@mallet/shared/types";
-import { notFound, ok, err, validation } from "@mallet/shared/types";
+import type { JobId, Result, AppError, Clock, PricingRates, Money } from "@mallet/shared/types";
+import { notFound, ok, err, validation, money, deriveTotals, BPS_DENOMINATOR } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import type { Job } from "../domain/job";
@@ -118,6 +118,34 @@ export class UpdateJobLineUseCase {
   }
 }
 
+/** Σ of every line's extended amount, rounded per line exactly as the field surface totals them. */
+const lineAmountCents = (l: JobLine): number => Math.round(l.props.quantity * l.props.rate);
+const subtotalOf = (lines: readonly JobLine[]): Money =>
+  money(lines.reduce((sum, l) => sum + lineAmountCents(l), 0));
+/** The taxable subset — a SECOND filter, not a subset shortcut. See deriveTotals. */
+const taxableBaseOf = (lines: readonly JobLine[]): Money =>
+  money(lines.reduce((sum, l) => (l.props.taxable ? sum + lineAmountCents(l) : sum), 0));
+
+/**
+ * The same bounds Job.create and the jobs_* CHECK constraints enforce, applied here because
+ * replaceLines writes the columns directly. Returning a named ValidationError rather than letting
+ * Postgres raise a constraint violation is the difference between a technician reading "discount
+ * must be between 0 and 100%" and reading a 500.
+ */
+function invalidRate(rates: PricingRates): Result<never, AppError> | null {
+  const bounded: ReadonlyArray<readonly [keyof PricingRates, number, number]> = [
+    ["discBps", rates.discBps, BPS_DENOMINATOR],
+    ["taxBps", rates.taxBps, Number.POSITIVE_INFINITY],
+    ["depBps", rates.depBps, BPS_DENOMINATOR],
+  ];
+  for (const [field, value, max] of bounded) {
+    if (!Number.isInteger(value) || value < 0 || value > max) {
+      return err(validation(`${field} must be a whole number of basis points within range`, field));
+    }
+  }
+  return null;
+}
+
 export interface SetJobLinesLine {
   readonly id?: string;
   readonly description: string;
@@ -141,6 +169,17 @@ export interface SetJobLinesCommand {
   readonly orgName?: string;
   /** The staff member whose device took it — the in-person witness. */
   readonly signedByUserId?: string | null;
+  /**
+   * Discount / tax / deposit set at the door. Absent on the office price builder (pricing a job
+   * in the office does not change what anyone agreed to) and on every caller that predates the
+   * field pricing controls, which is why it is optional rather than defaulted at the call site.
+   *
+   * When present it does three things in one atomic swap: it feeds the authorisation sentence,
+   * it becomes the job's stored total (tax-inclusive, as `jobs.total_cents` is documented), and
+   * it writes the rate pair the invoice later rebuilds the bill from. All three or none — a job
+   * holding a discounted total with no discount rate gets billed at the undiscounted sum.
+   */
+  readonly rates?: PricingRates;
 }
 
 // Bulk-replace a job's lines in one atomic swap (soft-delete current + insert new). Used by
@@ -157,6 +196,10 @@ export class SetJobLinesUseCase {
   async exec(cmd: SetJobLinesCommand, orgId: string): Promise<Result<JobWithExecution, AppError>> {
     const job = await this.repo.findById(cmd.jobId);
     if (!job) return err(notFound("job not found"));
+    if (cmd.rates) {
+      const invalid = invalidRate(cmd.rates);
+      if (invalid) return invalid;
+    }
     const built: JobLine[] = [];
     for (let i = 0; i < cmd.lines.length; i++) {
       const input = cmd.lines[i]!;
@@ -186,12 +229,26 @@ export class SetJobLinesUseCase {
         lines: built,
         orgName: cmd.orgName ?? "",
         signedAt: now,
+        ...(cmd.rates ? { rates: cmd.rates } : {}),
       });
       if (!result.ok) return result;
       signature = result.value;
     }
 
-    await this.repo.replaceLines(cmd.jobId, built, now);
+    // The figures the rates produce, derived HERE from the lines about to be written — the same
+    // chain the signature snapshot above ran, so the job row and the signed document state one
+    // total. Absent rates leave both arguments undefined and the repository keeps deriving the
+    // total from the lines exactly as it always has.
+    const priced = cmd.rates ? deriveTotals(subtotalOf(built), taxableBaseOf(built), cmd.rates) : null;
+    await this.repo.replaceLines(
+      cmd.jobId,
+      built,
+      now,
+      priced ? priced.total : undefined,
+      priced && cmd.rates
+        ? { discBps: cmd.rates.discBps, taxBps: cmd.rates.taxBps, taxCents: priced.tax }
+        : undefined,
+    );
     if (signature) {
       // Same tenant tx as the line write — the orgTx re-throw guard rolls both back together, so a
       // signature can never outlive the prices it refers to.

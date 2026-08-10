@@ -111,6 +111,21 @@ export interface JobExecution {
 }
 
 /** What an accepted estimate stamps onto the scope-visit job it converts. See adoptEstimateOnJob. */
+/**
+ * The rate pair a job carries so the invoice can rebuild the agreed bill from its lines, plus the
+ * tax amount those rates produced.
+ *
+ * `taxCents` is a SPLIT of the total, never an addition to it (Job.create enforces
+ * tax <= total) — it says how much of the stored total was tax, so the document can itemise it
+ * and QuickBooks can separate revenue from tax liability. There is no deposit here on purpose:
+ * a deposit is an ask against the ESTIMATE, not a change to what the job is worth.
+ */
+export interface JobPricingPatch {
+  readonly discBps: number;
+  readonly taxBps: number;
+  readonly taxCents: number;
+}
+
 export interface AdoptEstimatePatch {
   readonly sourceEstimateId: string;
   /** Tax-INCLUSIVE, snapshotted from the estimate's own rounding chain (same as the mint path). */
@@ -188,12 +203,23 @@ export interface JobRepository {
   // lines, and Money's ready-to-bill rollup, the `noPrice` view and the Amount sort all reported
   // zero on sold work.
   //
-  // `totalCents` overrides that derivation, and exists for exactly one caller shape: the accepted
-  // ESTIMATE, whose total is tax-inclusive and may carry a discount. Neither is reconstructible
-  // from the job's lines, so the path that holds the agreed figure passes it and it wins. Omit it
-  // anywhere the lines ARE the price (the price builder and the field sign-off, where the tech's
-  // quoted tax is already inside the rates).
-  replaceLines(jobId: JobId, lines: readonly JobLine[], now: Date, totalCents?: number): Promise<void>;
+  // `totalCents` overrides that derivation, and exists for the caller shapes that hold an agreed
+  // figure the lines cannot reproduce: the accepted ESTIMATE, and now a FIELD SIGN carrying
+  // discount or tax. Omit it where the lines ARE the price (the office price builder).
+  //
+  // `pricing` writes the RATES that produced that figure. It is not decoration: the invoice
+  // rebuilds the bill from the job's lines whenever they exist, and it reads the rates off the
+  // JOB row (job.discBps / job.taxBps) to do it. A field sale that stored a discounted total but
+  // no discount rate would be billed at the full undiscounted sum — which is exactly the bug this
+  // column pair was added to fix on the office side. Written in the SAME swap as the lines, so a
+  // job can never hold rates that belong to a line set that failed to save.
+  replaceLines(
+    jobId: JobId,
+    lines: readonly JobLine[],
+    now: Date,
+    totalCents?: number,
+    pricing?: JobPricingPatch,
+  ): Promise<void>;
 
   /**
    * Record an on-glass signature against a job.
