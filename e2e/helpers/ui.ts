@@ -24,6 +24,16 @@ export const TECH = {
   email: process.env.E2E_TECH_EMAIL ?? "tech@e2e.mallet.test",
   password: process.env.E2E_TECH_PASSWORD ?? "e2e-password-1",
 };
+/**
+ * The owner of the DELIBERATELY EMPTY org ("E2E Fresh Plumbing"), provisioned by
+ * `npm run seed:e2e:empty`. The only account that can see a first-run screen: OWNER's org
+ * accumulates a customer, a quote, a job and a bill on every golden-path run, and the first-run
+ * board renders only for a shop with nothing open and no won history.
+ */
+export const FRESH_OWNER = {
+  email: process.env.E2E_FRESH_EMAIL ?? "owner@e2e-fresh.mallet.test",
+  password: process.env.E2E_FRESH_PASSWORD ?? "e2e-password-1",
+};
 
 /** The instant every visual run pretends it is: 2025-07-15T12:00:00Z. */
 const FROZEN_MS = 1_752_580_800_000;

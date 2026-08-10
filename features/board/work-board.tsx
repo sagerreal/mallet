@@ -58,6 +58,26 @@ function groupLabel(key: BoardGroupKey, column: BoardColumnId): string {
 }
 
 /**
+ * The scroll frame both boards share.
+ *
+ * `tabIndex={0}` is load-bearing, not decoration. `.board` is `overflow-x:auto`, and a scrollable
+ * region a keyboard cannot reach is WCAG 2.1.1 (axe `scrollable-region-focusable`). A busy live
+ * board satisfies that rule by accident, because its cards carry focusable name buttons — but the
+ * two boards that do NOT are exactly the ones a keyboard user is most stranded on: the first-run
+ * board, whose example cards are inert by construction, and an established shop's board on a day
+ * it is cleared. Either way the columns to the right could not be scrolled to without a mouse.
+ *
+ * Named rather than left as a bare focus stop, so what has been focused is announced.
+ */
+function BoardFrame({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="board" tabIndex={0} role="group" aria-label="Work board">
+      {children}
+    </div>
+  );
+}
+
+/**
  * The column shell — title, header, and body container. Both the live and first-run boards render
  * identical markup here; they differ only in what fills the body.
  */
@@ -189,11 +209,11 @@ function GhostColumnView({ column }: { column: BoardColumn }) {
  */
 function FirstRunBoard({ columns }: { columns: WorkBoardData["columns"] }) {
   return (
-    <div className="board">
+    <BoardFrame>
       {columns.map((column) => (
         <GhostColumnView key={column.id} column={column} />
       ))}
-    </div>
+    </BoardFrame>
   );
 }
 
@@ -211,7 +231,7 @@ function LiveBoard({
   const sends = useBoardSends();
 
   return (
-    <div className="board">
+    <BoardFrame>
       {data.columns.map((column) => (
         <BoardColumnView
           key={column.id}
@@ -222,7 +242,7 @@ function LiveBoard({
           ctx={ctx}
         />
       ))}
-    </div>
+    </BoardFrame>
   );
 }
 

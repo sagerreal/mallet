@@ -428,6 +428,31 @@ describe("GHOST_CARDS", () => {
   });
 });
 
+/**
+ * The scroll frame, on BOTH boards.
+ *
+ * Found by the axe net on the first-run screen (`scrollable-region-focusable`), not by review:
+ * `.board` scrolls sideways, and a busy live board only passes the rule by accident because its
+ * cards happen to carry focusable name buttons. Take the cards away — a first-run shop, or an
+ * established one on a cleared day — and the columns off the right edge become unreachable
+ * without a mouse. Asserted on both paths so a future change to either cannot quietly drop it.
+ */
+describe("WorkBoard — the scroll frame", () => {
+  it.each([
+    ["live", fixtureBoard, false],
+    ["first-run", emptyBoard, true],
+  ] as const)("the %s board's scrolling columns are reachable by keyboard", (_name, data, firstRun) => {
+    const { container } = render(
+      <WorkBoard data={data} firstRun={firstRun} onOpen={vi.fn()} ctx={{}} />,
+    );
+    const frame = container.querySelector(".board");
+    expect(frame).toBeTruthy();
+    expect(frame?.getAttribute("tabindex")).toBe("0");
+    // A bare focus stop announces nothing; the frame says what has been focused.
+    expect(frame?.getAttribute("aria-label")).toBe("Work board");
+  });
+});
+
 describe("WorkBoardSkeleton", () => {
   it("announces itself as busy and draws the board's shape", () => {
     const { container } = render(<WorkBoardSkeleton />);
