@@ -178,8 +178,9 @@ test.describe("the work board on Office Today", () => {
       });
     });
 
+    // No goto after this: signing in LANDS on /dashboard, and a second navigation would replace
+    // the document — and with it the observer — so the load being watched would be the second one.
     await login(page, OWNER);
-    await page.goto("/dashboard");
     await waitForBoard(page);
 
     const flashes = await page.evaluate(

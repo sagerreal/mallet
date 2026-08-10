@@ -98,15 +98,42 @@ test.describe("a brand-new shop's first look at the board", () => {
 });
 
 /**
- * The pixels and the axe scan for this screen. Behind E2E_VISUAL like the other nets, and shot
- * here rather than added to e2e/helpers/routes.ts: the shared inventory is keyed by AUDIENCE
- * (office = OWNER), and adding a fourth audience for one screen would drag visual, a11y, keyboard
- * and both mobile specs into a fixture only this file needs.
+ * The axe scan for this screen — UNGATED, like e2e/a11y.spec.ts, so it runs on a plain
+ * `npx playwright test` rather than only when someone remembers E2E_VISUAL.
+ *
+ * It earns its place: the route inventory the shared a11y net walks is keyed by AUDIENCE
+ * (office = OWNER), and OWNER's org can never be empty, so this is the only scan that ever sees a
+ * board with no cards on it. It found one — `scrollable-region-focusable` on `.board`, which the
+ * live board passes by accident because its cards carry focusable name buttons (see BoardFrame in
+ * features/board/work-board.tsx). Measured both ways: 1 violation without the frame's tabIndex,
+ * clean with it, live board clean either way.
+ */
+test.describe("first-run · axe", () => {
+  test("no violations on the board a shop meets on day one", async ({ page }) => {
+    await prepare(page, "light");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openFirstRunBoard(page);
+    await settle(page);
+
+    const scan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+      .analyze();
+    const ids = scan.violations.map((v) => `${v.id}(${v.nodes.length})`);
+    expect(scan.violations.length, `axe violations: ${ids.join(", ")}`).toEqual(0);
+  });
+});
+
+/**
+ * The pixels for this screen. Behind E2E_VISUAL like the other visual nets, and shot here rather
+ * than added to e2e/helpers/routes.ts for the audience reason above.
  *
  * ⚠️ Re-baseline against a PRODUCTION build, like e2e/visual.spec.ts — never `next dev`.
+ *
+ *     pnpm build && PORT=3131 pnpm start
+ *     E2E_VISUAL=1 E2E_BASE_URL=http://localhost:3131 npx playwright test e2e/first-run.spec.ts
  */
-test.describe("first-run · nets", () => {
-  test.skip(!process.env.E2E_VISUAL, "set E2E_VISUAL=1 to run the visual + axe nets");
+test.describe("first-run · pixels", () => {
+  test.skip(!process.env.E2E_VISUAL, "set E2E_VISUAL=1 to run visual regression");
   test.describe.configure({ mode: "serial" });
 
   for (const theme of ["light", "dark"] as const) {
@@ -124,17 +151,4 @@ test.describe("first-run · nets", () => {
       });
     });
   }
-
-  test("axe · first-run board", async ({ page }) => {
-    await prepare(page, "light");
-    await page.setViewportSize({ width: 1440, height: 900 });
-    await openFirstRunBoard(page);
-    await settle(page);
-
-    const scan = await new AxeBuilder({ page })
-      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
-      .analyze();
-    const ids = scan.violations.map((v) => `${v.id}(${v.nodes.length})`);
-    expect(scan.violations.length, `axe violations: ${ids.join(", ")}`).toEqual(0);
-  });
 });
