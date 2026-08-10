@@ -15,6 +15,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import {
   selectCustomerCount,
   selectOpenTaskCount,
+  selectSentQuoteCount,
   selectJobsCount,
   selectUnscheduledCount,
 } from "@/components/shell/shell-selectors";
@@ -28,7 +29,7 @@ interface SecTab {
 }
 
 // The customer area's routes are separate pages grouped under "Customers".
-const CUSTOMER_AREA = ["/customers", "/tasks"];
+const CUSTOMER_AREA = ["/customers", "/tasks", "/quotes"];
 
 export function SectionTabs() {
   const pathname = usePathname();
@@ -41,6 +42,7 @@ export function SectionTabs() {
   const navCounts = useNavCounts();
   const customerCount = navCounts.customers ?? 0;
   const openTasks = useAppStore(selectOpenTaskCount);
+  const sentQuotes = useAppStore(selectSentQuoteCount);
   const jobsCount = navCounts.jobs ?? 0;
   const unscheduled = useAppStore(selectUnscheduledCount);
 
@@ -51,6 +53,7 @@ export function SectionTabs() {
   if (inCustomers) {
     tabs = [
       { href: "/customers", label: "Customers", active: pathname.startsWith("/customers"), count: customerCount },
+      { href: "/quotes", label: "Quotes", active: pathname.startsWith("/quotes"), count: sentQuotes },
       { href: "/tasks", label: "Tasks", active: pathname.startsWith("/tasks"), count: openTasks },
     ];
   } else if (inJobs) {

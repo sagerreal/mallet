@@ -12,6 +12,11 @@ export function selectOpenTaskCount(s: Pick<AppStore, "tasks">): number {
   return s.tasks.filter((t) => !t.done).length;
 }
 
+/** Sent quotes awaiting an answer — Quotes sub-nav badge (the paper out the door). */
+export function selectSentQuoteCount(s: Pick<AppStore, "estimates">): number {
+  return s.estimates.filter((e) => !e.archived && !e.trash && e.status === "sent").length;
+}
+
 /** Active (non-archived) customer/lead count — Customers nav badge. */
 export function selectCustomerCount(s: Pick<AppStore, "leads">): number {
   return s.leads.filter((l) => !l.archived).length;
