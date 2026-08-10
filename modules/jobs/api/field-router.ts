@@ -12,7 +12,7 @@ import { DrizzleLeadRepository } from "@mallet/customers";
 // and resolves fine because both sides bind lazily inside procedure bodies.
 import { RecordFieldSaleUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import type { OrgId } from "@mallet/shared/types";
+import type { OrgId, PricingRates } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
@@ -100,6 +100,24 @@ const fieldSignQuoteInput = z.object({
   // Optional, exactly as on the web path: a typed name IS the signature, and requiring a drawing
   // would gate approval on the weakest evidence and lock out anyone who cannot draw.
   signatureSvg: z.string().trim().max(100_000).optional(),
+  /**
+   * Discount / tax / deposit set at the door, in basis points. All three default to zero, which is
+   * what every field sale was before these controls existed — an omitting client keeps its exact
+   * current behaviour.
+   *
+   * These are the shop's OWN numbers, decided by a technician the assignment gate above has
+   * already established is on this job, so they legitimately come from the client — the office
+   * composer sends the same three the same way. What does NOT come from the client is anything
+   * derived from them: the total, the tax amount, the deposit and the sentence the customer signs
+   * are all computed server-side from these rates and the line set, so a tablet cannot show one
+   * figure and store another.
+   *
+   * Tax is unbounded above (rates vary by jurisdiction and Mallet is national); discount and
+   * deposit are capped at 100% because either one above that inverts the bill.
+   */
+  discBps: z.number().int().min(0).max(10_000).default(0),
+  taxBps: z.number().int().min(0).max(100_000).default(0),
+  depBps: z.number().int().min(0).max(10_000).default(0),
 });
 
 // Scope notes from the walkthrough — the field half of the estimating split. The visit's notes
@@ -677,12 +695,21 @@ export const createFieldRouter = () =>
         // sent by the tablet: a client-supplied counterparty on a signed document is a hole.
         const orgName = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getOrgName();
 
+        // ONE rates object, built once and handed to both writes below, so the job row, the job's
+        // signature snapshot and the estimate can never end up describing three different prices.
+        const rates: PricingRates = {
+          discBps: input.discBps,
+          taxBps: input.taxBps,
+          depBps: input.depBps,
+        };
+
         const useCase = new SetJobLinesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
           await useCase.exec(
             {
               jobId,
               lines: input.lines,
+              rates,
               signature: {
                 signerName: input.signerName,
                 signatureSvg: input.signatureSvg ?? "",
@@ -738,6 +765,7 @@ export const createFieldRouter = () =>
             signerName: input.signerName,
             signatureSvg: input.signatureSvg ?? "",
             orgName,
+            rates,
           }),
         );
         if (sale.kind === "created") {
