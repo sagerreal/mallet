@@ -98,6 +98,12 @@ export const bookingCfgDTO = z.object({
 export const fieldTogglesDTO = z.object({
   measurementEstimating: z.boolean(),
   canText: z.boolean(),
+  /**
+   * Does this shop punch a clock? False = a sheet shop: the crew types their week instead, so the
+   * field surface hides the clock and leads with adding hours. A capability flag, exactly the kind
+   * of fact this endpoint exists for — the office `get` is ownerOrOffice and always will be.
+   */
+  timesheetClock: z.boolean(),
 });
 
 /**
@@ -152,6 +158,7 @@ export const orgSettingsDTO = z.object({
   visitScopeMinutes: z.number().int(),
   visitRepairMinutes: z.number().int(),
   visitInstallMinutes: z.number().int(),
+  timesheetClock: z.boolean(),
   techSeesPrice: z.boolean(),
   techTexts: z.boolean(),
   frontDesk: z.boolean(),
@@ -369,6 +376,7 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
     visitScopeMinutes: p.visitScopeMinutes,
     visitRepairMinutes: p.visitRepairMinutes,
     visitInstallMinutes: p.visitInstallMinutes,
+    timesheetClock: p.timesheetClock,
     techSeesPrice: p.techSeesPrice,
     techTexts: p.techTexts,
     frontDesk: p.frontDesk,

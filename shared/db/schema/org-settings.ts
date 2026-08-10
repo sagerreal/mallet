@@ -38,6 +38,17 @@ export const orgSettings = pgTable(
     visitScopeMinutes: integer("visit_scope_minutes").notNull().default(30),
     visitRepairMinutes: integer("visit_repair_minutes").notNull().default(90),
     visitInstallMinutes: integer("visit_install_minutes").notNull().default(240),
+    /**
+     * Does this shop punch a clock, or does the crew just write their week down?
+     *
+     * Both are real. A punch shop taps start/break/end and the rows write themselves; a sheet shop
+     * has people type "Monday, 7 to 3:30" — which `time_entries.src` has always allowed
+     * (`manual | clock | timer`), so this is a SURFACE decision, not a model one. Nothing about
+     * the hours, the approval or the QuickBooks push changes.
+     *
+     * Defaults true: every existing shop keeps the clock it already has.
+     */
+    timesheetClock: boolean("timesheet_clock").notNull().default(true),
     techSeesPrice: boolean("tech_sees_price").notNull().default(true),
     techTexts: boolean("tech_texts").notNull().default(true),
     // Defaults OFF. It used to default true, which handed every new shop a phone number pointed at

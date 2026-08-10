@@ -4,6 +4,7 @@ import {
   asLeadId,
   asJobId,
   asVisitId,
+  asUserId,
   FixedClock,
   isOk,
   zeroMoney,
@@ -11,6 +12,7 @@ import {
   type LeadId,
   type JobId,
   type VisitId,
+  type UserId,
   type EstimateId,
   type CursorPage,
   type Paginated,
@@ -21,6 +23,7 @@ import { Job, JobVisit, type JobProps, type JobVisitProps } from "../domain/job"
 import type { JobRepository } from "../domain/job-repository";
 import { ScheduleJobUseCase } from "./schedule-job";
 import { SetVisitStatusUseCase } from "./set-visit-status";
+import type { CostRateReader } from "../domain/cost-rate-reader";
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -159,6 +162,7 @@ describe("SetVisitStatusUseCase", () => {
    */
   const seedJobWithVisit = async (
     visitStatus: JobVisitProps["status"] = "pending",
+    visitOver: Partial<JobVisitProps> = {},
   ): Promise<{ jobId: JobId; visitId: VisitId }> => {
     const schedResult = await new ScheduleJobUseCase(repo, bus, clock, seqIds()).exec({
       orgId: ORG,
@@ -171,7 +175,7 @@ describe("SetVisitStatusUseCase", () => {
     if (!isOk(schedResult)) throw new Error("schedule failed");
     const job = schedResult.value;
 
-    const visit = makeVisit({ status: visitStatus });
+    const visit = makeVisit({ status: visitStatus, ...visitOver });
     const updatedResult = job.withVisits([visit], clock.now());
     if (!isOk(updatedResult)) throw new Error(`withVisits failed: ${updatedResult.error.message}`);
     await repo.save(updatedResult.value);
@@ -507,5 +511,72 @@ describe("SetVisitStatusUseCase", () => {
     const saved = await repo.findById(jobId);
     const visit = saved?.props.visits.find((v) => v.props.id === visitId);
     expect(visit?.props.status).toBe("in_progress");
+  });
+
+  // ── the cost snapshot ──────────────────────────────────────────────────────
+  //
+  // Job costing multiplied hours by whatever the person costs TODAY, so the week somebody got a
+  // raise, every week they had ever worked re-priced itself. The cost of an hour is fixed when
+  // the hour is worked, and completion is the moment it settles.
+
+  describe("stamping what the hour cost", () => {
+    const TECH = asUserId("44444444-4444-4444-4444-444444444444");
+    const rates = (cents: number | null, seen: UserId[] = []): CostRateReader => ({
+      rateFor: async (id) => {
+        seen.push(id);
+        return cents;
+      },
+    });
+
+    const withRates = (reader: CostRateReader) => new SetVisitStatusUseCase(repo, bus, clock, reader);
+
+    const savedVisit = async (jobId: JobId, visitId: VisitId) =>
+      (await repo.findById(jobId))?.props.visits.find((v) => v.props.id === visitId);
+
+    it("stamps the assignee's rate when the visit completes", async () => {
+      const { jobId } = await seedJobWithVisit("in_progress", { assigneeUserId: TECH });
+      const seen: UserId[] = [];
+      await withRates(rates(3200, seen)).exec({ jobId, visitId: VISIT_A, status: "complete" });
+
+      expect((await savedVisit(jobId, VISIT_A))?.props.costRateCents).toBe(3200);
+      // The VISIT's assignee, never the caller — the hour belongs to whoever ran that trip.
+      expect(seen).toEqual([TECH]);
+    });
+
+    it("does not stamp on arrival — an unfinished visit has no settled cost", async () => {
+      const { jobId } = await seedJobWithVisit("pending", { assigneeUserId: TECH });
+      await withRates(rates(3200)).exec({ jobId, visitId: VISIT_A, status: "in_progress" });
+      expect((await savedVisit(jobId, VISIT_A))?.props.costRateCents ?? null).toBeNull();
+    });
+
+    it("clears the stamp on reopen, exactly as completedAt clears", async () => {
+      const { jobId } = await seedJobWithVisit("in_progress", { assigneeUserId: TECH });
+      await withRates(rates(3200)).exec({ jobId, visitId: VISIT_A, status: "complete" });
+      // Leaving the old figure would price the NEXT trip at the rate of the one that was undone.
+      await withRates(rates(9999)).exec({ jobId, visitId: VISIT_A, status: "pending" });
+      expect((await savedVisit(jobId, VISIT_A))?.props.costRateCents ?? null).toBeNull();
+    });
+
+    it("keeps null when the shop has set no rate — never 0, which reads as free to run", async () => {
+      const { jobId } = await seedJobWithVisit("in_progress", { assigneeUserId: TECH });
+      await withRates(rates(null)).exec({ jobId, visitId: VISIT_A, status: "complete" });
+      expect((await savedVisit(jobId, VISIT_A))?.props.costRateCents ?? null).toBeNull();
+    });
+
+    it("asks nobody when the visit has no assignee", async () => {
+      const { jobId } = await seedJobWithVisit("in_progress");
+      const seen: UserId[] = [];
+      await withRates(rates(3200, seen)).exec({ jobId, visitId: VISIT_A, status: "complete" });
+      expect(seen).toEqual([]);
+      expect((await savedVisit(jobId, VISIT_A))?.props.costRateCents ?? null).toBeNull();
+    });
+
+    it("defaults to no rates, so the dozen callers that only move a visit stay unchanged", async () => {
+      const { jobId } = await seedJobWithVisit("in_progress", { assigneeUserId: TECH });
+      // The three-argument constructor — exactly what every pre-existing call site uses.
+      await new SetVisitStatusUseCase(repo, bus, clock).exec({ jobId, visitId: VISIT_A, status: "complete" });
+      expect((await savedVisit(jobId, VISIT_A))?.props.status).toBe("complete");
+      expect((await savedVisit(jobId, VISIT_A))?.props.costRateCents ?? null).toBeNull();
+    });
   });
 });

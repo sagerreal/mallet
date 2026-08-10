@@ -22,6 +22,7 @@ export const baseSettingsProps = (o: Partial<OrgSettingsProps> = {}): OrgSetting
   visitScopeMinutes: 30,
   visitRepairMinutes: 90,
   visitInstallMinutes: 240,
+  timesheetClock: true,
   techSeesPrice: true,
   techTexts: true,
   frontDesk: true,

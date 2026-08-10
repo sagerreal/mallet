@@ -4,6 +4,7 @@ import { orThrow } from "@/trpc/errors";
 import { asJobId, asVisitId, asUserId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
+import { DrizzleCostRateReader } from "../infra/drizzle-cost-rate-reader";
 import { CreateVisitUseCase } from "../app/create-visit";
 import { ScheduleVisitUseCase } from "../app/schedule-visit";
 import { UpdateVisitDurationUseCase } from "../app/update-visit-duration";
@@ -189,7 +190,7 @@ export const createVisitRouter = () =>
       .output(jobDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock, new DrizzleCostRateReader(ctx.tx, ctx.principal.orgId));
         const job = orThrow(
           await useCase.exec({
             jobId: asJobId(input.jobId),

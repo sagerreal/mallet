@@ -54,7 +54,15 @@ export class DrizzleLaborReader {
         completedAt: jobVisits.completedAt,
         durationMinutes: jobVisits.durationMinutes,
         status: jobVisits.status,
-        costRateCents: users.costRateCents,
+        /**
+         * THE SNAPSHOT FIRST, the person's current rate only as a fallback.
+         *
+         * `job_visits.cost_rate_cents` is stamped when the visit completes, so a raise stops
+         * re-pricing every week already worked. The coalesce covers rows written before the stamp
+         * existed and visits whose assignee had no rate at the time — for those the current rate
+         * is the best available answer and is exactly the pre-snapshot behaviour.
+         */
+        costRateCents: sql<number | null>`coalesce(${jobVisits.costRateCents}, ${users.costRateCents})`,
         num: jobs.num,
         title: jobs.title,
         jobStatus: jobs.status,

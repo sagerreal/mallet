@@ -10,6 +10,7 @@
  * how a worker learns to stop reporting mistakes.
  */
 
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   KIND_LABELS,
@@ -23,6 +24,7 @@ import {
   type MyHoursEntry,
 } from "./my-hours-derive";
 import { dayLockNotes, editabilityOf } from "./my-hours-edit";
+import { runsForDay, runLength, type HoursRun } from "./my-hours-runs";
 import { MyHoursTimeEditor, type EntryKind } from "./my-hours-time-editor";
 
 export interface MyHoursWeekProps {
@@ -46,6 +48,8 @@ function EntryRow(props: RowProps) {
   const { entry, today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave } = props;
   const lock = editabilityOf(entry, today, myUserId);
   const editing = editingId === entry.id;
+  // Inside an expanded run the kind is worth showing again: it is the only thing distinguishing
+  // one part from the next, and by this point the man has already asked to see the parts.
   const kind = KIND_LABELS[entry.kind];
   const suggested = entry.running ? suggestEndFor(entry) : null;
 
@@ -128,7 +132,55 @@ function EntryRow(props: RowProps) {
   );
 }
 
+/**
+ * One stretch of the day — "Worked 10:46a–1:51p", whatever chain of taps recorded it.
+ *
+ * A run of ONE renders the entry directly, so the ordinary day is untouched. A run of several
+ * shows the stretch and opens to its parts, because the merge must never put a correction further
+ * out of reach than it was: the man is responsible for his own hours, so every minute has to stay
+ * editable.
+ */
+function RunRow({ run, expanded, onToggle, ...rest }: {
+  run: HoursRun;
+  expanded: boolean;
+  onToggle: () => void;
+} & Omit<MyHoursWeekProps, "entries" | "weekStartISO">) {
+  const single = run.entries[0];
+  if (run.entries.length === 1 && single) return <EntryRow entry={single} {...rest} />;
+
+  const shown = run.paid ? run.hours : runLength(run);
+  const span = `${clockLabel(run.startTime)}–${run.endTime ? clockLabel(run.endTime) : "still open"}`;
+
+  return (
+    <>
+      <div className={`ts-e${expanded ? " editing" : ""} rowclick`} onClick={onToggle}>
+        <span className="ts-kind">{run.label}</span>
+        <button
+          type="button"
+          className="ts-elabel rowopen"
+          aria-expanded={expanded}
+          aria-label={`${expanded ? "Hide" : "Show"} the ${run.entries.length} entries behind ${run.label} ${span}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+        >
+          {/* The pill already says Worked/Break; repeating it here read as "Worked Worked". What
+              this adds is the fact the row is a merge, and how much is folded into it. */}
+          <span className="muted">{run.entries.length} entries</span>
+        </button>
+        <span className="ts-etime">{span}</span>
+        <span className="ts-ehrs">{shown.toFixed(HOURS_PRECISION)} h</span>
+        <span className="ts-eact mh-act" />
+      </div>
+      {expanded ? run.entries.map((entry) => <EntryRow key={entry.id} entry={entry} {...rest} />) : null}
+    </>
+  );
+}
+
 export function MyHoursWeek({ entries, weekStartISO, ...rest }: MyHoursWeekProps) {
+  const [openRun, setOpenRun] = useState<string | null>(null);
+
   if (entries.length === 0) {
     return <div className="empty-att">No hours recorded this week.</div>;
   }
@@ -146,8 +198,14 @@ export function MyHoursWeek({ entries, weekStartISO, ...rest }: MyHoursWeekProps
               <span>{dayLabel(date)}</span>
               <span className="num">{paid.toFixed(HOURS_PRECISION)} h</span>
             </div>
-            {rows.map((entry) => (
-              <EntryRow key={entry.id} entry={entry} {...rest} />
+            {runsForDay(rows).map((run) => (
+              <RunRow
+                key={run.key}
+                run={run}
+                expanded={openRun === run.key}
+                onToggle={() => setOpenRun((open) => (open === run.key ? null : run.key))}
+                {...rest}
+              />
             ))}
             {dayLockNotes(rows, rest.today, rest.myUserId).map((note) => (
               <p className="mh-lock" key={note}>

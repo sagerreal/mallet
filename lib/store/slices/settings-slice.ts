@@ -112,6 +112,14 @@ export interface BookingCfg {
 
 export interface SettingsToggles {
   techSeesPrice: boolean;
+  /**
+   * Does the crew punch a clock, or type their week in?
+   *
+   * A SURFACE switch, not a payroll one: `time_entries.src` has always allowed both
+   * (`manual | clock | timer`), and nothing about hours, approval or the QuickBooks push changes
+   * with it. Off hides the day clock on My day and makes adding a day the primary action.
+   */
+  timesheetClock: boolean;
   frontDesk: boolean;
   /** Money's "Auto-remind" switch. It was useState(true) in that header — a control promising
    *  reminder texts on a schedule and wired to nothing at all. */
@@ -172,6 +180,7 @@ const EMPTY_TRADE = "plumbing";
 
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
+  timesheetClock: true,
   frontDesk: true,
   autoRemind: true,
   // "unknown", NOT false. This placeholder used to be `false`, which made a settings read that
@@ -671,6 +680,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     // measurementEstimating is absent by type (BooleanToggleKey) — it is not a hand switch.
     const toggleToField: Record<BooleanToggleKey, string> = {
       techSeesPrice: "techSeesPrice",
+      timesheetClock: "timesheetClock",
       frontDesk: "frontDesk",
       autoRemind: "autoRemind",
     };
