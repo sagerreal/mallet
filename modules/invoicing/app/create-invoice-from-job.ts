@@ -1,7 +1,7 @@
 import type { OrgId, JobId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
-import { asInvoiceId, money, zeroMoney, notFound, conflict, ok, err, isOk } from "@mallet/shared/types";
+import { asInvoiceId, money, zeroMoney, notFound, conflict, ok, err, isOk, deriveTotals } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
-import { Invoice, BPS_DENOMINATOR } from "../domain/invoice";
+import { Invoice } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
 import type { InvoiceRepository } from "../domain/invoice-repository";
 import type { JobReader, JobLineSummary } from "../domain/job-reader";
@@ -65,32 +65,32 @@ export class CreateInvoiceFromJobUseCase {
     // from lines without re-applying discBps charged the full undiscounted sum. Measured on a live
     // 10% quote: lines $114.98, agreed $112.02, billed $124.47.
     //
-    // The chain is discount → net → tax → total, each step rounded to whole cents, mirroring
-    // Estimate.totalsFrom (modules/quoting/domain/estimate.ts) exactly. Same order, same rounding,
-    // so an invoice rebuilt from lines lands on the number the customer accepted.
+    // The chain is discount → net → tax → total, each step rounded to whole cents. It is not
+    // re-implemented here: deriveTotals (@mallet/shared/types) is the SAME function the quote
+    // derived the signed total with and the on-glass signature froze into its snapshot, so an
+    // invoice rebuilt from lines weeks later cannot land on a different number from the one the
+    // customer put their name to. Three copies of this arithmetic is how the overbill above
+    // happened; there is now one.
     //
     // TAX IS CHARGED ON THE TAXABLE LINES ONLY — a SECOND, DIFFERENT filter from the subtotal.
     // A non-taxable line is still billed at its full rate and still in the total; it simply is
-    // not in the base. The discount comes off that base at the same rate it comes off the bill,
-    // so on an all-taxable job the base IS the subtotal and every figure is what it was before
-    // taxability existed. Same order, same rounding, same result.
-    const subtotal = lines.reduce((sum, line) => sum + line.amount(), 0);
-    const taxableBase = lines.reduce(
-      (sum, line) => (line.props.taxable ? sum + line.amount() : sum),
-      0,
-    );
-    const discountFromLines = money(Math.round((subtotal * job.discBps) / BPS_DENOMINATOR));
-    const netFromLines = money(subtotal - discountFromLines);
-    const taxableDiscount = money(Math.round((taxableBase * job.discBps) / BPS_DENOMINATOR));
-    const taxFromLines = money(
-      Math.round(((taxableBase - taxableDiscount) * job.taxBps) / BPS_DENOMINATOR),
+    // not in the base. On an all-taxable job the base IS the subtotal and every figure is what it
+    // was before taxability existed.
+    //
+    // depBps is deliberately absent: a deposit is an ask against the QUOTE, not a component of
+    // what the job is worth. What a deposit changes on a bill is `depositPaid` below, and only
+    // once money has actually landed.
+    const fromLines = deriveTotals(
+      money(lines.reduce((sum, line) => sum + line.amount(), 0)),
+      money(lines.reduce((sum, line) => (line.props.taxable ? sum + line.amount() : sum), 0)),
+      { discBps: job.discBps, taxBps: job.taxBps, depBps: 0 },
     );
     const totals =
       lines.length > 0
         ? {
-            total: money(netFromLines + taxFromLines),
-            tax: taxFromLines,
-            discount: discountFromLines,
+            total: fromLines.total,
+            tax: fromLines.tax,
+            discount: fromLines.discount,
           }
         : {
             // Carried, not recomputed. The tax is already inside the snapshot total; recording the
