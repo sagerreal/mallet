@@ -1907,9 +1907,21 @@
   .vstep-n.current .vstep-dot{border-color:var(--ink);box-shadow:0 0 0 3px var(--amber-bg)}
   .vstep-lab{display:block;font-size:var(--type-sm);font-weight:700;color:var(--ink-3);line-height:1.2}
   .vstep-n.reached .vstep-lab,.vstep-n.current .vstep-lab{color:var(--ink)}
-  /* The "when" line under the stepper — the one big figure in this section. */
-  .vwhen b{display:block;font-size:var(--type-lg);font-weight:800;letter-spacing:-.01em}
-  .vwhen span{display:block;font-size:var(--type-sm);color:var(--ink-2)}
+  /* ── The visits SLOT (Aug 10): a pager over one stepper, arrows or a swipe between stops. ──
+     The pager's mono line is the section's ONLY date — the old .vwhen block under the stepper
+     repeated it and is gone. Arrows are the ✕'s register (34px bordered square): a control, not
+     a glyph. Slides scroll-snap full-width; the scrollbar is hidden because the pager + arrows
+     ARE the affordance and a bar under a 3-item carousel reads as page chrome. */
+  .vpager{display:flex;align-items:center;gap:var(--space-3);margin-bottom:var(--space-3)}
+  .varr{width:34px;height:34px;flex:none;display:flex;align-items:center;justify-content:center;border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);font-size:var(--type-md);line-height:1;cursor:pointer;transition:background .12s,color .12s}
+  .varr:hover:not(:disabled){background:var(--manila-2);color:var(--ink)}
+  .varr:disabled{opacity:.3;cursor:default}
+  .vpager-mid{flex:1;text-align:center;min-width:0}
+  .vpager-mid b{display:block;font-size:var(--type-base);font-weight:700}
+  .vpager-mid span{display:block;font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .vslots{display:flex;overflow-x:auto;scroll-snap-type:x mandatory;scrollbar-width:none}
+  .vslots::-webkit-scrollbar{display:none}
+  .vslide{flex:0 0 100%;scroll-snap-align:start;min-width:0}
   /* The visits list. Rows used to end in --space-2xs (2px), so on a two-visit job a stepper, a
      date and a ↩ Reopen abutted the NEXT visit's stepper — one continuous block in which the
      first visit's control read as the second visit's. Separation is the CONTAINER's, on adjacent

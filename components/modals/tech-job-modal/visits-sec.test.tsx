@@ -1,44 +1,50 @@
 // @vitest-environment jsdom
 /**
- * THE DEFECT: two complete visit records abutted on `--space-2xs` — 2px. A stepper, a date and a
- * ↩ Reopen ran straight into the next visit's stepper, so the whole section read as one block and
- * the first visit's control looked like the second visit's. The same 2px sat between a placed row
- * and an awaiting-slot row, and between either and the follow-up ask.
+ * The visits SLOT: one stepper on screen, arrows between stops, one date line in the pager.
  *
- * Separation is the CONTAINER's job — one rule on adjacent siblings — so every combination of
- * rows separates without any row knowing what follows it. That is what these pin.
+ * What these pin, in the order the design decided them:
+ *   - it opens on the stop the job is AT, and finishing a stop advances it
+ *   - the pager is the section's ONLY date line (the .vwhen duplicate is what got this built)
+ *   - a one-stop job keeps the date line and drops the count and the arrows
+ *   - off-screen slides are inert — an invisible ↩ Reopen must not sit in the tab order
+ *
+ * jsdom has no layout, so `clientWidth` is 0 and the scroll effect no-ops by design — the arrows
+ * drive React state directly, which is exactly what these tests exercise.
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { VisitsSec } from "./visits-sec";
 import type { Visit } from "@/lib/store/types";
 
-const visit = (over: Partial<Visit> = {}): Visit => ({
-  id: "v1",
-  date: "2026-07-12",
-  techId: "tech-1",
-  start: 11,
-  dur: 0.5,
-  status: "scheduled",
-  ...over,
-});
+const visit = (over: Partial<Visit> = {}): Visit =>
+  ({
+    id: "v1",
+    date: "2026-07-12",
+    techId: "tech-1",
+    start: 11,
+    dur: 0.5,
+    status: "scheduled",
+    ...over,
+  }) as Visit;
 
-const awaiting = (over: Partial<Visit> = {}): Visit => ({
-  id: "a1",
-  date: null,
-  techId: null,
-  start: null,
-  dur: 1,
-  status: "scheduled",
-  ...over,
-});
+const awaiting = (over: Partial<Visit> = {}): Visit =>
+  ({
+    id: "a1",
+    date: null,
+    techId: null,
+    start: null,
+    dur: 1,
+    status: "scheduled",
+    ...over,
+  }) as Visit;
 
 interface SecOver {
   placed?: Visit[];
   awaiting?: Visit[];
-  /** The job is finished — the section's other shape. */
   done?: boolean;
   curVisit?: Visit;
+  isOffice?: boolean;
+  stepVisitId?: string;
   onAddFollowUp?: (reason: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -49,97 +55,177 @@ const sec = (over: SecOver = {}) =>
       awaiting={over.awaiting ?? []}
       curVisit={over.curVisit}
       done={over.done ?? false}
-      isOffice={false}
-      stepVisitId={undefined}
+      isOffice={over.isOffice ?? false}
+      stepVisitId={over.stepVisitId}
       onStatus={vi.fn()}
       onAddFollowUp={over.onAddFollowUp}
     />,
   );
 
-const rowsOf = (container: HTMLElement) => container.querySelector(".vlist")?.children ?? [];
+const caption = () => screen.getByText(/^Visit \d of \d$/).textContent;
+const activeSlides = (c: HTMLElement) =>
+  Array.from(c.querySelectorAll(".vslide")).filter((s) => !s.hasAttribute("inert"));
 
-describe("VisitsSec — the rows separate", () => {
-  it("puts placed rows, awaiting rows and the follow-up ask in ONE separated list", () => {
-    const { container } = sec({
-      placed: [visit()],
-      awaiting: [awaiting()],
-      onAddFollowUp: async () => ({ ok: true }),
+describe("VisitsSec — where the slot opens", () => {
+  it("opens on the first stop that has not finished", () => {
+    sec({
+      placed: [visit({ id: "d1", status: "done" }), visit({ id: "s2", start: 15 })],
     });
-    expect(rowsOf(container)).toHaveLength(3);
+    expect(caption()).toBe("Visit 2 of 2");
   });
 
-  it("gives the follow-up ask a plain wrapper — the hairline never lands on the button itself", () => {
-    const { container } = sec({ onAddFollowUp: async () => ({ ok: true }) });
-    const last = rowsOf(container)[1];
-    expect(last?.tagName).toBe("DIV");
-    expect(last?.querySelector("button")?.textContent).toBe("Need to come back — add a visit");
+  it("the viewer's own movable stop wins over the job's first open one", () => {
+    sec({
+      placed: [visit({ id: "s1" }), visit({ id: "s2", start: 15 })],
+      stepVisitId: "s2",
+    });
+    expect(caption()).toBe("Visit 2 of 2");
+  });
+
+  it("a return trip waiting on a time IS where the job is once every placed stop finished", () => {
+    sec({
+      placed: [visit({ id: "d1", status: "done" })],
+      awaiting: [awaiting()],
+    });
+    expect(caption()).toBe("Visit 2 of 2");
+    expect(screen.getByText("Return trip — waiting on a time")).toBeTruthy();
+  });
+
+  it("a finished job opens on the last stop — the record most likely to be read back", () => {
+    sec({
+      placed: [visit({ id: "d1", status: "done" }), visit({ id: "d2", start: 15, status: "done" })],
+      done: true,
+    });
+    expect(caption()).toBe("Visit 2 of 2");
   });
 });
 
-describe("VisitsSec — a finished job can still book the return", () => {
-  // The owner's report, verbatim: "just clicked done and theres no way to add another visit, just
-  // take payment." Finishing is exactly when a plumber discovers the fitting is wrong, and this
-  // branch used to render the visit he had just finished and nothing else.
-  it("offers the ask on a DONE job", () => {
+describe("VisitsSec — the pager", () => {
+  it("arrows move between stops and disable at the ends", () => {
+    sec({ placed: [visit({ id: "s1" }), visit({ id: "s2", start: 15 })] });
+    const prev = screen.getByRole("button", { name: "Previous visit" }) as HTMLButtonElement;
+    const next = screen.getByRole("button", { name: "Next visit" }) as HTMLButtonElement;
+
+    expect(caption()).toBe("Visit 1 of 2");
+    expect(prev.disabled).toBe(true);
+
+    fireEvent.click(next);
+    expect(caption()).toBe("Visit 2 of 2");
+    expect((screen.getByRole("button", { name: "Next visit" }) as HTMLButtonElement).disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous visit" }));
+    expect(caption()).toBe("Visit 1 of 2");
+  });
+
+  it("carries the section's ONLY date line — the stop's when, once", () => {
+    const { container } = sec();
+    expect(screen.getByText("Sun 12 · 11:00 AM · ~0h 30m")).toBeTruthy();
+    // Exactly one leaf node prints that date — the .vwhen duplicate is what this design deleted.
+    expect(
+      Array.from(container.querySelectorAll("*")).filter(
+        (n) => /Sun 12 · 11:00 AM/.test(n.textContent ?? "") && n.children.length === 0,
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("a one-stop job keeps the date line and drops the count and the arrows", () => {
+    sec();
+    expect(screen.getByText("Sun 12 · 11:00 AM · ~0h 30m")).toBeTruthy();
+    expect(screen.queryByText(/^Visit \d of \d$/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Previous visit" })).toBeNull();
+  });
+
+  it("the line follows the stop you slide to", () => {
+    sec({
+      placed: [
+        visit({
+          id: "d1",
+          status: "done",
+          startedAt: "2026-07-12T18:22:00.000Z",
+          completedAt: "2026-07-12T18:56:00.000Z",
+        }),
+        visit({ id: "s2", start: 15 }),
+      ],
+    });
+    // Lands on the open stop; its line is the booking.
+    expect(screen.getByText("Sun 12 · 3:00 PM · ~0h 30m")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous visit" }));
+    // The finished stop's line is the measured time, never the booked start.
+    expect(screen.getByText("Sun 12 · 0h 34m on site")).toBeTruthy();
+  });
+});
+
+describe("VisitsSec — one stepper on screen", () => {
+  it("every stop keeps its record mounted, but only the shown slide is reachable", () => {
     const { container } = sec({
+      placed: [visit({ id: "d1", status: "done" }), visit({ id: "s2", start: 15 })],
+      isOffice: true,
+    });
+    // Both steppers exist — the record is never thrown away…
+    expect(container.querySelectorAll(".vstep")).toHaveLength(2);
+    // …but exactly one slide is live, and the finished stop's ↩ Reopen sits inert off-screen.
+    expect(activeSlides(container)).toHaveLength(1);
+    expect(activeSlides(container)[0]!.querySelector("[aria-label='Visit 2 progress']")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Previous visit" }));
+    expect(activeSlides(container)[0]!.querySelector("[aria-label='Visit 1 progress']")).toBeTruthy();
+    expect(activeSlides(container)[0]!.textContent).toContain("↩ Reopen");
+  });
+
+  it("finishing the shown stop advances the slot to the next one", () => {
+    const first = visit({ id: "s1" });
+    const { rerender } = render(
+      <VisitsSec
+        placed={[first, visit({ id: "s2", start: 15 })]}
+        awaiting={[]}
+        curVisit={first}
+        done={false}
+        isOffice={false}
+        stepVisitId="s1"
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(caption()).toBe("Visit 1 of 2");
+
+    // The tap lands: stop 1 is done, the viewer's movable visit is now stop 2.
+    rerender(
+      <VisitsSec
+        placed={[visit({ id: "s1", status: "done" }), visit({ id: "s2", start: 15 })]}
+        awaiting={[]}
+        curVisit={visit({ id: "s2", start: 15 })}
+        done={false}
+        isOffice={false}
+        stepVisitId="s2"
+        onStatus={vi.fn()}
+      />,
+    );
+    expect(caption()).toBe("Visit 2 of 2");
+  });
+});
+
+describe("VisitsSec — the follow-up ask and the empty state", () => {
+  it("offers the ask on a DONE job — finishing is when the wrong fitting turns up", () => {
+    const { container } = sec({
+      placed: [visit({ status: "done" })],
       done: true,
-      curVisit: visit(),
       onAddFollowUp: async () => ({ ok: true }),
     });
     const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons).toContain("Need to come back — add a visit");
-  });
-
-  it("keeps the finished visit's record above it — the ask is added, not swapped in", () => {
-    const { container } = sec({
-      placed: [visit({ status: "done" })],
-      done: true,
-      curVisit: visit({ status: "done" }),
-      onAddFollowUp: async () => ({ ok: true }),
-    });
-    // A finished job has no stop in progress, so no bar is drawn by default — the record is one
-    // tap down on the row's own summary. What must NOT happen is the row vanishing.
-    expect(container.querySelector(".vstep")).toBeNull();
-    expect(screen.getByText(/^Done/)).toBeTruthy();
-    fireEvent.click(screen.getByText("Details"));
+    // The finished stop's record is right there above it — nothing vanished.
     expect(container.querySelector(".vstep")).toBeTruthy();
   });
 
   it("renders no ask when this viewer may not book one", () => {
-    const { container } = sec({ done: true, curVisit: visit() });
+    const { container } = sec({ done: true });
     const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent);
     expect(buttons).not.toContain("Need to come back — add a visit");
   });
-});
 
-describe("VisitsSec — which stop is which", () => {
-  it("numbers every visit in the section, placed first then awaiting", () => {
-    sec({
-      placed: [visit()],
-      awaiting: [awaiting({ scopeNotes: "waiting on the part" })],
-    });
-    expect(screen.getByText("Visit 1 of 2")).toBeTruthy();
-    expect(screen.getByText("Visit 2 of 2")).toBeTruthy();
-  });
-
-  // The visit rows come off a join with no ORDER BY, so the array order is not a promise. A number
-  // printed against an arbitrary order is a lie, so the section orders before it counts.
-  it("numbers placed rows in time order, whatever order they arrive in", () => {
-    const { container } = sec({
-      placed: [
-        visit({ id: "late", start: 12 }),
-        visit({ id: "early", start: 11 }),
-      ],
-    });
-    const captions = Array.from(container.querySelectorAll(".vseq")).map((n) => n.textContent);
-    expect(captions).toEqual(["Visit 1 of 2", "Visit 2 of 2"]);
-    expect(container.querySelector(".vlist")?.textContent).toMatch(/Visit 1 of 2[\s\S]*11:00 AM/);
-    expect(container.querySelector(".vlist")?.textContent).toMatch(/Visit 2 of 2[\s\S]*12:00 PM/);
-  });
-
-  it("numbers nothing when there is only one visit", () => {
-    const { container } = sec();
-    expect(container.querySelectorAll(".vseq")).toHaveLength(0);
+  it("says so plainly when nothing is scheduled at all", () => {
+    sec({ placed: [], awaiting: [] });
+    expect(screen.getByText("Not scheduled yet — the office will set the time.")).toBeTruthy();
   });
 
   it("pluralises the heading on a placed + awaiting pair, not just on two placed", () => {

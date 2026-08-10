@@ -1,45 +1,42 @@
 /**
  * components/modals/tech-job-modal/visits-sec.tsx
- * "Your visit(s)" — the sheet's record of where this job has got to.
+ * The visits SLOT — one stepper on screen, arrows or a swipe to reach the others.
  *
- * One file per section is this directory's convention (work-order-sec, found-work-sec,
- * checklist-sec, note-feed); this was the one section still inlined in the modal's own render.
+ * THE SHAPE (Owen, Aug 10, picked from a live mock). A multi-visit job used to stack a full
+ * stepper per stop, and the collapsed-summary revision that followed confused the same tester in
+ * a different way — two treatments for one thing, changing with job state. The slot is ONE
+ * treatment: a pager line ("Visit 2 of 3" over one small date line), the stepper for that stop,
+ * its own ↩ Reopen when it has one, and horizontal movement between stops. It opens on the stop
+ * the job is at; finishing a stop advances it to the next one.
  *
- * ONE SEPARATED LIST, and the container owns the separation. Every row used to end in
- * `--space-2xs` — 2px — so a stepper, a date and a ↩ Reopen ran straight into the next visit's
- * stepper and the section read as one continuous block with the first visit's control apparently
- * belonging to the second. The rows are now children of `.vlist`, whose adjacent-sibling rule
- * draws the same hairline every other repeated row in this app separates on (`.nrow`, `.trow`).
- * Putting it on the container rather than on the rows is the point: a placed visit, an
- * awaiting-slot row and the follow-up ask all separate from one another without any of them
- * having to know what comes next.
+ * ONE DATE LINE. The pager's mono line is the only place a visit's when/how-long is printed —
+ * the `.vwhen` block that repeated the date under the stepper is deleted (visit-meta.ts is the
+ * line's contents). A single-visit job keeps the line and drops the arrows and the count:
+ * "Visit 1 of 1" is a label for a distinction that does not exist.
  *
- * Two shapes:
- *   - OPEN job: one VisitRow per PLACED visit. Both rows show on a two-visit job, because "my
- *     stop is the second one today" is useful context; only the office gets a control on either.
- *   - DONE job: the stepper on the visit that ran, the date and booked length beside it, and the
- *     office's ↩ Reopen. THE STEPPER STAYS ON A FINISHED VISIT — this is the moment it matters
- *     most. Which steps were recorded and which were skipped IS the record of the visit, and it
- *     is what gets read back weeks later when a customer argues about an arrival time.
+ * OFF-SCREEN SLIDES ARE `inert`. Every stop stays mounted (that is what makes the swipe a swipe),
+ * but a slide you cannot see must not be tabbable or read — an invisible ↩ Reopen in the focus
+ * order is how a keyboard user reopens the wrong stop.
  */
 
 "use client";
 
+import { useEffect, useRef, useState } from "react";
 import type { Visit } from "@/lib/store/types";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
-import { colLabel } from "./helpers";
+import { useTickingNow } from "@/lib/use-ticking-now";
+import { visitPagerMeta } from "./visit-meta";
 import { VisitRow } from "./visit-row";
 import { FollowUpAsk } from "./follow-up-ask";
-import { VisitCaption, seqAt, type VisitSeq } from "./visit-seq";
+import { seqAt } from "./visit-seq";
 
 /**
  * The placed visits in the order they actually run.
  *
  * A COPY, and a deliberate one. `job.visits` comes off a LEFT JOIN with no ORDER BY
  * (drizzle-job-repository.findById), so the array order is not a promise — and the moment the
- * rows are numbered, printing them in an arbitrary order is not untidy, it is a false statement
- * about which stop came first. Sorting here rather than upstream keeps it to the surface that
- * makes the claim: the modal's own `currentVisit` / `actVisit` pick by STATUS and are unaffected.
+ * stops are numbered, printing them in an arbitrary order is not untidy, it is a false statement
+ * about which stop came first.
  */
 function inTimeOrder(placed: readonly Visit[]): Visit[] {
   return [...placed].sort(
@@ -48,12 +45,12 @@ function inTimeOrder(placed: readonly Visit[]): Visit[] {
 }
 
 interface VisitsSecProps {
-  /** The job's PLACED visits — the tech never sees an unplaced "Invalid Date" row. */
+  /** The job's PLACED visits — the tech never sees an "Invalid Date" slide. */
   placed: readonly Visit[];
   /**
    * Unplaced visits still to run — a return trip booked from the field, waiting on the office to
-   * set a time. These are NOT hidden like a half-typed office row would be: this technician
-   * created them, so a booking that vanished from the sheet reads as a tap that did nothing.
+   * set a time. A slide like any other: this technician created it, and a booking that vanished
+   * from the sheet reads as a tap that did nothing.
    */
   awaiting: readonly Visit[];
   /** The job's current visit, if it has one. */
@@ -62,8 +59,8 @@ interface VisitsSecProps {
   /** Owner/office. ↩ Reopen writes a VISIT status, which has no field endpoint. */
   isOffice: boolean;
   /**
-   * The one visit this viewer may move forward — the sheet's `actVisit`, the same visit the foot's
-   * primary steps. Only that row's stepper has live nodes; on every other row it stays a readout.
+   * The one visit this viewer may move forward — the sheet's `actVisit`, the same visit the
+   * foot's primary steps. Only that stop's stepper has live nodes.
    */
   stepVisitId: string | undefined;
   onStatus: (visitId: string, status: string) => void;
@@ -82,107 +79,210 @@ export function VisitsSec({
   onAddFollowUp,
 }: VisitsSecProps) {
   const rows = inTimeOrder(placed);
-  /**
-   * WHICH ROW DRAWS THE BAR. The one this viewer can move (the foot's actVisit), else the job's
-   * current one. On a DONE job neither exists, so every row is a summary — which is right: there
-   * is no stop in progress to put at the top of the sheet, and each finished one is one tap from
-   * its full record.
-   */
-  const currentId = stepVisitId ?? (done ? undefined : curVisit?.id);
-  /**
-   * WHICH FINISHED STOP CARRIES ↩ Reopen — the LAST one, and only it.
-   *
-   * Every done row used to carry its own, so a two-stop job that finished showed two identical
-   * buttons a summary line apart. They are not the same action and neither is wrong, but reopening
-   * stop one while stop two is finished leaves the job in a state nobody asked for; the office's
-   * real intent is "put this back", and that means the most recent stop.
-   */
-  const lastDoneId = [...rows].reverse().find((v) => v.status === STORE_VISIT_STATUS.DONE)?.id;
-  // Every visit the section renders — placed and awaiting alike. It is what the heading
-  // pluralises on and what the rows count to. Pluralising on `placed` alone said "Visit" while a
-  // placed row and a return trip were both on screen.
-  const total = rows.length + awaiting.length;
+  const slides: Visit[] = [...rows, ...awaiting];
+  const total = slides.length;
+
+  const landIndex = landOn(slides, stepVisitId);
+
+  const [idx, setIdx] = useState(landIndex);
+  // Follow the JOB, not the render: snap to landIndex only when it MOVES (a stop finished, a
+  // trip was booked) — a swipe back to an old stop must survive unrelated store writes.
+  const landRef = useRef(landIndex);
+  useEffect(() => {
+    if (landRef.current !== landIndex) {
+      landRef.current = landIndex;
+      setIdx(landIndex);
+    }
+  }, [landIndex]);
+  const shown = Math.min(idx, Math.max(0, total - 1));
+
+  const { scRef, onScroll } = useSlotScroll(shown, total, idx, setIdx);
+  const active = slides[shown];
 
   return (
     <div className="fsec">
       <div className="fsec-h">
-        {/* "Visit", not "Your visit" — the office reads this sheet too, and on a two-visit job the
-            second row is somebody else's stop. The heading names the thing, not its owner. */}
+        {/* "Visit", not "Your visit" — the office reads this sheet too. */}
         <span>Visit{total > 1 ? "s" : ""}</span>
         {done && <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>}
       </div>
-      <div className="vlist">
-        {rows.length ? (
-          rows.map((v, i) => (
-            <VisitRow
-              key={v.id}
-              visit={v}
-              seq={seqAt(i, total)}
-              canReopen={isOffice && v.id === lastDoneId}
-              // Only the sheet's own actVisit gets live stepper nodes — the same visit the foot
-              // steps, so a two-visit job can never offer two places to move a different stop.
-              canStep={v.id === stepVisitId}
-              // ONE stepper on the sheet, on the stop this sheet is about. Everything else is a
-              // summary line that opens on demand. The section used to draw a full stepper per
-              // placed visit and then, the instant the job completed, swap to a branch that drew
-              // exactly one — so finishing a visit made a progress bar disappear.
-              isCurrent={v.id === currentId}
-              onStatus={(status) => onStatus(v.id, status)}
-            />
-          ))
-        ) : awaiting.length ? null : (
-          <div className="empty-att" style={{ marginBottom: "0" }}>
-            Not scheduled yet — the office will set the time.
+
+      {total === 0 ? (
+        <div className="empty-att" style={{ marginBottom: "0" }}>
+          Not scheduled yet — the office will set the time.
+        </div>
+      ) : (
+        <>
+          <Pager shown={shown} total={total} active={active} onGo={setIdx} />
+
+          <div className="vslots" ref={scRef} onScroll={onScroll}>
+            {slides.map((v, i) => (
+              <div className="vslide" key={v.id} inert={i !== shown}>
+                {rows.includes(v) ? (
+                  <VisitRow
+                    visit={v}
+                    seq={seqAt(i, total)}
+                    canReopen={isOffice}
+                    canStep={v.id === stepVisitId}
+                    onStatus={(status) => onStatus(v.id, status)}
+                  />
+                ) : (
+                  <AwaitingSlide visit={v} />
+                )}
+              </div>
+            ))}
           </div>
-        )}
-        {awaiting.map((v, i) => (
-          <AwaitingSlotRow key={v.id} visit={v} seq={seqAt(rows.length + i, total)} />
-        ))}
-        {/* Wrapped, not bare: `.vlist`'s rule puts a hairline on each subsequent child, and the
-            ask's own resting state is a full-width bordered button. A border-top landing on the
-            button itself would recolour its own edge instead of separating it from the record
-            above. The wrapper is the row; the button stays the button. */}
-        {onAddFollowUp ? (
-          <div>
-            <FollowUpAsk onBook={onAddFollowUp} />
-          </div>
-        ) : null}
-      </div>
+        </>
+      )}
+
+      {onAddFollowUp ? (
+        <div style={{ marginTop: "var(--space-3)" }}>
+          <FollowUpAsk onBook={onAddFollowUp} />
+        </div>
+      ) : null}
     </div>
   );
 }
 
 /**
- * A visit that is still to run but has nowhere to sit on the board yet.
+ * The scroller, kept in step with `idx` both ways.
  *
- * No stepper and no controls — there is nothing to step through and nothing here to move. What it
- * carries is the reason, because that is the whole content of the row and the thing that stops
- * the office having to ring the technician to ask what the second visit is for.
- *
- * IT NAMES WHAT IS ACTUALLY MISSING. Two different rows land here — a return trip with no date at
- * all, and the office's half-planned shape (a day with nobody on it, isVisitDatedUnassigned).
- * Telling a technician a dated visit is "waiting on a time" is a small lie he can disprove by
- * looking at the schedule, and small lies are how a screen stops being trusted.
+ * A programmatic smooth scroll EMITS scroll events, and rounding its intermediate positions back
+ * into `idx` is a fight the arrow loses: tap ›, the animation passes 40% of a slide, the handler
+ * rounds that to the old index, the effect scrolls back. Caught live — the arrow looked dead.
+ * While a scroll WE started is in flight, the handler stays out of it; a finger swipe never
+ * coincides with the same half-second as an arrow tap.
  */
-function AwaitingSlotRow({ visit, seq }: { visit: Visit; seq: VisitSeq | undefined }) {
-  const dated = Boolean(visit.date);
-  return (
-    // No padding of its own — `.vlist` separates it from whatever it follows. Its old
-    // `paddingTop: --space-2` was this row trying to hold itself off the record above, which is
-    // the container's job and was 8px short of doing it anyway. The caption sits OUTSIDE the
-    // flex column so its own margin is the gap, exactly as it is on a placed row.
-    <div>
-      <VisitCaption seq={seq} />
-      <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
-        <b style={{ fontSize: "var(--type-base)" }}>
-          {dated ? `${colLabel(visit.date)} — waiting on a tech` : "Return trip — waiting on a time"}
-        </b>
-        {visit.scopeNotes ? (
-          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-            {visit.scopeNotes}
-          </span>
-        ) : null}
+function useSlotScroll(
+  shown: number,
+  total: number,
+  idx: number,
+  setIdx: (i: number) => void,
+) {
+  const scRef = useRef<HTMLDivElement>(null);
+  const progAt = useRef(0);
+  useEffect(() => {
+    const sc = scRef.current;
+    // clientWidth 0 = no layout (jsdom, display:none) — nothing to scroll and nothing to gain.
+    if (!sc || !sc.clientWidth) return;
+    const reduce =
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    progAt.current = Date.now();
+    sc.scrollTo?.({ left: shown * sc.clientWidth, behavior: reduce ? "auto" : "smooth" });
+  }, [shown, total]);
+
+  const onScroll = () => {
+    const sc = scRef.current;
+    if (!sc || !sc.clientWidth) return;
+    if (Date.now() - progAt.current < 500) return;
+    const i = Math.round(sc.scrollLeft / sc.clientWidth);
+    if (i !== idx && i >= 0 && i < total) setIdx(i);
+  };
+
+  return { scRef, onScroll };
+}
+
+/**
+ * WHERE THE SLOT OPENS — the stop the job is at.
+ *
+ * The viewer's own movable visit first (the foot's), else the first stop that has not finished
+ * (a return trip waiting on a time counts — that IS where the job is), else the last stop: on a
+ * finished job the most recent record is the one that gets read back.
+ */
+function landOn(slides: readonly Visit[], stepVisitId: string | undefined): number {
+  const own = stepVisitId ? slides.findIndex((v) => v.id === stepVisitId) : -1;
+  if (own >= 0) return own;
+  const open = slides.findIndex((v) => v.status !== STORE_VISIT_STATUS.DONE);
+  return open >= 0 ? open : Math.max(0, slides.length - 1);
+}
+
+/**
+ * The pager row: ‹ Visit N of M over the one date line ›. On a ONE-stop job the date line keeps
+ * its place and the count and arrows go — "Visit 1 of 1" is a label for a distinction that does
+ * not exist.
+ */
+function Pager({
+  shown,
+  total,
+  active,
+  onGo,
+}: {
+  shown: number;
+  total: number;
+  active: Visit | undefined;
+  onGo: (next: (i: number) => number) => void;
+}) {
+  if (total <= 1) {
+    return (
+      <div className="vpager">
+        <div className="vpager-mid">{active ? <MetaLine visit={active} /> : null}</div>
       </div>
+    );
+  }
+  return (
+    <div className="vpager">
+      <button
+        type="button"
+        className="varr"
+        aria-label="Previous visit"
+        disabled={shown === 0}
+        onClick={() => onGo((i) => Math.max(0, i - 1))}
+      >
+        ‹
+      </button>
+      <div className="vpager-mid">
+        <b>
+          Visit {shown + 1} of {total}
+        </b>
+        {active ? <MetaLine visit={active} /> : null}
+      </div>
+      <button
+        type="button"
+        className="varr"
+        aria-label="Next visit"
+        disabled={shown === total - 1}
+        onClick={() => onGo((i) => Math.min(total - 1, i + 1))}
+      >
+        ›
+      </button>
+    </div>
+  );
+}
+
+/**
+ * The pager's one date line. Split out because the ON-SITE state ticks — the elapsed figure is
+ * the number a technician on site actually watches — and the interval must exist only while an
+ * on-site stop is the one showing, not all day for every visit of the job.
+ */
+function MetaLine({ visit }: { visit: Visit }) {
+  const live = visit.status === STORE_VISIT_STATUS.ONSITE && Boolean(visit.startedAt);
+  return live ? <TickingMeta visit={visit} /> : <span>{visitPagerMeta(visit)}</span>;
+}
+
+function TickingMeta({ visit }: { visit: Visit }) {
+  const now = useTickingNow();
+  // data-dynamic: genuinely live — masked out of the visual baseline (e2e/helpers/ui.ts).
+  return <span data-dynamic>{visitPagerMeta(visit, now)}</span>;
+}
+
+/**
+ * A visit that is still to run but has nowhere to sit on the board yet — a slide with no stepper,
+ * because there is nothing to step through. It carries the reason: that is the whole content of
+ * the stop and the thing that stops the office ringing the technician to ask what it is for.
+ * The pager line above names what is actually missing (a time, or a tech) — see visitPagerMeta.
+ */
+function AwaitingSlide({ visit }: { visit: Visit }) {
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+      <b style={{ fontSize: "var(--type-base)" }}>
+        {visit.date ? "Booked — waiting on a tech" : "Return trip — waiting on a time"}
+      </b>
+      {visit.scopeNotes ? (
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+          {visit.scopeNotes}
+        </span>
+      ) : null}
     </div>
   );
 }
