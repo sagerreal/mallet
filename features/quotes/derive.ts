@@ -93,7 +93,7 @@ function toRailRow(est: Estimate, leads: Lead[], customerName?: string | null): 
   return {
     est,
     // The server's name first. Falling back to the store's copy keeps the in-memory callers
-    // (features/home/pipe.ts) working unchanged; "—" is the last resort, not the normal case.
+    // working unchanged; "—" is the last resort, not the normal case.
     customerName: customerName ?? lead?.name ?? "—",
     lead,
     total: estTotal(est),
@@ -171,10 +171,4 @@ export function deltaOf(out: RailRow[]): string | null {
   return reads.length >= 2
     ? `${first} read it twice — ${last.when}`
     : `${first} read it — ${last.when}`;
-}
-
-
-/** Dot diameter from dollars — a figure rendered as shape (√ scale, 10–17px). */
-export function dotSize(total: number): number {
-  return Math.round(Math.min(17, Math.max(10, 6 + Math.sqrt(total) / 9)));
 }

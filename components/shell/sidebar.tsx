@@ -126,7 +126,7 @@ function NavSub({ href, label, count, active }: NavSubProps) {
 }
 
 // Routes that belong to the Customers group (its sidebar sub-nav).
-const CUSTOMER_AREA = ["/customers", "/pipeline", "/tasks"];
+const CUSTOMER_AREA = ["/customers", "/tasks"];
 
 // Routes that belong to the Office group — the shop's own surfaces: today's brief
 // (Home content), the AI Front Desk, and the Pricebook.
@@ -217,7 +217,6 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
             />
             {customersActive && (
               <div className="navsubs">
-                <NavSub href="/pipeline" label="Pipeline" active={pathname.startsWith("/pipeline")} />
                 <NavSub
                   href="/tasks"
                   label="Tasks"

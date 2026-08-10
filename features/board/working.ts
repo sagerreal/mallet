@@ -1,6 +1,6 @@
 /**
- * features/pipeline/working.ts
- * Pure derivations for the board's first two columns. WORKING ITSELF = intake
+ * features/board/working.ts
+ * Pure derivations for the work board's lead columns. WORKING ITSELF = intake
  * the AI has in hand. GETTING THE NUMBER = the three routes a deal takes to a
  * price: a visit came back with scope notes (office owes the quote), a
  * walkthrough is on the books, or paper is being built in the shop — including
@@ -9,8 +9,8 @@
  */
 
 import { todayISO } from "@/lib/clock";
-import { isCooling, traceOf } from "./pipeline-lanes";
-import { scopedEstimateVisitWithJob, pendingEstimateVisit } from "./pipeline-utils";
+import { isCooling, traceOf } from "@/features/pipeline/pipeline-lanes";
+import { scopedEstimateVisitWithJob, pendingEstimateVisit } from "@/features/pipeline/pipeline-utils";
 import type { Estimate, Job, Lead } from "@/lib/store/types";
 
 export interface IntakeRow {
@@ -65,11 +65,6 @@ export function intakeRowOf(lead: Lead): IntakeRow {
         : `${lead.age}d`;
   return { lead, stalled, stamp };
 }
-
-/** Stalled first, then oldest — the order the column is worked in. */
-export const byStalledThenAge = (a: IntakeRow, b: IntakeRow): number =>
-  Number(b.stalled) - Number(a.stalled) || b.lead.age - a.lead.age;
-
 
 /** Deals with an active route to a price — scoped / walkthrough booked / in the shop. */
 export function deriveGetting(leads: Lead[], estimates: Estimate[], jobs: Job[]): GettingRow[] {

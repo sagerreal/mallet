@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { loadConfig } from "@mallet/shared/config";
+import { logger } from "@mallet/shared/observability";
+import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { orgs, leads, a2pRegistrations } from "@mallet/shared/db/schema";
 import { asLeadId, Phone } from "@mallet/shared/types";
 import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
@@ -11,6 +13,24 @@ import { ListThreadUseCase } from "../app/list-thread";
 import { ListConversationsUseCase } from "../app/list-conversations";
 import { messageDTO, toMessageDTO } from "./message-dto";
 import type { ConversationRow } from "../domain/message-repository";
+
+// One-click sends from board cards have no human pacing them, so a runaway client (a stuck
+// retry loop, a buggy automation) could otherwise burn through Twilio spend and carrier
+// reputation with no ceiling. Per-org, per-warm-instance fixed window (see FixedWindowLimiter's
+// own doc comment) — a hard global cap isn't the goal here, a sane ceiling on one org's send
+// rate is.
+//
+// Narrower than the public quote/invoice routes' use of the same limiter: those run it before
+// ANY DB work, because their routes open no transaction of their own. Here `ownerOrOffice`
+// already opens the org's tenant transaction (withTenant's set_config round trip) before this
+// resolver body ever runs — that is a pre-existing characteristic of the procedure and out of
+// scope to change here. What this check DOES guarantee: it is the first statement in the
+// resolver, so it shields every resolver-level query (org lookup, A2P lookup, lead lookup) and
+// the Twilio call itself — a rejected request still costs the one tx-open the middleware already
+// paid for, but never reaches this module's own DB reads or the provider call.
+const SEND_LIMIT_PER_MIN = 30;
+const SEND_LIMIT_WINDOW_MS = 60_000;
+const sendLimiter = new FixedWindowLimiter({ limit: SEND_LIMIT_PER_MIN, windowMs: SEND_LIMIT_WINDOW_MS });
 
 // Wire DTO for the conversations-list endpoint. One entry per lead thread, sorted newest-first.
 const conversationDTO = z.object({
@@ -43,6 +63,12 @@ const sendInput = z.object({
   // editable number). Validated server-side via Phone.parse; falls back to the lead's
   // on-file phone when absent.
   to: z.string().min(7).max(25).optional(),
+  // Caller-supplied dedupe token (the board sends "<okItemKey>-d<YYYYMMDD>" — the record plus the
+  // shop's own day, see features/home/send.ts okSendKey). Two sends carrying the same key produce
+  // ONE text; the second returns the first one's message. The date salt is what keeps a legitimate
+  // reminder sendable TOMORROW while a double-click today still lands once. Absent, every send goes
+  // out — an ad-hoc text from the inbox is never deduped against an earlier one.
+  idempotencyKey: z.string().min(8).max(64).optional(),
 });
 
 const listByLeadInput = z.object({
@@ -62,6 +88,16 @@ export const createMessagingRouter = () =>
       .output(messageDTO)
       .mutation(async ({ ctx, input }) => {
         const orgId = ctx.principal.orgId;
+
+        // Rate limit FIRST — before any precondition check or DB/tx work runs.
+        if (!sendLimiter.allow(orgId)) {
+          logger.warn({ orgId }, "messaging.send rate limited");
+          throw new TRPCError({
+            code: "TOO_MANY_REQUESTS",
+            message: "too many texts sent from this org — try again in a minute",
+          });
+        }
+
         const tx = ctx.tx;
 
         // Resolve the org's outbound Twilio number (null if not provisioned yet).
@@ -154,9 +190,12 @@ export const createMessagingRouter = () =>
           leadId: asLeadId(input.leadId),
           leadPhone,
           body: input.body,
+          idempotencyKey: input.idempotencyKey,
         });
 
         if (!result.ok) {
+          // Every domain refusal (no number, campaign not approved) is caught by the
+          // preconditions above, so what reaches here is a provider failure.
           throw new TRPCError({ code: "BAD_GATEWAY", message: result.error.message });
         }
 

@@ -551,9 +551,9 @@ export default function ComposerPage() {
     // Traces held on this quote persist onto the flow's job when one exists
     // (?job=/?change=) — fire-and-forget; the draft is already saved.
     void persistHeldTraces();
-    // Quotes live in the Pipeline rail (the /quotes route just redirects here);
-    // the new draft lands in the "in the shop" lane.
-    router.push("/pipeline");
+    // Quotes live on the work board on the Office page (the /quotes and /pipeline routes
+    // just redirect there); the new draft lands in the "in the shop" lane.
+    router.push("/dashboard");
   }
 
   // The v1.quoting.draft payload built from the current composer state — shared by the
@@ -717,7 +717,7 @@ export default function ComposerPage() {
         moveLeadStage(selectedLead.id, "Quote Sent");
       }
 
-      router.push("/pipeline");
+      router.push("/dashboard");
     } catch (e: unknown) {
       // Surface the error inline. A PRECONDITION_FAILED from messaging means the
       // quote was persisted + marked sent — only delivery failed.

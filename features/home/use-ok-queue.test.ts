@@ -137,4 +137,19 @@ describe("the OK queue", () => {
     expect(result.current.items).toHaveLength(0);
     expect(result.current.value).toBe(0);
   });
+
+  // An EMPTY queue is an answer, not a missing one. A caller cannot infer this from items.length:
+  // a shop that has dismissed everything would read as "no data" and one failed refetch would then
+  // look like a broken screen.
+  it("reports data in hand once both reads have answered, empty or not", () => {
+    quoteRows = [];
+    invoiceRows = [];
+    expect(renderHook(() => useOkQueue()).result.current.hasData).toBe(true);
+  });
+
+  it("reports no data while either read is still in flight", () => {
+    quoteRows = [quote()];
+    invoiceRows = undefined;
+    expect(renderHook(() => useOkQueue()).result.current.hasData).toBe(false);
+  });
 });

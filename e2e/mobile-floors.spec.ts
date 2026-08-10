@@ -30,7 +30,7 @@ import { login, prepare, settle, OWNER } from "./helpers/ui";
 const PHONE = { width: 402, height: 874 };
 
 /** Routes with real form and list density. */
-const ROUTES = ["/dashboard", "/customers", "/pipeline", "/jobs", "/money", "/tasks", "/settings", "/more"];
+const ROUTES = ["/dashboard", "/customers", "/jobs", "/money", "/tasks", "/settings", "/more"];
 
 /** Controls that must clear 44px: the ones a tech presses on purpose. */
 const PRIMARY_TARGETS = [".btn", ".chip", ".iconbtn", "#mobiletabs a", ".uirow-clickable", ".morerow"];

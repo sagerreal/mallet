@@ -11,7 +11,6 @@ const CRUMBS: Record<string, { section: string; label: string }> = {
   "/frontdesk": { section: "Customer", label: "Front Desk" },
   "/customers": { section: "Customer", label: "Customers" },
   "/quotes": { section: "Customer", label: "Quotes" },
-  "/pipeline": { section: "Customer", label: "Pipeline" },
   "/tasks": { section: "Customer", label: "Tasks" },
   "/composer": { section: "Customer", label: "New quote" },
   "/jobs": { section: "Customer", label: "Jobs" },
@@ -76,7 +75,7 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
   const [theme, setTheme] = useState<Theme>("light");
 
   // The bottom tab bar is the only navigation on a phone and reaches nine routes.
-  // Everything else (/pipeline, /tasks, /composer, /settings, /jobs/:id, /money/:id)
+  // Everything else (/tasks, /composer, /settings, /jobs/:id, /money/:id)
   // was a dead end — and a WKWebView has no browser chrome to fall back on.
   const showBack = !isTabRoot(pathname);
   const goBack = () => {

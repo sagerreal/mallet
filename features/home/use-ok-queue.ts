@@ -36,6 +36,14 @@ export interface OkQueue {
   readonly truncated: boolean;
   readonly isFetched: boolean;
   readonly isError: boolean;
+  /**
+   * Both reads have answered at least once, empty or not.
+   *
+   * Distinct from `items.length > 0`, which a caller cannot use in its place: a shop that has
+   * dismissed everything, or has nothing waiting, has answered reads and no items — and treating
+   * that as "no data" makes one failed refetch look like a broken screen.
+   */
+  readonly hasData: boolean;
 }
 
 const daysSinceIso = (iso: string | null): number => {
@@ -124,5 +132,6 @@ export function useOkQueue(): OkQueue {
     truncated: (quoteRows?.length ?? 0) >= QUEUE_CAP || (invoiceRows?.length ?? 0) >= QUEUE_CAP,
     isFetched: quotes.isFetched && overdueInvoices.isFetched,
     isError: quotes.isError || overdueInvoices.isError,
+    hasData: quotes.data !== undefined && overdueInvoices.data !== undefined,
   };
 }

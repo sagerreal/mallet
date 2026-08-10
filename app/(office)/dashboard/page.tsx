@@ -11,16 +11,17 @@
 
 import { useState, useEffect } from "react";
 import { todayISO } from "@/lib/clock";
-import { useAppStore } from "@/lib/store/app-store";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import { deriveShiftReport } from "@/features/home/derive";
-import { useOkQueue } from "@/features/home/use-ok-queue";
-import { useHomePipe } from "@/features/home/use-home-pipe";
 import { HandoffNote } from "@/features/home/handoff-note";
-import { HomePipe, HomePipeSkeleton } from "@/features/home/home-pipe";
+import { useWorkBoard } from "@/features/board/use-work-board";
+import { WorkBoard, WorkBoardSkeleton } from "@/features/board/work-board";
+import type { BoardItem } from "@/features/board/types";
 import { api } from "@/lib/trpc/client";
-import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { isFirstLoad } from "@/lib/first-run";
-import { OkQueue } from "@/features/home/ok-queue";
+import { LoadFailed } from "@/components/shared/load-failed";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
+import { shouldShowFirstRun } from "@/lib/first-run";
 import dynamic from "next/dynamic";
 import { useMe } from "@/features/identity/hooks";
 import { ListLoading } from "@/components/shared/list-loading";
@@ -83,7 +84,9 @@ export default function OfficePage() {
         </button>
       </div>
 
-      {tab === "today" && <TodayPane />}
+      {/* The first-run brief's third path forwards the shop's calls, which is a TAB, not a modal —
+          the switcher lives here, so the pane is handed the move rather than the router. */}
+      {tab === "today" && <TodayPane onFrontDesk={() => switchTab("frontdesk")} />}
       {tab === "frontdesk" && <FrontDeskPane />}
       {tab === "pricebook" && <PricebookPane />}
       {tab === "checklists" && <ChecklistsPanel />}
@@ -91,66 +94,176 @@ export default function OfficePage() {
   );
 }
 
-function TodayPane() {
+/**
+ * A BoardItemKind with no modal behind it. The `never` parameter makes adding a fifth kind a
+ * COMPILE error at the one call site that has to map it, rather than a card that quietly opens the
+ * wrong record. The throw is unreachable by construction — it exists so the mapping has no return
+ * path that guesses. (Same idiom as modules/calls/infra/outbound-call-mapper.ts's unknownTransport.)
+ */
+function unknownBoardKind(kind: never): never {
+  throw new Error(`work board: no modal for item kind ${String(kind)}`);
+}
+
+/**
+ * The setup brief a shop meets on day one, in place of the handoff note. Three ways in, in the
+ * order that pays off soonest: the shop's existing book first, one job second, and the front desk
+ * third because it pays off on the NEXT call rather than on this click.
+ */
+const FIRST_RUN = {
+  subtext: "This board fills itself as work comes in. Start wherever you like:",
+  importCustomers: {
+    title: "Import your customers",
+    description: "Jobber, Housecall Pro, or a spreadsheet",
+    actionLabel: "Import",
+  },
+  firstJob: {
+    title: "Add your first job",
+    description: "Book work you already have lined up",
+    actionLabel: "Add job",
+  },
+  frontDesk: {
+    title: "Forward calls to Front Desk",
+    description: "Answered calls land here on their own",
+    actionLabel: "Set up",
+  },
+} as const;
+
+/**
+ * Every path opens something real: two modals and the tab that actually forwards the calls. A
+ * fourth "explore" that opened nothing would be the dead button the house rules forbid, so the
+ * brief carries exactly three. The tab move arrives from the page — this pane does not route.
+ */
+function SetupBrief({ ownerFirst, onFrontDesk }: { ownerFirst: string; onFrontDesk: () => void }) {
+  const openModal = useOpenModal();
+  return (
+    <FirstRunEmptyState
+      heading={`Welcome, ${ownerFirst}.`}
+      subtext={FIRST_RUN.subtext}
+      paths={[
+        { ...FIRST_RUN.importCustomers, onAction: () => openModal(MODAL.IMPORT_CUSTOMERS), variant: "primary" },
+        { ...FIRST_RUN.firstJob, onAction: () => openModal(MODAL.NEW_JOB) },
+        { ...FIRST_RUN.frontDesk, onAction: onFrontDesk },
+      ]}
+    />
+  );
+}
+
+/**
+ * Today = the handoff note over THE BOARD. The flow strip and the OK queue are gone: a strip of
+ * six tiles stated figures the owner could not act on, and the queue showed only the five records
+ * that happened to carry a prepared text. The board shows EVERY open piece of work in the four
+ * columns it moves through, and carries those same texts on the cards they belong to.
+ */
+function TodayPane({ onFrontDesk }: { onFrontDesk: () => void }) {
   const leads = useAppStore((s) => s.leads);
   const estimates = useAppStore((s) => s.estimates);
-  const invoices = useAppStore((s) => s.invoices);
   const jobs = useAppStore((s) => s.jobs);
-  const techs = useAppStore((s) => s.techs);
   const frontDeskOn = useAppStore((s) => s.toggles.frontDesk);
 
   // ---- real identity — org name + owner's first name from the DB -----------
   const me = useMe();
   const orgName = me.data?.orgName ?? "My Business";
+  // Truthiness, not `??` — the same "blank is not a name" guard as nameOr in features/board/derive.
+  // A stored name of "" is a value, so `??` kept it and greeted the owner with "Welcome, .".
   const ownerFirst =
-    (me.data?.name?.split(" ")[0]) ??
-    (me.data?.email?.split("@")[0]) ??
+    me.data?.name?.trim().split(" ")[0] ||
+    me.data?.email?.split("@")[0] ||
     "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);
-  // The queue comes from the DATABASE. It used to derive from the browser's loaded page, so on a
-  // shop with 239 open invoices not one overdue bill reached it — $67,790 of late money missing
-  // from the screen whose whole job is to surface what needs chasing. See useOkQueue.
-  const okQueue = useOkQueue();
-  const queue = okQueue.items;
-  const queueValue = okQueue.value;
-  // Every tile is computed where its data lives now. It used to add these up from the store —
-  // one page per collection, and three of the six were joins ACROSS two capped collections — so
-  // the first screen of the app stated money derived from whatever happened to be cached.
-  const pipe = useHomePipe();
+  // EVERY open piece of work, from the database — one composed read (features/board/use-work-board).
+  const board = useWorkBoard();
 
-  // Cold reload: the tiles derive from four store slices that hydrate client-side. Until every
-  // hydrator's FIRST load lands, the derived figures are zeros-from-an-empty-store — rendering
-  // them would state "$0 to bill" as fact for a beat (Owen saw exactly this in the iOS shell).
-  // Same query keys + options as the hydrators, so React Query dedupes — no extra fetches; we
-  // only read load state. Skeletons keep the exact tile metrics, so nothing shifts on arrival.
-  const leadsQ = api.v1.customers.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const jobsQ = api.v1.jobs.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const estimatesQ = api.v1.quoting.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const invoicesQ = api.v1.invoicing.list.useQuery({ limit: HYDRATOR_PAGE_LIMIT }, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const loading =
-    isFirstLoad({ isFetched: leadsQ.isFetched, isError: leadsQ.isError, count: leads.length }) ||
-    isFirstLoad({ isFetched: jobsQ.isFetched, isError: jobsQ.isError, count: jobs.length }) ||
-    isFirstLoad({ isFetched: estimatesQ.isFetched, isError: estimatesQ.isError, count: estimates.length }) ||
-    isFirstLoad({ isFetched: invoicesQ.isFetched, isError: invoicesQ.isError, count: invoices.length });
+  // A brand-new shop, told apart from a slow one and a broken one by the shared predicate: every
+  // source settled, none failed, and the four columns hold nothing between them. `count` is each
+  // column's SERVER count where it has one, so a shop whose page happens to be empty still isn't
+  // first-run. A shop with history but nothing open IS first-run on this board, correctly — the
+  // board only ever showed open work, and there is none. Add wonCount to guard against treating a
+  // cleared board on an established shop as first-run.
+  const totalOpen = board.columns.reduce((sum, column) => sum + column.count, 0);
+  const firstRun = shouldShowFirstRun({
+    isFetched: board.isFetched,
+    isError: board.isError,
+    count: totalOpen + board.wonCount,
+  });
+
+  const openModal = useOpenModal();
+  const utils = api.useUtils();
+  const [retrying, setRetrying] = useState(false);
+
+  // A card opens the record it IS. The board settled `kind` and `refId` upstream, so the card and
+  // the modal behind it can never disagree about which record was clicked. Exhaustive on purpose:
+  // a catch-all `else` would open the INVOICE modal for a fifth kind added later — silently
+  // sending the owner to somebody else's record. See unknownBoardKind.
+  function openItem(item: BoardItem): void {
+    switch (item.kind) {
+      case "lead":
+        openModal(MODAL.LEAD, { leadId: item.refId });
+        break;
+      case "estimate":
+        openModal(MODAL.EST, { estId: item.refId });
+        break;
+      case "job":
+        openModal(MODAL.JOB, { jobId: item.refId });
+        break;
+      case "invoice":
+        openModal(MODAL.INVOICE, { invoiceId: item.refId });
+        break;
+      default:
+        unknownBoardKind(item.kind);
+    }
+  }
+
+  // The board composes eleven reads and holds no refetch of its own, so retry invalidates the
+  // whole v1 cache — every column comes back, and so does anything else the page shows.
+  async function retry() {
+    setRetrying(true);
+    try {
+      await utils.v1.invalidate();
+    } catch {
+      // Not swallowed: a still-failing refetch leaves `board.isError` set, so this screen keeps
+      // saying so. The catch exists only to put the button back rather than strand it on "Retrying…".
+    } finally {
+      setRetrying(false);
+    }
+  }
 
   return (
     <div>
+      {/* The hero, or the brief that REPLACES it. "Nothing's waiting on you. Go run the day." is
+          true for a shop on day one and teaches it nothing; the brief says what to do instead. */}
+      {firstRun ? (
+        <SetupBrief ownerFirst={ownerFirst} onFrontDesk={onFrontDesk} />
+      ) : (
+        <HandoffNote
+          orgName={orgName}
+          ownerFirst={ownerFirst}
+          dateLabel={dateLabel()}
+          frontDeskOn={frontDeskOn}
+          report={report}
+          queueCount={board.needsYou.count}
+          queueValue={board.needsYou.valueDollars}
+          textsReady={board.needsYou.textsReady}
+          // `|| isError` is load-bearing, not belt-and-braces. Once a failed source SETTLES both
+          // flags are true, and on `!isFetched` alone the hero would drop its skeleton and print
+          // "Nothing's waiting on you. Go run the day." — derived from an empty board — directly
+          // above "Couldn't load your board." Two contradicting statements, the confident one first.
+          loading={!board.isFetched || board.isError}
+        />
+      )}
 
-      <HandoffNote
-        orgName={orgName}
-        ownerFirst={ownerFirst}
-        dateLabel={dateLabel()}
-        frontDeskOn={frontDeskOn}
-        report={report}
-        queueCount={queue.length}
-        queueValue={queueValue}
-        loading={loading || !okQueue.isFetched}
-      />
-
-      {loading || pipe.isLoading ? <HomePipeSkeleton /> : <HomePipe stages={pipe.stages} />}
-
-      {!loading && okQueue.isFetched && <OkQueue items={queue} ctx={{ orgName, ownerFirst }} />}
+      {!board.isFetched && !board.isError ? (
+        // The skeleton wins while the read is in flight: `firstRun` is false until every source
+        // has settled, so a shop with work never sees a flash of the ghosts on its way in.
+        <WorkBoardSkeleton />
+      ) : board.isError ? (
+        // Errored with nothing cached. Four empty columns would read as "nothing open today" —
+        // the one thing this screen must never say when it doesn't know. This outranks first-run
+        // for the same reason: an empty READ is not the same fact as an empty SHOP.
+        <LoadFailed noun="board" onRetry={() => void retry()} retrying={retrying} />
+      ) : (
+        <WorkBoard data={board} firstRun={firstRun} onOpen={openItem} ctx={{ orgName, ownerFirst }} />
+      )}
     </div>
   );
 }

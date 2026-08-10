@@ -3,9 +3,11 @@ import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
 import { TRPCError } from "@trpc/server";
-import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
+import { asOrgId, asUserId, asLeadId, systemClock } from "@mallet/shared/types";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb } from "@mallet/shared/db/client";
+import { withTenant } from "@mallet/shared/db/tx";
+import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
@@ -48,6 +50,8 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
   let orgAId = "";
   let orgBId = "";
   let leadAId = "";
+  // Orgs minted by the per-org rate-limit tests below (each needs its own limiter window).
+  const rateLimitOrgIds: string[] = [];
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
@@ -86,6 +90,9 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       await admin`delete from messages where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from a2p_registrations where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
+    }
+    if (rateLimitOrgIds.length > 0) {
+      await admin`delete from orgs where id = any(${rateLimitOrgIds})`;
     }
     await admin.end({ timeout: 5 });
     await closeDb();
@@ -190,5 +197,214 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     await expect(
       caller.v1.messaging.send({ leadId: leadAId, body: "x".repeat(1601) }),
     ).rejects.toBeInstanceOf(TRPCError);
+  });
+
+  it("send rejects an idempotency key shorter than 8 chars", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.messaging.send({ leadId: leadAId, body: "Hi", idempotencyKey: "short" }),
+    ).rejects.toBeInstanceOf(TRPCError);
+  });
+
+  // ── send: per-org rate limit ──────────────────────────────────────────────────
+  // The limiter is a module-level singleton keyed by orgId, so every test here uses its OWN
+  // fresh org — reusing orgAId would let earlier tests' send() calls in this file count against
+  // the same window. Each org is created with NO twilioNumber, so any call that gets PAST the
+  // limiter always fails on the (DB-backed) "no business number provisioned" precondition —
+  // which is what lets these tests prove the limiter runs before that DB work, not because of it.
+
+  async function makeRateLimitOrg(): Promise<string> {
+    const [org] = await admin<{ id: string }[]>`
+      insert into orgs (name) values ('MsgApi RateLimit ' || gen_random_uuid()) returning id`;
+    const id = org!.id;
+    rateLimitOrgIds.push(id);
+    return id;
+  }
+
+  it("rate limits the 31st send in a minute per org, without affecting a different org's window", async () => {
+    const orgId = await makeRateLimitOrg();
+    const otherOrgId = await makeRateLimitOrg();
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const otherCaller = appRouter.createCaller(ctxFor(otherOrgId, "owner"));
+    const fakeLeadId = randomUUID();
+
+    for (let i = 0; i < 30; i++) {
+      await caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }).catch(() => {});
+    }
+    await expect(
+      caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }),
+    ).rejects.toMatchObject({ code: "TOO_MANY_REQUESTS" });
+
+    // otherOrgId has never sent in this window — still well under the limit, proving the two
+    // orgs' windows are independent rather than sharing one global counter.
+    await expect(
+      otherCaller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  it("the 30th send in the window still reaches the DB precondition, not the limiter", async () => {
+    const orgId = await makeRateLimitOrg();
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const fakeLeadId = randomUUID();
+
+    for (let i = 0; i < 29; i++) {
+      await caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }).catch(() => {});
+    }
+    await expect(
+      caller.v1.messaging.send({ leadId: fakeLeadId, body: "hi" }),
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+  });
+
+  // ── the claim itself (messages_org_idem_uidx, live) ───────────────────────────
+  // Exercised at the repository rather than through send(): this environment has no Twilio
+  // credentials, so a router send never reaches the claim. What has to hold is the DB contract
+  // the double-send guard rests on — one row per (org_id, idempotency_key), enforced by the
+  // partial unique index and not by application logic.
+
+  it("a second claim on the same (org, key) writes no row and returns the first one", async () => {
+    const orgA = asOrgId(orgAId);
+    const key = `okq-int-${randomUUID()}-fu1`;
+
+    const first = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+    const second = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+
+    expect(first.created).toBe(true);
+    expect(second.created).toBe(false);
+    expect(second.message.props.id).toBe(first.message.props.id);
+    expect(first.message.props.status).toBe("queued");
+
+    const rows = await admin<{ id: string }[]>`
+      select id from messages where org_id = ${orgAId} and idempotency_key = ${key}`;
+    expect(rows).toHaveLength(1);
+  });
+
+  it("the same key in a different org is a different message (the index is per-tenant)", async () => {
+    const orgA = asOrgId(orgAId);
+    const orgB = asOrgId(orgBId);
+    const key = `okq-int-${randomUUID()}-fu1`;
+
+    const inA = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+    const inB = await withTenant(orgB, (tx) =>
+      new DrizzleMessageRepository(tx, orgB).claimOutbound({
+        id: randomUUID(),
+        leadId: null,
+        from: "+15005550007",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+
+    expect(inA.created).toBe(true);
+    expect(inB.created).toBe(true);
+    expect(inB.message.props.id).not.toBe(inA.message.props.id);
+
+    const rows = await admin<{ id: string }[]>`
+      select id from messages where idempotency_key = ${key}`;
+    expect(rows).toHaveLength(2);
+  });
+
+  it("a failed claim is reclaimed in place — same row, still one row for the key", async () => {
+    const orgA = asOrgId(orgAId);
+    const key = `okq-int-${randomUUID()}-fu1`;
+    const claimCmd = {
+      leadId: asLeadId(leadAId),
+      from: "+15005550006",
+      to: "+15555550199",
+      body: "follow-up",
+      idempotencyKey: key,
+    };
+
+    const first = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({ ...claimCmd, id: randomUUID() }),
+    );
+    await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).markFailed(first.message.props.id, "30034"),
+    );
+
+    // The retry: a deterministic follow-up key must not be spent by an attempt that failed.
+    const retry = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        ...claimCmd,
+        id: randomUUID(),
+        body: "follow-up, corrected",
+        to: "+15555550188",
+      }),
+    );
+
+    expect(retry.created).toBe(true);
+    expect(retry.message.props.id).toBe(first.message.props.id);
+    expect(retry.message.props.status).toBe("queued");
+    // Re-stamped from the retry, and the dead attempt's carrier code cleared.
+    expect(retry.message.props.body).toBe("follow-up, corrected");
+    expect(retry.message.props.toNumber).toBe("+15555550188");
+    expect(retry.message.props.errorCode).toBeNull();
+
+    const rows = await admin<{ id: string }[]>`
+      select id from messages where org_id = ${orgAId} and idempotency_key = ${key}`;
+    expect(rows).toHaveLength(1);
+  });
+
+  it("settling a message that does not exist throws rather than passing silently", async () => {
+    const orgA = asOrgId(orgAId);
+    await expect(
+      withTenant(orgA, (tx) => new DrizzleMessageRepository(tx, orgA).markSent(randomUUID(), "SM_x")),
+    ).rejects.toThrow(/matched no message row/);
+  });
+
+  it("markSent and markFailed settle a claim in place", async () => {
+    const orgA = asOrgId(orgAId);
+    const key = `okq-int-${randomUUID()}-fu2`;
+
+    const claim = await withTenant(orgA, (tx) =>
+      new DrizzleMessageRepository(tx, orgA).claimOutbound({
+        id: randomUUID(),
+        leadId: asLeadId(leadAId),
+        from: "+15005550006",
+        to: "+15555550199",
+        body: "follow-up",
+        idempotencyKey: key,
+      }),
+    );
+    const id = claim.message.props.id;
+
+    await withTenant(orgA, (tx) => new DrizzleMessageRepository(tx, orgA).markSent(id, "SM_int_sid"));
+    const [sent] = await admin<{ status: string; provider_sid: string | null }[]>`
+      select status, provider_sid from messages where id = ${id}`;
+    expect(sent!.status).toBe("sent");
+    expect(sent!.provider_sid).toBe("SM_int_sid");
+
+    await withTenant(orgA, (tx) => new DrizzleMessageRepository(tx, orgA).markFailed(id, "30034"));
+    const [failed] = await admin<{ status: string; error_code: string | null }[]>`
+      select status, error_code from messages where id = ${id}`;
+    expect(failed!.status).toBe("failed");
+    expect(failed!.error_code).toBe("30034");
   });
 });

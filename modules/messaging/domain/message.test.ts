@@ -82,6 +82,35 @@ describe("Message.create", () => {
     expect(m.props.leadId).toBeNull();
   });
 
+  it("markSent returns a NEW sent message and leaves the claim untouched", () => {
+    const claim = unwrap(Message.create(base()));
+    const at = new Date("2026-07-09T01:00:00Z");
+
+    const sent = claim.markSent("SM_sid", at);
+
+    expect(sent).not.toBe(claim);
+    expect(sent.props.status).toBe("sent");
+    expect(sent.props.providerSid).toBe("SM_sid");
+    expect(sent.props.updatedAt).toBe(at);
+    // The claim it came from is unchanged — no mutation.
+    expect(claim.props.status).toBe("queued");
+    expect(claim.props.providerSid).toBeNull();
+  });
+
+  it("markFailed returns a NEW failed message carrying the carrier code", () => {
+    const claim = unwrap(Message.create(base()));
+    const at = new Date("2026-07-09T01:00:00Z");
+
+    const failed = claim.markFailed("30034", at);
+
+    expect(failed).not.toBe(claim);
+    expect(failed.props.status).toBe("failed");
+    expect(failed.props.errorCode).toBe("30034");
+    expect(failed.isFailed).toBe(true);
+    expect(claim.isFailed).toBe(false);
+    expect(claim.props.status).toBe("queued");
+  });
+
   it("props are immutable — returned object is frozen from the factory", () => {
     const m = unwrap(Message.create(base()));
     // props getter returns the private object; verify it's not the same reference across calls

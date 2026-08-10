@@ -6,7 +6,7 @@
  *
  * Excluded on purpose: token-gated public pages (/q/[token], /f/[token]) and
  * Stripe return pages (/pay/*), which need live tokens; and the redirect-only
- * routes /frontdesk, /pricebook and /quotes, whose destinations are covered here
+ * routes /frontdesk, /pricebook, /quotes and /pipeline, whose destinations are covered here
  * directly (redirects also never settle into a stable screenshot).
  */
 
@@ -21,6 +21,21 @@ export interface RouteDef {
   audience: Audience;
   /** Also shoot this route at mobile width. */
   mobile?: boolean;
+  /**
+   * Shoot the desktop screenshot at THIS viewport height instead of the standard 900.
+   *
+   * `fullPage` does not mean full CONTENT here. `.appshell` is `height:100vh;overflow:hidden` and
+   * `main` is the scroller (app/prototype.css:155,356), so on desktop the document never scrolls:
+   * `document.scrollHeight` is exactly the viewport, and a fullPage shot returns the fold and
+   * nothing below it. (On phones `.appshell` goes `overflow:visible` and the document scrolls, so
+   * the mobile shots have always captured everything.)
+   *
+   * Measured on /dashboard at 1440×900: main's content is 2720px against a 793px window — 1,927px
+   * of the work board, most of two columns, absent from the baseline. Setting a height taller than
+   * the content puts it all in frame. `visual.spec.ts` asserts nothing is left below the fold, so
+   * a route that outgrows its height fails loudly instead of quietly clipping again.
+   */
+  desktopHeight?: number;
 }
 
 export const ROUTES: readonly RouteDef[] = [
@@ -30,12 +45,14 @@ export const ROUTES: readonly RouteDef[] = [
   { path: "/forgot-password", name: "forgot-password", audience: "public" },
 
   // --- office --------------------------------------------------------------
-  { path: "/dashboard", name: "office-today", audience: "office", mobile: true },
+  // The work board is the tallest office surface: 2,720px of content with 43 open items in the
+  // E2E org. 3,200 clears that with room for the fixture to grow; the no-clipping assertion in
+  // visual.spec.ts is what says when it stops being enough.
+  { path: "/dashboard", name: "office-today", audience: "office", mobile: true, desktopHeight: 3200 },
   { path: "/dashboard?tab=frontdesk", name: "office-frontdesk", audience: "office", mobile: true },
   { path: "/dashboard?tab=pricebook", name: "office-pricebook", audience: "office", mobile: true },
   { path: "/dashboard?tab=checklists", name: "office-checklists", audience: "office" },
   { path: "/customers", name: "customers", audience: "office", mobile: true },
-  { path: "/pipeline", name: "pipeline", audience: "office", mobile: true },
   { path: "/tasks", name: "tasks", audience: "office", mobile: true },
   { path: "/jobs", name: "jobs", audience: "office", mobile: true },
   { path: "/jobs?tab=schedule", name: "jobs-schedule", audience: "office" },

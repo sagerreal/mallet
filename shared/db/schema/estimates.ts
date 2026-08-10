@@ -160,6 +160,9 @@ export const estimates = pgTable(
     // tenant — fine at a few hundred quotes, a timeout at forty thousand.
     index("estimates_org_sent_idx").on(t.orgId, t.sentAt.desc(), t.id.desc()),
     index("estimates_org_lead_idx").on(t.orgId, t.leadId),
+    // Backs quoting.list({status}) — filtering the board's worklist by status without a
+    // sequential scan over the whole tenant.
+    index("estimates_org_status_idx").on(t.orgId, t.status),
     uniqueIndex("estimates_org_num_uidx")
       .on(t.orgId, t.num)
       .where(sql`${t.deletedAt} is null`),

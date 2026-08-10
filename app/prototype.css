@@ -424,12 +424,14 @@
   .frs-sub{color:var(--ink-2);font-size:var(--type-md);margin:0}
   .frs-paths{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--space-4);width:100%;max-width:560px}
   .frs-paths[data-count="1"]{grid-template-columns:minmax(0,360px);justify-content:center}
+  /* three ways in (the work board's setup brief) sit as one row of three, not two-and-an-orphan */
+  .frs-paths[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr));max-width:840px}
   .frs-path{display:flex;flex-direction:column;gap:var(--space-2);text-align:left;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-6) var(--space-5);box-shadow:var(--shadow-sm)}
   .frs-path-primary{border-color:var(--ink);border-width:1.6px}
   .frs-path-title{font-size:var(--type-md);font-weight:800;margin:0}
   .frs-path-desc{color:var(--ink-2);font-size:var(--type-base);line-height:1.45;margin:0;flex:1}
   .frs-path .btn{align-self:flex-start;margin-top:var(--space-1)}
-  @media (max-width:640px){.frs{padding:var(--space-10) var(--space-4) var(--space-10)}.frs-paths{grid-template-columns:1fr}}
+  @media (max-width:640px){.frs{padding:var(--space-10) var(--space-4) var(--space-10)}.frs-paths{grid-template-columns:1fr}.frs-paths[data-count="3"]{grid-template-columns:1fr}}
   /* Tasks — a clean, tight checklist (checkbox left · due right), not a sparse table */
   .tasklist{display:flex;flex-direction:column}
   .tsec{font-size:var(--type-xs);text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:800;padding:var(--space-4) var(--space-2xs) var(--space-1)}
@@ -776,36 +778,50 @@
   /* fresh overnight work glows a touch warmer — never a colored border */
   .kcard.warm{background:color-mix(in srgb,var(--amber) 5%,var(--card))}
 
-  /* ---- the Quotes rail: band = phase, ink = warmth, dot = the customer ---- */
-  /* the verdict strip above the board */
-  .qstrip{display:flex;align-items:flex-end;gap:var(--space-8);padding:var(--space-4) var(--space-6) var(--space-4);margin-bottom:var(--space-4)}
-  .qstrip-fig{font-size:var(--type-4xl);margin-top:0}
-  .qstrip .thesis{margin-top:var(--space-2xs)}
-  .qstrip-delta{padding-bottom:var(--space-1)}
-  /* board cards in the rail language */
-  .kcard .crow{display:flex;align-items:center;gap:var(--space-2)}
+  /* ---- board cards in the rail language ---- */
   .kcard .cname{font-weight:700;font-size:var(--type-base);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .kcard .camt{font-weight:700;font-size:var(--type-base);white-space:nowrap}
-  .kcard .cjob{font-size:var(--type-sm);color:var(--ink-2);margin:var(--space-1) 0 0 var(--space-5);line-height:1.4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .kcard .cstamp{font-size:var(--type-xs);color:var(--ink-3);margin:var(--space-2) 0 0 var(--space-5)}
-  .kcard .cstamp .linklike{font-size:var(--type-xs)}
   .cardghost{border-radius:var(--radius) 12px 12px 4px;background:var(--paper);padding:var(--space-2) var(--space-3);font-size:var(--type-sm);line-height:1.5;color:color-mix(in srgb,var(--ink) 66%,var(--paper));margin-top:var(--space-2)}
   .cardghost-edit{width:100%;box-sizing:border-box;margin-top:var(--space-2);border:1.5px solid var(--accent);border-radius:var(--radius) 12px 12px 4px;padding:var(--space-2) var(--space-3);font-family:inherit;font-size:var(--type-sm);line-height:1.5;background:var(--card);color:var(--ink)}
   .cardacts{display:flex;gap:var(--space-2);align-items:center;margin-top:var(--space-2)}
+  /* There is deliberately no global .btn:disabled rule (it would move every visual baseline), so
+     a blocked Send is scoped here — invisible-disabled is the bug this prevents. */
+  .cardacts .btn:disabled{opacity:.55;cursor:not-allowed}
+  /* .btn:hover would repaint a disabled button as if it were live — restate the resting look. */
+  .cardacts .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none;filter:none}
+  .cardacts .btn.approve:disabled:hover{background:var(--amber);border-color:var(--amber)}
   .cardsent{font-size:var(--type-sm);color:var(--ink-2);margin-top:var(--space-2)}
-  .qfootbar{display:flex;justify-content:flex-end;gap:var(--space-4);padding:var(--space-3) var(--space-2) 0}
-  .qdelta{font-size:var(--type-base);color:var(--manila-ink);opacity:.62;margin-top:var(--space-1)}
-  /* the dot: size = dollars; amber is earned — breath = live, halo = needs-you */
-  .qdot{position:relative;flex:0 0 auto;border-radius:50%;background:var(--ink);display:inline-block}
-  .qdot.hollow{background:none;border:1.6px solid var(--ink);opacity:.5}
-  .qdot.live{animation:qbreathe 5s ease-in-out infinite}
-  .qring.halo{position:absolute;inset:-4px;border:1.6px solid var(--amber);border-radius:50%;opacity:.9}
-  @keyframes qbreathe{
-    0%,100%{box-shadow:0 0 0 3px color-mix(in srgb,var(--amber) 18%,transparent)}
-    50%{box-shadow:0 0 0 7px color-mix(in srgb,var(--amber) 30%,transparent),0 0 14px 2px color-mix(in srgb,var(--amber) 35%,transparent)}
-  }
-  .qrecord{font-family:var(--font-mono);font-size:var(--type-sm);color:var(--ink-3);white-space:nowrap}
-  .qrecord:hover{color:var(--ink)}
+
+  /* ---- the work board: group headers, the card meta line, the page foot ----
+     .kgrp is the board's small mono caption. It heads each group of cards inside a column
+     ("NEEDS ACTION 3" / "AWAITING PAYMENT 2") and, on a card, captions the drafted text — one
+     caption look, two jobs, rather than a second class that reads the same. */
+  .kgrp{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-2xs) var(--space-2xs);
+        font-family:var(--font-mono);font-weight:700;font-size:var(--type-xs);line-height:1.3;
+        letter-spacing:.075em;text-transform:uppercase;color:var(--ink-3)}
+  /* Amber is earned: it means the shop owes the next move. */
+  .kgrp.on{color:var(--amber)}
+  .kgrp .kdot{width:6px;height:6px;flex:0 0 auto;border-radius:50%;background:currentcolor}
+  .kgrp .kcount{margin-left:auto}
+  /* state badge + age on one line — the card's "where it stands, and for how long". */
+  .kcard .kmeta{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
+  /* "Showing first 100" — the column is a capped page and says so. */
+  .kfoot{padding:var(--space-2) var(--space-2xs) 0;font-size:var(--type-xs);color:var(--ink-3)}
+  /* board skeleton bars — the card face's two lines, at the width they resolve to. */
+  .kcard .sk-nm{width:56%;height:14px;margin-bottom:var(--space-2)}
+  .kcard .sk-job{width:78%;height:11px}
+
+  /* ---- first-run EXAMPLE cards ----
+     A brand-new shop's four columns are empty, so each one is DRAWN with a single example card.
+     Dashed + dimmed is the whole message: this is the shape of the thing, not the thing. The card
+     is aria-hidden and handler-free in the markup, so the look must not offer an affordance the
+     markup won't honour — the pointer, the hover lift and the press tint are all taken back here
+     (.kcard's own :hover/:active are unqualified, and .kcard:active lands later in this file, so
+     each override is stated at the specificity that beats it rather than relying on order). */
+  .kcard.ghosted{background:transparent;border-style:dashed;border-color:var(--manila-line);cursor:default}
+  .kcard.ghosted:hover{border-color:var(--manila-line);box-shadow:none}
+  .kcard.ghosted:active{background:transparent;transform:none}
+  /* the EXAMPLE tag reuses the board's caption look; it heads the card, so it drops the leading pad */
+  .kcard.ghosted .kgrp{padding:0 0 var(--space-1)}
 
   /* ---- Jobs page: THE LEDGER SHEET — one white sheet on the cream desk ----
      Scoped warm palette (jobs-only, no global blast radius). Figure/ground from
@@ -916,7 +932,6 @@
   .cg-val{font-family:var(--font-mono);font-size:var(--type-base);font-weight:600;color:var(--ink);text-align:right;font-variant-numeric:tabular-nums}
   .cg-dash{color:var(--ink-3);font-weight:400}
   @media (prefers-reduced-motion:reduce){.jh-ldot{animation:none}}
-  @media (prefers-reduced-motion:reduce){.qdot.live{animation:none;box-shadow:0 0 0 5px color-mix(in srgb,var(--amber) 24%,transparent)}}
   /* the board reprints itself while you slept — overnight cards land one at a time */
   @keyframes kenter{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
   .kcard.enter{animation:kenter .42s cubic-bezier(.22,1,.36,1) both}
@@ -1317,38 +1332,10 @@
   /* the ONLY amber on the page — one accent, one meaning: this tap moves money */
   .btn.approve{background:var(--amber);border-color:var(--amber);color:#FFF9EE;font-weight:700}
   .btn.approve:hover{filter:brightness(1.08)}
-  /* the draft as a real outbound SMS bubble, ghost ink until it goes */
-  .okghost{border-radius:var(--radius-xl) 18px 18px 4px;background:var(--manila);border:1px solid var(--manila-line);padding:var(--space-3) var(--space-4);font-size:var(--type-base);line-height:1.55;color:color-mix(in srgb,var(--manila-ink) 66%,var(--manila));transition:color .15s ease,transform .18s ease-out}
-  .okcard:hover .okghost,.okcard:focus-within .okghost{color:var(--manila-ink)}
-  /* send choreography: ink-in + nudge (180ms) → fold (260ms, delayed) */
-  .okwrap{display:grid;grid-template-rows:1fr;transition:grid-template-rows .26s ease-in .18s,opacity .22s ease-in .18s}
-  .okwrap.leaving{grid-template-rows:0fr;opacity:0}
-  .okwrap>.okinner{overflow:hidden;min-height:0}
-  .okwrap.leaving .okghost{color:var(--manila-ink);transform:translateX(10px)}
-  .okskip{color:var(--ink-3);font-size:var(--type-md);opacity:.4;transition:opacity .12s}
-  .okcard:hover .okskip{opacity:1}
-  /* THE PIPE — the shop's money flowing through the process, one line of sight.
-     Fixed cells, no config; each is a door; leaks glow amber at their stage. */
-  .hpipe{display:flex;align-items:stretch;background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden;margin:var(--space-4) 0 var(--space-1)}
-  .hpcell{flex:1;min-width:0;padding:var(--space-3) var(--space-4) var(--space-3);position:relative;text-decoration:none;color:inherit;display:block}
-  .hpcell + .hpcell{border-left:1px solid var(--line-2)}
-  .hpcell:hover{background:var(--line-2)}
-  .hpcell:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-  .hpcell .l{display:block;font-size:var(--type-xs);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
-  .hpcell .v{display:block;font-family:var(--font-mono);font-size:var(--type-lg);font-weight:700;letter-spacing:-.02em;margin-top:var(--space-1);font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
-  .hpcell .s{display:block;font-size:var(--type-xs);color:var(--ink-3);margin-top:var(--space-2xs);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .hpcell .s .red{color:var(--red);font-weight:700}
-  .hpcell.leak{box-shadow:inset 0 3px 0 var(--amber)}
-  .hpcell.leak .l,.hpcell.leak .v{color:var(--amber)}
-  /* flow chevron between stages */
-  .hpcell::after{content:"›";position:absolute;right:-6px;top:50%;transform:translateY(-56%);color:#D8D0BF;font-size:var(--type-md);font-weight:700;z-index:2}
-  .hpcell:last-child::after{content:""}
-  @media (max-width:900px){.hpipe{flex-wrap:wrap}.hpcell{flex:1 1 33%}.hpcell::after{content:""}}
   /* the ledger — timestamps ARE the section header */
   .ledgerrow{display:flex;align-items:baseline;gap:var(--space-3);padding:var(--space-2) var(--space-2xs);font-size:var(--type-base);animation:ledgerin .18s ease-out}
   @keyframes ledgerin{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
   @media (prefers-reduced-motion: reduce){
-    .okwrap,.okghost{transition:none}
     .ledgerrow{animation:none}
   }
   /* linklike as a REAL button (keyboard-focusable) with identical visuals */
@@ -2190,9 +2177,9 @@
        blocks, so anything added later was uncovered by default — the failure mode is silent
        and only a user with the OS setting on ever sees it.
        This is deliberately blanket: reduced-motion is a request to stop moving, not a request
-       to stop moving in the places we remembered. The nine specific blocks above stay, because
-       several also restore a STATIC appearance (e.g. .qdot.live swaps its pulse for a ring)
-       which a bare kill cannot do. Skeletons lose their shimmer and become plain blocks —
+       to stop moving in the places we remembered. The specific blocks above stay, because
+       several also restore a STATIC appearance (e.g. .cl-caret drops to a dimmed rest
+       state) which a bare kill cannot do. Skeletons lose their shimmer and become plain blocks —
        correct: they still convey structure, and a pulsing placeholder is exactly the motion
        this setting exists to remove. */
     *{animation:none!important} }
@@ -2331,12 +2318,6 @@
     .kpis{grid-template-columns:1fr 1fr;gap:var(--space-3)}
     .kpi .val{font-size:var(--type-xl)}
     .row2{grid-template-columns:1fr}
-    /* Home pipe: 2-col grid so sub-text stops truncating */
-    .hpipe{flex-wrap:wrap}
-    .hpcell{flex:1 1 50%;border-left:none !important;border-top:1px solid var(--line-2)}
-    .hpcell:nth-child(odd){border-right:1px solid var(--line-2)}
-    .hpcell:nth-child(-n+2){border-top:none}
-    .hpcell .s{white-space:normal}
     /* Handoff note: tighter type on phone */
     .ticket h1{font-size:var(--type-2xl)}
     .herofig{font-size:var(--type-3xl) !important}
@@ -2606,14 +2587,14 @@
      eases their hover highlight in instead of snapping. :active is transient (mouse-
      down only), so the visual baselines — which capture the resting state — don't move. */
   .trow.clickable,tr.clickable,.msg-row,.cg-row,.notif-row,.ts-trow,.uirow-clickable,
-  .njchk-row,.okcard,.att-item.clickable,.otab,th.sortable,.newitem{transition:background .1s ease,transform .09s ease}
+  .njchk-row,.att-item.clickable,.otab,th.sortable,.newitem{transition:background .1s ease,transform .09s ease}
   .trow.clickable:active,tr.clickable:active,.msg-row:active,.cg-row:active,.notif-row:active,
   .ts-trow:active,.uirow-clickable:active,.njchk-row:active,.otab:active,th.sortable:active{
     background:color-mix(in srgb,var(--ink) 9%,transparent)}
-  .okcard:active,.att-item.clickable:active{background:color-mix(in srgb,var(--green-600) 9%,transparent)}
+  .att-item.clickable:active{background:color-mix(in srgb,var(--green-600) 9%,transparent)}
   .newitem:active{background:var(--green-100)}
   .msg-row:active,.cg-row:active,.notif-row:active,.ts-trow:active,.njchk-row:active,
-  .okcard:active,.att-item.clickable:active{transform:scale(.996)}
+  .att-item.clickable:active{transform:scale(.996)}
 
   /* Chips / filter pills: a quick squish on tap. */
   .chip:active,.cbar .chip:active,.iph-chip:active,.cp-chip-remove:active{transform:scale(.94)}

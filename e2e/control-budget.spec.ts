@@ -27,12 +27,16 @@ const FOCUSABLE = [
 
 // path · name · ceiling  (baseline count at commit time in the comment)
 const ROUTES: ReadonlyArray<{ path: string; name: string; ceiling: number }> = [
-  { path: "/dashboard", name: "office-today", ceiling: 70 },                    // 44
+  // 72 measured 2026-08-10 with 43 open items in the E2E org (was 44 before the work board).
+  // The board's per-card name button scales with the shop's OPEN WORK exactly as the list routes'
+  // rows scale with their seed data — the repeating-pattern case this file's header already
+  // accepts, and the reason customers/money carry 85/90. The FIXED chrome here is 16 controls
+  // (tabs, sidebar, hero, the board's own scroll frame); everything above that is one row of work.
+  { path: "/dashboard", name: "office-today", ceiling: 120 },                   // 72
   { path: "/dashboard?tab=frontdesk", name: "office-frontdesk", ceiling: 60 },  // 36
   { path: "/dashboard?tab=pricebook", name: "office-pricebook", ceiling: 95 },  // 60
   { path: "/dashboard?tab=checklists", name: "office-checklists", ceiling: 50 },// 27
   { path: "/customers", name: "customers", ceiling: 85 },                       // 52
-  { path: "/pipeline", name: "pipeline", ceiling: 100 },                        // 64
   { path: "/tasks", name: "tasks", ceiling: 45 },                               // 19
   { path: "/jobs", name: "jobs", ceiling: 70 },                                 // 41
   { path: "/money", name: "money", ceiling: 90 },                              // 57

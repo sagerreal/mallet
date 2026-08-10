@@ -1,0 +1,204 @@
+/**
+ * e2e/first-run.spec.ts
+ * DAY ONE ON THE WORK BOARD — the screen a shop meets before it has any work.
+ *
+ * Runs against its OWN org. "E2E Plumbing" cannot serve here: the golden path adds a customer, a
+ * quote, a job and a bill to it on every run, and the first-run board renders only for a shop with
+ * nothing open AND no won history (the wonCount guard in app/(office)/dashboard/page.tsx). So this
+ * spec logs in as the owner of "E2E Fresh Plumbing", which the STANDARD seed provisions:
+ *
+ *     npm run seed:e2e            # both orgs — what the gate line runs
+ *     npm run seed:e2e:empty      # just this one
+ *
+ * Nothing in this file writes. If it starts failing on "0 ghosts", the fixture org has grown work
+ * — the seed script prints a warning when it has — and the fix is to find what wrote to it, not to
+ * loosen the assertion.
+ */
+
+import { test, expect, type Page } from "@playwright/test";
+import AxeBuilder from "@axe-core/playwright";
+import { login, prepare, settle, dynamicRegions, FRESH_OWNER } from "./helpers/ui";
+
+/** The word every drawn card is tagged with (features/board/ghosts GHOST_TAG). */
+const GHOST_TAG = "Example";
+
+/** The three ways in, in the order the setup brief offers them (dashboard/page.tsx FIRST_RUN). */
+const SETUP_PATHS = [
+  { title: "Import your customers", action: "Import" },
+  { title: "Add your first job", action: "Add job" },
+  { title: "Forward calls to Front Desk", action: "Set up" },
+];
+
+async function openFirstRunBoard(page: Page): Promise<void> {
+  await login(page, FRESH_OWNER);
+  await page.goto("/dashboard");
+  await expect(page.locator('[role="status"][aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+
+  // Say WHICH of the three no-board screens this is before asserting the count.
+  //
+  // The skeleton going away does not mean the board arrived: a failed read renders "Couldn't load
+  // your board", and a thrown one renders the route's own "Something went wrong". Both hold zero
+  // columns, so without this the failure reads `expected 4, received 0` — a sentence that sends
+  // the next person hunting for a markup regression. It has already happened once here, and the
+  // cause was the laptop losing its route to Supabase's pooler mid-run (EHOSTUNREACH), which this
+  // names in one line.
+  const crashed = page.getByText(/Something went wrong|Couldn't load/i);
+  if (await crashed.count()) {
+    throw new Error(
+      `the dashboard did not render a board: "${(await crashed.first().innerText()).trim()}" — ` +
+        `check the server log for tRPC errors (a dropped DB connection looks exactly like this)`,
+    );
+  }
+
+  await expect(page.getByRole("region", { name: /\bcolumn$/ })).toHaveCount(4, { timeout: 30_000 });
+}
+
+test.describe("a brand-new shop's first look at the board", () => {
+  test.describe.configure({ mode: "serial" });
+
+  test("four columns, each drawn with one EXAMPLE card", async ({ page }) => {
+    await openFirstRunBoard(page);
+
+    const ghosts = page.locator(".kcard.ghosted");
+    await expect(ghosts).toHaveCount(4);
+
+    // Every one of them is tagged, and every one is hidden from assistive tech: a screen reader
+    // that read these out would be reading out four customers who do not exist.
+    for (let i = 0; i < 4; i += 1) {
+      await expect(ghosts.nth(i)).toContainText(GHOST_TAG);
+      await expect(ghosts.nth(i)).toHaveAttribute("aria-hidden", "true");
+    }
+
+    // INERT IN THE MARKUP, not behind a disabled handler. Nothing to click, nothing the keyboard
+    // can land on — a drawn card must not promise a record it has not got.
+    const clickable = await ghosts.locator("a, button, [role='button'], [tabindex]").count();
+    expect(clickable, "a drawn example card must hold nothing focusable").toEqual(0);
+
+    // Every column head reads a hard 0 — the ghosts are drawings, not rows, and must not be counted.
+    const figures = await page
+      .locator("section.col > .col-head > .sum")
+      .evaluateAll((els) => els.map((el) => (el.textContent ?? "").trim()));
+    expect(figures).toEqual(["0", "0", "0", "0"]);
+  });
+
+  test("the setup brief replaces the hero with three real ways in", async ({ page }) => {
+    await openFirstRunBoard(page);
+
+    // The hero is GONE, not emptied: "Nothing's waiting on you. Go run the day." is true on day
+    // one and teaches a new shop nothing.
+    await expect(page.locator(".ticket")).toHaveCount(0);
+
+    const brief = page.locator(".frs");
+    await expect(brief).toBeVisible();
+    await expect(brief.locator(".frs-path")).toHaveCount(SETUP_PATHS.length);
+
+    for (const path of SETUP_PATHS) {
+      const card = brief.locator(".frs-path", { hasText: path.title });
+      await expect(card).toHaveCount(1);
+      await expect(card.getByRole("button", { name: path.action, exact: true })).toBeVisible();
+    }
+
+    // Every path opens something real — the house rule forbids a dead button. The first one is a
+    // modal, and it opens.
+    await brief.getByRole("button", { name: "Import", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+  });
+
+  test("no dollar figure anywhere on the first-run screen", async ({ page }) => {
+    await openFirstRunBoard(page);
+
+    // A dollar figure is the one thing on a card an owner reads as a fact about their own
+    // business. Inventing one on day one would be a lie told in the app's own voice — so the
+    // drawn cards carry no price and the column heads state 0 rather than $0.
+    //
+    // textContent, not innerText — but over the body's CONTENT nodes only.
+    //
+    // innerText is too weak: it returns only what is laid out, so a `$` inside a display:none
+    // branch, an sr-only line, or an aria-hidden ghost card would slip past. textContent sees all
+    // of that, which is the assertion actually meant.
+    //
+    // Raw `document.body.textContent` is too strong in a way that measures the wrong thing: this
+    // is a Next RSC page, so the body ends with `<script>self.__next_f.push(…)</script>` carrying
+    // the serialized flight payload, and React's wire format spells its own sigils with a dollar
+    // ("$undefined", "$L2", "$Sreact.fragment"). Verified against the real page: every `$` in the
+    // raw string came from those script tags and none from a rendered node. Asserting over them
+    // would be asserting on the bundler's protocol, not on what the app says about money.
+    const text = await page.evaluate(() => {
+      const body = document.body.cloneNode(true) as HTMLElement;
+      body.querySelectorAll("script, style, template, noscript").forEach((n) => n.remove());
+      return body.textContent ?? "";
+    });
+    expect(text, "the first-run screen must not state any money").not.toContain("$");
+  });
+});
+
+/**
+ * The axe scan for this screen — UNGATED, like e2e/a11y.spec.ts, so it runs on a plain
+ * `npx playwright test` rather than only when someone remembers E2E_VISUAL.
+ *
+ * It earns its place: the route inventory the shared a11y net walks is keyed by AUDIENCE
+ * (office = OWNER), and OWNER's org can never be empty, so this is the only scan that ever sees a
+ * board with no cards on it. It found one — `scrollable-region-focusable` on `.board`, which the
+ * live board passes by accident because its cards carry focusable name buttons (see BoardFrame in
+ * features/board/work-board.tsx). Measured both ways: 1 violation without the frame's tabIndex,
+ * clean with it, live board clean either way.
+ */
+test.describe("first-run · axe", () => {
+  test("no violations on the board a shop meets on day one", async ({ page }) => {
+    await prepare(page, "light");
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await openFirstRunBoard(page);
+    await settle(page);
+
+    const scan = await new AxeBuilder({ page })
+      .withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"])
+      .analyze();
+    const ids = scan.violations.map((v) => `${v.id}(${v.nodes.length})`);
+    expect(scan.violations.length, `axe violations: ${ids.join(", ")}`).toEqual(0);
+  });
+});
+
+/**
+ * The pixels for this screen. Behind E2E_VISUAL like the other visual nets, and shot here rather
+ * than added to e2e/helpers/routes.ts for the audience reason above.
+ *
+ * Shot at the standard 900px height, unlike office-today's 3,200 (see RouteDef.desktopHeight):
+ * measured, this screen's scroller is 793px of content in a 793px window — a setup brief and one
+ * drawn card per column simply fit. The assertion below is what keeps that true; if the first-run
+ * screen ever grows past the fold, it fails here rather than quietly cropping the baseline.
+ *
+ * ⚠️ Re-baseline against a PRODUCTION build, like e2e/visual.spec.ts — never `next dev`.
+ *
+ *     pnpm build && PORT=3131 pnpm start
+ *     E2E_VISUAL=1 E2E_BASE_URL=http://localhost:3131 npx playwright test e2e/first-run.spec.ts
+ */
+test.describe("first-run · pixels", () => {
+  test.skip(!process.env.E2E_VISUAL, "set E2E_VISUAL=1 to run visual regression");
+  test.describe.configure({ mode: "serial" });
+
+  for (const theme of ["light", "dark"] as const) {
+    test(`office-today-first-run · ${theme} · desktop`, async ({ page }) => {
+      await prepare(page, theme);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await openFirstRunBoard(page);
+      await settle(page);
+
+      const scroller = await page.evaluate(() => {
+        const main = document.querySelector("main");
+        return { content: main?.scrollHeight ?? 0, window: main?.clientHeight ?? 0 };
+      });
+      expect(
+        scroller.content,
+        `${scroller.content - scroller.window}px of the first-run screen sits below the fold — give it a taller viewport`,
+      ).toBeLessThanOrEqual(scroller.window);
+
+      await expect(page).toHaveScreenshot(`office-today-first-run-${theme}-desktop.png`, {
+        fullPage: true,
+        animations: "disabled",
+        mask: dynamicRegions(page),
+        maxDiffPixels: 150,
+        timeout: 20_000,
+      });
+    });
+  }
+});

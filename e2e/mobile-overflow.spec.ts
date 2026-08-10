@@ -35,7 +35,6 @@ const OWNER_ROUTES = [
   "/dashboard?tab=pricebook",
   "/dashboard?tab=checklists",
   "/customers",
-  "/pipeline",
   "/jobs",
   "/jobs?tab=schedule",
   "/jobs?tab=timesheets",

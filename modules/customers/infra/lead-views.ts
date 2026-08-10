@@ -3,7 +3,7 @@ import { leads, estimates, jobVisits, jobs, invoices } from "@mallet/shared/db/s
 import type { TenantTx } from "@mallet/shared/db/tx";
 
 /**
- * The Pipeline board's columns, in SQL — the twin of deriveIntake/deriveRail in features/pipeline.
+ * The work board's lead columns, in SQL — the twin of the derivations in features/board/working.ts.
  *
  * The board derived its columns in the browser from three collections at once (leads, estimates,
  * jobs), so it could only ever classify the rows that had loaded. On a 606-customer book its first
