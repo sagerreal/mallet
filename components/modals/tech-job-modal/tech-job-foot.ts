@@ -142,12 +142,17 @@ export function footActions(facts: FootFacts, on: FootHandlers): FootActions {
   if (closeOut) return { primary: closeOut, quiet: null };
 
   const { actVisit } = facts;
-  const finish: FootAction | null = actVisit
-    ? {
-        label: finishLabel(facts),
-        run: () => on.setVisitStatus(actVisit.id, STORE_VISIT_STATUS.DONE),
-      }
-    : null;
+  // A visit that is already done has no Finish. The caller filters it out too (tech-job-modal's
+  // `movable`), and the rule belongs here as well: this file's whole job is that the primary
+  // never says one thing and does another, and "Finish visit →" writing `done` onto a done visit
+  // is the purest form of that — a live-looking button that takes the tap and changes nothing.
+  const finish: FootAction | null =
+    actVisit && actVisit.status !== STORE_VISIT_STATUS.DONE
+      ? {
+          label: finishLabel(facts),
+          run: () => on.setVisitStatus(actVisit.id, STORE_VISIT_STATUS.DONE),
+        }
+      : null;
   const next = actVisit ? nextStepAction(actVisit, on) : null;
 
   if (next) return { primary: next, quiet: finish };

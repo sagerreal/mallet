@@ -43,7 +43,7 @@ import {
   type BuildLine,
   type LaborRate,
   type PricebookItem,
-  AddLineRow,
+  AddToQuoteRow,
   AddMenu,
   LineRow,
   custLabel,
@@ -132,7 +132,7 @@ interface ChoicesRowProps {
  * than as a control.
  *
  * The AFFORDANCE is unchanged — the same two independent opt-ins, the same handlers,
- * the same place in the flow (under "+ Add a line", above the sticky primary). They
+ * the same place in the flow (under the price card, above the sticky primary). They
  * are one tap further in, expanded IN FLOW under the row (no floating UI) and rendered
  * OUTSIDE the head button so a button never nests inside a button — the same shape the
  * tech clock's expander uses.
@@ -630,47 +630,67 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
         </div>
       ) : null}
 
-      {/* the current tier's line list + a per-tier Total */}
-      {lines.length ? (
-        <div className="card" style={{ marginBottom: "var(--space-4)" }}>
-          {lines.map((l, i) => (
-            <LineRow
-              key={i}
-              line={l}
-              onSet={(patch) => setLine(i, patch)}
-              onRemove={() => removeLine(i)}
-            />
-          ))}
-          {/* The list's own append. Pricing a repair at the door is mostly a run of one-off
-              items, and each one used to cost a trip back out to the picker's "Custom item"
-              card. This adds the next blank line in place — in flow at the foot of the list it
-              belongs to, above the Total, which stays the list's last word. The picker below
-              still owns the pricebook, the labor rates and the first line of an empty quote.
-              Full width and 44px tall: this is a technician's tablet on a doorstep. */}
-          <AddLineRow onAdd={addCustom} />
-          {/* With nothing set the subtotal IS the total, and a four-row derivation of one number
-              is noise — the list keeps its single Total line exactly as before. The moment a rate
-              is set the arithmetic becomes the customer's business and it is shown in full. */}
-          {editPriced ? (
-            <PriceBreakdown totals={editTotals} rates={editRates} ruleColor="var(--line)" />
-          ) : (
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                fontWeight: 800,
-                fontSize: "var(--type-lg)",
-                borderTop: "1px solid var(--line)",
-                marginTop: "var(--space-2)",
-                paddingTop: "var(--space-2)",
-              }}
-            >
-              <span>{multi ? `${tierLabel(tier)} total` : "Total"}</span>
-              <span className="fig">{fmt$(tierTotal(tier))}</span>
-            </div>
-          )}
-        </div>
-      ) : null}
+      {/* THE PRICE CARD — the lines, the one way to add to them, and the Total.
+          It renders even with nothing in it. It used to be hidden until the first line existed,
+          which is precisely why the add control had to live outside it and ended up stranded
+          below the discount rows. An empty card holding the invitation to act is the house's
+          own first-run shape, and it keeps the control in the same place all the way through. */}
+      <div className="card" style={{ marginBottom: "var(--space-4)" }}>
+        {lines.map((l, i) => (
+          <LineRow
+            key={i}
+            line={l}
+            onSet={(patch) => setLine(i, patch)}
+            onRemove={() => removeLine(i)}
+          />
+        ))}
+        {/* Picking happens IN the card, under the lines it is about — the four paths replace the
+            control that opened them rather than pushing the list around it. */}
+        {picking ? (
+          <AddMenu
+            sub={add}
+            hasLines={lines.length > 0}
+            pricebook={pricebook}
+            laborRates={laborRates}
+            onSetSub={setAdd}
+            onPickBook={pickBook}
+            onAddCustom={addCustom}
+            onPickRate={pickRate}
+            onAddCustomLabor={addCustomLabor}
+            onDone={() => setPicking(false)}
+          />
+        ) : (
+          <AddToQuoteRow
+            onOpen={() => {
+              setAdd(null);
+              setPicking(true);
+            }}
+          />
+        )}
+        {/* With nothing set the subtotal IS the total, and a four-row derivation of one number
+            is noise — the list keeps its single Total line exactly as before. The moment a rate
+            is set the arithmetic becomes the customer's business and it is shown in full.
+            An empty quote has no Total at all: nothing has been priced, so there is no figure
+            to state and a $0 would be a claim about the job rather than a fact about the list. */}
+        {lines.length === 0 ? null : editPriced ? (
+          <PriceBreakdown totals={editTotals} rates={editRates} ruleColor="var(--line)" />
+        ) : (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontWeight: 800,
+              fontSize: "var(--type-lg)",
+              borderTop: "1px solid var(--line)",
+              marginTop: "var(--space-2)",
+              paddingTop: "var(--space-2)",
+            }}
+          >
+            <span>{multi ? `${tierLabel(tier)} total` : "Total"}</span>
+            <span className="fig">{fmt$(tierTotal(tier))}</span>
+          </div>
+        )}
+      </div>
 
       {/* Discount / sales tax / deposit — three collapsed rows, one open at a time, appearing only
           once a line is priced. See field-pricing.tsx for why this is not the office's three-across
@@ -684,33 +704,8 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
         />
       ) : null}
 
-      {/* "+ Add a line" — open menu (picking) or the collapsed entry button */}
-      {picking ? (
-        <AddMenu
-          sub={add}
-          hasLines={lines.length > 0}
-          pricebook={pricebook}
-          laborRates={laborRates}
-          onSetSub={setAdd}
-          onPickBook={pickBook}
-          onAddCustom={addCustom}
-          onPickRate={pickRate}
-          onAddCustomLabor={addCustomLabor}
-          onDone={() => setPicking(false)}
-        />
-      ) : (
-        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-          <button
-            className="btn"
-            onClick={() => {
-              setAdd(null);
-              setPicking(true);
-            }}
-          >
-            + Add a line
-          </button>
-        </div>
-      )}
+      {/* The add control used to sit HERE, below the discount rows — outside the card whose total
+          it fed, and beneath the three rows that modify that total. It lives in the card now. */}
 
       {/* "Give the customer choices?" — once anything is priced and not all opted */}
       {anyPriced && (showGoodOpt || showBestOpt) ? (

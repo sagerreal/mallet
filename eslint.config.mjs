@@ -1,5 +1,6 @@
 import tseslint from "typescript-eslint";
 import jsxA11y from "eslint-plugin-jsx-a11y";
+import reactHooks from "eslint-plugin-react-hooks";
 import ui from "./eslint-rules/index.mjs";
 
 // Architectural boundary: a module's internals (domain/app/infra/api) are private. Other code
@@ -50,6 +51,26 @@ export default [
       "ui/no-raw-style": "error",
       "ui/no-adhoc-card": "warn",
       "ui/no-bare-field": "warn",
+    },
+  },
+  {
+    // THE HOOK-ORDER GATE. Every page and modal in this app is a client component reading a
+    // Zustand store, and `setJobs`/`setLeads` REPLACE their collections — so a by-id selector
+    // going undefined mid-session is an ordinary event, not an edge case. A hook declared below
+    // the `if (!x) return null` guard that follows it changes the hook COUNT when that happens,
+    // and React answers by throwing "Rendered fewer hooks than expected" and rebuilding the tree:
+    // on screen it is a sheet that blinks and comes back, and a tap that appears to do nothing.
+    // It cost a live-testing session to find one instance by hand (tech-job-modal). ERROR, so the
+    // next one costs a lint run instead.
+    //
+    // exhaustive-deps stays a WARNING: it carries a small adoption debt (10 at time of writing)
+    // and its failure mode is a stale closure, not a crash.
+    files: ["app/**/*.{ts,tsx}", "components/**/*.{ts,tsx}", "features/**/*.{ts,tsx}", "lib/**/*.{ts,tsx}"],
+    languageOptions: { parser: tseslint.parser, parserOptions: { sourceType: "module", ecmaFeatures: { jsx: true } } },
+    plugins: { "react-hooks": reactHooks },
+    rules: {
+      "react-hooks/rules-of-hooks": "error",
+      "react-hooks/exhaustive-deps": "warn",
     },
   },
   {

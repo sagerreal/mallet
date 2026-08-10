@@ -15,7 +15,7 @@
  *   - the sticky .sheet-head: <h2>Build the price</h2> over one .sheet-meta line
  *     ("Price the job · <customer>")
  *   - the built line list (.card) with per-line editable rows + a per-tier Total
- *   - the "+ Add a line" builder: a 2×2 .addgrid of .addtile tiles
+ *   - the "+ Add to the quote" picker: a 2×2 .addgrid of .addtile tiles
  *       Pricebook (browse saved items) · Custom item (one-off price)
  *       Labor    (browse your rates $/hr) · Custom labor (one-off $/hr)
  *     browsing a sublist stays open while building (adding does NOT collapse it)
@@ -44,6 +44,7 @@ import {
   type LaborRate,
   type PricebookItem,
   AddMenu,
+  AddToQuoteRow,
   LineRow,
   custLabel,
   lineAmt,
@@ -177,17 +178,44 @@ export function PriceBuilderModalContent() {
         </div>
       </div>
 
-      {/* Built line list + single-tier Total */}
-      {lines.length ? (
-        <div className="card" style={{ marginBottom: "var(--space-4)" }}>
-          {lines.map((l, i) => (
-            <LineRow
-              key={i}
-              line={l}
-              onSet={(patch) => setLine(i, patch)}
-              onRemove={() => removeLine(i)}
-            />
-          ))}
+      {/* THE PRICE CARD — the lines, the one way to add to them, and the Total. Same shape as the
+          field builder (tech-quote-builder), because it is the same job: the card renders even
+          when empty so the add control has a fixed home, rather than floating below a card that
+          only appears once the first line exists. */}
+      <div className="card" style={{ marginBottom: "var(--space-4)" }}>
+        {lines.map((l, i) => (
+          <LineRow
+            key={i}
+            line={l}
+            onSet={(patch) => setLine(i, patch)}
+            onRemove={() => removeLine(i)}
+          />
+        ))}
+        {/* Picking happens IN the card, under the lines it is about. */}
+        {picking ? (
+          <AddMenu
+            sub={add}
+            hasLines={lines.length > 0}
+            pricebook={pricebook}
+            laborRates={laborRates}
+            onSetSub={setAdd}
+            onPickBook={pickBook}
+            onAddCustom={addCustom}
+            onPickRate={pickRate}
+            onAddCustomLabor={addCustomLabor}
+            onDone={() => setPicking(false)}
+          />
+        ) : (
+          <AddToQuoteRow
+            onOpen={() => {
+              setAdd(null);
+              setPicking(true);
+            }}
+          />
+        )}
+        {/* No Total on an empty quote: nothing has been priced, so there is no figure to state
+            and a $0 would be a claim about the job rather than a fact about the list. */}
+        {lines.length ? (
           <div
             style={{
               display: "flex",
@@ -202,36 +230,8 @@ export function PriceBuilderModalContent() {
             <span>Total</span>
             <span className="fig">{fmt$(total)}</span>
           </div>
-        </div>
-      ) : null}
-
-      {/* "+ Add a line" — open menu (picking) or the collapsed entry button */}
-      {picking ? (
-        <AddMenu
-          sub={add}
-          hasLines={lines.length > 0}
-          pricebook={pricebook}
-          laborRates={laborRates}
-          onSetSub={setAdd}
-          onPickBook={pickBook}
-          onAddCustom={addCustom}
-          onPickRate={pickRate}
-          onAddCustomLabor={addCustomLabor}
-          onDone={() => setPicking(false)}
-        />
-      ) : (
-        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap" }}>
-          <button
-            className="btn"
-            onClick={() => {
-              setAdd(null);
-              setPicking(true);
-            }}
-          >
-            + Add a line
-          </button>
-        </div>
-      )}
+        ) : null}
+      </div>
 
       {saveError ? (
         <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{saveError}</p>

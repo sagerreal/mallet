@@ -42,6 +42,7 @@ import { useMe } from "@/features/identity/hooks";
 import { useCanText } from "@/features/messaging/use-can-text";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { VISIT_FEE_TITLE } from "@/features/invoices/visit-fee";
+import type { Visit } from "@/lib/store/types";
 import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
 import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { isJobAssignedTo } from "@/lib/store/job-assignment";
@@ -192,6 +193,26 @@ export function TechJobModalContent() {
     [jobId, setVisitStatus, visitSurface],
   );
 
+  /**
+   * Books a return trip. Keyed on `jobId` — the modal's own param — NOT on the `job` object, and
+   * declared HERE with the other handlers rather than beside the control that uses it.
+   *
+   * IT USED TO SIT BELOW THE `if (!job) return null` GUARD, which made it a conditional hook: the
+   * sheet ran one more hook when the job was in the store than when it wasn't. Both hydrators call
+   * `setJobs`, which REPLACES the collection, so any snapshot that no longer carries this job —
+   * a myDay refetch on focus once the visit is finished, a scoped list, a page boundary — dropped
+   * the hook count mid-render and React threw "Rendered fewer hooks than expected", discarding the
+   * tree and rebuilding it. That was the flash: the sheet blinked and came back, and the tap that
+   * triggered the refetch looked like it had done nothing.
+   */
+  const bookFollowUp = useCallback(
+    (reason: string) => {
+      if (!jobId) return Promise.resolve({ ok: false, error: "This job is no longer open." });
+      return addFollowUpVisit(jobId, reason);
+    },
+    [addFollowUpVisit, jobId],
+  );
+
   const chargeOnFile = useCallback(() => {
     // charge the balance to the card on file — the "paid before they left" play. Unreachable on
     // the field surface by construction (the field customer DTO carries no card), but the write
@@ -301,8 +322,18 @@ export function TechJobModalContent() {
    * The visit this sheet's FOOT moves. Own visit first; an owner/office viewer may move the
    * job's current one either way. A technician looking at a colleague's visit gets neither the
    * step nor the finish — the server refuses both, so a live-looking button would just error.
+   *
+   * A FINISHED VISIT IS NOT MOVABLE, and that is the whole of this filter. On a job whose first
+   * stop is done and whose second is a return trip with no slot yet, the job is still open, so
+   * `done` is false and this used to hand the foot the finished visit: the sheet offered
+   * "Finish visit →" and the tap wrote `done` onto a visit that was already done. The write
+   * succeeded, changed nothing, and the reconcile re-rendered the same sheet — a button that
+   * looked live, took the tap and did nothing. Reopening a finished visit is a separate,
+   * office-only correction and keeps its own ↩ Reopen on the row (see visit-row.tsx).
    */
-  const actVisit = !done ? (myVisit ?? (isOffice ? curVisit : undefined)) : undefined;
+  const movable = (v: Visit | undefined): Visit | undefined =>
+    v && v.status !== STORE_VISIT_STATUS.DONE ? v : undefined;
+  const actVisit = !done ? (movable(myVisit) ?? (isOffice ? movable(curVisit) : undefined)) : undefined;
 
   /**
    * Booking a return trip. Job-level, matching the server's gate (assertOnJobIfTech) — the person
@@ -315,10 +346,6 @@ export function TechJobModalContent() {
    * is simply absent at the moment somebody needs it.
    */
   const canBookFollowUp = isOffice || assignedToMe;
-  const bookFollowUp = useCallback(
-    (reason: string) => addFollowUpVisit(job!.id, reason),
-    [addFollowUpVisit, job],
-  );
 
   // The foot — sheet grammar: ONE loud primary, and a quiet Finish under it whenever the primary
   // is something else. The branch is a pure view model; see tech-job-foot.ts for the four rules.

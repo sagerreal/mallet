@@ -208,6 +208,22 @@ export function BrowseRow({ label, right, onClick }: BrowseRowProps) {
   );
 }
 
+/**
+ * The picker's own frame, INSIDE the price card.
+ *
+ * The two browse sublists used to carry `.card` themselves, which was right while the picker sat
+ * out on the page as a sibling of the line list. It now opens in the card, under the lines it is
+ * about, so its own card would be a card inside a card. A hairline and the card's own padding do
+ * the separating instead — the same way every other in-card section in this app is divided.
+ *
+ * THE RULE IS CONDITIONAL, because on an empty quote there is nothing above it to separate from:
+ * a hairline with blank card above it reads as a broken divider rather than as a division.
+ */
+const sublistStyle = (hasLines: boolean): React.CSSProperties =>
+  hasLines
+    ? { borderTop: "1px solid var(--line)", marginTop: "var(--space-2)", paddingTop: "var(--space-3)" }
+    : {};
+
 interface AddMenuProps {
   sub: AddSub;
   hasLines: boolean;
@@ -221,7 +237,7 @@ interface AddMenuProps {
   onDone: () => void;
 }
 
-/** The "+ Add a line" builder: sublists (pb / labor) or the 2×2 tile grid. */
+/** The "+ Add to the quote" picker: sublists (pb / labor) or the 2×2 tile grid. */
 export function AddMenu({
   sub,
   hasLines,
@@ -236,7 +252,7 @@ export function AddMenu({
 }: AddMenuProps) {
   if (sub === "pb") {
     return (
-      <div className="card" style={{ marginBottom: "var(--space-2xs)" }}>
+      <div style={sublistStyle(hasLines)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
           <span style={SEC_LABEL}>Pricebook</span>
           <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={() => onSetSub(null)}>
@@ -263,7 +279,7 @@ export function AddMenu({
 
   if (sub === "labor") {
     return (
-      <div className="card" style={{ marginBottom: "var(--space-2xs)" }}>
+      <div style={sublistStyle(hasLines)}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
           <span style={SEC_LABEL}>Labor rates</span>
           <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={() => onSetSub(null)}>
@@ -283,20 +299,25 @@ export function AddMenu({
   }
 
   return (
-    <div style={{ marginBottom: "var(--space-2xs)" }}>
+    <div style={sublistStyle(hasLines)}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 var(--space-3)" }}>
-        <span style={SEC_LABEL}>Add a line</span>
+        <span style={SEC_LABEL}>Add to the quote</span>
         {hasLines ? (
           <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={onDone}>
             done
           </span>
         ) : null}
       </div>
+      {/* LEFT COLUMN IS THE ONE-OFF, RIGHT COLUMN IS THE SAVED — and "Custom item" leads, because
+          it is now the only route to the thing the list's own append used to do in one tap. A 2×2
+          grid reads top-left first and that corner is where the thumb already rests, so the
+          commonest door-side move is the shortest one. Rows pair item with item and labor with
+          labor, so the grid still explains itself at a glance. */}
       <div className="addgrid">
-        <AddTile ico={IcoBook} title="Pricebook" sub="browse saved items" arrow onClick={() => onSetSub("pb")} />
         <AddTile ico={IcoPen} title="Custom item" sub="one-off price" arrow={false} onClick={onAddCustom} />
-        <AddTile ico={IcoClock} title="Labor" sub="browse your rates · $/hr" arrow onClick={() => onSetSub("labor")} />
+        <AddTile ico={IcoBook} title="Pricebook" sub="browse saved items" arrow onClick={() => onSetSub("pb")} />
         <AddTile ico={IcoPen} title="Custom labor" sub="one-off $/hr" arrow={false} onClick={onAddCustomLabor} />
+        <AddTile ico={IcoClock} title="Labor" sub="browse your rates · $/hr" arrow onClick={() => onSetSub("labor")} />
       </div>
     </div>
   );
@@ -311,31 +332,37 @@ const INP: React.CSSProperties = {
   fontFamily: "inherit",
 };
 
-interface AddLineRowProps {
-  onAdd: () => void;
+interface AddToQuoteRowProps {
+  onOpen: () => void;
 }
 
 /**
- * The line list's own append control — the last row of the list, not a floating affordance.
+ * THE ONE WAY INTO THIS QUOTE — the last row of the line list, above the Total.
  *
- * WHY IT EXISTS SEPARATELY FROM THE ADD MENU. AddMenu asks WHICH KIND of line (pricebook / custom
- * item / labor rate / custom labor), which is the right question for the first line and the wrong
- * one for the fifth: a repair priced at the door is mostly a run of one-off items, and each one
- * cost a trip back out to the "Custom item" tile. This appends the next blank one in place. The
- * menu keeps the other three kinds.
+ * There used to be two. This row appended a blank custom line, and a second button called
+ * "+ Add a line" sat OUTSIDE the card, below the discount / sales tax / deposit rows, opening the
+ * four-way picker. Two controls, near-identical names, and one of the picker's four tiles
+ * ("Custom item") did exactly what this row did — so the pair read as the same button printed
+ * twice, and the one that owned the pricebook had drifted below the totals it was supposed to
+ * feed. It is one control now, and it opens the picker in place.
+ *
+ * THE COST, NAMED. Appending a one-off item is two taps again rather than one, and door-side
+ * repair pricing is mostly a run of one-off items. The picker opens INSIDE the card so nothing
+ * navigates away, and "Custom item" is the grid's first tile — top-left, the nearest thumb
+ * target — so the common path is the shortest one available.
  *
  * Full width and 44px tall because the surface is a technician's tablet held at a doorstep — the
  * same tap-target floor the sheet feet and the mobile `.btn` rule use.
  */
-export function AddLineRow({ onAdd }: AddLineRowProps) {
+export function AddToQuoteRow({ onOpen }: AddToQuoteRowProps) {
   return (
     <button
       type="button"
       className="btn ghost"
-      onClick={onAdd}
+      onClick={onOpen}
       style={{ width: "100%", minHeight: 44, marginTop: "var(--space-2)" }}
     >
-      + Add another line
+      + Add to the quote
     </button>
   );
 }

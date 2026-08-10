@@ -127,7 +127,7 @@ describe("QuoteTab — normal job", () => {
 });
 
 // ---------------------------------------------------------------------------
-// The good/better/best opt-in. It is ONE bordered row under "+ Add a line" — the
+// The good/better/best opt-in. It is ONE bordered row under the price card — the
 // question and what it buys on the left, "Set up →" on the right — instead of a
 // muted caption with two loose chips under it. The two opt-ins themselves are
 // unchanged; they expand IN FLOW under the row (no floating UI).
@@ -187,74 +187,97 @@ describe("QuoteTab — the customer-choices row", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Adding a SECOND line. Pricing a doorstep repair is mostly a run of one-off
-// items, and every one of them meant going back out to the "Custom item" card in
-// the kind picker. The list now carries its own append control at its foot; the
-// picker keeps the other three kinds.
+// THE ONE WAY INTO THE QUOTE. There used to be two controls: this list's own append
+// ("+ Add another line") and a second button called "+ Add a line" stranded outside the card,
+// below the discount / sales tax / deposit rows. One of the picker's four tiles did exactly what
+// the append did, so the pair read as the same button printed twice — and the one that owned the
+// pricebook had drifted below the totals it feeds.
 // ---------------------------------------------------------------------------
 
-describe("QuoteTab — + Add another line", () => {
-  const ADD_LINE = { name: "+ Add another line" };
+describe("QuoteTab — + Add to the quote", () => {
+  const ADD = { name: "+ Add to the quote" };
   const oneLine = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
 
-  it("appends an empty line without a trip back through the kind picker", () => {
+  const renderPriced = () => {
     const job = oneLine();
     mockJobs = [job];
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    expect(screen.getAllByLabelText("Price")).toHaveLength(1);
+  };
 
-    fireEvent.click(screen.getByRole("button", ADD_LINE));
-
-    expect(screen.getAllByLabelText("Price")).toHaveLength(2);
-    // The picker was never involved — its tiles are not on screen.
-    expect(screen.queryByText("Custom item")).toBeNull();
+  it("is the only add control on the tab", () => {
+    renderPriced();
+    expect(screen.getAllByRole("button", ADD)).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "+ Add a line" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "+ Add another line" })).toBeNull();
   });
 
-  it("the appended line is a real editable line that reaches the total", () => {
-    const job = oneLine();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    fireEvent.click(screen.getByRole("button", ADD_LINE));
+  it("opens the four paths in place", () => {
+    renderPriced();
+    // Collapsed: the picker is not on screen and the control is.
+    expect(screen.queryByText("Pricebook")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", ADD));
+
+    expect(screen.getByText("Custom item")).toBeTruthy();
+    expect(screen.getByText("Pricebook")).toBeTruthy();
+    expect(screen.getByText("Labor")).toBeTruthy();
+    expect(screen.getByText("Custom labor")).toBeTruthy();
+  });
+
+  it("Custom item appends a real editable line that reaches the total", () => {
+    renderPriced();
+    expect(screen.getAllByLabelText("Price")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", ADD));
+    fireEvent.click(screen.getByText("Custom item"));
 
     const prices = screen.getAllByLabelText("Price");
+    expect(prices).toHaveLength(2);
     fireEvent.change(prices[1]!, { target: { value: "50" } });
-
     expect(screen.getByText("$235")).toBeTruthy();
   });
 
-  it("adds one line per tap — a third line is one tap away, not four", () => {
-    const job = oneLine();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    fireEvent.click(screen.getByRole("button", ADD_LINE));
-    fireEvent.click(screen.getByRole("button", ADD_LINE));
-    expect(screen.getAllByLabelText("Price")).toHaveLength(3);
-  });
-
   it("carries a doorstep-sized tap target", () => {
-    const job = oneLine();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    expect((screen.getByRole("button", ADD_LINE) as HTMLButtonElement).style.minHeight).toBe("44px");
+    renderPriced();
+    expect((screen.getByRole("button", ADD) as HTMLButtonElement).style.minHeight).toBe("44px");
   });
 
-  it("is absent while there is no list to append to — the picker owns the first line", () => {
+  it("on an empty quote the picker is already open, so the first line is one tap", () => {
     const job = makeJob();
     mockJobs = [job];
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    expect(screen.queryByRole("button", ADD_LINE)).toBeNull();
+
     expect(screen.getByText("Custom item")).toBeTruthy();
+    // Nothing is priced, so there is no figure to state — a $0 Total would be a claim
+    // about the job rather than a fact about the list.
+    expect(screen.queryByText("Total")).toBeNull();
   });
 
-  it("keeps the kind picker for the other three kinds", () => {
-    const job = oneLine();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    fireEvent.click(screen.getByRole("button", { name: "+ Add a line" }));
-    expect(screen.getByText("Pricebook")).toBeTruthy();
-    expect(screen.getByText("Custom item")).toBeTruthy();
-    expect(screen.getByText("Labor")).toBeTruthy();
-    expect(screen.getByText("Custom labor")).toBeTruthy();
+  it("sits INSIDE the price card, above the Total — not below the discount rows", () => {
+    renderPriced();
+
+    const card = screen.getByLabelText("Price").closest(".card") as HTMLElement;
+    expect(card).toBeTruthy();
+
+    const add = screen.getByRole("button", ADD);
+    // In the card that holds the lines, and before the Total inside it.
+    expect(card.contains(add)).toBe(true);
+
+    const order = Array.from(card.querySelectorAll("button, span")).filter(
+      (el) => el === add || el.textContent === "Total",
+    );
+    expect(order[0]).toBe(add);
+    expect(order[1]?.textContent).toBe("Total");
+  });
+
+  it("Custom item leads the grid — the shortest path to the commonest door-side move", () => {
+    renderPriced();
+    fireEvent.click(screen.getByRole("button", ADD));
+
+    const tiles = Array.from(document.querySelectorAll(".addtile .addtile-t")).map(
+      (el) => (el.textContent ?? "").replace("→", "").trim(),
+    );
+    expect(tiles).toEqual(["Custom item", "Pricebook", "Custom labor", "Labor"]);
   });
 });
 
