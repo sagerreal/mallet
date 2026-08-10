@@ -97,7 +97,19 @@ export function VisitsSec({
         {done && <span style={{ color: "var(--green-700)", fontWeight: 700 }}>✓ Done</span>}
       </div>
       {done ? (
-        <FinishedJobVisit curVisit={curVisit} isOffice={isOffice} onStatus={onStatus} />
+        <div className="vlist">
+          <FinishedJobVisit curVisit={curVisit} isOffice={isOffice} onStatus={onStatus} />
+          {/* THE MOMENT THIS MATTERS MOST. He taps Done, packs up, and finds the fitting is wrong —
+              and until now this branch rendered the visit he had just finished and nothing else.
+              The endpoint reopens the job and appends the trip; a bill that has been paid, sent or
+              voided refuses, and says which. Same wrapper rule as the open list: `.vlist` puts the
+              hairline on the child, so the ask's own bordered button keeps its edge. */}
+          {onAddFollowUp ? (
+            <div>
+              <FollowUpAsk onBook={onAddFollowUp} />
+            </div>
+          ) : null}
+        </div>
       ) : (
         <div className="vlist">
           {rows.length ? (

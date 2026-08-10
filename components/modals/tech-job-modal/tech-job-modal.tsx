@@ -308,10 +308,13 @@ export function TechJobModalContent() {
    * Booking a return trip. Job-level, matching the server's gate (assertOnJobIfTech) — the person
    * who walked the site books the return, whichever visit carried them there.
    *
-   * Not offered on a finished job: the server refuses it (a closed job takes a Reopen, not a new
-   * visit), and a control that always errors is worse than no control.
+   * OFFERED ON A FINISHED JOB TOO, and that is the moment it matters most: he finishes, packs up,
+   * and finds the fitting is wrong. The endpoint reopens the job and appends the trip in one save.
+   * It can still refuse — a bill that is paid, part-paid, sent or voided is not ours to disturb —
+   * but that refusal names the bill and the next step, which is worth far more than a control that
+   * is simply absent at the moment somebody needs it.
    */
-  const canBookFollowUp = !done && (isOffice || assignedToMe);
+  const canBookFollowUp = isOffice || assignedToMe;
   const bookFollowUp = useCallback(
     (reason: string) => addFollowUpVisit(job!.id, reason),
     [addFollowUpVisit, job],
