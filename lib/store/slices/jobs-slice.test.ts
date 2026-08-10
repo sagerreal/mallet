@@ -12,6 +12,8 @@ const mockRemoveVisit = vi.fn();
 const mockScheduleVisit = vi.fn();
 const mockFieldSetVisitStatus = vi.fn();
 const mockFieldSetVisitEnroute = vi.fn();
+const mockFieldAddAddon = vi.fn();
+const mockApproveFoundWork = vi.fn();
 
 // jobs-slice imports RouterOutputs from @/lib/trpc/client for type purposes only.
 vi.mock("@/lib/trpc/client", () => ({ api: {} }));
@@ -41,6 +43,8 @@ vi.mock("@/lib/trpc/vanilla", () => ({
       field: {
         setVisitStatus: { mutate: (...a: unknown[]) => mockFieldSetVisitStatus(...a) },
         setVisitEnroute: { mutate: (...a: unknown[]) => mockFieldSetVisitEnroute(...a) },
+        addAddon: { mutate: (...a: unknown[]) => mockFieldAddAddon(...a) },
+        approveFoundWork: { mutate: (...a: unknown[]) => mockApproveFoundWork(...a) },
       },
     },
   },
@@ -2017,5 +2021,83 @@ describe("setVisitStatus — a job with an unplaced return trip stays open", () 
     get().setVisitStatus("j-return-2", RETURN_TRIP.id, "done", "field");
 
     expect(get().jobs.find((j) => j.id === "j-return-2")?.status).toBe("done");
+  });
+});
+
+
+/**
+ * signChangeOrder — the found-work addendum as one store action. Each typed line becomes an
+ * add-on with a CLIENT-authored id, then one approveFoundWork call signs the whole set (new ids
+ * + the already-proposed ones on the glass). Server-first: a signature flow never fakes success.
+ */
+describe("signChangeOrder", () => {
+  beforeEach(() => {
+    mockFieldAddAddon.mockReset();
+    mockApproveFoundWork.mockReset();
+    mockInvalidate.mockReset();
+  });
+
+  it("creates each line with a client id, then approves them all in one call", async () => {
+    mockFieldAddAddon.mockResolvedValue(makeJobDTO("j-co"));
+    mockApproveFoundWork.mockResolvedValue(
+      makeJobDTO("j-co", { lines: [{ id: "l1", description: "Extra valve", quantity: 1, rateCents: 4000, costCents: 0 }] }),
+    );
+    const { get } = makeStore();
+    seedDbJob(get, "j-co");
+
+    const r = await get().signChangeOrder("j-co", {
+      lines: [{ description: "Extra valve", rateCents: 4000 }],
+      includeAddonDbIds: ["ad-existing"],
+      signerName: "Dana Alvarez",
+    });
+
+    expect(r.ok).toBe(true);
+    expect(mockFieldAddAddon).toHaveBeenCalledTimes(1);
+    const created = mockFieldAddAddon.mock.calls[0]![0] as { id: string; description: string; rateCents: number };
+    expect(created.description).toBe("Extra valve");
+    expect(created.rateCents).toBe(4000);
+    expect(created.id).toMatch(/^[0-9a-f-]{36}$/);
+
+    const approve = mockApproveFoundWork.mock.calls[0]![0] as { addonIds: string[]; signerName: string };
+    // The already-proposed add-on is on the glass, so it is in the approval — first, then the new id.
+    expect(approve.addonIds).toEqual(["ad-existing", created.id]);
+    expect(approve.signerName).toBe("Dana Alvarez");
+    expect(mockInvalidate).toHaveBeenCalled();
+  });
+
+  it("a refused approval reports the server's wording and leaves the add-ons PROPOSED", async () => {
+    mockFieldAddAddon.mockResolvedValue(makeJobDTO("j-co2"));
+    // The wire shape of a domain refusal — a bare Error would (correctly) map to generic copy.
+    mockApproveFoundWork.mockRejectedValue({
+      data: { code: "BAD_REQUEST" },
+      message: "This job is closed — ask the office to change it.",
+    });
+    const { get } = makeStore();
+    seedDbJob(get, "j-co2");
+
+    const r = await get().signChangeOrder("j-co2", {
+      lines: [{ description: "Extra valve", rateCents: 4000 }],
+      includeAddonDbIds: [],
+      signerName: "Dana",
+    });
+
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/closed/);
+    // The creates went through — the true state is "proposed, unsigned", not a rollback.
+    expect(mockFieldAddAddon).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a job the server does not know yet", async () => {
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-opt", origin: "manual", visits: [] }]);
+
+    const r = await get().signChangeOrder("j-opt", {
+      lines: [{ description: "x", rateCents: 100 }],
+      includeAddonDbIds: [],
+      signerName: "Dana",
+    });
+
+    expect(r.ok).toBe(false);
+    expect(mockFieldAddAddon).not.toHaveBeenCalled();
   });
 });

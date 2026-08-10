@@ -444,6 +444,31 @@ export interface JobsSlice {
       depBps?: number;
     },
   ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * THE CHANGE ORDER — new work added AFTER the quote was signed, signed for by the customer.
+   *
+   * The sentence they signed says work beyond what is listed needs their approval; this is that
+   * approval, through the machinery that already existed for it: each new line becomes a found-
+   * work add-on (client-authored ids, so the ids are known before the network), then ONE
+   * v1.field.approveFoundWork call signs them all — the addendum, the approval stamps and the
+   * job-lines write land in a single transaction server-side.
+   *
+   * `includeAddonDbIds` carries add-ons that were ALREADY proposed on the job (found work the
+   * office or a prior session queued) — they are on the glass being signed, so they are in the
+   * approval. SERVER-FIRST, no optimistic step: a signature flow must never fake success.
+   *
+   * If the approval fails after the add-ons were created they remain PROPOSED — visible in Found
+   * work with the office OK flow — which is the true state of the world, not a rollback target.
+   */
+  signChangeOrder: (
+    jobId: string,
+    input: {
+      lines: { description: string; rateCents: number }[];
+      includeAddonDbIds: string[];
+      signerName: string;
+      signatureSvg?: string;
+    },
+  ) => Promise<{ ok: boolean; error?: string }>;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
@@ -1024,6 +1049,43 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         reportWriteError("saveQuoteDraft", err);
         return { ok: false, error: userMessage(err) };
       });
+  },
+
+  signChangeOrder: async (jobId, input) => {
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) {
+      return { ok: false, error: "This job hasn't finished saving yet — try again in a moment." };
+    }
+    try {
+      // Client-authored ids: the approve call needs them, and waiting on each create's echo to
+      // learn them would serialize the flow around data this device already chose.
+      const newIds: string[] = [];
+      for (const line of input.lines) {
+        const id = crypto.randomUUID();
+        newIds.push(id);
+        await trpcVanilla.v1.field.addAddon.mutate({
+          jobId,
+          id,
+          description: line.description,
+          rateCents: line.rateCents,
+        });
+      }
+      const dto = await trpcVanilla.v1.field.approveFoundWork.mutate({
+        jobId,
+        addonIds: [...input.includeAddonDbIds, ...newIds],
+        signerName: input.signerName,
+        ...(input.signatureSvg ? { signatureSvg: input.signatureSvg } : {}),
+      });
+      // The approval writes job LINES — guard the merge exactly as the other line writes do.
+      _recentLineWrites.set(jobId, Date.now());
+      set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+      invalidateJobLists();
+      return { ok: true };
+    } catch (err: unknown) {
+      reportWriteError("signChangeOrder", err);
+      // Surface the server's wording — a refusal here names something fixable at the door.
+      return { ok: false, error: userMessage(err) };
+    }
   },
 
   // ---------------------------------------------------------------------------
