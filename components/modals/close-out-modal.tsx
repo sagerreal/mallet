@@ -1366,43 +1366,18 @@ export function CloseOutModalContent() {
         </div>
       </div>
 
-      {/* What was done — goes on the invoice the customer sees (completionNote).
-          OFFICE ONLY: `job.completion` rides `v1.jobs.update`, ownerOrOffice, and the field
-          router has no `setCompletion` sibling yet (`v1.field.setVisitNotes` is a different
-          column — visit notes are not the job's completion line). A technician typing here would
-          watch the text save and silently roll back, so the field gets no box rather than a
-          lying one. This is the one control the person who did the work should own; it is owed
-          a field endpoint, not a disabled input. */}
-      {isOffice ? (
-        <Field
-          label="What was done"
-          style={{ marginBottom: "var(--space-3)" }}
-          hint={
-            <span className="muted" style={{ fontWeight: 500 }}>
-              — goes on the invoice the customer sees
-            </span>
-          }
-        >
-          {/* The placeholder is short enough to READ on a phone. The old hint needed
-              490px inside a 309px field, so it was cut off mid-word on every device a
-              tech actually owns. */}
-          <input
-            type="text"
-            defaultValue={job.completion || ""}
-            placeholder="e.g. Replaced 40-gal water heater"
-            onChange={(e) => updateJob(job.id, { completion: e.target.value })}
-            style={{
-              width: "100%",
-              boxSizing: "border-box",
-              border: "1.5px solid var(--line)",
-              borderRadius: "var(--radius-sm)",
-              padding: "var(--space-2) var(--space-3)",
-              fontFamily: "inherit",
-              fontSize: "var(--type-base)",
-            }}
-          />
-        </Field>
-      ) : null}
+      {/* NO "What was done" BOX HERE, and its removal is not a matter of taste.
+          Its own label promised "goes on the invoice the customer sees" and that was FALSE:
+          nothing in components/shared/invoice-document.tsx, features/invoices/ or
+          modules/invoicing/ has ever read `job.completion`. The customer never saw a word of it.
+          So the one thing this control claimed to do, it did not do — and the wrap-up sheet is
+          the worst place to ask a question whose answer goes nowhere, because it stands between
+          a technician and taking the money.
+
+          The COLUMN and the office surface stay: job-modal.tsx still renders `completion` in the
+          job's living record, which is a real place for it, and no data is dropped. If the
+          customer's copy should carry a what-we-did line later, it needs to actually reach the
+          document — a field endpoint and a renderer — not a box that saves into silence. */}
 
       {/* Bill-ask — ONLY when there is GENUINELY no price. A persisted on-site
           price flows job.lines → invoice.total via ensureInvoiceForJob, so we

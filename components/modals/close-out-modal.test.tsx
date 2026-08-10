@@ -806,9 +806,8 @@ describe("CloseOutModalContent — a technician collects", () => {
     expect(mockCreatePayment).toHaveBeenCalledWith("field", "inv-1");
   });
 
-  it("offers no what-was-done box and no hand-off — both are ownerOrOffice writes", () => {
+  it("offers no hand-off — it is an ownerOrOffice write", () => {
     render(<CloseOutModalContent />);
-    expect(screen.queryByText("What was done")).toBeNull();
     expect(screen.queryByText(/Log & send to office/)).toBeNull();
   });
 
@@ -929,14 +928,23 @@ describe("CloseOutModalContent — the office keeps its own gates (regression fe
     expect(screen.getByText("Take payment — $450")).toBeTruthy();
   });
 
-  it("still offers the what-was-done box, the hand-off, and the price builder", () => {
+  it("still offers the hand-off and the price builder", () => {
     mockJobs = [{ ...cardJob, lines: [] } as Job];
     mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
     render(<CloseOutModalContent />);
 
-    expect(screen.getByText("What was done")).toBeTruthy();
     expect(screen.getByText("No price on this job yet — what did it run?")).toBeTruthy();
     expect(screen.getByText(/Log & send to office/)).toBeTruthy();
+  });
+
+  // The box is gone for EVERY role, not hidden from one. Its label promised the text went on the
+  // customer's invoice and nothing in the invoicing module has ever read job.completion.
+  it("offers no what-was-done box to the office either", () => {
+    mockJobs = [{ ...cardJob, lines: [] } as Job];
+    mockInvoices = [{ ...cardInvoice, total: 0, lines: [] } as Invoice];
+    render(<CloseOutModalContent />);
+
+    expect(screen.queryByText("What was done")).toBeNull();
   });
 });
 
