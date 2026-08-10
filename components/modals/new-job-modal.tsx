@@ -104,6 +104,9 @@ export function NewJobModalContent() {
 
   // Saved before-you-leave checklists feed the picker (hydrated from the DB).
   const jobChecklists = checklists.filter((c) => c.stage === "job");
+  // The office's "scope it THIS way" list — ServiceTitan runs the same mechanic as job-type
+  // forms; the stage existed in the domain from day one and nothing ever offered it.
+  const scopeChecklists = checklists.filter((c) => c.stage === "scope");
 
   // Only live (non-archived) leads feed the customer picker (prototype liveLeads()).
   const liveLeads = leads.filter((l) => !l.archived);
@@ -112,6 +115,8 @@ export function NewJobModalContent() {
   // Core fields
   const [title, setTitle] = useState("");
   const [njType, setNjType] = useState<NjType>("service");
+  // Which template pool the checklist row offers — the type IS the stage.
+  const activeChecklists = njType === "service" ? jobChecklists : scopeChecklists;
   const [customer, setCustomer] = useState("");
   const [phone, setPhone] = useState("");
   const [addr, setAddr] = useState("");
@@ -259,7 +264,7 @@ export function NewJobModalContent() {
         })),
       };
     }
-    const saved = jobChecklists.find((c) => c.id === chkTpl);
+    const saved = activeChecklists.find((c) => c.id === chkTpl);
     return saved ? { name: saved.name, items: saved.items } : null;
   }
 
@@ -313,6 +318,8 @@ export function NewJobModalContent() {
    * way to reach the thing that had just been created.
    */
   async function createEstimate(job: string): Promise<{ ok: boolean; createdJob: Job | null }> {
+    // Retry after a failed checklist attach — the job and visits already persisted.
+    if (chkRetryJobRef.current) return attachPickedChecklist(chkRetryJobRef.current);
     const rows = resolvedVisits();
     const custName = customer.trim();
     const match = await resolveTypedCustomer(custName);
@@ -386,8 +393,8 @@ export function NewJobModalContent() {
     // Unplaced (hours only) — dragged onto the Schedule later. Must run after the
     // reconcile: addVisit only persists once the job is DB-origin.
     rows.forEach((v) => addVisit(created.id, v.h));
-    // No checklist on estimates — the section only renders for the Job type.
-    return { ok: true, createdJob: created };
+    // The scoping checklist rides the estimate job exactly as the job checklist rides a job.
+    return attachPickedChecklist(created);
   }
 
   /** Create a new Job and persist it (along with its visits) to the database.
@@ -584,7 +591,7 @@ export function NewJobModalContent() {
   // ---- collapsed row summaries (the value IS the state) ---------------------
 
   const chkIsBlank = chkTpl === "blank";
-  const chkPicked = jobChecklists.find((c) => c.id === chkTpl);
+  const chkPicked = activeChecklists.find((c) => c.id === chkTpl);
   const chkCurName = !chkTpl
     ? "No checklist"
     : chkIsBlank
@@ -768,10 +775,14 @@ export function NewJobModalContent() {
             </div>
           </DisclosureRow>
 
-          {/* Jobs only: estimates attach to the lead, which carries no checklist. */}
-          {njType === "service" && (
+          {/* BOTH types. The gate here used to say "estimates attach to the lead, which carries
+              no checklist" — true once, stale since the estimate became a REAL job. A scoping
+              checklist is how the office makes a walkthrough happen a particular way (measure the
+              run, photo the panel, check crawlspace access) — the same job-type-forms mechanic
+              the incumbents gate estimate closeout on. */}
+          {(
             <DisclosureRow
-              label="Before-you-leave checklist"
+              label={njType === "service" ? "Before-you-leave checklist" : "Scoping checklist"}
               value={chkCurName}
               open={openRow === "chk" || chkIsBlank}
               onToggle={() => toggleRow("chk")}
@@ -785,7 +796,7 @@ export function NewJobModalContent() {
                   <span className="njchk-dot">✓</span>
                   <span style={{ flex: 1 }}>No checklist</span>
                 </button>
-                {jobChecklists.map((c) => (
+                {activeChecklists.map((c) => (
                   <button
                     key={c.id}
                     type="button"

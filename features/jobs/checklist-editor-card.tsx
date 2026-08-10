@@ -90,6 +90,9 @@ function CollapsedRow({
       >
         {checklist.name || "Untitled checklist"}
       </span>
+      {/* Scope-stage lists run on estimate walkthroughs, not jobs — say so in the list, or two
+          same-named checklists with different stages are indistinguishable. */}
+      {checklist.stage === "scope" ? <span style={CHIP_STYLE}>scoping</span> : null}
       <span style={CHIP_STYLE}>{checklist.items.length} {checklist.items.length === 1 ? "step" : "steps"}</span>
     </button>
     </div>

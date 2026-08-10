@@ -532,7 +532,13 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     }));
   });
 
-  it("no checklist section for the Estimate type; none attached without a pick", async () => {
+  it("the Estimate type offers SCOPING checklists — and none attaches without a pick", async () => {
+    storeChecklists = [
+      { id: "chk-j", name: "Drain close-out", trade: "Custom", stage: "job", match: [],
+        items: [{ id: "j1", text: "Water back on", type: "check", required: true, position: 0 }] },
+      { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "scope", match: [],
+        items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }] },
+    ];
     const persistedLead = { id: "lead-42", name: "Plain Customer" };
     addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
     addJob.mockReturnValue({
@@ -541,19 +547,54 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     });
 
     render(<NewJobModalContent />);
-    // Estimate type hides the checklist picker entirely.
+    // The row exists for estimates now (it used to unmount — the "estimates attach to the lead"
+    // gate went stale the day the estimate became a real job), offering SCOPE-stage templates:
+    // how the office makes a walkthrough happen a particular way.
     fireEvent.click(screen.getByText("Estimate"));
-    expect(screen.queryByText("No checklist")).toBeNull();
-    // Back to Job: create without picking → no checklist attach.
-    // The chip reads "Flat rate" now — "Job" was wrong twice: an estimate visit IS a job, and
-    // what the chip means is that the price is known.
-    fireEvent.click(screen.getByRole("button", { name: "Flat rate" }));
+    expect(screen.getByText("Scoping checklist")).toBeTruthy();
+    fireEvent.click(screen.getByText("Scoping checklist"));
+    expect(screen.getByText("Repipe walkthrough")).toBeTruthy();
+    // Job-stage templates stay out of the estimate pool.
+    expect(screen.queryByText("Drain close-out")).toBeNull();
+
+    // Create WITHOUT picking → no checklist attach.
     fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "plain job" },
+      target: { value: "plain estimate" },
     });
     fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
     await waitFor(() => expect(addVisit).toHaveBeenCalled());
     expect(updateJob).not.toHaveBeenCalled();
+  });
+
+  it("an estimate with a picked scoping checklist attaches it to the created job", async () => {
+    storeChecklists = [
+      { id: "chk-j", name: "Drain close-out", trade: "Custom", stage: "job", match: [],
+        items: [{ id: "j1", text: "Water back on", type: "check", required: true, position: 0 }] },
+      { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "scope", match: [],
+        items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }] },
+    ];
+    const persistedLead = { id: "lead-43", name: "Scoped Customer" };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-43", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-43", origin: "db", visits: [] }),
+    });
+    updateJob.mockResolvedValue({ ok: true });
+
+    render(<NewJobModalContent />);
+    fireEvent.click(screen.getByText("Estimate"));
+    fireEvent.click(screen.getByText("Scoping checklist"));
+    fireEvent.click(screen.getByText("Repipe walkthrough"));
+    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
+      target: { value: "scoped estimate" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+
+    await waitFor(() =>
+      expect(updateJob).toHaveBeenCalledWith("job-43", expect.objectContaining({
+        checklist: expect.objectContaining({ name: "Repipe walkthrough" }),
+      })),
+    );
   });
 });
 

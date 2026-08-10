@@ -71,6 +71,7 @@ import {
 import { suggestFromGood } from "./gbb-suggest";
 import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
 import { CustomerSelector } from "./customer-selector";
+import { SiteReference } from "./site-reference";
 import { QuoteCard } from "./quote-card";
 import { PricingCard } from "./pricing-card";
 import { MessageCard } from "./message-card";
@@ -862,6 +863,10 @@ export default function ComposerPage() {
             )}
           </div>
         )}
+
+      {/* What the technician brought back — read before pricing. Renders only when the picked
+          customer has a scoped walkthrough (the tech→office estimating lane). */}
+      <SiteReference leadId={cs.leadId} />
 
       {/* Measure — satellite measurement's point of entry, always available on
           the quote page (no customer or job needed; org toggle gates it). A

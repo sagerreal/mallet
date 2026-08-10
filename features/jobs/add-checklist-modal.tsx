@@ -13,6 +13,7 @@ import { userMessage } from "@/lib/trpc/error-map";
 import { COMPACT_INPUT, Field } from "@/components/ui/input";
 
 type DraftItem = { text: string; type: "check" | "photo" };
+type ChecklistStage = "job" | "scope";
 
 export function AddChecklistModal({
   open,
@@ -21,21 +22,26 @@ export function AddChecklistModal({
 }: {
   open: boolean;
   onClose: () => void;
-  onAdd: (name: string, items?: DraftItem[]) => void;
+  onAdd: (name: string, stage: ChecklistStage, items?: DraftItem[]) => void;
 }) {
   const [name, setName] = useState("");
+  // WHEN the checklist runs. "job" is before-you-leave on real work; "scope" runs on an estimate
+  // walkthrough — the office's way of making a tech scope a particular way (the domain carried
+  // this stage from day one; this control is the first thing to offer it).
+  const [stage, setStage] = useState<ChecklistStage>("job");
   const [drafting, setDrafting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function reset() {
     setName("");
+    setStage("job");
     setDrafting(false);
     setError(null);
   }
 
   function handleAdd() {
     if (!name.trim()) return;
-    onAdd(name.trim());
+    onAdd(name.trim(), stage);
     reset();
   }
 
@@ -46,7 +52,7 @@ export function AddChecklistModal({
     setError(null);
     try {
       const { items } = await trpcVanilla.v1.ai.draftChecklist.mutate({ jobType });
-      onAdd(jobType, items);
+      onAdd(jobType, stage, items);
       reset();
     } catch (err) {
       setError(userMessage(err));
@@ -65,6 +71,8 @@ export function AddChecklistModal({
         New checklist
       </h3>
 
+      <StagePicker stage={stage} onStage={setStage} disabled={drafting} />
+
       <Field label="Checklist name">
         <input
           type="text"
@@ -72,7 +80,7 @@ export function AddChecklistModal({
           value={name}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-          placeholder="e.g. Water heater replacement"
+          placeholder={stage === "job" ? "e.g. Water heater replacement" : "e.g. Repipe walkthrough"}
           style={COMPACT_INPUT}
           disabled={drafting}
         />
@@ -95,5 +103,39 @@ export function AddChecklistModal({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** WHEN the checklist runs — the two stages the domain has carried since day one. */
+function StagePicker({
+  stage,
+  onStage,
+  disabled,
+}: {
+  stage: ChecklistStage;
+  onStage: (s: ChecklistStage) => void;
+  disabled: boolean;
+}) {
+  return (
+    <Field label="Runs on">
+      <div className="chips" style={{ marginBottom: 0 }}>
+        <button
+          type="button"
+          className={`chip ${stage === "job" ? "sel" : ""}`}
+          onClick={() => onStage("job")}
+          disabled={disabled}
+        >
+          Job — before you leave
+        </button>
+        <button
+          type="button"
+          className={`chip ${stage === "scope" ? "sel" : ""}`}
+          onClick={() => onStage("scope")}
+          disabled={disabled}
+        >
+          Estimate — scoping visit
+        </button>
+      </div>
+    </Field>
   );
 }

@@ -1650,3 +1650,28 @@ describe("TechJobModalContent — a finished stop on a still-open job", () => {
     expect(screen.getByText("↩ Reopen")).toBeTruthy();
   });
 });
+
+/**
+ * A SCOPING CHECKLIST RIDES AN ESTIMATE JOB. The office attaches it at booking ("scope it this
+ * way"); the walkthrough's sheet must run it exactly as a work job runs before-you-leave — the
+ * mechanic both incumbents gate estimate closeout on. The section never asked the job's kind,
+ * so this pins that nobody ever makes it start asking.
+ */
+describe("TechJobModalContent — a scoping checklist on an estimate walkthrough", () => {
+  it("renders the checklist section on an estimate-kind job", () => {
+    mockJobs = [
+      makeJob({
+        kind: "estimate",
+        svc: "estimate",
+        lines: [],
+        checklist: {
+          name: "Repipe walkthrough",
+          items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }],
+        },
+      } as Partial<Job>),
+    ];
+    render(<TechJobModalContent />);
+
+    expect(screen.getByText(/Measure the run/)).toBeTruthy();
+  });
+});
