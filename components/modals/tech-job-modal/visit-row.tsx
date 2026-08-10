@@ -1,253 +1,62 @@
 /**
  * components/modals/tech-job-modal/visit-row.tsx
- * Your visit — the three-node progress stepper, then the one figure that matters right now
- * (when you are due, or how long you have been on site), then ↩ Reopen.
+ * One stop, inside the visits slot: the stepper, and ↩ Reopen when the stop has one.
  *
- * The stepper REPLACED a pair of "ARRIVE / ON SITE" columns that printed the plan twice and the
- * state not at all: which state a visit was in could only be inferred from which button happened
- * to be showing. It reads out what was recorded and, on the viewer's OWN visit, lets them jump
- * forward to a step that has not happened yet — see visit-steps.ts for why only the nodes ahead
- * are live and why a skipped step stays visibly skipped.
+ * The date, the booked length and the elapsed/measured time all live in the PAGER's single line
+ * now (visit-meta.ts) — this file used to carry a big when-line under the stepper that repeated
+ * the date the pager already showed, and the accordion revision before that hid the stepper
+ * behind a Details tap. The slot keeps one treatment: the stepper IS the record, and only one
+ * stop's is on screen at a time (visits-sec.tsx owns the movement).
  *
- * THE FOOT IS STILL THE MAIN ROAD. On my way / Arrived / Finish live in the sticky foot, where the
- * primary names the next step and a quiet Finish sits under it (see tech-job-foot.ts): two
- * half-width buttons partway up a tall sheet sit past one-handed reach exactly when the sheet is
- * fullest, and the foot's full-width target is the one place a thumb always owns. The stepper adds
- * the one move the foot's ladder cannot express — SKIPPING a step — and changes nothing else.
+ * THE STEPPER STAYS ON A FINISHED VISIT — that is the moment it matters most. Which steps were
+ * recorded and which were skipped is what gets read back weeks later when a customer argues
+ * about an arrival time.
  */
 
 "use client";
 
-import { useId, useState } from "react";
 import type { Visit } from "@/lib/store/types";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
-import { MS_PER_MINUTE, MINUTES_PER_HOUR } from "@/lib/time";
-import { useTickingNow } from "@/lib/use-ticking-now";
-import { colLabel, hmLabel, startTimeStr } from "./helpers";
 import { VisitStepper } from "./visit-stepper";
-import { stampLabel } from "./visit-steps";
-import { VisitCaption, seqStepperLabel, type VisitSeq } from "./visit-seq";
+import { seqStepperLabel, type VisitSeq } from "./visit-seq";
 
 interface VisitRowProps {
   visit: Visit;
   /**
-   * Which stop this is, when the section renders more than one. Undefined on a one-visit job —
-   * see visit-seq.ts for why nothing is printed then.
+   * Which stop this is, when the job has more than one — the stepper's accessible name
+   * ("Visit 2 progress"). The visible numbering is the pager's.
    */
   seq?: VisitSeq;
   /**
    * ↩ Reopen — an office correction: it rewrites a visit that already ended, days later, against
-   * hours somebody may already have been paid for. Owner/office only.
+   * hours somebody may already have been paid for. Owner/office only. Off-screen copies are
+   * unreachable — the slot marks every non-showing slide `inert`.
    */
   canReopen: boolean;
   /**
    * May this viewer move THIS visit forward? The same rule the foot uses (tech-job-modal's
-   * `actVisit`): your own visit, or the job's current one if you are owner/office. False leaves
-   * the stepper the pure readout it has always been — a technician looking at a colleague's stop
-   * gets no live node, because the server would refuse the write anyway.
+   * `actVisit`). False leaves the stepper the pure readout it has always been.
    */
   canStep: boolean;
-  /**
-   * Is this the visit the sheet is ABOUT — the one being worked right now?
-   *
-   * Only that one draws the stepper. A two-stop job drew two full steppers, a finished job drew
-   * one, and finishing a visit therefore made a progress bar vanish off the sheet: the section
-   * changed shape under the technician at the moment they tapped. The record of a stop that has
-   * already ended is still here, one tap down (see `expanded`), because it is what gets read back
-   * weeks later in an argument about an arrival time — it is just not competing with the stop in
-   * front of them for the top of the sheet.
-   */
-  isCurrent: boolean;
   onStatus: (status: string) => void;
 }
 
-/**
- * How long you have BEEN here — the number a technician on site is actually watching, with the
- * booked length demoted to context beside it.
- *
- * Its own component so that `useTickingNow` — and the interval behind it — exists only while a
- * visit is on site. Called from the row it ran on every visit of the job, all day, to feed a
- * figure two of the three states never render.
- */
-function OnSiteLine({ visit, startedAt }: { visit: Visit; startedAt: string }) {
-  const now = useTickingNow();
-  const ms = now.getTime() - new Date(startedAt).getTime();
-  const onSite =
-    Number.isNaN(ms) || ms < 0 ? null : hmLabel(Math.floor(ms / MS_PER_MINUTE) / MINUTES_PER_HOUR);
-
-  return (
-    <div className="vwhen">
-      {/* Genuinely live — masked out of the visual baseline, which would otherwise fail on
-          every run as the figure grows. See dynamicRegions in e2e/helpers/ui.ts. */}
-      <b data-dynamic>{onSite ? `On site ${onSite}` : `On site since ${stampLabel(startedAt)}`}</b>
-      <span>~{hmLabel(visit.dur)} booked</span>
-    </div>
-  );
-}
-
-/**
- * How long the visit ACTUALLY took, in hours — `completedAt − startedAt`.
- *
- * Null when either stamp is missing or the pair reads backwards. "✓ Mark done" has always worked
- * straight from scheduled and the server leaves `started_at` NULL on that path (see
- * set-visit-status.ts), so an unmeasurable visit is an ordinary case, not an error — and absent
- * means nobody recorded it, never zero.
- */
-function onSiteHours(visit: Visit): number | null {
-  if (!visit.startedAt || !visit.completedAt) return null;
-  const ms = new Date(visit.completedAt).getTime() - new Date(visit.startedAt).getTime();
-  if (Number.isNaN(ms) || ms < 0) return null;
-  return ms / MS_PER_MINUTE / MINUTES_PER_HOUR;
-}
-
-/**
- * A finished visit — the figure that stays true after everyone has gone home.
- *
- * IT USED TO PRINT THE BOOKED START, in the biggest text on the row, two lines under a stepper
- * saying the technician actually arrived at 9:22p. The row contradicted itself, and the booked
- * start was ALREADY on screen: the stepper's Scheduled node carries exactly that number
- * (plannedLabel, visit-steps.ts). So the headline was simultaneously a duplicate and the one
- * figure on the row that describes something which did not happen.
- *
- * What replaces it is the only figure this row can add to the stamps above it: how long the
- * technician was actually there. That is the number the shop bills against, pays against and
- * argues about weeks later, and it is the natural terminal of the live line — the elapsed figure
- * counts up while he is on site and freezes here, in the same words and the same format, so
- * nothing jumps at the moment the visit ends.
- *
- * When it cannot be measured the row falls back to the DAY and says nothing about duration. The
- * same rule the stepper's skipped nodes follow: a sheet that printed a length nobody recorded
- * would be a fabrication in a record that gets read back in an argument with a customer.
- */
-function DoneLine({ visit }: { visit: Visit }) {
-  const hours = onSiteHours(visit);
-  const day = colLabel(visit.date ?? "");
-  const booked = `~${hmLabel(visit.dur)} booked`;
-
-  if (hours === null) {
-    return (
-      <div className="vwhen">
-        <b>{day}</b>
-        <span>{booked}</span>
-      </div>
-    );
-  }
-  return (
-    <div className="vwhen">
-      <b>On site {hmLabel(hours)}</b>
-      {/* The booked length stays, demoted and LABELLED as the plan — the same relationship it has
-          to the live figure. A booked duration sitting unlabelled under a measured one reads as a
-          measurement of what happened when it is nothing of the kind. */}
-      <span>
-        {day} · {booked}
-      </span>
-    </div>
-  );
-}
-
-/**
- * The one big figure beneath the stepper. Before arrival it is the appointment — when you are due,
- * and how long the office booked it for; once you are on site it becomes the elapsed figure above;
- * once the visit is over it freezes at what that elapsed figure reached.
- */
-function WhenLine({ visit }: { visit: Visit }) {
-  if (visit.status === STORE_VISIT_STATUS.ONSITE && visit.startedAt) {
-    return <OnSiteLine visit={visit} startedAt={visit.startedAt} />;
-  }
-  if (visit.status === STORE_VISIT_STATUS.DONE) return <DoneLine visit={visit} />;
-  return (
-    <div className="vwhen">
-      <b>
-        {colLabel(visit.date ?? "")} · {startTimeStr(visit.start ?? 0)}
-      </b>
-      <span>about {hmLabel(visit.dur)} on site</span>
-    </div>
-  );
-}
-
-export function VisitRow({ visit, seq, canReopen, canStep, isCurrent, onStatus }: VisitRowProps) {
-  // A past or future stop opens on demand. Closed is the default because the sheet's job is the
-  // stop the technician is standing in — see the `isCurrent` note above.
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
-  const reopen =
-    canReopen && visit.status === STORE_VISIT_STATUS.DONE ? (
-      <div style={{ display: "flex", marginTop: "var(--space-3)" }}>
-        <button
-          type="button"
-          className="btn ghost"
-          style={{ flex: 1 }}
-          onClick={() => onStatus(STORE_VISIT_STATUS.SCHEDULED)}
-        >
-          ↩ Reopen
-        </button>
-      </div>
-    ) : null;
-
-  // No margin of its own. The row is one child of the section's `.vlist`, and separation from
-  // whatever follows it — another visit, an awaiting-slot row, the follow-up ask — belongs to the
-  // container. It used to carry `marginBottom: --space-2xs`, which is 2px: two complete visit
-  // records abutted, so this row's ↩ Reopen sat directly above the NEXT row's stepper and read as
-  // its control.
-  if (isCurrent) {
-    return (
-      <div>
-        <VisitCaption seq={seq} />
-        <VisitStepper visit={visit} label={seqStepperLabel(seq)} onJump={canStep ? onStatus : undefined} />
-        <WhenLine visit={visit} />
-        {reopen}
-      </div>
-    );
-  }
-
-  // NOT the current stop: one line saying what happened and when, and the stepper behind it.
-  // Expanded IN FLOW under its own summary — no popover, no second sheet (house rule).
+export function VisitRow({ visit, seq, canReopen, canStep, onStatus }: VisitRowProps) {
   return (
     <div>
-      <VisitCaption seq={seq} />
-      <button
-        type="button"
-        className="jaddr"
-        aria-expanded={open}
-        aria-controls={open ? bodyId : undefined}
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className="jaddr-t">
-          {summaryTitle(visit)}
-          <span className="jaddr-s">{summaryDetail(visit)}</span>
-        </span>
-        <span className="nav">{open ? "Hide" : "Details"}</span>
-      </button>
-      {open ? (
-        <div id={bodyId} style={{ marginTop: "var(--space-3)" }}>
-          <VisitStepper visit={visit} label={seqStepperLabel(seq)} />
+      <VisitStepper visit={visit} label={seqStepperLabel(seq)} onJump={canStep ? onStatus : undefined} />
+      {canReopen && visit.status === STORE_VISIT_STATUS.DONE ? (
+        <div style={{ display: "flex", marginTop: "var(--space-3)" }}>
+          <button
+            type="button"
+            className="btn ghost"
+            style={{ flex: 1 }}
+            onClick={() => onStatus(STORE_VISIT_STATUS.SCHEDULED)}
+          >
+            ↩ Reopen
+          </button>
         </div>
       ) : null}
-      {/* OUTSIDE the collapse, deliberately. Only the STEPPER folds away — ↩ Reopen is the
-          office's way back into a finished visit and it was already on this row before the
-          section was trimmed. Hiding a control behind a disclosure it never used to be behind is
-          how a screen quietly loses a feature. */}
-      {reopen}
     </div>
   );
-}
-
-/** "Done 12:19p" / "Due 4p" — what this stop IS, in three words. */
-function summaryTitle(visit: Visit): string {
-  if (visit.status === STORE_VISIT_STATUS.DONE) {
-    const at = stampLabel(visit.completedAt);
-    return at ? `Done ${at}` : "Done";
-  }
-  if (visit.status === STORE_VISIT_STATUS.ONSITE) return "On site";
-  if (visit.status === STORE_VISIT_STATUS.ENROUTE) return "On the way";
-  return `Due ${startTimeStr(visit.start ?? 0)}`;
-}
-
-/** The day, plus how long it actually took when that is a measured fact rather than a booking. */
-function summaryDetail(visit: Visit): string {
-  const day = colLabel(visit.date ?? "");
-  if (visit.status !== STORE_VISIT_STATUS.DONE) return `${day} · about ${hmLabel(visit.dur)} on site`;
-  const hours = onSiteHours(visit);
-  // Absent means nobody recorded it, never zero — the same rule DoneLine follows.
-  return hours === null ? day : `${day} · ${hmLabel(hours)} on site`;
 }

@@ -342,16 +342,13 @@ describe("TechJobModalContent — tech", () => {
       }),
     ];
     render(<TechJobModalContent />);
-    // Both visits are on the sheet (useful context — "my stop is the second one today"), but only
-    // the tech's OWN one draws a stepper: one bar, on the stop this sheet is about. The
-    // colleague's is a summary line whose record opens on demand, and the steppers stay NUMBERED
-    // so a screen-reader user can tell which stop a bar belongs to.
+    // Both stops stay mounted in the slot (numbered, so a screen reader can tell which bar is
+    // which), the pager opens on the tech's OWN stop, and the colleague's slide is inert — its
+    // stepper exists but cannot be reached until you slide to it.
     expect(screen.getByRole("list", { name: "Visit 1 progress" })).toBeTruthy();
-    expect(screen.queryByRole("list", { name: "Visit 2 progress" })).toBeNull();
     expect(screen.getByText("Visit 1 of 2")).toBeTruthy();
-    // …and it is one tap away, not gone.
-    fireEvent.click(screen.getAllByText("Details")[0]!);
-    expect(screen.getByRole("list", { name: "Visit 2 progress" })).toBeTruthy();
+    const colleagueSlide = document.querySelector("[aria-label='Visit 2 progress']")!.closest(".vslide")!;
+    expect(colleagueSlide.hasAttribute("inert")).toBe(true);
     fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
@@ -753,10 +750,8 @@ describe("TechJobModalContent — visit stepper", () => {
       }),
     ];
     render(<TechJobModalContent />);
-    // A finished job has no stop in progress, so the bar is behind the row's own summary —
-    // the record is kept, it is just not the top of the sheet any more.
-    expect(screen.queryAllByText("skipped")).toHaveLength(0);
-    fireEvent.click(screen.getByText("Details"));
+    // The finished stop's record IS the slot's content — both denied steps read skipped, with
+    // no invented stamps, straight away. No disclosure in front of the record.
     expect(screen.getAllByText("skipped")).toHaveLength(2);
   });
 });
