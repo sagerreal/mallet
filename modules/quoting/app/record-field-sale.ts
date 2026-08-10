@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, LeadId, Result, AppError, Clock, PricingRates } from "@mallet/shared/types";
 import { asEstimateId, asEstimateLineId, money, notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -30,6 +30,15 @@ export interface RecordFieldSaleCommand {
   readonly signerName: string;
   readonly signatureSvg: string;
   readonly orgName: string;
+  /**
+   * Discount / tax / deposit agreed at the door. Absent means none — the shape every field sale
+   * taken before these controls existed genuinely had.
+   *
+   * On a RE-SIGN these REPLACE the estimate's previous rates rather than merging with them: the
+   * customer is agreeing to a whole new document, so a discount the tech deliberately removed
+   * must not survive into it.
+   */
+  readonly rates?: PricingRates;
 }
 
 /** What happened, so the caller knows whether to link job.source_estimate_id. */
@@ -107,7 +116,7 @@ export class RecordFieldSaleUseCase {
         );
         return ok({ kind: "kept_office_estimate", estimate: existing });
       }
-      const resigned = existing.resignOnSite(built, signature, cmd.orgName, now);
+      const resigned = existing.resignOnSite(built, signature, cmd.orgName, now, cmd.rates);
       if (!isOk(resigned)) return resigned;
       await this.repo.save(resigned.value);
       logger.info(
@@ -130,6 +139,7 @@ export class RecordFieldSaleUseCase {
       signature,
       orgName: cmd.orgName,
       now,
+      ...(cmd.rates ? { rates: cmd.rates } : {}),
     });
     if (!isOk(created)) return created;
 

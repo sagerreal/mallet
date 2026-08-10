@@ -291,11 +291,13 @@ describe("settings-slice persistence", () => {
       sources: [{ id: "src99", label: "Google" }],
       booking: store.get().booking,
       markup: 40,
+      taxRate: 8.75,
       trade: "hvac",
       toggles: { techSeesPrice: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);
+    expect(store.get().taxRate).toBe(8.75);
     expect(store.get().trade).toBe("hvac");
     expect(store.get().toggles.frontDesk).toBe(false);
     expect(store.get().sources[0]?.id).toBe("src99");

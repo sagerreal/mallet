@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { asJobId, asOrgId, FixedClock, isOk, isErr, type JobId } from "@mallet/shared/types";
 import { JobLine, JobAddon, JobVerifyAnswer, JobPhoto } from "../domain/job-execution";
-import type { JobRepository } from "../domain/job-repository";
+import type { JobRepository, JobPricingPatch } from "../domain/job-repository";
+import type { JobSignature } from "../domain/job-signature";
 import type { Job } from "../domain/job";
 import {
   AddJobLineUseCase,
@@ -64,10 +65,25 @@ class FakeRepo implements Partial<JobRepository> {
     this.lines = this.lines.filter((l) => l.props.id !== lineId);
     return before - this.lines.length;
   }
-  async replaceLines(_j: JobId, lines: readonly JobLine[]): Promise<void> {
+  /** What replaceLines was last told the stored total and rate pair should be. */
+  lastTotalCents: number | undefined;
+  lastPricing: JobPricingPatch | undefined;
+  lastSignature: JobSignature | undefined;
+  async replaceLines(
+    _j: JobId,
+    lines: readonly JobLine[],
+    _now: Date,
+    totalCents?: number,
+    pricing?: JobPricingPatch,
+  ): Promise<void> {
     // Bulk swap: drop the current set, install the new one (mirrors the Drizzle
     // soft-delete-all + insert-all).
     this.lines = [...lines];
+    this.lastTotalCents = totalCents;
+    this.lastPricing = pricing;
+  }
+  async saveOnSiteSignature(_j: JobId, signature: JobSignature): Promise<void> {
+    this.lastSignature = signature;
   }
   async addAddon(addon: JobAddon): Promise<void> {
     this.addons.push(addon);
@@ -200,6 +216,81 @@ describe("job execution use-cases", () => {
     if (isErr(r)) expect(r.error.kind).toBe("validation");
     // Nothing was written — the validation failed before replaceLines ran.
     expect(repo.lines).toHaveLength(0);
+  });
+
+  /**
+   * The rates a technician sets at the door. What the invoice bills weeks later is rebuilt from
+   * the job's lines and the RATE PAIR stored on the job row, so if the rates do not land here the
+   * customer is billed the undiscounted, untaxed line sum — a different number from the one they
+   * signed.
+   */
+  describe("SetJobLines with rates", () => {
+    const priced = { description: "Water heater", quantity: 1, rateCents: 50_000, costCents: 0 };
+
+    it("stores the tax-inclusive total and the rate pair that produced it", async () => {
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec(
+        { jobId: JOB, lines: [priced], rates: { discBps: 1_000, taxBps: 875, depBps: 0 } },
+        ORG,
+      );
+      expect(isOk(r)).toBe(true);
+      expect(repo.lastTotalCents).toBe(48_938); // 500.00 − 10% = 450.00, + 8.75% = 489.38
+      expect(repo.lastPricing).toEqual({ discBps: 1_000, taxBps: 875, taxCents: 3_938 });
+    });
+
+    it("leaves the total to the repository's own derivation when no rates are set", async () => {
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      await uc.exec({ jobId: JOB, lines: [priced] }, ORG);
+      expect(repo.lastTotalCents).toBeUndefined();
+      expect(repo.lastPricing).toBeUndefined();
+    });
+
+    it("clears a rate that was removed on a re-price rather than leaving the old one", async () => {
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      await uc.exec({ jobId: JOB, lines: [priced], rates: { discBps: 1_000, taxBps: 875, depBps: 0 } }, ORG);
+      await uc.exec({ jobId: JOB, lines: [priced], rates: { discBps: 0, taxBps: 0, depBps: 0 } }, ORG);
+      expect(repo.lastPricing).toEqual({ discBps: 0, taxBps: 0, taxCents: 0 });
+      expect(repo.lastTotalCents).toBe(50_000);
+    });
+
+    it("signs the SAME total it stores", async () => {
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec(
+        {
+          jobId: JOB,
+          lines: [priced],
+          rates: { discBps: 0, taxBps: 875, depBps: 2_000 },
+          signature: { signerName: "Dana Ruiz", signatureSvg: "", signerIp: null, signerUserAgent: null },
+          orgName: "Summit Plumbing",
+        },
+        ORG,
+      );
+      expect(isOk(r)).toBe(true);
+      expect(repo.lastSignature?.snapshot.totalCents).toBe(repo.lastTotalCents);
+      expect(repo.lastSignature?.snapshot.authorizationText).toContain("$543.75");
+      expect(repo.lastSignature?.snapshot.authorizationText).toContain("deposit of $108.75");
+    });
+
+    it("refuses a discount over 100% by name, without writing anything", async () => {
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec(
+        { jobId: JOB, lines: [priced], rates: { discBps: 10_001, taxBps: 0, depBps: 0 } },
+        ORG,
+      );
+      expect(isErr(r)).toBe(true);
+      if (isErr(r) && r.error.kind === "validation") expect(r.error.field).toBe("discBps");
+      expect(repo.lines).toHaveLength(0);
+    });
+
+    it("refuses a negative tax rate", async () => {
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec(
+        { jobId: JOB, lines: [priced], rates: { discBps: 0, taxBps: -1, depBps: 0 } },
+        ORG,
+      );
+      expect(isErr(r)).toBe(true);
+      if (isErr(r) && r.error.kind === "validation") expect(r.error.field).toBe("taxBps");
+    });
   });
 
   it("AddJobAddon inserts a proposed addon", async () => {

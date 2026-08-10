@@ -253,4 +253,52 @@ describe("RecordFieldSaleUseCase", () => {
     expect(isOk(result)).toBe(false);
     expect(repo.store.size).toBe(0);
   });
+
+  /** The rates a technician set at the door have to reach the estimate, or the quotes rail, the
+   *  won-revenue figures and the learning estimator all record a sale at the wrong price. */
+  describe("rates", () => {
+    it("records no rates when the sign carried none", async () => {
+      const result = await useCase.exec(command());
+      if (!isOk(result)) throw new Error("sign failed");
+      expect(result.value.estimate.rates()).toEqual({ discBps: 0, taxBps: 0, depBps: 0 });
+      expect(result.value.estimate.total()).toBe(155_000);
+    });
+
+    it("carries the discount, tax and deposit onto the accepted estimate", async () => {
+      const result = await useCase.exec(
+        command({ rates: { discBps: 1_000, taxBps: 875, depBps: 2_000 } }),
+      );
+      if (!isOk(result)) throw new Error("sign failed");
+      const est = result.value.estimate;
+      expect(est.rates()).toEqual({ discBps: 1_000, taxBps: 875, depBps: 2_000 });
+      // 1550.00 − 10% = 1395.00, + 8.75% = 1517.06
+      expect(est.total()).toBe(151_706);
+      expect(est.depositDue()).toBe(30_341);
+      expect(est.props.signedSnapshot?.totalCents).toBe(151_706);
+      expect(est.props.signedSnapshot?.authorizationText).toContain("$1,517.06");
+      expect(est.props.signedSnapshot?.authorizationText).toContain("deposit of $303.41");
+    });
+
+    it("announces the accepted total and deposit the customer actually agreed to", async () => {
+      await useCase.exec(command({ rates: { discBps: 0, taxBps: 875, depBps: 2_000 } }));
+      const accepted = bus.recorded.find((e) => e.name === "estimate.accepted");
+      expect(accepted?.payload).toMatchObject({ totalCents: 168_563, depositDueCents: 33_713 });
+    });
+
+    it("a re-sign REPLACES the rates rather than keeping the old ones", async () => {
+      const first = await useCase.exec(command({ rates: { discBps: 1_000, taxBps: 875, depBps: 2_000 } }));
+      if (!isOk(first)) throw new Error("first sign failed");
+      const second = await useCase.exec(
+        command({
+          existingEstimateId: first.value.estimate.props.id,
+          rates: { discBps: 0, taxBps: 875, depBps: 0 },
+        }),
+      );
+      if (!isOk(second)) throw new Error("re-sign failed");
+      expect(second.value.kind).toBe("updated");
+      expect(second.value.estimate.rates()).toEqual({ discBps: 0, taxBps: 875, depBps: 0 });
+      expect(second.value.estimate.total()).toBe(168_563);
+      expect(second.value.estimate.props.signedSnapshot?.totalCents).toBe(168_563);
+    });
+  });
 });

@@ -19,7 +19,7 @@ import {
 } from "@mallet/shared/types";
 import type { Job, JobChecklistProps } from "../domain/job";
 import type { JobSignature } from "../domain/job-signature";
-import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow, AdoptEstimatePatch } from "../domain/job-repository";
+import type { JobRepository, JobFilter, JobExecution, CallbackScanRow, AutopsyPairRow, AdoptEstimatePatch, JobPricingPatch } from "../domain/job-repository";
 import { flipScopeVisitJob, appendPendingVisit } from "./job-convert";
 import type { JobLine, JobAddon, JobVerifyAnswer, JobPhoto, AddonStatus } from "../domain/job-execution";
 import { toDomain, type JobVisitRow } from "./job-mapper";
@@ -579,7 +579,12 @@ export class DrizzleJobRepository implements JobRepository {
    * UPDATE so there is never an instant, even inside the transaction, where the row states a total
    * nobody agreed to.
    */
-  private async syncTotalFromLines(jobId: JobId, now: Date, override?: number): Promise<void> {
+  private async syncTotalFromLines(
+    jobId: JobId,
+    now: Date,
+    override?: number,
+    pricing?: JobPricingPatch,
+  ): Promise<void> {
     const derived = sql<number>`coalesce((
       select sum(round(jl.quantity * jl.rate_cents))::int
       from job_lines jl
@@ -587,7 +592,15 @@ export class DrizzleJobRepository implements JobRepository {
     ), 0)`;
     await this.tx
       .update(jobs)
-      .set({ totalCents: override ?? derived, updatedAt: now })
+      .set({
+        totalCents: override ?? derived,
+        // Same statement as the total for the same reason: the rates and the figure they produced
+        // must never be observable apart, not even mid-transaction.
+        ...(pricing
+          ? { discBps: pricing.discBps, taxBps: pricing.taxBps, taxCents: pricing.taxCents }
+          : {}),
+        updatedAt: now,
+      })
       .where(and(eq(jobs.id, jobId), eq(jobs.orgId, this.orgId), isNull(jobs.deletedAt)));
   }
 
@@ -663,6 +676,7 @@ export class DrizzleJobRepository implements JobRepository {
     lines: readonly JobLine[],
     now: Date,
     totalCents?: number,
+    pricing?: JobPricingPatch,
   ): Promise<void> {
     await this.tx
       .update(jobLines)
@@ -688,7 +702,7 @@ export class DrizzleJobRepository implements JobRepository {
         }),
       );
     }
-    await this.syncTotalFromLines(jobId, now, totalCents);
+    await this.syncTotalFromLines(jobId, now, totalCents, pricing);
   }
 
   /**

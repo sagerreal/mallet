@@ -1,4 +1,5 @@
-import type { Result, ValidationError } from "@mallet/shared/types";
+import type { Result, ValidationError, PricingRates } from "@mallet/shared/types";
+import { money, deriveTotals, ZERO_RATES } from "@mallet/shared/types";
 // Imported from the DOMAIN files, not the @mallet/quoting barrel. The barrel re-exports the API
 // router, which pulls the config validator and throws without DB env — so a barrel import here
 // would take out every unit test that touches this module. Documented in CLAUDE.md.
@@ -45,6 +46,13 @@ export interface BuildJobSignatureInput {
   readonly lines: readonly JobLine[];
   readonly orgName: string;
   readonly signedAt: Date;
+  /**
+   * Discount / tax / deposit the tech set at the door. Absent means none, which is what every
+   * on-site signature taken before these controls existed genuinely was: the line rates WERE the
+   * price. With rates present the sentence authorises the tax-inclusive total and names the
+   * deposit, because what the customer signs has to be what they owe.
+   */
+  readonly rates?: PricingRates;
 }
 
 /**
@@ -53,14 +61,22 @@ export interface BuildJobSignatureInput {
  * The snapshot is built HERE from the JobLine value objects that are about to be written — never
  * from anything the caller supplies. A tablet that could post its own snapshot could post a $500
  * document against a $19,500 line set, and the record would look authoritative while being wrong.
+ * The RATES are supplied (they are a decision, not a derivation), but every figure derived from
+ * them is computed here, through the shared chain the quote and the invoice also run.
  *
- * There is no deposit, tier or terms on this path: an on-site approval is the whole price, agreed
- * on the spot. Those fields are recorded as empty rather than invented so the snapshot shape stays
- * identical to the web one and a reader can tell "no deposit was taken" from "we did not capture
- * whether one was".
+ * There is no tier or terms on this path: an on-site approval is one price agreed on the spot.
+ * Those stay empty rather than invented, so the snapshot shape matches the web one and a reader
+ * can tell "no tier was offered" from "we did not capture which one was chosen".
  */
 export function buildJobSignature(input: BuildJobSignatureInput): Result<JobSignature, ValidationError> {
-  const totalCents = input.lines.reduce((sum, l) => sum + lineAmountCents(l), 0);
+  const subtotal = money(input.lines.reduce((sum, l) => sum + lineAmountCents(l), 0));
+  // Two filters, not one: a non-taxable line is still sold and still in the total, it simply does
+  // not feed the tax base. Field lines default to taxable, so on an ordinary field sale the base
+  // IS the subtotal and the figures are what they were before rates existed.
+  const taxableBase = money(
+    input.lines.reduce((sum, l) => (l.props.taxable ? sum + lineAmountCents(l) : sum), 0),
+  );
+  const totals = deriveTotals(subtotal, taxableBase, input.rates ?? ZERO_RATES);
 
   const snapshot: SignedSnapshot = {
     estimateNum: "",
@@ -72,16 +88,18 @@ export function buildJobSignature(input: BuildJobSignatureInput): Result<JobSign
       tier: null,
       included: true,
     })),
-    subtotalCents: totalCents,
-    discountCents: 0,
-    // Tax on the field path is already inside the line rates the tech quoted — recording a
-    // separate figure here would imply a split this flow never computed.
-    taxCents: 0,
-    totalCents,
-    depositCents: 0,
+    subtotalCents: totals.subtotal,
+    discountCents: totals.discount,
+    taxCents: totals.tax,
+    totalCents: totals.total,
+    depositCents: totals.depositDue,
     chosenTier: null,
     termsText: null,
-    authorizationText: authorizationText({ totalCents, orgName: input.orgName }),
+    authorizationText: authorizationText({
+      totalCents: totals.total,
+      depositCents: totals.depositDue,
+      orgName: input.orgName,
+    }),
   };
 
   const built = createSignature({ ...input.draft, signedAt: input.signedAt, snapshot });

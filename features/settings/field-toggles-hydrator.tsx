@@ -30,7 +30,18 @@ import { measurementGateFrom } from "@/lib/measurement-gate";
 
 export function FieldTogglesHydrator() {
   const setMeasurementGate = useAppStore((s) => s.setMeasurementGate);
+  const setDefaultTaxRate = useAppStore((s) => s.setDefaultTaxRate);
   const { data, isError, error } = api.v1.settings.fieldToggles.useQuery(undefined, {
+    staleTime: HYDRATOR_STALE_MS,
+    refetchOnWindowFocus: false,
+  });
+  /**
+   * The shop's default sales-tax rate — a SECOND narrow read rather than a field on the toggles
+   * payload, because fieldTogglesDTO's contract is capability flags only and a tax rate is org
+   * configuration. Same mount, same staleness, same fail-quiet rule as the toggles above; a
+   * technician's field quote builder seeds its Tax % from this exactly as a new office quote does.
+   */
+  const pricing = api.v1.settings.fieldPricingDefaults.useQuery(undefined, {
     staleTime: HYDRATOR_STALE_MS,
     refetchOnWindowFocus: false,
   });
@@ -46,6 +57,21 @@ export function FieldTogglesHydrator() {
     if (!data) return;
     setMeasurementGate(measurementGateFrom(data.measurementEstimating));
   }, [data, isError, error, setMeasurementGate]);
+
+  useEffect(() => {
+    // A failed read writes nothing: the rate stays 0 and the tech prices with no tax, which is the
+    // same thing a shop that has never set one gets. Seeding a guess onto a document a customer
+    // signs would be worse than showing none.
+    if (pricing.isError) {
+      if (process.env.NODE_ENV !== "production") {
+        // eslint-disable-next-line no-console
+        console.error("[hydrator:field-toggles] tax default load failed", pricing.error);
+      }
+      return;
+    }
+    if (!pricing.data) return;
+    setDefaultTaxRate(pricing.data.taxBps / 100);
+  }, [pricing.data, pricing.isError, pricing.error, setDefaultTaxRate]);
 
   return null;
 }

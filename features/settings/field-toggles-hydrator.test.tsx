@@ -9,14 +9,30 @@ import { render } from "@testing-library/react";
 import { FieldTogglesHydrator } from "./field-toggles-hydrator";
 
 const setMeasurementGate = vi.fn();
+const setDefaultTaxRate = vi.fn();
 vi.mock("@/lib/store/app-store", () => ({
-  useAppStore: (sel: (s: { setMeasurementGate: typeof setMeasurementGate }) => unknown) =>
-    sel({ setMeasurementGate }),
+  useAppStore: (
+    sel: (s: {
+      setMeasurementGate: typeof setMeasurementGate;
+      setDefaultTaxRate: typeof setDefaultTaxRate;
+    }) => unknown,
+  ) => sel({ setMeasurementGate, setDefaultTaxRate }),
 }));
 
 const fieldTogglesQuery = vi.fn();
+// The same hydrator now carries the shop's default TAX RATE to the field, so the technician's
+// quote builder can seed its Tax % the way a new office quote does. Stubbed to a quiet, settled
+// answer: these tests are about the measurement gate, and an unstubbed read throws on `.useQuery`.
+const fieldPricingQuery = vi.fn(() => ({ data: undefined, isError: false, error: null }));
 vi.mock("@/lib/trpc/client", () => ({
-  api: { v1: { settings: { fieldToggles: { useQuery: () => fieldTogglesQuery() } } } },
+  api: {
+    v1: {
+      settings: {
+        fieldToggles: { useQuery: () => fieldTogglesQuery() },
+        fieldPricingDefaults: { useQuery: () => fieldPricingQuery() },
+      },
+    },
+  },
 }));
 
 describe("FieldTogglesHydrator", () => {
