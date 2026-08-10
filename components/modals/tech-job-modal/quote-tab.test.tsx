@@ -32,6 +32,7 @@ const mockOnSigned = vi.fn();
 const mockSetVisitNotes = vi.fn();
 const mockAdoptJobPhotoPath = vi.fn();
 const mockSignJobQuote = vi.fn();
+const mockSaveQuoteDraft = vi.fn(() => Promise.resolve({ ok: true }));
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -45,6 +46,8 @@ vi.mock("@/lib/store/app-store", () => ({
       setVisitNotes: mockSetVisitNotes,
       adoptJobPhotoPath: mockAdoptJobPhotoPath,
       signJobQuote: mockSignJobQuote,
+      // Save-on-leave: the builder writes the field draft when it unmounts.
+      saveQuoteDraft: mockSaveQuoteDraft,
     }),
   usePushModal: () => mockPushModal,
   useCloseModal: () => mockClose,
@@ -89,6 +92,7 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 
 beforeEach(() => {
   mockJobs = [makeJob()];
+  mockSaveQuoteDraft.mockClear();
   mockMeasurementEstimating = "off";
   mockScan = { status: "no-native-app" };
   mockPushModal.mockClear();
@@ -612,5 +616,74 @@ describe("QuoteTab — closed job", () => {
 
     fireEvent.click(button);
     expect(mockPushModal).not.toHaveBeenCalled();
+  });
+});
+
+
+/**
+ * THE PRICE SURVIVES LEAVING THE TAB.
+ *
+ * signQuote was the only way a field-built price reached the server, and it demands a signature —
+ * so a technician who priced a repair and then switched to the Job tab, closed the sheet, or had
+ * iOS reap the tab lost every line. The builder held them in local React state and nothing else.
+ *
+ * Saved on UNMOUNT rather than per keystroke: a debounced autosave writes half-typed prices to the
+ * job from a moving truck, and leaving the tab is the moment the edit is actually finished.
+ */
+describe("QuoteTab — the price is saved when the tech leaves", () => {
+  const priced = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
+
+  it("writes the changed lines through the field draft endpoint", () => {
+    const job = priced();
+    mockJobs = [job];
+    const { unmount } = render(
+      <QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />,
+    );
+
+    fireEvent.change(screen.getAllByLabelText("Price")[0]!, { target: { value: "250" } });
+    unmount();
+
+    expect(mockSaveQuoteDraft).toHaveBeenCalledTimes(1);
+    const [jobId, input] = mockSaveQuoteDraft.mock.calls[0] as unknown as [
+      string,
+      { lines: { description: string; rateCents: number }[] },
+    ];
+    expect(jobId).toBe(job.id);
+    expect(input.lines).toEqual([
+      expect.objectContaining({ description: "Flat rate", rateCents: 25000 }),
+    ]);
+  });
+
+  it("writes NOTHING when the tech only looked at the tab", () => {
+    const job = priced();
+    mockJobs = [job];
+    const { unmount } = render(
+      <QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />,
+    );
+
+    unmount();
+
+    // An unchanged price is not an edit — a write here would be a pointless round trip and would
+    // stamp the job as touched when it was only read.
+    expect(mockSaveQuoteDraft).not.toHaveBeenCalled();
+  });
+
+  it("saves a line ADDED through the picker", () => {
+    const job = priced();
+    mockJobs = [job];
+    const { unmount } = render(
+      <QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getAllByLabelText("Price")[1]!, { target: { value: "95" } });
+    unmount();
+
+    const [, input] = mockSaveQuoteDraft.mock.calls[0] as unknown as [
+      string,
+      { lines: { rateCents: number }[] },
+    ];
+    expect(input.lines.map((l) => l.rateCents)).toEqual([18500, 9500]);
   });
 });

@@ -86,6 +86,42 @@ const noticeFor = (outcome: ClockTapOutcome): z.infer<typeof clockNoticeDTO> | n
  * Only the name and the mark come from the client. The snapshot, the authorisation sentence, the
  * timestamp, the IP and the witnessing user are all assembled server-side.
  */
+/**
+ * The price a technician has built but the customer has NOT agreed to yet.
+ *
+ * WHY THIS EXISTS. `signQuote` was the only way a field-built price could reach the server, and it
+ * demands a signature — so a technician who priced a repair and then backed out of the sheet lost
+ * every line. The builder held them in local React state and nothing else. On a phone, in a truck,
+ * that is a normal thing to do and it silently threw the work away.
+ *
+ * It writes job LINES, which is the same thing the office's Build the price writes
+ * (v1.jobs.setLines → SetJobLinesUseCase). `job.lines` has always meant "the price", not "the
+ * accepted quote" — acceptance is the signature, the estimate record and the won stage, none of
+ * which this touches. So the office may well see a price the customer has not agreed to; that is
+ * the intended trade and the reason the endpoint is named a DRAFT.
+ *
+ * No signature, no estimate, no lead write, no `signedByUserId` — the three things signQuote does
+ * that make a sale a sale are exactly what this omits.
+ */
+const fieldSaveQuoteDraftInput = z.object({
+  jobId: z.string().uuid(),
+  lines: z
+    .array(
+      z.object({
+        description: z.string().trim().min(1).max(2000),
+        quantity: z.number().min(0),
+        rateCents: z.number().int().min(0),
+        costCents: z.number().int().min(0).default(0),
+      }),
+    )
+    // EMPTY IS LEGAL, unlike signQuote's `.min(1)`. Clearing every line is a real edit, and a save
+    // that refused it would silently keep a price the technician had just deleted.
+    .max(200),
+  discBps: z.number().int().min(0).max(10_000).default(0),
+  taxBps: z.number().int().min(0).max(10_000).default(0),
+  depBps: z.number().int().min(0).max(10_000).default(0),
+});
+
 const fieldSignQuoteInput = z.object({
   jobId: z.string().uuid(),
   lines: z
@@ -691,6 +727,54 @@ export const createFieldRouter = () =>
         const dto = toJobDTO(r.job, r.execution);
         if (ctx.principal.role !== "tech") return dto;
         const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
+        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+      }),
+
+    /**
+     * Save the field-built price WITHOUT selling it. See fieldSaveQuoteDraftInput for why.
+     *
+     * Same gates as signQuote — the assignment check (a tech may act only on jobs they are on) and
+     * the terminal-job guard (a closed job's price is the office's to change). Everything that
+     * makes signQuote a SALE is absent.
+     */
+    saveQuoteDraft: anyRole
+      .input(fieldSaveQuoteDraftInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const job = techJob ?? (await repo.findById(jobId));
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        if (job.isTerminal()) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "This job is closed — ask the office to change it.",
+          });
+        }
+
+        const useCase = new SetJobLinesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const r = orThrow(
+          await useCase.exec(
+            {
+              jobId,
+              lines: input.lines,
+              rates: { discBps: input.discBps, taxBps: input.taxBps, depBps: input.depBps },
+            },
+            ctx.principal.orgId,
+          ),
+        );
+
+        // Redacted like every other field response: a tech whose org has techSeesPrice off must
+        // not read cost back out of the record they just wrote.
+        const dto = toJobDTO(r.job, r.execution);
+        const isTech = ctx.principal.role === "tech";
+        if (!isTech) return dto;
+        const seesPrice = await new DrizzleSettingsRepository(
+          ctx.tx,
+          ctx.principal.orgId,
+        ).getTechSeesPrice();
         return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
       }),
 

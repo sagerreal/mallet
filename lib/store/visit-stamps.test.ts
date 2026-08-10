@@ -70,7 +70,7 @@ describe("what the stepper reads mid-flight", () => {
     const arrived = optimisticVisit(optimisticVisit(visit(), "enroute", AT), "onsite", LATER);
     const finished = optimisticVisit(arrived, "done", LATER);
 
-    expect(visitSteps(finished).map((s) => s.state)).toEqual(["reached", "reached", "reached"]);
+    expect(visitSteps(finished).map((s) => s.state)).toEqual(["reached", "reached", "reached", "reached"]);
     expect(visitSteps(finished)[1]?.time).toBe("2:41p");
     expect(visitSteps(finished)[2]?.time).toBe("2:58p");
   });
@@ -87,6 +87,6 @@ describe("what the stepper reads mid-flight", () => {
 
   it("finishing straight from scheduled still shows both middle steps skipped", () => {
     const finished = optimisticVisit(visit(), "done", AT);
-    expect(visitSteps(finished).map((s) => s.state)).toEqual(["reached", "skipped", "skipped"]);
+    expect(visitSteps(finished).map((s) => s.state)).toEqual(["reached", "skipped", "skipped", "reached"]);
   });
 });

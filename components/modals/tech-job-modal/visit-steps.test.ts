@@ -36,6 +36,8 @@ describe("visitSteps", () => {
       { key: "scheduled", label: "Scheduled", state: "current", time: null, jumpTo: null },
       { key: "enroute", label: "On the way", state: "pending", time: null, jumpTo: "enroute" },
       { key: "onsite", label: "On site", state: "pending", time: null, jumpTo: "onsite" },
+      // Done is a readout, never a jump — the foot owns finishing.
+      { key: "done", label: "Done", state: "pending", time: null, jumpTo: null },
     ]);
   });
 
@@ -53,14 +55,14 @@ describe("visitSteps", () => {
     const steps = visitSteps(
       visit({ status: "onsite", enrouteAt: at(14, 41), startedAt: at(14, 58) }),
     );
-    expect(steps.map((s) => s.state)).toEqual(["reached", "reached", "current"]);
+    expect(steps.map((s) => s.state)).toEqual(["reached", "reached", "current", "pending"]);
     expect(steps[1]?.time).toBe("2:41p");
   });
 
   // THE RULE. Finished from scheduled: no stamps were written, so none are shown.
   it("finished with no taps: both middle steps are SKIPPED, with no time on either", () => {
     const steps = visitSteps(visit({ status: "done" }));
-    expect(steps.map((s) => s.state)).toEqual(["reached", "skipped", "skipped"]);
+    expect(steps.map((s) => s.state)).toEqual(["reached", "skipped", "skipped", "reached"]);
     expect(steps[1]?.time).toBeNull();
     expect(steps[2]?.time).toBeNull();
   });
@@ -91,12 +93,12 @@ describe("visitSteps", () => {
 describe("visitSteps — forward jumps", () => {
   it("from scheduled, BOTH steps ahead are jumpable — including skipping straight to On site", () => {
     const steps = visitSteps(visit());
-    expect(steps.map((s) => s.jumpTo)).toEqual([null, "enroute", "onsite"]);
+    expect(steps.map((s) => s.jumpTo)).toEqual([null, "enroute", "onsite", null]);
   });
 
   it("from enroute, only On site is left to jump to", () => {
     const steps = visitSteps(visit({ status: "enroute", enrouteAt: at(14, 41) }));
-    expect(steps.map((s) => s.jumpTo)).toEqual([null, null, "onsite"]);
+    expect(steps.map((s) => s.jumpTo)).toEqual([null, null, "onsite", null]);
   });
 
   // Backwards is not "refused", it is absent: the office's ↩ Reopen is the only way back, because
@@ -108,7 +110,7 @@ describe("visitSteps — forward jumps", () => {
 
   it("done: nothing is jumpable, skipped nodes included", () => {
     const steps = visitSteps(visit({ status: "done" }));
-    expect(steps.map((s) => s.state)).toEqual(["reached", "skipped", "skipped"]);
+    expect(steps.map((s) => s.state)).toEqual(["reached", "skipped", "skipped", "reached"]);
     expect(steps.every((s) => s.jumpTo === null)).toBe(true);
   });
 
@@ -131,5 +133,52 @@ describe("stampLabel", () => {
   });
   it.each([null, undefined, "not a date"])("answers null for %s rather than a confident wrong time", (v) => {
     expect(stampLabel(v)).toBeNull();
+  });
+});
+
+/**
+ * THE FOURTH NODE.
+ *
+ * The stepper stopped at "On site", so a finished visit that skipped the middle two rendered
+ * exactly like a scheduled one — Scheduled stamped, both others "skipped" — and the ONLY thing
+ * on the sheet saying it had finished was the office's ↩ Reopen button. Owen read that, correctly,
+ * as a contradiction: reopen what?
+ *
+ * Finishing is a recorded event with a real stamp (completedAt, written by set-visit-status.ts),
+ * so it belongs on the line with the other three.
+ */
+describe("visitSteps — the Done node", () => {
+  it("a finished visit reads Done, with the stamp it was finished at", () => {
+    const steps = visitSteps(visit({ status: "done", completedAt: at(13, 47) }));
+    const done = steps[steps.length - 1]!;
+    expect(done.key).toBe("done");
+    expect(done.label).toBe("Done");
+    expect(done.state).toBe("reached");
+    expect(done.time).toBe("1:47p");
+  });
+
+  it("an unfinished visit shows Done as pending, and it is NOT tappable", () => {
+    for (const status of ["scheduled", "enroute", "onsite"] as const) {
+      const done = visitSteps(visit({ status }))[3]!;
+      expect(done.state).toBe("pending");
+      // Finishing is the FOOT's job — one full-width target, always one tap (tech-job-foot.ts).
+      // A second finish on a third-of-the-sheet node would be the smaller, worse one.
+      expect(done.jumpTo).toBeNull();
+    }
+  });
+
+  it("is never SKIPPED — a visit is finished or it is not, and that is known from the record", () => {
+    // No completedAt (a legacy row, or a job completed by a path that left it null). It still
+    // finished; "skipped" would say nobody finished it, which is a different and false claim.
+    const done = visitSteps(visit({ status: "done" }))[3]!;
+    expect(done.state).toBe("reached");
+    expect(done.time).toBeNull();
+  });
+
+  it("leaves the first three nodes exactly as they were", () => {
+    const steps = visitSteps(visit({ status: "done", completedAt: at(13, 47) }));
+    expect(steps.map((s) => s.key)).toEqual(["scheduled", "enroute", "onsite", "done"]);
+    expect(steps[1]!.state).toBe("skipped");
+    expect(steps[2]!.state).toBe("skipped");
   });
 });

@@ -256,6 +256,61 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
     setPricing((prev) => (prev.taxPct > 0 ? prev : { ...prev, taxPct: orgTaxRate }));
   }, [orgTaxRate]);
 
+  /**
+   * SAVE THE PRICE WHEN THE TECHNICIAN LEAVES IT.
+   *
+   * The builder's lines were local React state and `signJobQuote` was the only way out of this
+   * component, so pricing a repair and then switching to the Job tab — or closing the sheet, or
+   * having iOS reap the tab — threw every line away without a word. On a phone in a truck that is
+   * an ordinary thing to do.
+   *
+   * On UNMOUNT, not on every keystroke: a debounced autosave writes half-typed prices to the job
+   * from a moving vehicle, and this surface is the one place a technician is standing in front of
+   * a customer. Leaving the tab is the moment the edit is finished.
+   *
+   * Refs, not deps: the cleanup has to read the LAST lines rather than the ones present when the
+   * effect was declared, and re-declaring it per keystroke would fire a save on every change.
+   */
+  const draftRef = useRef<{ lines: BuildLine[]; pricing: FieldPricing }>({ lines: [], pricing: NO_FIELD_PRICING });
+  draftRef.current = { lines: tiers[tier], pricing };
+  /** Set once the customer signs — signQuote has already written these lines, so the unmount
+   *  save must not fire and re-write them as an unsigned draft a moment later. */
+  const soldRef = useRef(false);
+  /** What the job already held. An unmodified visit to the tab must write nothing at all. */
+  const seedKeyRef = useRef("");
+  const lineKey = (ls: readonly BuildLine[]): string =>
+    ls.map((l) => `${l.d}|${lineAmt(l)}`).join("~");
+  if (seedKeyRef.current === "") seedKeyRef.current = lineKey(seed);
+
+  const saveQuoteDraft = useAppStore((s) => s.saveQuoteDraft);
+  const jobIdRef = useRef<string | undefined>(undefined);
+  jobIdRef.current = job?.id;
+  useEffect(() => {
+    return () => {
+      const id = jobIdRef.current;
+      if (!id || soldRef.current) return;
+      const { lines: current, pricing: rates } = draftRef.current;
+      // Nothing the technician did changed the price — writing would be a pointless round trip
+      // and would stamp the job as edited when it was only looked at.
+      if (lineKey(current) === seedKeyRef.current) return;
+
+      const wireLines = current
+        .map((l) => ({ d: l.d || "Repair", q: 1, r: lineAmt(l) }))
+        .filter((l) => (l.r ?? 0) > 0)
+        .map((l) => ({
+          description: l.d,
+          quantity: l.q,
+          rateCents: Math.round(l.r * 100),
+          costCents: 0,
+        }));
+      const subtotalCents = wireLines.reduce((sum, l) => sum + Math.round(l.quantity * l.rateCents), 0);
+      // Fire and forget: the component is already gone, so there is nothing left to show a
+      // spinner on. A refusal still reaches the user — the store reports it through
+      // WriteErrorToast and rolls the optimistic lines back.
+      void saveQuoteDraft(id, { lines: wireLines, ...fieldPricingRates(rates, subtotalCents) });
+    };
+  }, [saveQuoteDraft]);
+
   // Mode transitions notify the host (effect, not in-setter, so a re-render
   // during another component's render never fires a parent state update).
   useEffect(() => {
@@ -388,6 +443,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
       pricing,
       wireLines.reduce((sum, l) => sum + Math.round(l.quantity * l.rateCents), 0),
     );
+    soldRef.current = true;
     const { ok, error } = await signJobQuote(job.id, {
       lines: wireLines,
       signerName: name,
@@ -398,6 +454,9 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
     });
     setSigning(false);
     if (!ok) {
+      // The sale did not happen, so the price is a DRAFT again — clear the flag or the unmount
+      // save would be suppressed and a failed signature would still lose the lines.
+      soldRef.current = false;
       setSignError(error ?? "Couldn't save the signature — check your connection and try again.");
       return;
     }

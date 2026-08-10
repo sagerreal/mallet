@@ -427,6 +427,23 @@ export interface JobsSlice {
       depBps?: number;
     },
   ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Save the field-built price WITHOUT selling it (v1.field.saveQuoteDraft — anyRole,
+   * assignment-gated). The builder held its lines in local React state and `signJobQuote` was the
+   * only way out, so a technician who priced a repair and backed out lost every line.
+   *
+   * Writes job LINES, exactly as the office's Build the price does. It is NOT a sale: no
+   * signature, no estimate, no won stage. Resolves { ok, error } and never rejects.
+   */
+  saveQuoteDraft: (
+    jobId: string,
+    input: {
+      lines: { description: string; quantity: number; rateCents: number; costCents: number }[];
+      discBps?: number;
+      taxBps?: number;
+      depBps?: number;
+    },
+  ) => Promise<{ ok: boolean; error?: string }>;
   addVisit: (jobId: string, dur?: number) => Visit | null;
   updateVisit: (jobId: string, visitId: string, patch: Partial<Visit>) => void;
   placeVisit: (jobId: string, visitId: string, at: { techId: string; date: string; start: number }) => void;
@@ -974,6 +991,37 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         reportWriteError("signJobQuote", err);
         // Surface the server's wording. A signature refusal names something the tech can fix on
         // the spot; replacing it with "check your connection" is what sent them home empty.
+        return { ok: false, error: userMessage(err) };
+      });
+  },
+
+  saveQuoteDraft: (jobId, input) => {
+    const prior = snapshot(get().jobs, jobId);
+    // Same optimistic shape as signJobQuote: STORE units (dollars), so the work order behind the
+    // tab reads the new price the instant the tech leaves it rather than a beat later.
+    const optimistic = input.lines.map((l) => ({ d: l.description, q: l.quantity, r: l.rateCents / 100 }));
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: optimistic } : j)) }));
+    _recentLineWrites.set(jobId, Date.now());
+
+    const wire = {
+      jobId,
+      lines: input.lines,
+      ...(input.discBps ? { discBps: input.discBps } : {}),
+      ...(input.taxBps ? { taxBps: input.taxBps } : {}),
+      ...(input.depBps ? { depBps: input.depBps } : {}),
+    };
+    return trpcVanilla.v1.field.saveQuoteDraft
+      .mutate(wire)
+      .then((dto) => {
+        _recentLineWrites.set(jobId, Date.now());
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        _recentLineWrites.delete(jobId);
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        reportWriteError("saveQuoteDraft", err);
         return { ok: false, error: userMessage(err) };
       });
   },

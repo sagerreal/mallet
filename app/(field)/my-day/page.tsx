@@ -25,6 +25,7 @@ import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { useMyDayInput } from "@/features/field/my-day-input";
 import { colLabel } from "@/components/modals/tech-job-modal/helpers";
+import { visitProgress, progressPill, progressNote, canOfferStart } from "./visit-progress";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 
@@ -130,6 +131,14 @@ interface JobCardProps {
 
 function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) {
   const s = statusLabel(job.status);
+  /**
+   * What the VISITS say, which the row used to throw away. A two-stop job whose first stop
+   * finished hours ago still has an open job status — correctly, the return trip is outstanding —
+   * so the row read "SCHEDULED · Start job" as though nobody had been out. See visit-progress.ts.
+   */
+  const progress = visitProgress(job.visits);
+  const pill = progressPill(progress);
+  const note = progressNote(progress);
 
   // stopPropagation belongs on the CONTROL, never on the .md-acts wrapper around it. The wrapper is
   // a full-width flex row, so stopping the click there made every pixel BESIDE the button — most of
@@ -137,7 +146,18 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
   // row still tinted and compressed under the finger (.md-stop:active), so it read as the app
   // ignoring you rather than as dead space. Only the button itself may keep the row from opening.
   const acts =
-    job.status === "scheduled" ? (
+    job.status === "scheduled" && !canOfferStart(progress) ? (
+      // Part-done: starting is a claim the technician who finished stop one can disprove, so the
+      // row keeps only the thing it can still honestly do.
+      <button
+        type="button"
+        className="btn sm"
+        onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
+        disabled={isPending}
+      >
+        ✓ Complete
+      </button>
+    ) : job.status === "scheduled" ? (
       // BOTH, on a scheduled job. Start job is the expected next step and stays the primary; ✓
       // Complete is beside it because the job sheet has always let a technician finish without
       // starting, and the card refusing the same thing read as the app contradicting itself.
@@ -192,12 +212,16 @@ function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) 
           >
             <b>{job.title ?? `Job #${job.num}`}</b>
           </button>
+          {/* The visit reading wins when it has something truer to say than the job status —
+              and only then; see progressPill for why "Return trip" is not applied to a dated
+              second stop. */}
           <span className="stpill" style={{ color: s.c, background: s.bg }}>
-            {s.l}
+            {pill ?? s.l}
           </span>
         </div>
         <div className="md-sub">
           #{job.num}
+          {note ? ` · ${note}` : ""}
           {job.notes ? ` · ${job.notes}` : ""}
         </div>
         {acts ? <div className="md-acts">{acts}</div> : null}
