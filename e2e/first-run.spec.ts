@@ -5,9 +5,10 @@
  * Runs against its OWN org. "E2E Plumbing" cannot serve here: the golden path adds a customer, a
  * quote, a job and a bill to it on every run, and the first-run board renders only for a shop with
  * nothing open AND no won history (the wonCount guard in app/(office)/dashboard/page.tsx). So this
- * spec logs in as the owner of "E2E Fresh Plumbing", provisioned by:
+ * spec logs in as the owner of "E2E Fresh Plumbing", which the STANDARD seed provisions:
  *
- *     npm run seed:e2e:empty
+ *     npm run seed:e2e            # both orgs — what the gate line runs
+ *     npm run seed:e2e:empty      # just this one
  *
  * Nothing in this file writes. If it starts failing on "0 ghosts", the fixture org has grown work
  * — the seed script prints a warning when it has — and the fix is to find what wrote to it, not to
@@ -32,6 +33,23 @@ async function openFirstRunBoard(page: Page): Promise<void> {
   await login(page, FRESH_OWNER);
   await page.goto("/dashboard");
   await expect(page.locator('[role="status"][aria-busy="true"]')).toHaveCount(0, { timeout: 30_000 });
+
+  // Say WHICH of the three no-board screens this is before asserting the count.
+  //
+  // The skeleton going away does not mean the board arrived: a failed read renders "Couldn't load
+  // your board", and a thrown one renders the route's own "Something went wrong". Both hold zero
+  // columns, so without this the failure reads `expected 4, received 0` — a sentence that sends
+  // the next person hunting for a markup regression. It has already happened once here, and the
+  // cause was the laptop losing its route to Supabase's pooler mid-run (EHOSTUNREACH), which this
+  // names in one line.
+  const crashed = page.getByText(/Something went wrong|Couldn't load/i);
+  if (await crashed.count()) {
+    throw new Error(
+      `the dashboard did not render a board: "${(await crashed.first().innerText()).trim()}" — ` +
+        `check the server log for tRPC errors (a dropped DB connection looks exactly like this)`,
+    );
+  }
+
   await expect(page.getByRole("region", { name: /\bcolumn$/ })).toHaveCount(4, { timeout: 30_000 });
 }
 
@@ -92,7 +110,24 @@ test.describe("a brand-new shop's first look at the board", () => {
     // A dollar figure is the one thing on a card an owner reads as a fact about their own
     // business. Inventing one on day one would be a lie told in the app's own voice — so the
     // drawn cards carry no price and the column heads state 0 rather than $0.
-    const text = await page.locator("body").innerText();
+    //
+    // textContent, not innerText — but over the body's CONTENT nodes only.
+    //
+    // innerText is too weak: it returns only what is laid out, so a `$` inside a display:none
+    // branch, an sr-only line, or an aria-hidden ghost card would slip past. textContent sees all
+    // of that, which is the assertion actually meant.
+    //
+    // Raw `document.body.textContent` is too strong in a way that measures the wrong thing: this
+    // is a Next RSC page, so the body ends with `<script>self.__next_f.push(…)</script>` carrying
+    // the serialized flight payload, and React's wire format spells its own sigils with a dollar
+    // ("$undefined", "$L2", "$Sreact.fragment"). Verified against the real page: every `$` in the
+    // raw string came from those script tags and none from a rendered node. Asserting over them
+    // would be asserting on the bundler's protocol, not on what the app says about money.
+    const text = await page.evaluate(() => {
+      const body = document.body.cloneNode(true) as HTMLElement;
+      body.querySelectorAll("script, style, template, noscript").forEach((n) => n.remove());
+      return body.textContent ?? "";
+    });
     expect(text, "the first-run screen must not state any money").not.toContain("$");
   });
 });
@@ -127,6 +162,11 @@ test.describe("first-run · axe", () => {
  * The pixels for this screen. Behind E2E_VISUAL like the other visual nets, and shot here rather
  * than added to e2e/helpers/routes.ts for the audience reason above.
  *
+ * Shot at the standard 900px height, unlike office-today's 3,200 (see RouteDef.desktopHeight):
+ * measured, this screen's scroller is 793px of content in a 793px window — a setup brief and one
+ * drawn card per column simply fit. The assertion below is what keeps that true; if the first-run
+ * screen ever grows past the fold, it fails here rather than quietly cropping the baseline.
+ *
  * ⚠️ Re-baseline against a PRODUCTION build, like e2e/visual.spec.ts — never `next dev`.
  *
  *     pnpm build && PORT=3131 pnpm start
@@ -142,6 +182,16 @@ test.describe("first-run · pixels", () => {
       await page.setViewportSize({ width: 1440, height: 900 });
       await openFirstRunBoard(page);
       await settle(page);
+
+      const scroller = await page.evaluate(() => {
+        const main = document.querySelector("main");
+        return { content: main?.scrollHeight ?? 0, window: main?.clientHeight ?? 0 };
+      });
+      expect(
+        scroller.content,
+        `${scroller.content - scroller.window}px of the first-run screen sits below the fold — give it a taller viewport`,
+      ).toBeLessThanOrEqual(scroller.window);
+
       await expect(page).toHaveScreenshot(`office-today-first-run-${theme}-desktop.png`, {
         fullPage: true,
         animations: "disabled",

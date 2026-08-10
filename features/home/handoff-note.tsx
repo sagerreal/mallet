@@ -140,8 +140,12 @@ export function HandoffNote({
 
   return (
     <div className="ticket">
+      {/* data-dynamic on the DATE only, not the whole eyebrow: like the greeting below it, the
+          date is rendered from the wall clock during SSR, which the E2E clock freeze (a
+          browser-side shim) cannot reach — so an unmasked eyebrow expires every baseline at
+          midnight. The org name beside it is stable and stays asserted. */}
       <div className="eyebrow">
-        {orgName.toUpperCase()} · {dateLabel}
+        {orgName.toUpperCase()} · <span data-dynamic>{dateLabel}</span>
       </div>
       {/* data-dynamic: the greeting is derived from the wall clock during SSR, which
           the E2E clock freeze (a browser-side shim) cannot reach — mask it in visual

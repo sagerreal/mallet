@@ -40,8 +40,29 @@ const THEMES = ["light", "dark"] as const;
 const DESKTOP = { width: 1440, height: 900 };
 const MOBILE = { width: 390, height: 844 };
 
+/**
+ * Nothing may be left below the fold.
+ *
+ * Only meaningful for a route that declares `desktopHeight` — see RouteDef for why `fullPage` is
+ * not full content on this app's desktop layout. Asserted rather than assumed: the height is a
+ * constant and the content it has to clear is the shop's real work, so the day the fixture
+ * outgrows it the baseline would silently start clipping again, which is the exact failure this
+ * whole change is fixing.
+ */
+async function assertNothingBelowTheFold(page: import("@playwright/test").Page, name: string) {
+  const scroller = await page.evaluate(() => {
+    const main = document.querySelector("main");
+    return { content: main?.scrollHeight ?? 0, window: main?.clientHeight ?? 0 };
+  });
+  expect(
+    scroller.content,
+    `${name}: ${scroller.content - scroller.window}px of content sits below the fold — raise this route's desktopHeight`,
+  ).toBeLessThanOrEqual(scroller.window);
+}
+
 async function shoot(page: import("@playwright/test").Page, route: RouteDef, theme: string, size: string) {
   await settle(page);
+  if (size === "desktop" && route.desktopHeight) await assertNothingBelowTheFold(page, route.name);
   await expect(page).toHaveScreenshot(`${route.name}-${theme}-${size}.png`, {
     fullPage: true,
     animations: "disabled",
@@ -64,7 +85,7 @@ for (const theme of THEMES) {
     for (const route of ROUTES) {
       test(`${route.name} · desktop`, async ({ page }) => {
         await prepare(page, theme);
-        await page.setViewportSize(DESKTOP);
+        await page.setViewportSize({ ...DESKTOP, height: route.desktopHeight ?? DESKTOP.height });
         if (route.audience === "office") await login(page, OWNER);
         if (route.audience === "field") await login(page, TECH);
         await page.goto(route.path);
