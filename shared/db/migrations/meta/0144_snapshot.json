@@ -1,5 +1,5 @@
 {
-  "id": "5f2c8479-48e3-471f-b10c-57413de2d32c",
+  "id": "e5f4bbf0-ce6d-400a-aafc-77ea7d89f7c9",
   "prevId": "c3b0b83e-2232-4a42-8d42-1dd128acb5a9",
   "version": "7",
   "dialect": "postgresql",
@@ -263,6 +263,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'::text[]"
+        },
+        "cost_rate_cents": {
+          "name": "cost_rate_cents",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         },
         "callback_number": {
           "name": "callback_number",
@@ -607,27 +613,6 @@
               "expression": "id",
               "isExpression": false,
               "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "leads_org_stage_idx": {
-          "name": "leads_org_stage_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "stage",
-              "isExpression": false,
-              "asc": true,
               "nulls": "last"
             }
           ],
@@ -1220,27 +1205,6 @@
             },
             {
               "expression": "lead_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "estimates_org_status_idx": {
-          "name": "estimates_org_status_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4745,12 +4709,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4817,28 +4775,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "messages_org_idem_uidx": {
-          "name": "messages_org_idem_uidx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"messages\".\"idempotency_key\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}

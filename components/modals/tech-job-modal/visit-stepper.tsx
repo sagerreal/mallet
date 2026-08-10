@@ -72,11 +72,22 @@ export function VisitStepper({ visit, label, onJump }: VisitStepperProps) {
             <span className="vstep-dot" aria-hidden="true" />
             <span className="vstep-lab">{s.label}</span>
             <span className="sr-only">, {jumpTo ? SPOKEN_JUMP : SPOKEN[s.state]}</span>
+            {/* The second line, and the one place an affordance can live without moving anything.
+                A reached step prints its stamp here, a skipped one prints "skipped", and a pending
+                one printed nothing at all — which is why a tappable node was indistinguishable
+                from a dead readout: the ONLY rule separating them dimmed a label a shade.
+                A word in the same mono/xs/muted style as the stamp says what the tap does, costs
+                no geometry, keeps the row a record rather than a button strip, and — unlike a
+                colour or a border — survives daylight, gloves and a colour-blind technician. */}
             {s.time ? (
               <span style={TIME_STYLE}>{s.time}</span>
             ) : s.state === "skipped" ? (
               <span style={TIME_STYLE} aria-hidden="true">
                 skipped
+              </span>
+            ) : jumpTo ? (
+              <span style={TIME_STYLE} aria-hidden="true">
+                tap to record
               </span>
             ) : null}
           </>

@@ -90,7 +90,7 @@ import {
   type JobDTO,
 } from "@/lib/store/dto-mapper";
 import { persistVisitStatus, visitWriteName, type VisitWriteSurface } from "@/lib/store/visit-status-write";
-import { optimisticVisit } from "@/lib/store/visit-stamps";
+import { optimisticVisit, heldVisitState, revertedVisit } from "@/lib/store/visit-stamps";
 import { HYDRATOR_STALE_MS, JOB_ORIGIN } from "@/lib/store/hydrator-config";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { reportWriteError } from "../write-error";
@@ -179,7 +179,23 @@ const _recentLineWrites = new Map<string, number>();
 // the STORE visit's status and step stamps; the write's own reconcile stands the
 // entry down for that one merge (it IS the authoritative answer) and re-arms it.
 // Mirrors _recentLineWrites. Cleared on write failure or entry expiry.
-const _recentVisitStatusWrites = new Map<string, number>();
+//
+// THE ENTRY NAMES ITS WRITER, and that is the whole point. It used to be a bare timestamp, so ANY
+// write could stand down ANY other write's guard — and one did. Tap "Start driving", then tap
+// "On site" a second later: the second tap sets the store and re-arms this entry, but its request
+// is QUEUED behind the first (see `chain`). When the first request returns it deleted this entry —
+// which by then belonged to the second tap — and merged its own now-stale answer (pending +
+// enrouteAt → "enroute") straight over the optimistic "onsite". The sheet fell back to On the way
+// for the whole of the second request's round trip. A write may now only stand down the guard it
+// armed itself; when a newer tap owns it, the older reconcile merges with the guard STILL UP.
+interface VisitStatusWrite {
+  /** When the tap happened — read for the HYDRATOR_STALE_MS expiry. */
+  readonly at: number;
+  /** Which tap. Monotonic per session; only this writer may stand its own entry down. */
+  readonly seq: number;
+}
+const _recentVisitStatusWrites = new Map<string, VisitStatusWrite>();
+let _visitWriteSeq = 0;
 
 function chain(visitId: string, fn: () => Promise<unknown>): void {
   const prev = _visitOpChain.get(visitId) ?? Promise.resolve();
@@ -529,7 +545,7 @@ function withRecentVisitStatus(prior: Job, incoming: Job): Job {
   const now = Date.now();
   let held = false;
   const visits = incoming.visits.map((v) => {
-    const writtenAt = _recentVisitStatusWrites.get(v.id);
+    const writtenAt = _recentVisitStatusWrites.get(v.id)?.at;
     if (writtenAt === undefined) return v;
     if (now - writtenAt > HYDRATOR_STALE_MS) {
       _recentVisitStatusWrites.delete(v.id);
@@ -546,13 +562,7 @@ function withRecentVisitStatus(prior: Job, incoming: Job): Job {
       return v;
     }
     held = true;
-    return {
-      ...v,
-      status: local.status,
-      enrouteAt: local.enrouteAt,
-      startedAt: local.startedAt,
-      completedAt: local.completedAt,
-    };
+    return heldVisitState(local, v);
   });
   return held ? { ...incoming, visits } : incoming;
 }
@@ -1206,7 +1216,11 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
 
     // Guard the optimistic step against a stale snapshot from now on: the refetch the PREVIOUS
     // step's reconcile dispatched is still in flight, and its database read predates this tap.
-    _recentVisitStatusWrites.set(visitId, Date.now());
+    // The token makes the entry THIS tap's: a predecessor still in flight may not stand it down.
+    const seq = ++_visitWriteSeq;
+    _recentVisitStatusWrites.set(visitId, { at: Date.now(), seq });
+    /** Is the guard still the one this write armed, or has a newer tap taken it over? */
+    const ownsGuard = (): boolean => _recentVisitStatusWrites.get(visitId)?.seq === seq;
 
     // Serialize behind the visit's own createVisit (and any other in-flight op)
     // so the status write can never race the row's creation or deletion.
@@ -1214,7 +1228,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       // Execution-time re-check: the visit may have been removed (or its
       // create rolled back) while this op waited in the chain.
       if (!visitExists(get().jobs, jobId, visitId)) {
-        _recentVisitStatusWrites.delete(visitId);
+        if (ownsGuard()) _recentVisitStatusWrites.delete(visitId);
         return Promise.resolve();
       }
       return persistVisitStatus(surface, jobId, visitId, status)
@@ -1223,17 +1237,40 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           // whatever it did to the others (↩ Reopen clears them). So the guard stands down for
           // this one merge and is re-armed immediately after: the refetch dispatched before this
           // commit can still land later, and must not revert the visit then either.
-          _recentVisitStatusWrites.delete(visitId);
+          //
+          // ONLY IF THE GUARD IS STILL OURS. A newer tap owning the entry means this response is
+          // no longer the latest word on the visit — it is a slower predecessor, and standing the
+          // guard down for it is precisely how the newer tap got reverted. Merge with the guard
+          // up: the newer optimistic state survives and the newer op's own DTO lands right after.
+          const mine = ownsGuard();
+          if (mine) _recentVisitStatusWrites.delete(visitId);
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
-          _recentVisitStatusWrites.set(visitId, Date.now());
+          if (mine) _recentVisitStatusWrites.set(visitId, { at: Date.now(), seq });
           invalidateJobLists();
         })
         .catch((err: unknown) => {
-          _recentVisitStatusWrites.delete(visitId);
-          // Skip the restore when the visit is gone at catch time — the
-          // snapshot contains it and restoring would resurrect a phantom.
-          if (prior && visitExists(get().jobs, jobId, visitId)) {
-            set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+          // Same ownership rule, and the rollback obeys it too. `prior` is a whole-job snapshot
+          // taken BEFORE this tap, so restoring it once a newer tap has landed would discard that
+          // tap — and every line, note and checklist answer written since. A superseded write
+          // reports its failure and leaves the store to the writer that replaced it.
+          const mine = ownsGuard();
+          if (mine) {
+            _recentVisitStatusWrites.delete(visitId);
+            // Undo THIS tap on THIS visit, not the whole job. Skipped when the visit is gone at
+            // catch time — reverting would resurrect a phantom.
+            const before = prior?.visits.find((v) => v.id === visitId);
+            if (before && visitExists(get().jobs, jobId, visitId)) {
+              set((s) => ({
+                jobs: s.jobs.map((j) =>
+                  j.id === jobId
+                    ? withVisits(
+                        j,
+                        j.visits.map((v) => (v.id === visitId ? revertedVisit(v, before, status) : v)),
+                      )
+                    : j,
+                ),
+              }));
+            }
           }
           reportWriteError(visitWriteName(status), err);
         });

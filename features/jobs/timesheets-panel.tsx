@@ -27,6 +27,7 @@ import {
 } from "./timesheet-derive";
 import { type TsPick } from "./timesheets-entries";
 import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
+import { JobCostingView } from "./job-costing-view";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 
@@ -78,6 +79,13 @@ export function TimesheetsPanel() {
   // Week nav — local weekStart state, normalized to the Monday of today's week.
   const today = todayISO();
   const [weekStart, setWeekStart] = useState<string>(() => tsWeekStart(today));
+  /**
+   * Which reading of the week is on screen. TWO LEDGERS, and this tab is the guardrail between
+   * them: Timesheet changes what people are PAID and syncs to QuickBooks; Job costing changes a
+   * REPORT. Keeping them on one screen behind a tab is what stops an approver thinking a costing
+   * edit moved somebody's pay.
+   */
+  const [ledger, setLedger] = useState<"timesheet" | "costing">("timesheet");
   // Loads the week ON SCREEN into the store, which the grid below reads. Previously a hydrator
   // fetched a flat, unscoped page of the newest 500 entries and this panel filtered it down — so
   // any week older than that window rendered empty, indistinguishable from "nobody logged hours".
@@ -271,6 +279,37 @@ export function TimesheetsPanel() {
         )}
       </div>
 
+      <div className="otabs" role="tablist" aria-label="Timesheets view">
+        <button
+          id="ts-tab-timesheet"
+          className={ledger === "timesheet" ? "otab on" : "otab"}
+          role="tab"
+          type="button"
+          aria-selected={ledger === "timesheet"}
+          aria-controls="ts-panel-timesheet"
+          onClick={() => setLedger("timesheet")}
+        >
+          Timesheet
+        </button>
+        <button
+          id="ts-tab-costing"
+          className={ledger === "costing" ? "otab on" : "otab"}
+          role="tab"
+          type="button"
+          aria-selected={ledger === "costing"}
+          aria-controls="ts-panel-costing"
+          onClick={() => setLedger("costing")}
+        >
+          Job costing
+        </button>
+      </div>
+
+      {ledger === "costing" ? (
+        <div id="ts-panel-costing" role="tabpanel" aria-labelledby="ts-tab-costing">
+          <JobCostingView weekStart={weekStart} weekEnd={wkEnd} paidHours={totPaid} />
+        </div>
+      ) : (
+      <div id="ts-panel-timesheet" role="tabpanel" aria-labelledby="ts-tab-timesheet">
       <TsCrewChips
         techs={techs}
         totals={totals}
@@ -308,6 +347,8 @@ export function TimesheetsPanel() {
             />
           );
         })()}
+      </div>
+      )}
     </>
   );
 }

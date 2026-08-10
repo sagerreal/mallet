@@ -35,6 +35,7 @@ import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
+import { CostRateField } from "./cost-rate-field";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { userMessage } from "@/lib/trpc/error-map";
@@ -181,6 +182,7 @@ type MemberItem = {
   isFieldCrew: boolean;
   takesCalls: boolean;
   skillTags: string[];
+  costRateCents: number | null;
 };
 
 const CERT_MAX = 10;
@@ -390,7 +392,13 @@ function MemberRow({ member }: { member: MemberItem }) {
         <div role="alert" style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", paddingLeft: "var(--space-2xs)" }}>{callsError}</div>
       )}
       {member.isFieldCrew && (
-        <CertChipsEditor memberId={member.id} skillTags={member.skillTags} />
+        <>
+          <CertChipsEditor memberId={member.id} skillTags={member.skillTags} />
+          {/* Field crew only: job costing divides revenue by the hours of whoever ran the visit,
+              and only field crew are on visits. An office cost rate would be a number with
+              nothing to multiply. */}
+          <CostRateField memberId={member.id} costRateCents={member.costRateCents} />
+        </>
       )}
     </div>
   );

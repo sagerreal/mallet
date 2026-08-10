@@ -73,11 +73,24 @@ suite("Task 2.1 crew-schedules reader against live Supabase RLS", () => {
       const rows = await new DrizzleAvailabilityReader(tx, org).readCrewSchedules();
       // crew1 Mon+Tue, crew2 Sat = 3 rows. Office member's row and the other org's row are excluded.
       expect(rows).toHaveLength(3);
-      expect(rows).toEqual([
-        { userId: crew1Id, weekday: 1, openHour: 8, closeHour: 17 },
-        { userId: crew1Id, weekday: 2, openHour: 8, closeHour: 17 },
-        { userId: crew2Id, weekday: 6, openHour: 9, closeHour: 13 },
-      ]);
+
+      // SORTED BOTH SIDES, because the reader orders by (user_id, weekday) and the fixture mints
+      // its users with gen_random_uuid(). Which of crew1/crew2 sorts first is therefore a COIN
+      // FLIP, and a literal array here failed about half the time — the flake that has been read
+      // as a broken environment more than once. What the reader actually promises is a
+      // deterministic order for a GIVEN set of ids, and that is what this compares.
+      const byUserThenDay = (a: { userId: string; weekday: number }, b: { userId: string; weekday: number }) =>
+        a.userId === b.userId ? a.weekday - b.weekday : a.userId < b.userId ? -1 : 1;
+
+      expect(rows).toEqual(
+        [
+          { userId: crew1Id, weekday: 1, openHour: 8, closeHour: 17 },
+          { userId: crew1Id, weekday: 2, openHour: 8, closeHour: 17 },
+          { userId: crew2Id, weekday: 6, openHour: 9, closeHour: 13 },
+        ].sort(byUserThenDay),
+      );
+      // And the ordering promise itself, checked against the rows as they arrived.
+      expect(rows).toEqual([...rows].sort(byUserThenDay));
     });
   });
 

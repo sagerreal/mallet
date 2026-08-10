@@ -705,11 +705,14 @@ describe("TechJobModalContent — visit stepper", () => {
     const list = screen.getByRole("list", { name: "Visit progress" });
     const nodes = screen.getAllByRole("listitem");
     expect(list).toBeTruthy();
+    // Each node reads: label, then the screen-reader state, then the second line — a stamp on a
+    // reached step, "skipped" on a denied one, and on a LIVE one the visible "tap to record" that
+    // is the only thing distinguishing a tappable node from a readout for a sighted user.
     expect(nodes.map((n) => n.textContent)).toEqual([
       "Scheduled, current step",
       // A live node says what tapping it does rather than only that it has not happened.
-      "On the way, not yet — tap to move the visit here",
-      "On site, not yet — tap to move the visit here",
+      "On the way, not yet — tap to move the visit heretap to record",
+      "On site, not yet — tap to move the visit heretap to record",
     ]);
     expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
   });
