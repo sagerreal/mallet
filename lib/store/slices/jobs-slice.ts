@@ -333,7 +333,21 @@ function recalcStatus(job: Job, visits: Visit[]): string {
   if (isTerminalStoreJobStatus(job.status)) return job.status;
   const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
-  if (placed.every((v) => v.status === "done")) return "done";
+  /**
+   * DONE ASKS EVERY VISIT, NOT EVERY PLACED ONE — the server's rule, verbatim: "every active
+   * (non-canceled) visit complete → the job completes" (set-visit-status.ts). Canceled visits
+   * never reach the store; both mappers drop them at the boundary, so everything here is active.
+   *
+   * Asking only the PLACED ones is what produced the flash. A return trip booked from the field
+   * has no date, no tech and no start — which is exactly what makes it outstanding — so it fell
+   * out of `placed`, the last placed visit finishing read as "all done", and the store called the
+   * job complete. The sheet swapped to its close-out branch and offered "Take payment" for as long
+   * as the round trip took; then the server answered "still open" and it swapped back.
+   *
+   * `placed` still decides UNSCHEDULED, which is a question about the board and genuinely is
+   * about placement: a job nobody has put on a day is unscheduled however many visits it has.
+   */
+  if (visits.every((v) => v.status === "done")) return "done";
   return "scheduled";
 }
 

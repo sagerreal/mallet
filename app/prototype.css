@@ -2229,8 +2229,15 @@
   .mtab .ic{font-size:var(--type-xl);line-height:1}
   .mtab .ic svg{width:20px;height:20px;stroke:currentColor}
   .mtab .mb{position:absolute;top:2px;left:50%;margin-left:var(--space-1);background:var(--amber);color:#fff;border-radius:var(--radius-sm);font-size:var(--type-xs);padding:0 var(--space-1);font-weight:800}
-  /* Field shell — desktop uses the office sidebar layout; mobile goes phone-first. */
-  .field-shell main{overflow:visible}
+  /* Field shell — desktop uses the office sidebar layout; mobile goes phone-first.
+
+     `.field-shell main{overflow:visible}` USED TO LIVE HERE, unscoped, and it applied at every
+     width. On a phone that is right: `.appshell` and `main` both go `overflow:visible` so the
+     DOCUMENT scrolls. On desktop the shell is `height:100vh;overflow:hidden` and `.layout` is
+     `overflow:hidden` too, so `main` is the only element that can scroll — and this rule took
+     that away. My day rendered its full list into a box that clipped it, with nothing able to
+     scroll: every job below the fold was unreachable. The phone rule that needs it now sets it
+     in the phone block below, where it belongs. */
   .field-shell .sectiontabs{display:flex;flex:0 0 auto;padding:0 var(--space-4);background:var(--bg);border-bottom:1px solid var(--line);overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
   /* To-schedule tray, DESKTOP: about two rows, then it scrolls. The grid wrapped without limit,
      so a shop with twenty jobs waiting pushed the BOARD off the screen — and the board is the
@@ -2430,8 +2437,13 @@
     #aidrawer.mopen{display:flex}
     .aigrip{display:none}
     .pathpick,.pathpick2,.pathpick2 .path{grid-template-columns:1fr !important}
-    /* field shell — phone-first on mobile: block layout, no sidebar */
+    /* field shell — phone-first on mobile: block layout, no sidebar.
+       `main` goes overflow:visible HERE and only here — on a phone the document itself scrolls
+       (see the .appshell/main rules at the top of this block), so a scroll container on main
+       would trap the page inside it. On desktop main is the ONLY thing that can scroll, and this
+       rule used to be unscoped, which is what made My day unscrollable there. */
     .field-shell .layout{display:block;height:auto;overflow:visible}
+    .field-shell main{overflow:visible}
     .field-shell .appmain{height:auto}
     .field-shell .sidebar{display:none}
     /* bottom tab bar — clears the iPhone home indicator via the safe-area inset */
