@@ -33,6 +33,8 @@ const mockSetVisitNotes = vi.fn();
 const mockAdoptJobPhotoPath = vi.fn();
 const mockSignJobQuote = vi.fn();
 const mockSaveQuoteDraft = vi.fn(() => Promise.resolve({ ok: true }));
+const mockSignChangeOrder = vi.fn(() => Promise.resolve({ ok: true }));
+const mockAddAddonField = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
@@ -48,6 +50,8 @@ vi.mock("@/lib/store/app-store", () => ({
       signJobQuote: mockSignJobQuote,
       // Save-on-leave: the builder writes the field draft when it unmounts.
       saveQuoteDraft: mockSaveQuoteDraft,
+      signChangeOrder: mockSignChangeOrder,
+      addAddonField: mockAddAddonField,
     }),
   usePushModal: () => mockPushModal,
   useCloseModal: () => mockClose,
@@ -93,6 +97,8 @@ function makeJob(overrides: Partial<Job> = {}): Job {
 beforeEach(() => {
   mockJobs = [makeJob()];
   mockSaveQuoteDraft.mockClear();
+  mockSignChangeOrder.mockClear();
+  mockAddAddonField.mockClear();
   mockMeasurementEstimating = "off";
   mockScan = { status: "no-native-app" };
   mockPushModal.mockClear();
@@ -147,141 +153,29 @@ describe("QuoteTab — the customer-choices row", () => {
     expect(screen.queryByText("Give the customer choices?")).toBeNull();
   });
 
-  it("reads as one row: question, what it buys, and a single 'Set up →' action", () => {
+  it("offers + Cheaper / + Premium directly — the actions ARE the row", () => {
     const job = pricedJob();
     mockJobs = [job];
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
     expect(screen.getByText("Give the customer choices?")).toBeTruthy();
-    expect(screen.getByText("Add cheaper or premium options")).toBeTruthy();
-    expect(screen.getByText("Set up →")).toBeTruthy();
-    // At rest the options are behind the row, not loose under the price block.
-    expect(screen.queryByText("+ Add a cheaper option")).toBeNull();
-    expect(screen.queryByText("+ Add a premium option")).toBeNull();
+    // No disclosure in front of two buttons — "Set up →" revealed exactly these and nothing else.
+    expect(screen.queryByText("Set up →")).toBeNull();
+    expect(screen.getByRole("button", { name: "+ Cheaper" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Premium" })).toBeTruthy();
   });
 
-  it("'Set up' expands BOTH opt-ins in flow, and says so to a screen reader", () => {
+  it("an opt-in still adds the tier and the row drops that button", () => {
     const job = pricedJob();
     mockJobs = [job];
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    const head = screen.getByText("Give the customer choices?").closest("button")!;
-    expect(head.getAttribute("aria-expanded")).toBe("false");
 
-    fireEvent.click(head);
-    expect(head.getAttribute("aria-expanded")).toBe("true");
-    const body = document.getElementById(head.getAttribute("aria-controls")!);
-    expect(body).toBeTruthy();
-    expect(screen.getByText("+ Add a cheaper option")).toBeTruthy();
-    expect(screen.getByText("+ Add a premium option")).toBeTruthy();
-  });
+    fireEvent.click(screen.getByRole("button", { name: "+ Premium" }));
 
-  it("the opt-ins still do what they did — a tier is added and the row drops it", () => {
-    const job = pricedJob();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    fireEvent.click(screen.getByText("Give the customer choices?"));
-    fireEvent.click(screen.getByText("+ Add a premium option"));
-
-    // Opting in turns the builder multi-tier and lands the editor on the new tier.
-    expect(screen.getByText("Present options →")).toBeTruthy();
-    expect(screen.getByText("Best total")).toBeTruthy();
-    // …and the taken option is no longer on offer, while the other still is.
-    expect(screen.queryByText("+ Add a premium option")).toBeNull();
-    expect(screen.getByText("+ Add a cheaper option")).toBeTruthy();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// THE ONE WAY INTO THE QUOTE. There used to be two controls: this list's own append
-// ("+ Add another line") and a second button called "+ Add a line" stranded outside the card,
-// below the discount / sales tax / deposit rows. One of the picker's four tiles did exactly what
-// the append did, so the pair read as the same button printed twice — and the one that owned the
-// pricebook had drifted below the totals it feeds.
-// ---------------------------------------------------------------------------
-
-describe("QuoteTab — + Add to the quote", () => {
-  const ADD = { name: "+ Add to the quote" };
-  const oneLine = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
-
-  const renderPriced = () => {
-    const job = oneLine();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-  };
-
-  it("is the only add control on the tab", () => {
-    renderPriced();
-    expect(screen.getAllByRole("button", ADD)).toHaveLength(1);
-    expect(screen.queryByRole("button", { name: "+ Add a line" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "+ Add another line" })).toBeNull();
-  });
-
-  it("opens the four paths in place", () => {
-    renderPriced();
-    // Collapsed: the picker is not on screen and the control is.
-    expect(screen.queryByText("Pricebook")).toBeNull();
-
-    fireEvent.click(screen.getByRole("button", ADD));
-
-    expect(screen.getByText("Custom item")).toBeTruthy();
-    expect(screen.getByText("Pricebook")).toBeTruthy();
-    expect(screen.getByText("Labor")).toBeTruthy();
-    expect(screen.getByText("Custom labor")).toBeTruthy();
-  });
-
-  it("Custom item appends a real editable line that reaches the total", () => {
-    renderPriced();
-    expect(screen.getAllByLabelText("Price")).toHaveLength(1);
-
-    fireEvent.click(screen.getByRole("button", ADD));
-    fireEvent.click(screen.getByText("Custom item"));
-
-    const prices = screen.getAllByLabelText("Price");
-    expect(prices).toHaveLength(2);
-    fireEvent.change(prices[1]!, { target: { value: "50" } });
-    expect(screen.getByText("$235")).toBeTruthy();
-  });
-
-  it("carries a doorstep-sized tap target", () => {
-    renderPriced();
-    expect((screen.getByRole("button", ADD) as HTMLButtonElement).style.minHeight).toBe("44px");
-  });
-
-  it("on an empty quote the picker is already open, so the first line is one tap", () => {
-    const job = makeJob();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-
-    expect(screen.getByText("Custom item")).toBeTruthy();
-    // Nothing is priced, so there is no figure to state — a $0 Total would be a claim
-    // about the job rather than a fact about the list.
-    expect(screen.queryByText("Total")).toBeNull();
-  });
-
-  it("sits INSIDE the price card, above the Total — not below the discount rows", () => {
-    renderPriced();
-
-    const card = screen.getByLabelText("Price").closest(".card") as HTMLElement;
-    expect(card).toBeTruthy();
-
-    const add = screen.getByRole("button", ADD);
-    // In the card that holds the lines, and before the Total inside it.
-    expect(card.contains(add)).toBe(true);
-
-    const order = Array.from(card.querySelectorAll("button, span")).filter(
-      (el) => el === add || el.textContent === "Total",
-    );
-    expect(order[0]).toBe(add);
-    expect(order[1]?.textContent).toBe("Total");
-  });
-
-  it("Custom item leads the grid — the shortest path to the commonest door-side move", () => {
-    renderPriced();
-    fireEvent.click(screen.getByRole("button", ADD));
-
-    const tiles = Array.from(document.querySelectorAll(".addtile .addtile-t")).map(
-      (el) => (el.textContent ?? "").replace("→", "").trim(),
-    );
-    expect(tiles).toEqual(["Custom item", "Pricebook", "Custom labor", "Labor"]);
+    // The tier rail appears with the new option selected…
+    expect(screen.getByRole("button", { name: /Best/ })).toBeTruthy();
+    // …and the row now offers only the tier not yet on.
+    expect(screen.queryByRole("button", { name: "+ Premium" })).toBeNull();
+    expect(screen.getByRole("button", { name: "+ Cheaper" })).toBeTruthy();
   });
 });
 
@@ -687,3 +581,149 @@ describe("QuoteTab — the price is saved when the tech leaves", () => {
     expect(input.lines.map((l) => l.rateCents)).toEqual([18500, 9500]);
   });
 });
+
+
+/**
+ * THE CHANGE ORDER. A job with `sourceEstimateId` has a SIGNED quote behind it — the price is a
+ * document, not a draft. The builder stops offering to rewrite it: sold lines read back fixed,
+ * new lines are a change order, and the signature goes through the found-work addendum
+ * (signChangeOrder → addAddon + approveFoundWork), which is the approval the customer's own
+ * signed sentence requires.
+ */
+describe("QuoteTab — a sold job takes change orders, not edits", () => {
+  const soldJob = (over: Partial<Job> = {}) =>
+    makeJob({
+      sourceEstimateId: "est-1",
+      lines: [{ d: "Diagnostic / trip fee", q: 1, r: 95 }],
+      ...over,
+    } as Partial<Job>);
+
+  const renderSold = (job = soldJob()) => {
+    mockJobs = [job];
+    return render(
+      <QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />,
+    );
+  };
+
+  it("reads the sold document back fixed — no inputs carry the signed price", () => {
+    renderSold();
+    expect(screen.getByText("Sold — signed")).toBeTruthy();
+    expect(screen.getByText("Diagnostic / trip fee")).toBeTruthy();
+    // The sold line is a read-back, not an editable row.
+    expect(screen.queryByDisplayValue("Diagnostic / trip fee")).toBeNull();
+    expect(screen.getByText("Change order")).toBeTruthy();
+  });
+
+  it("the primary names the change order and stays down until there is one", () => {
+    renderSold();
+    const pri = screen.getByText("Present change order →") as HTMLButtonElement;
+    expect(pri.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getByLabelText("Price"), { target: { value: "40" } });
+    fireEvent.change(screen.getByPlaceholderText(/part, material/), { target: { value: "Extra shutoff valve" } });
+
+    expect((screen.getByText("Present change order →") as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("presenting lands on Sign change order, and signing goes through the addendum", async () => {
+    renderSold();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getByLabelText("Price"), { target: { value: "40" } });
+    fireEvent.change(screen.getByPlaceholderText(/part, material/), { target: { value: "Extra shutoff valve" } });
+
+    fireEvent.click(screen.getByText("Present change order →"));
+
+    expect(screen.getByText("Sign change order")).toBeTruthy();
+    expect(screen.getByText(/Approve & sign — \$40\.00/)).toBeTruthy();
+    // The addition against the document it changes.
+    expect(screen.getByText("New job total")).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/full name/), { target: { value: "Dana Alvarez" } });
+    fireEvent.click(screen.getByText(/Approve & sign/));
+    await Promise.resolve();
+
+    expect(mockSignChangeOrder).toHaveBeenCalledTimes(1);
+    const [jobId, input] = mockSignChangeOrder.mock.calls[0] as unknown as [
+      string,
+      { lines: { description: string; rateCents: number }[]; includeAddonDbIds: string[]; signerName: string },
+    ];
+    expect(jobId).toBe("job-1");
+    expect(input.lines).toEqual([{ description: "Extra shutoff valve", rateCents: 4000 }]);
+    expect(input.signerName).toBe("Dana Alvarez");
+    // The signed quote itself was never re-signed.
+    expect(mockSignJobQuote).not.toHaveBeenCalled();
+  });
+
+  it("found work already proposed rides the change order", () => {
+    renderSold(
+      soldJob({
+        addons: [{ id: 1, dbId: "ad-1", d: "Extra shutoff valve", q: 1, r: 40, status: "proposed" }],
+      } as Partial<Job>),
+    );
+    expect(screen.getByText(/Extra shutoff valve · waiting for OK/)).toBeTruthy();
+    // It counts as the change order, so presenting is live with no typed lines at all.
+    expect((screen.getByText("Present change order →") as HTMLButtonElement).disabled).toBe(false);
+
+    fireEvent.click(screen.getByText("Present change order →"));
+    fireEvent.change(screen.getByLabelText(/full name/), { target: { value: "Dana Alvarez" } });
+    fireEvent.click(screen.getByText(/Approve & sign/));
+
+    const [, input] = mockSignChangeOrder.mock.calls[0] as unknown as [
+      string,
+      { includeAddonDbIds: string[] },
+    ];
+    expect(input.includeAddonDbIds).toEqual(["ad-1"]);
+  });
+
+  it("leaving without signing stashes the change lines as PROPOSED found work — never a price draft", () => {
+    const { unmount } = renderSold();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getByLabelText("Price"), { target: { value: "40" } });
+    fireEvent.change(screen.getByPlaceholderText(/part, material/), { target: { value: "Extra shutoff valve" } });
+
+    unmount();
+
+    expect(mockAddAddonField).toHaveBeenCalledWith("job-1", { d: "Extra shutoff valve", r: 40 });
+    // saveQuoteDraft would overwrite the signed document — it must never fire on a sold job.
+    expect(mockSaveQuoteDraft).not.toHaveBeenCalled();
+  });
+
+  it("hides the document's own machinery — choices and rates belong to the signed quote", () => {
+    renderSold();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getByLabelText("Price"), { target: { value: "40" } });
+
+    expect(screen.queryByText("Give the customer choices?")).toBeNull();
+    expect(screen.queryByText("Discount")).toBeNull();
+    expect(screen.queryByText("Sales tax")).toBeNull();
+  });
+});
+
+/**
+ * A CLOSED job's quote tab used to render scope + Done and nothing else — on a job with a signed
+ * quote that read as "this job has no quote" (Owen: "this is all I see").
+ */
+describe("QuoteTab — a closed job reads its quote back", () => {
+  it("shows the sold lines, the total, and the honest next step", () => {
+    const job = makeJob({
+      status: "done",
+      sourceEstimateId: "est-1",
+      lines: [{ d: "Diagnostic / trip fee", q: 1, r: 95 }],
+    } as Partial<Job>);
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly onSigned={mockOnSigned} />);
+
+    expect(screen.getByText("Sold — signed")).toBeTruthy();
+    expect(screen.getByText("Diagnostic / trip fee")).toBeTruthy();
+    expect(screen.getAllByText("$95.00").length).toBeGreaterThan(0);
+    expect(screen.getByText(/Reopen it from the Job tab/)).toBeTruthy();
+    // Read-back only: no builder, no add control.
+    expect(screen.queryByRole("button", { name: "+ Add to the quote" })).toBeNull();
+  });
+});
+

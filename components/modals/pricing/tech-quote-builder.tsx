@@ -126,51 +126,121 @@ interface ChoicesRowProps {
 }
 
 /**
- * The good/better/best opt-in, drawn as ONE bordered row: the question and what it
- * buys on the left, "Set up →" on the right. It was a muted caption with two ghost
- * chips loose underneath it, which read as a stray fragment of the price block rather
- * than as a control.
- *
- * The AFFORDANCE is unchanged — the same two independent opt-ins, the same handlers,
- * the same place in the flow (under the price card, above the sticky primary). They
- * are one tap further in, expanded IN FLOW under the row (no floating UI) and rendered
- * OUTSIDE the head button so a button never nests inside a button — the same shape the
- * tech clock's expander uses.
+ * The good/better/best opt-in — ONE row whose actions ARE the row: the question on the left,
+ * "+ Cheaper / + Premium" on the right. It shipped as a "Set up →" disclosure whose entire
+ * content was those same two buttons — a step that existed only to be an extra step (Owen:
+ * "that's terrible design"). Each tap opts that tier in directly, seeded as a copy of the
+ * current price, exactly as before; a tier already on drops its button, and with both on the
+ * caller removes the row.
  */
 function ChoicesRow({ showGood, showBest, onAddGood, onAddBest }: ChoicesRowProps) {
-  const [open, setOpen] = useState(false);
-  const bodyId = useId();
-
   return (
     <div className="tqchoice">
-      <button
-        type="button"
-        className="jaddr"
-        aria-expanded={open}
-        aria-controls={open ? bodyId : undefined}
-        onClick={() => setOpen(!open)}
-      >
+      <div className="tqchoice-row">
         <span className="jaddr-t">
           Give the customer choices?
-          <span className="jaddr-s">Add cheaper or premium options</span>
+          <span className="jaddr-s">Each option starts as a copy of this price</span>
         </span>
-        <span className="nav">Set up →</span>
-      </button>
-      {open ? (
-        <div className="tqchoice-b" id={bodyId}>
+        <span className="tqchoice-acts">
           {showGood ? (
-            <button className="chip ghost" onClick={onAddGood}>
-              + Add a cheaper option
+            <button type="button" className="chip ghost" onClick={onAddGood}>
+              + Cheaper
             </button>
           ) : null}
           {showBest ? (
-            <button className="chip ghost" onClick={onAddBest}>
-              + Add a premium option
+            <button type="button" className="chip ghost" onClick={onAddBest}>
+              + Premium
             </button>
           ) : null}
-        </div>
-      ) : null}
+        </span>
+      </div>
     </div>
+  );
+}
+
+interface SignBlockProps {
+  signerName: string;
+  signatureSvg: string;
+  signing: boolean;
+  signError: string | null;
+  onName: (v: string) => void;
+  onSignature: (svg: string) => void;
+  onBack: () => void;
+  onSign: () => void;
+  signLabel: string;
+}
+
+/**
+ * The signature capture — name, pad, error, and the ← Back / sign foot. ONE chunk for both
+ * signings (the quote's Accept & sign and the change order's Approve & sign): the ceremony is
+ * identical, only the words above it and the write behind it differ.
+ */
+function SignBlock({
+  signerName,
+  signatureSvg,
+  signing,
+  signError,
+  onName,
+  onSignature,
+  onBack,
+  onSign,
+  signLabel,
+}: SignBlockProps) {
+  return (
+    <>
+      <label
+        htmlFor="tq-signer-name"
+        style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 700, marginBottom: "var(--space-1)" }}
+      >
+        Customer&rsquo;s full name
+      </label>
+      <input
+        id="tq-signer-name"
+        type="text"
+        value={signerName}
+        maxLength={120}
+        autoComplete="off"
+        disabled={signing}
+        onChange={(ev) => onName(ev.target.value)}
+        style={{
+          width: "100%",
+          border: "1.5px solid var(--line)",
+          borderRadius: "var(--radius-sm)",
+          padding: "var(--space-2) var(--space-3)",
+          fontFamily: "inherit",
+          fontSize: "var(--type-base)",
+          background: "var(--card)",
+          color: "var(--ink)",
+          boxSizing: "border-box",
+          marginBottom: "var(--space-3)",
+        }}
+      />
+
+      <span style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 700, marginBottom: "var(--space-1)" }}>
+        Customer signature
+      </span>
+      {/* The same pad the web quote page uses, so one stored format renders in one viewer. */}
+      <SignaturePad value={signatureSvg} disabled={signing} aria-label="Customer signature" onChange={onSignature} />
+
+      {signError ? (
+        <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{signError}</p>
+      ) : null}
+
+      {/* Sticky foot — ONE filled primary (the on-glass confirm); Back stays a quiet ghost. */}
+      <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <button className="btn ghost" onClick={onBack} disabled={signing} style={{ flexShrink: 0 }}>
+          ← Back
+        </button>
+        <button
+          className="sheet-pri"
+          onClick={onSign}
+          disabled={signing}
+          style={{ flex: 1, opacity: signing ? 0.45 : undefined }}
+        >
+          {signLabel}
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -191,6 +261,8 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const signJobQuote = useAppStore((s) => s.signJobQuote);
+  const signChangeOrder = useAppStore((s) => s.signChangeOrder);
+  const addAddonField = useAppStore((s) => s.addAddonField);
   const brand = useAppStore((s) => s.brand);
   const servicesRaw = useAppStore((s) => s.services);
   const laborRatesRaw = useAppStore((s) => s.laborRates);
@@ -208,12 +280,22 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   );
 
   const job = jobs.find((j) => j.id === jobId);
+  /**
+   * IS THERE A SOLD QUOTE BEHIND THIS JOB? `sourceEstimateId` is stamped by both directions of a
+   * sale — an office quote accepted into a job, and a field sign (signQuote links the accepted
+   * estimate back). When it is set, this builder is NOT a quote editor any more: the price on the
+   * job is a signed document, and a technician adding work is writing a CHANGE ORDER — the
+   * found-work addendum the customer's own signed sentence requires ("work beyond what is listed
+   * above needs my approval"). Editing the sold lines themselves is the office's correction.
+   */
+  const sold = Boolean(job?.sourceEstimateId);
 
   // ---- LOCAL builder state (prototype state.tq) -----------------------------
   // better is seeded from the job's existing lines; good/best start empty and
   // opt-in. `use.better` is always on. `picking` opens the add menu when better
   // has no seed lines. `mode` drives edit → present → sign.
-  const seed = useMemo(() => (job ? seedLines(job) : []), [job]);
+  // CO mode starts EMPTY — the sold lines are a document to read back, not a draft to reseed.
+  const seed = useMemo(() => (job && !sold ? seedLines(job) : []), [job, sold]);
 
   const [tiers, setTiers] = useState<TierLines>(() => ({
     good: [],
@@ -224,7 +306,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const [tier, setTier] = useState<Tier>("better");
   const [mode, setMode] = useState<TechQuoteMode>("edit");
   const [chosen, setChosen] = useState<Tier | null>(null);
-  const [picking, setPicking] = useState<boolean>(() => seed.length === 0);
+  const [picking, setPicking] = useState<boolean>(() => !sold && seed.length === 0);
   const [add, setAdd] = useState<AddSub>(null);
   // Surfaced when the on-site price fails to persist — the sign view stays open
   // so the tech can retry rather than closing on a lost price (no silent fail).
@@ -285,6 +367,8 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const saveQuoteDraft = useAppStore((s) => s.saveQuoteDraft);
   const jobIdRef = useRef<string | undefined>(undefined);
   jobIdRef.current = job?.id;
+  const coRef = useRef(false);
+  coRef.current = sold;
   useEffect(() => {
     return () => {
       const id = jobIdRef.current;
@@ -293,6 +377,18 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
       // Nothing the technician did changed the price — writing would be a pointless round trip
       // and would stamp the job as edited when it was only looked at.
       if (lineKey(current) === seedKeyRef.current) return;
+
+      // A SOLD job's unsigned lines are found work, not a price draft — saveQuoteDraft would
+      // overwrite the signed document. Stash them as PROPOSED add-ons: they surface in Found
+      // work with the office OK flow, and the next change order picks them up for signature.
+      if (coRef.current) {
+        for (const l of current) {
+          const d = l.d.trim();
+          const r = lineAmt(l);
+          if (d && r > 0) addAddonField(id, { d, r });
+        }
+        return;
+      }
 
       const wireLines = current
         .map((l) => ({ d: l.d || "Repair", q: 1, r: lineAmt(l) }))
@@ -309,7 +405,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
       // WriteErrorToast and rolls the optimistic lines back.
       void saveQuoteDraft(id, { lines: wireLines, ...fieldPricingRates(rates, subtotalCents) });
     };
-  }, [saveQuoteDraft]);
+  }, [saveQuoteDraft, addAddonField]);
 
   // Mode transitions notify the host (effect, not in-setter, so a re-render
   // during another component's render never fires a parent state update).
@@ -415,8 +511,52 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
 
   const chosenTier: Tier = chosen ?? "better";
 
+  // ---- change order (sold job) ----------------------------------------------
+  // The CO's items: add-ons already PROPOSED on the job (found work queued by the office or a
+  // prior session — they are on the glass, so they are in the approval), plus the lines typed
+  // here. `dbId` present = the server knows the row; a still-persisting optimistic add-on is
+  // excluded rather than signed for by an id the server would refuse.
+  const proposedAddons = (job?.addons ?? []).filter((a) => a.status === "proposed" && a.dbId);
+  const coLines = tiers.better.filter((l) => l.d.trim() && lineAmt(l) > 0);
+  const coTotal =
+    proposedAddons.reduce((sum, a) => sum + (a.r ?? 0) * (a.q ?? 1), 0) + linesTotal(coLines);
+  const coCount = proposedAddons.length + coLines.length;
+  const soldTotal = (job?.lines ?? []).reduce((sum, l) => sum + (l.r ?? 0) * (l.q ?? 1), 0);
+  // A redacted device (techSeesPrice off) reads null rates — never print those as $0.
+  const soldRedacted = (job?.lines ?? []).some((l) => l.r == null);
+
+  async function signCO() {
+    if (!job || signing) return;
+    const name = signerName.trim();
+    if (!name) {
+      setSignError("Type the customer's name to sign.");
+      return;
+    }
+    if (coCount === 0) {
+      setSignError("Add the extra work first.");
+      return;
+    }
+    setSigning(true);
+    setSignError(null);
+    soldRef.current = true; // the CO commits its lines itself — the unmount stash must stand down
+    const { ok, error } = await signChangeOrder(job.id, {
+      lines: coLines.map((l) => ({ description: l.d, rateCents: Math.round(lineAmt(l) * 100) })),
+      includeAddonDbIds: proposedAddons.map((a) => a.dbId!),
+      signerName: name,
+      ...(signatureSvg ? { signatureSvg } : {}),
+    });
+    setSigning(false);
+    if (!ok) {
+      soldRef.current = false;
+      setSignError(error ?? "Couldn't save the approval — check your connection and try again.");
+      return;
+    }
+    onSigned();
+  }
+
   async function sign() {
     if (!job || signing) return;
+    if (sold) return signCO();
     const name = signerName.trim();
     if (!name) {
       setSignError("Type the customer's name to sign.");
@@ -468,6 +608,86 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   // ---- SIGN mode ------------------------------------------------------------
   if (mode === "sign") {
     const signLines = tiers[chosenTier];
+    // CHANGE ORDER signing shares this screen's chrome (name, pad, foot) and swaps the substance:
+    // the items are the ADDITION (proposed add-ons + the lines typed here), the figure is the
+    // change-order total, and the sentence names an addition to a signed job — no doc rates,
+    // which belong to the document already signed.
+    if (sold) {
+      return (
+        <>
+          <ModeHead title="Sign change order" custName={custName} embedded={embedded} />
+
+          <div className="card" style={{ background: "var(--manila)" }}>
+            {proposedAddons.map((a2) => (
+              <div
+                key={a2.dbId}
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
+              >
+                <span>{a2.d}</span>
+                <b className="fig">{fmt$2((a2.r ?? 0) * (a2.q ?? 1))}</b>
+              </div>
+            ))}
+            {coLines.map((l, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
+              >
+                <span>{l.d}</span>
+                <b className="fig">{fmt$2(lineAmt(l))}</b>
+              </div>
+            ))}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 800,
+                fontSize: "var(--type-lg)",
+                borderTop: "1px solid var(--manila-line)",
+                marginTop: "var(--space-2)",
+                paddingTop: "var(--space-2)",
+              }}
+            >
+              <span>Change order</span>
+              <span className="fig">{fmt$2(coTotal)}</span>
+            </div>
+            {!soldRedacted && (
+              <div
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", color: "var(--ink-2)", paddingTop: "var(--space-1)" }}
+              >
+                <span>New job total</span>
+                <span className="fig">{fmt$2(soldTotal + coTotal)}</span>
+              </div>
+            )}
+          </div>
+
+          <div
+            className="muted"
+            style={{ fontSize: "var(--type-sm)", margin: "var(--space-4) 0 var(--space-3)", lineHeight: 1.55 }}
+          >
+            The customer approves adding the work listed above, at the price shown, to the job
+            they already signed with {brand.name}. It bills with the job.
+          </div>
+
+          <SignBlock
+            signerName={signerName}
+            signatureSvg={signatureSvg}
+            signing={signing}
+            signError={signError}
+            onName={(v) => {
+              setSignerName(v);
+              if (signError) setSignError(null);
+            }}
+            onSignature={(v) => {
+              setSignatureSvg(v);
+              if (signError) setSignError(null);
+            }}
+            onBack={() => setMode("edit")}
+            onSign={() => void sign()}
+            signLabel={signing ? "Saving…" : `Approve & sign — ${fmt$2(coTotal)}`}
+          />
+        </>
+      );
+    }
     // Cent-precise from here down. This is the document, and every figure on it has to be the one
     // inside the sentence — a total rounded to whole dollars beside a sentence naming cents is two
     // different numbers on one screen.
@@ -523,75 +743,23 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           })}
         </div>
 
-        <label
-          htmlFor="tq-signer-name"
-          style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 700, marginBottom: "var(--space-1)" }}
-        >
-          Customer&rsquo;s full name
-        </label>
-        <input
-          id="tq-signer-name"
-          type="text"
-          value={signerName}
-          maxLength={120}
-          autoComplete="off"
-          disabled={signing}
-          onChange={(ev) => {
-            setSignerName(ev.target.value);
+        <SignBlock
+          signerName={signerName}
+          signatureSvg={signatureSvg}
+          signing={signing}
+          signError={signError}
+          onName={(v) => {
+            setSignerName(v);
             if (signError) setSignError(null);
           }}
-          style={{
-            width: "100%",
-            border: "1.5px solid var(--line)",
-            borderRadius: "var(--radius-sm)",
-            padding: "var(--space-2) var(--space-3)",
-            fontFamily: "inherit",
-            fontSize: "var(--type-base)",
-            background: "var(--card)",
-            color: "var(--ink)",
-            boxSizing: "border-box",
-            marginBottom: "var(--space-3)",
-          }}
-        />
-
-        <span style={{ display: "block", fontSize: "var(--type-sm)", fontWeight: 700, marginBottom: "var(--space-1)" }}>
-          Customer signature
-        </span>
-        {/* The same pad the web quote page uses, so one stored format renders in one viewer. */}
-        <SignaturePad
-          value={signatureSvg}
-          disabled={signing}
-          aria-label="Customer signature"
-          onChange={(svg) => {
-            setSignatureSvg(svg);
+          onSignature={(v) => {
+            setSignatureSvg(v);
             if (signError) setSignError(null);
           }}
+          onBack={() => setMode(offered.length > 1 ? "present" : "edit")}
+          onSign={() => void sign()}
+          signLabel={signing ? "Saving…" : `Accept & sign — ${fmt$2(signTotals.total / 100)}`}
         />
-
-        {signError ? (
-          <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{signError}</p>
-        ) : null}
-
-        {/* Sticky foot — ONE filled primary (the on-glass accept, the flow's
-            terminal confirm); Back stays a quiet ghost beside it. */}
-        <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-          <button
-            className="btn ghost"
-            onClick={() => setMode(offered.length > 1 ? "present" : "edit")}
-            disabled={signing}
-            style={{ flexShrink: 0 }}
-          >
-            ← Back
-          </button>
-          <button
-            className="sheet-pri"
-            onClick={sign}
-            disabled={signing}
-            style={{ flex: 1, opacity: signing ? 0.45 : undefined }}
-          >
-            {signing ? "Saving…" : `Accept & sign — ${fmt$2(signTotals.total / 100)}`}
-          </button>
-        </div>
       </>
     );
   }
@@ -670,8 +838,38 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           surface — a second "Build the price" heading would say it twice. */}
       {!embedded && <ModeHead title="Build the price" custName={custName} embedded={false} />}
 
+      {/* THE SOLD DOCUMENT — read-back, not a draft. A signed price is not this surface's to
+          edit (that correction is the office's); it is here so the change order below is read
+          against the thing it changes. Null rates are a redacted device, never $0. */}
+      {sold ? (
+        <>
+          <div className="fsec" style={{ marginBottom: 0 }}>
+            <div className="fsec-h">
+              <span>Sold — signed</span>
+              <span className="fig">{soldRedacted ? "" : fmt$2(soldTotal)}</span>
+            </div>
+          </div>
+          <div className="card" style={{ marginBottom: "var(--space-4)" }}>
+            {(job.lines ?? []).map((l, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
+              >
+                <span>{l.d}</span>
+                <b className="fig">{l.r == null ? "—" : fmt$2((l.r ?? 0) * (l.q ?? 1))}</b>
+              </div>
+            ))}
+          </div>
+          <div className="fsec" style={{ marginBottom: 0 }}>
+            <div className="fsec-h">
+              <span>Change order</span>
+            </div>
+          </div>
+        </>
+      ) : null}
+
       {/* tier chips (only better + opted-in tiers; each shows label · $total) */}
-      {multi ? (
+      {multi && !sold ? (
         <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
           {tierChips.map(([k, lbl]) => {
             const t = tierTotal(k);
@@ -695,6 +893,20 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           below the discount rows. An empty card holding the invitation to act is the house's
           own first-run shape, and it keeps the control in the same place all the way through. */}
       <div className="card" style={{ marginBottom: "var(--space-4)" }}>
+        {/* Found work already PROPOSED on the job — queued by the office or a prior session. It
+            is on the glass when the customer signs, so it is in the change order; fixed rows,
+            because these are persisted records with their own edit surface (Found work). */}
+        {sold
+          ? proposedAddons.map((a2) => (
+              <div
+                key={a2.dbId}
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0", color: "var(--ink-2)" }}
+              >
+                <span>{a2.d} · waiting for OK</span>
+                <b className="fig">{fmt$2((a2.r ?? 0) * (a2.q ?? 1))}</b>
+              </div>
+            ))
+          : null}
         {lines.map((l, i) => (
           <LineRow
             key={i}
@@ -731,7 +943,32 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
             is set the arithmetic becomes the customer's business and it is shown in full.
             An empty quote has no Total at all: nothing has been priced, so there is no figure
             to state and a $0 would be a claim about the job rather than a fact about the list. */}
-        {lines.length === 0 ? null : editPriced ? (
+        {sold && coCount > 0 ? (
+          <>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 800,
+                fontSize: "var(--type-lg)",
+                borderTop: "1px solid var(--line)",
+                marginTop: "var(--space-2)",
+                paddingTop: "var(--space-2)",
+              }}
+            >
+              <span>Change order</span>
+              <span className="fig">{fmt$2(coTotal)}</span>
+            </div>
+            {!soldRedacted && (
+              <div
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", color: "var(--ink-2)", paddingTop: "var(--space-1)" }}
+              >
+                <span>New job total</span>
+                <span className="fig">{fmt$2(soldTotal + coTotal)}</span>
+              </div>
+            )}
+          </>
+        ) : sold ? null : lines.length === 0 ? null : editPriced ? (
           <PriceBreakdown totals={editTotals} rates={editRates} ruleColor="var(--line)" />
         ) : (
           <div
@@ -755,7 +992,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           once a line is priced. See field-pricing.tsx for why this is not the office's three-across
           card: a technician on a doorstep needs one of these, usually none, and the collapsed value
           is the whole summary. */}
-      {anyPriced ? (
+      {anyPriced && !sold ? (
         <FieldPricingRows
           pricing={pricing}
           subtotalCents={Math.round(tierTotal(tier) * 100)}
@@ -767,7 +1004,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           it fed, and beneath the three rows that modify that total. It lives in the card now. */}
 
       {/* "Give the customer choices?" — once anything is priced and not all opted */}
-      {anyPriced && (showGoodOpt || showBestOpt) ? (
+      {anyPriced && !sold && (showGoodOpt || showBestOpt) ? (
         <ChoicesRow
           showGood={showGoodOpt}
           showBest={showBestOpt}
@@ -782,10 +1019,10 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
         <button
           className="sheet-pri"
           onClick={present}
-          disabled={!anyPriced}
-          style={anyPriced ? undefined : { opacity: 0.45 }}
+          disabled={sold ? coCount === 0 : !anyPriced}
+          style={(sold ? coCount > 0 : anyPriced) ? undefined : { opacity: 0.45 }}
         >
-          {multi ? "Present options →" : "Present to customer →"}
+          {sold ? "Present change order →" : multi ? "Present options →" : "Present to customer →"}
         </button>
       </div>
     </>

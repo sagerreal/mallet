@@ -32,6 +32,7 @@
 
 import { useCallback, useRef, useState } from "react";
 import { useAppStore, usePushModal, useCloseModal } from "@/lib/store/app-store";
+import { fmt$2 } from "@/lib/format";
 import { MODAL } from "@/lib/store/modal-ids";
 import { useRoomScanAvailability } from "@/lib/native/room-scan";
 import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unavailable";
@@ -399,10 +400,12 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
         </div>
       )}
 
-      {/* The price — the embedded builder (its own sticky foot is THE foot). */}
+      {/* The price — the embedded builder (its own sticky foot is THE foot). On a SOLD job the
+          builder frames itself ("Sold — signed" / "Change order"), so a "The price" header here
+          would caption a section that no longer exists. */}
       {showBuilder && !readOnly && (
         <>
-          {builderMode === "edit" && (
+          {builderMode === "edit" && !job.sourceEstimateId && (
             <div className="fsec" style={{ marginBottom: 0 }}>
               <div className="fsec-h">
                 <span>The price</span>
@@ -417,6 +420,38 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
           />
         </>
       )}
+
+      {/* A CLOSED job's quote is still a record worth reading — it used to render nothing here
+          at all, which read as "this job has no quote" on a job with a signed one (Owen: "this is
+          all I see"). The lines and the total, read-only, with the honest next step named: the
+          price of a closed job changes by reopening it, not from this tab. Null rates are a
+          redacted device, never $0. */}
+      {readOnly && (job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
+        <div className="fsec">
+          <div className="fsec-h">
+            <span>{job.sourceEstimateId ? "Sold — signed" : "The price"}</span>
+            <span className="fig">
+              {(job.lines ?? []).some((l) => l.r == null)
+                ? ""
+                : fmt$2((job.lines ?? []).reduce((sum, l) => sum + (l.r ?? 0) * (l.q ?? 1), 0))}
+            </span>
+          </div>
+          <div className="card">
+            {(job.lines ?? []).map((l, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
+              >
+                <span>{l.d}</span>
+                <b className="fig">{l.r == null ? "—" : fmt$2((l.r ?? 0) * (l.q ?? 1))}</b>
+              </div>
+            ))}
+          </div>
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-3)" }}>
+            This job is closed. Reopen it from the Job tab to add a change order.
+          </div>
+        </div>
+      ) : null}
 
       {/* No builder on screen (estimate pre-choice, or closed job) — the tab still
           docks ONE primary: a plain Done, same as the Job tab's default. */}

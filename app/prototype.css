@@ -1992,8 +1992,11 @@
      options are unchanged; they expand IN FLOW beneath the row (house rule: no floating UI)
      and stay OUTSIDE the head button, so a button never nests inside a button. */
   .tqchoice{margin-top:var(--space-4)}
-  .tqchoice .jaddr{margin:0}
-  .tqchoice-b{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-top:var(--space-3)}
+  /* One bordered row whose actions ARE the row — the "Set up →" disclosure whose entire content
+     was these two chips is gone. Same border/padding register as .jaddr, minus the button-ness. */
+  .tqchoice-row{display:flex;align-items:center;gap:var(--space-3);border:1.5px solid var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);background:var(--card)}
+  .tqchoice-row .jaddr-t{flex:1;min-width:0}
+  .tqchoice-acts{display:flex;gap:var(--space-2);flex:0 0 auto}
   /* New-job "Visits" — each visit a clean row with an hours stepper (− value +), created unplaced */
   .njvisit{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border:1.5px solid var(--line);border-radius:var(--radius);margin-bottom:var(--space-2);background:var(--card)}
   .njvisit-t{flex:1;font-size:var(--type-md);font-weight:700;color:var(--ink)}
