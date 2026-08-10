@@ -36,6 +36,9 @@ const awaiting = (over: Partial<Visit> = {}): Visit => ({
 interface SecOver {
   placed?: Visit[];
   awaiting?: Visit[];
+  /** The job is finished — the section's other shape. */
+  done?: boolean;
+  curVisit?: Visit;
   onAddFollowUp?: (reason: string) => Promise<{ ok: boolean; error?: string }>;
 }
 
@@ -44,8 +47,8 @@ const sec = (over: SecOver = {}) =>
     <VisitsSec
       placed={over.placed ?? [visit()]}
       awaiting={over.awaiting ?? []}
-      curVisit={undefined}
-      done={false}
+      curVisit={over.curVisit}
+      done={over.done ?? false}
       isOffice={false}
       stepVisitId={undefined}
       onStatus={vi.fn()}
@@ -70,6 +73,32 @@ describe("VisitsSec — the rows separate", () => {
     const last = rowsOf(container)[1];
     expect(last?.tagName).toBe("DIV");
     expect(last?.querySelector("button")?.textContent).toBe("Need to come back — add a visit");
+  });
+});
+
+describe("VisitsSec — a finished job can still book the return", () => {
+  // The owner's report, verbatim: "just clicked done and theres no way to add another visit, just
+  // take payment." Finishing is exactly when a plumber discovers the fitting is wrong, and this
+  // branch used to render the visit he had just finished and nothing else.
+  it("offers the ask on a DONE job", () => {
+    const { container } = sec({
+      done: true,
+      curVisit: visit(),
+      onAddFollowUp: async () => ({ ok: true }),
+    });
+    const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent);
+    expect(buttons).toContain("Need to come back — add a visit");
+  });
+
+  it("keeps the finished visit's record above it — the ask is added, not swapped in", () => {
+    const { container } = sec({ done: true, curVisit: visit(), onAddFollowUp: async () => ({ ok: true }) });
+    expect(container.querySelector(".vstep")).toBeTruthy();
+  });
+
+  it("renders no ask when this viewer may not book one", () => {
+    const { container } = sec({ done: true, curVisit: visit() });
+    const buttons = [...container.querySelectorAll("button")].map((b) => b.textContent);
+    expect(buttons).not.toContain("Need to come back — add a visit");
   });
 });
 

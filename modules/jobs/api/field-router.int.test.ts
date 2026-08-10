@@ -277,16 +277,135 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     expect(Number(rows[0]!.n)).toBe(0);
   });
 
-  it("a closed job takes a Reopen, not a new visit", async () => {
+  /**
+   * BOOKING THE RETURN TRIP AFTER "DONE" — and the money rule that decides whether he may.
+   *
+   * "just clicked done and theres no way to add another visit, just take payment." He finishes,
+   * then finds out the part is on order. Reopening the job is how the return trip gets booked, and
+   * the ONE thing that must never happen is a reopen disturbing money already taken — or quietly
+   * producing work that can never be billed, because CreateInvoiceFromJobUseCase is idempotent on
+   * `source_job_id` and the existing bill will not pick a later visit up.
+   *
+   * These seed the INVOICE directly, not through the invoicing router: the guard has to hold
+   * whatever raised the bill, and the field surface is the one place a technician can reach it.
+   */
+  const finishedJobWithBill = async (
+    status: string | null,
+    amountPaidCents = 0,
+  ): Promise<string> => {
     const [j] = await admin<{ id: string }[]>`
       insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
-      values (${orgId}, ${leadId}, ${"JOB-TA-FUX-" + randomUUID().slice(0, 8)}, 'complete', 0, ${techAId})
+      values (${orgId}, ${leadId}, ${"JOB-TA-RT-" + randomUUID().slice(0, 8)}, 'complete', 40000, ${techAId})
+      returning id`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position, completed_at)
+      values (${orgId}, ${j!.id}, current_date, ${techAId}, 120, 'complete', 1, now())`;
+    if (status !== null) {
+      await admin`
+        insert into invoices (org_id, num, source_job_id, lead_id, status, total_cents, amount_paid_cents)
+        values (${orgId}, ${"INV-RT-" + randomUUID().slice(0, 8)}, ${j!.id}, ${leadId}, ${status}, 40000, ${amountPaidCents})`;
+    }
+    return j!.id;
+  };
+
+  const visitCount = async (jobId: string): Promise<number> => {
+    const rows = await admin<{ n: string }[]>`
+      select count(*) as n from job_visits where job_id = ${jobId}`;
+    return Number(rows[0]!.n);
+  };
+
+  it("REFUSES the return trip on a finished job whose bill is PAID, and changes nothing", async () => {
+    const jobId = await finishedJobWithBill("paid", 40000);
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    await expect(
+      caller.v1.field.addFollowUpVisit({ jobId, reason: "wrong fitting, back tomorrow" }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("Payment has already been taken"),
+    });
+
+    const [row] = await admin<{ status: string }[]>`select status from jobs where id = ${jobId}`;
+    expect(row!.status).toBe("complete");
+    expect(await visitCount(jobId)).toBe(1);
+  });
+
+  it("REFUSES on a PART-paid bill too — a deposit against the bill is money taken", async () => {
+    const jobId = await finishedJobWithBill("partial", 15000);
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    await expect(
+      caller.v1.field.addFollowUpVisit({ jobId, reason: "second half" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const [row] = await admin<{ status: string }[]>`select status from jobs where id = ${jobId}`;
+    expect(row!.status).toBe("complete");
+    expect(await visitCount(jobId)).toBe(1);
+  });
+
+  it("REFUSES when the bill is already with the customer", async () => {
+    const jobId = await finishedJobWithBill("sent");
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    await expect(
+      caller.v1.field.addFollowUpVisit({ jobId, reason: "back for the trim" }),
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("already gone to the customer"),
+    });
+    expect(await visitCount(jobId)).toBe(1);
+  });
+
+  it("ALLOWS the return trip on a finished job with no bill — the job reopens", async () => {
+    const jobId = await finishedJobWithBill(null);
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    const after = await caller.v1.field.addFollowUpVisit({
+      jobId,
+      reason: "Part on order — back once the tank lands",
+    });
+
+    expect(after.status).toBe("in_progress");
+    expect(after.visits).toHaveLength(2);
+
+    const [row] = await admin<{ status: string; completed_at: Date | null }[]>`
+      select status, completed_at from jobs where id = ${jobId}`;
+    expect(row!.status).toBe("in_progress");
+    expect(row!.completed_at).toBeNull();
+
+    const [added] = await admin<
+      { scheduled_date: string | null; assignee_user_id: string | null; status: string; notes: string | null }[]
+    >`select scheduled_date, assignee_user_id, status, notes
+        from job_visits where job_id = ${jobId} and position = 2`;
+    expect(added!.scheduled_date).toBeNull();
+    expect(added!.assignee_user_id).toBeNull();
+    expect(added!.status).toBe("pending");
+    expect(added!.notes).toBe("Part on order — back once the tank lands");
+  });
+
+  it("ALLOWS the return trip behind an untouched DRAFT bill", async () => {
+    const jobId = await finishedJobWithBill("draft");
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    const after = await caller.v1.field.addFollowUpVisit({ jobId, reason: "customer went out" });
+    expect(after.status).toBe("in_progress");
+    expect(await visitCount(jobId)).toBe(2);
+  });
+
+  it("a CANCELED job still refuses — there is no un-cancel", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id, cancel_reason)
+      values (${orgId}, ${leadId}, ${"JOB-TA-FUX-" + randomUUID().slice(0, 8)}, 'canceled', 0, ${techAId}, 'customer pulled out')
       returning id`;
     const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
 
     await expect(
       caller.v1.field.addFollowUpVisit({ jobId: j!.id, reason: "too late" }),
-    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    ).rejects.toMatchObject({
+      code: "CONFLICT",
+      message: expect.stringContaining("canceled"),
+    });
+    expect(await visitCount(j!.id)).toBe(0);
   });
 
   it("tech gets FORBIDDEN on someone else's job", async () => {
