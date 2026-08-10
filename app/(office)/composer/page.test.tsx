@@ -27,8 +27,11 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/store/app-store", () => ({
   useLeads: () => [],
+  // SiteReference (From the site) reads the jobs slice and can open the walkthrough.
+  usePushModal: () => vi.fn(),
   useAppStore: (sel: (s: Record<string, unknown>) => unknown) =>
     sel({
+      jobs: [],
       addEstimate: vi.fn(),
       adoptEstimate: vi.fn(),
       moveLeadStage: vi.fn(),
