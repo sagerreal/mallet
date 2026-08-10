@@ -32,7 +32,7 @@
 
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { SignaturePad } from "@/components/shared/signature-pad";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
 import { useAppStore } from "@/lib/store/app-store";
@@ -51,7 +51,16 @@ import {
   linesTotal,
   seedLines,
 } from "./build-line";
-import { fmt$ } from "@/lib/format";
+import { fmt$, fmt$2 } from "@/lib/format";
+import {
+  FieldPricingRows,
+  PriceBreakdown,
+  NO_FIELD_PRICING,
+  fieldPricingRates,
+  fieldPricingTotals,
+  hasFieldPricing,
+  type FieldPricing,
+} from "./field-pricing";
 
 // ---- tier model (prototype TQ_TIERS / state.tq) ----------------------------
 
@@ -225,6 +234,28 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const [signerName, setSignerName] = useState("");
   const [signatureSvg, setSignatureSvg] = useState("");
 
+  // Discount / tax / deposit, shared by every tier: they describe the DOCUMENT, not one option on
+  // it, exactly as the office composer's single pricing block does for a GBB quote.
+  const [pricing, setPricing] = useState<FieldPricing>(NO_FIELD_PRICING);
+
+  // The shop's default sales-tax rate, seeded ONCE onto a fresh quote the way a new office quote
+  // seeds it — same org setting, same rule, so one document does not depend on where it was born.
+  // Never over a rate the tech has already typed; a shop with no rate on file gets 0 and this does
+  // nothing.
+  //
+  // Read from the STORE rather than queried here: this component renders in two homes and the
+  // hydrators already own settings reads (SettingsHydrator for owner/office, FieldTogglesHydrator
+  // for technicians, whose `fieldPricingDefaults` read exists precisely because settings.get is
+  // ownerOrOffice). A query inside the builder would also make every surface that renders it
+  // require a tRPC provider.
+  const orgTaxRate = useAppStore((s) => s.taxRate);
+  const seededOrgTax = useRef(false);
+  useEffect(() => {
+    if (seededOrgTax.current || orgTaxRate <= 0) return;
+    seededOrgTax.current = true;
+    setPricing((prev) => (prev.taxPct > 0 ? prev : { ...prev, taxPct: orgTaxRate }));
+  }, [orgTaxRate]);
+
   // Mode transitions notify the host (effect, not in-setter, so a re-render
   // during another component's render never fires a parent state update).
   useEffect(() => {
@@ -345,17 +376,25 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
     }
     setSigning(true);
     setSignError(null);
+    const wireLines = jobLines.map((l) => ({
+      description: l.d,
+      quantity: l.q ?? 1,
+      rateCents: Math.round((l.r ?? 0) * 100),
+      costCents: 0,
+    }));
+    // Derived from the SAME line set being sent, so the rates cannot describe a different subtotal
+    // from the one the server will run them against.
+    const rates = fieldPricingRates(
+      pricing,
+      wireLines.reduce((sum, l) => sum + Math.round(l.quantity * l.rateCents), 0),
+    );
     const { ok, error } = await signJobQuote(job.id, {
-      lines: jobLines.map((l) => ({
-        description: l.d,
-        quantity: l.q ?? 1,
-        rateCents: Math.round((l.r ?? 0) * 100),
-        costCents: 0,
-      })),
+      lines: wireLines,
       signerName: name,
       // Omitted when nothing was drawn: the typed name IS the signature, and "" would be a
       // different, emptier record than "they signed without drawing".
       ...(signatureSvg ? { signatureSvg } : {}),
+      ...rates,
     });
     setSigning(false);
     if (!ok) {
@@ -370,7 +409,13 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   // ---- SIGN mode ------------------------------------------------------------
   if (mode === "sign") {
     const signLines = tiers[chosenTier];
-    const total = tierTotal(chosenTier);
+    // Cent-precise from here down. This is the document, and every figure on it has to be the one
+    // inside the sentence — a total rounded to whole dollars beside a sentence naming cents is two
+    // different numbers on one screen.
+    const subtotalCents = Math.round(tierTotal(chosenTier) * 100);
+    const signRates = fieldPricingRates(pricing, subtotalCents);
+    const signTotals = fieldPricingTotals(pricing, subtotalCents);
+    const priced = hasFieldPricing(signRates);
     return (
       <>
         <ModeHead title="Approve & sign" custName={custName} embedded={embedded} />
@@ -382,32 +427,41 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
               style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}
             >
               <span>{l.d || "Repair"}</span>
-              <b className="fig">{fmt$(lineAmt(l))}</b>
+              <b className="fig">{fmt$2(lineAmt(l))}</b>
             </div>
           ))}
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontWeight: 800,
-              fontSize: "var(--type-lg)",
-              borderTop: "1px solid var(--manila-line)",
-              marginTop: "var(--space-2)",
-              paddingTop: "var(--space-2)",
-            }}
-          >
-            <span>Total</span>
-            <span className="fig">{fmt$(total)}</span>
-          </div>
+          {priced ? (
+            <PriceBreakdown totals={signTotals} rates={signRates} ruleColor="var(--manila-line)" />
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 800,
+                fontSize: "var(--type-lg)",
+                borderTop: "1px solid var(--manila-line)",
+                marginTop: "var(--space-2)",
+                paddingTop: "var(--space-2)",
+              }}
+            >
+              <span>Total</span>
+              <span className="fig">{fmt$2(signTotals.total / 100)}</span>
+            </div>
+          )}
         </div>
 
         {/* The sentence the customer is agreeing to — rendered from the SAME function the server
-            stores, so the words on the tablet and the words in the record cannot diverge. */}
+            stores, off the SAME chain that produced the figures above, so the words on the tablet,
+            the numbers above them and the frozen record cannot diverge. */}
         <div
           className="muted"
           style={{ fontSize: "var(--type-sm)", margin: "var(--space-4) 0 var(--space-3)", lineHeight: 1.55 }}
         >
-          {authorizationText({ totalCents: Math.round(total * 100), orgName: brand.name })}
+          {authorizationText({
+            totalCents: signTotals.total,
+            depositCents: signTotals.depositDue,
+            orgName: brand.name,
+          })}
         </div>
 
         <label
@@ -476,7 +530,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
             disabled={signing}
             style={{ flex: 1, opacity: signing ? 0.45 : undefined }}
           >
-            {signing ? "Saving…" : `Accept & sign — ${fmt$(total)}`}
+            {signing ? "Saving…" : `Accept & sign — ${fmt$2(signTotals.total / 100)}`}
           </button>
         </div>
       </>
@@ -486,6 +540,11 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   // ---- PRESENT mode ---------------------------------------------------------
   if (mode === "present") {
     const firstName = custName.split(" ")[0] ?? custName;
+    // The customer picks from these cards and signs the next screen. Whatever is on the card has to
+    // be the figure on that screen, so the tier prices carry the document's rates too — a card
+    // showing the pre-tax option price would be a number nobody ends up paying.
+    const offeredTotal = (t: Tier): number =>
+      fieldPricingTotals(pricing, Math.round(tierTotal(t) * 100)).total / 100;
     return (
       <>
         <ModeHead title="Present — on glass" custName={custName} embedded={embedded} />
@@ -510,7 +569,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
                   {lbl}
                   {k === "better" ? " · recommended" : ""}
                 </b>
-                <b>{fmt$(tierTotal(k))}</b>
+                <b className="fig">{fmt$2(offeredTotal(k))}</b>
               </div>
               <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2xs)" }}>
                 {tiers[k].map((l) => l.d || "Repair").join(" · ")}
@@ -538,6 +597,13 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const tierChips = TQ_TIERS.filter(([k]) => k === "better" || use[k]);
   const showGoodOpt = !use.good;
   const showBestOpt = !use.best;
+
+  // The active tier's derivation, so the tech sees the effect of a rate on the option he is
+  // editing. The rates themselves are shared across tiers — they describe the document.
+  const editSubtotalCents = Math.round(tierTotal(tier) * 100);
+  const editRates = fieldPricingRates(pricing, editSubtotalCents);
+  const editTotals = fieldPricingTotals(pricing, editSubtotalCents);
+  const editPriced = hasFieldPricing(editRates);
 
   return (
     <>
@@ -582,21 +648,40 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
               still owns the pricebook, the labor rates and the first line of an empty quote.
               Full width and 44px tall: this is a technician's tablet on a doorstep. */}
           <AddLineRow onAdd={addCustom} />
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              fontWeight: 800,
-              fontSize: "var(--type-lg)",
-              borderTop: "1px solid var(--line)",
-              marginTop: "var(--space-2)",
-              paddingTop: "var(--space-2)",
-            }}
-          >
-            <span>{multi ? `${tierLabel(tier)} total` : "Total"}</span>
-            <span className="fig">{fmt$(tierTotal(tier))}</span>
-          </div>
+          {/* With nothing set the subtotal IS the total, and a four-row derivation of one number
+              is noise — the list keeps its single Total line exactly as before. The moment a rate
+              is set the arithmetic becomes the customer's business and it is shown in full. */}
+          {editPriced ? (
+            <PriceBreakdown totals={editTotals} rates={editRates} ruleColor="var(--line)" />
+          ) : (
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 800,
+                fontSize: "var(--type-lg)",
+                borderTop: "1px solid var(--line)",
+                marginTop: "var(--space-2)",
+                paddingTop: "var(--space-2)",
+              }}
+            >
+              <span>{multi ? `${tierLabel(tier)} total` : "Total"}</span>
+              <span className="fig">{fmt$(tierTotal(tier))}</span>
+            </div>
+          )}
         </div>
+      ) : null}
+
+      {/* Discount / sales tax / deposit — three collapsed rows, one open at a time, appearing only
+          once a line is priced. See field-pricing.tsx for why this is not the office's three-across
+          card: a technician on a doorstep needs one of these, usually none, and the collapsed value
+          is the whole summary. */}
+      {anyPriced ? (
+        <FieldPricingRows
+          pricing={pricing}
+          subtotalCents={Math.round(tierTotal(tier) * 100)}
+          onChange={setPricing}
+        />
       ) : null}
 
       {/* "+ Add a line" — open menu (picking) or the collapsed entry button */}

@@ -95,6 +95,8 @@ export function SettingsHydrator() {
         },
       },
       markup: Math.round(dto.config.markupBps / 100),
+      // bps → percent (875 = 8.75%). Not rounded like markup: a quarter-point is a real US rate.
+      taxRate: dto.config.taxBps / 100,
       trade: dto.config.trade,
       toggles: {
         techSeesPrice: dto.config.techSeesPrice,
