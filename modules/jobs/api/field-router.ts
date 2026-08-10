@@ -22,7 +22,9 @@ import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
 import { CreateVisitUseCase } from "../app/create-visit";
+import { AddReturnTripUseCase } from "../app/add-return-trip";
 import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
+import { DrizzleJobBillingReader } from "../infra/drizzle-job-billing-reader";
 import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
@@ -408,13 +410,24 @@ export const createFieldRouter = () =>
     }),
 
     /**
-     * "Need to come back" — the return trip, booked from the doorstep.
+     * "Need to come back" — the return trip, booked from the doorstep, INCLUDING after Done.
      *
      * A technician could not create a visit at all: every procedure in visit-router.ts is
      * ownerOrOffice. So the commitment made at the customer's kitchen table — and it IS made,
      * software or no software — lived in his head until he remembered to tell the office. Since
      * found work started billing (#389) it got worse: he can sign a customer for extra work and
      * then have no way to book the trip that performs it.
+     *
+     * AND THE MOMENT IT IS MOST NEEDED IS AFTER HE TAPS DONE. "just clicked done and theres no way
+     * to add another visit, just take payment." He finishes, packs up, and finds out the fitting is
+     * wrong. This used to refuse outright, because `Job.withVisits` rejects a terminal job. It now
+     * reopens the job and appends the trip in ONE aggregate save (AddReturnTripUseCase) — the same
+     * mechanism SetVisitStatusUseCase already uses to reopen a finished job for a visit.
+     *
+     * WHEN IT MAY REOPEN IS A QUESTION ABOUT MONEY, and `decideReturnTrip` owns it: paid,
+     * part-paid, sent and voided bills all refuse; no bill and an untouched draft allow. The rule
+     * lives in the use-case, NOT in whichever control happens to be on screen — a hidden button is
+     * not enforcement, and the office surface reaches this same endpoint.
      *
      * WHAT HE CREATES IS UNPLACED, AND THAT IS THE DESIGN. He records that a return is needed and
      * why; the office picks the slot. Choosing a time is a shop-level decision — when the part
@@ -431,37 +444,43 @@ export const createFieldRouter = () =>
      */
     addFollowUpVisit: anyRole
       .input(fieldAddFollowUpVisitInput)
-      .output(jobDTO)
+      .output(jobDTO.extend({ reopened: z.boolean(), billIsStale: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const jobId = asJobId(input.jobId);
-        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
-        const before = techJob ?? (await repo.findById(jobId));
-        if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found." });
-        // Guarded here rather than left to withVisits' terminal refusal, so the sheet can say why.
-        if (before.isTerminal()) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
-        }
+        await assertOnJobIfTech(repo, jobId, ctx.principal);
 
-        const job = orThrow(
-          await new CreateVisitUseCase(repo, ctx.deps.clock, ctx.deps.ids).exec({
-            jobId,
-            assigneeUserId: null,
-            scheduledDate: null,
-            scheduledStart: null,
-            durationHours: input.durationHours,
-            notes: input.reason,
-          }),
+        const booked = orThrow(
+          await new AddReturnTripUseCase(
+            repo,
+            new DrizzleJobBillingReader(ctx.tx, ctx.principal.orgId),
+            ctx.deps.clock,
+            ctx.deps.ids,
+          ).exec({ jobId, reason: input.reason, durationHours: input.durationHours }),
         );
 
         logger.info(
-          { jobId: input.jobId, orgId: ctx.principal.orgId },
-          "job_visit.follow_up_created",
+          {
+            jobId: input.jobId,
+            orgId: ctx.principal.orgId,
+            reopened: booked.reopened,
+            billIsStale: booked.billIsStale,
+          },
+          booked.reopened ? "job.reopened_for_return_trip" : "job_visit.follow_up_created",
         );
-        const dto = await toJobDTOWithExecution(repo, job);
-        if (ctx.principal.role !== "tech") return dto;
-        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+        const dto = await toJobDTOWithExecution(repo, booked.job);
+        const body =
+          ctx.principal.role !== "tech"
+            ? dto
+            : redactMoneyForTech(
+                dto,
+                await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice(),
+                FIELD_SURFACE_REDACTION,
+              );
+        // `billIsStale` is the honest half of allowing a reopen behind a draft: createFromJob is
+        // idempotent on source_job_id, so that draft will NOT pick this trip's work up. It rides
+        // the response so the surface that booked can say so on the spot.
+        return { ...body, reopened: booked.reopened, billIsStale: booked.billIsStale };
       }),
 
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
