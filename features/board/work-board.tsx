@@ -68,9 +68,15 @@ function groupLabel(key: BoardGroupKey, column: BoardColumnId): string {
  * it is cleared. Either way the columns to the right could not be scrolled to without a mouse.
  *
  * Named rather than left as a bare focus stop, so what has been focused is announced.
+ *
+ * Measured, not assumed: axe on the first-run board reports `scrollable-region-focusable(1)` with
+ * the tabIndex removed and is clean with it, while the live board is clean either way.
  */
 function BoardFrame({ children }: { children: React.ReactNode }) {
   return (
+    // jsx-a11y reads a tabIndex on a non-interactive role as a mistake; here it is the fix axe
+    // asks for, and the two rules genuinely disagree. The runtime scan is the accurate gate.
+    // eslint-disable-next-line jsx-a11y/no-noninteractive-tabindex
     <div className="board" tabIndex={0} role="group" aria-label="Work board">
       {children}
     </div>
