@@ -12,8 +12,9 @@ import { DrizzleLeadRepository } from "@mallet/customers";
 // and resolves fine because both sides bind lazily inside procedure bodies.
 import { RecordFieldSaleUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import type { OrgId } from "@mallet/shared/types";
+import type { OrgId, PricingRates } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
+import { DrizzleCostRateReader } from "../infra/drizzle-cost-rate-reader";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
@@ -22,7 +23,9 @@ import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
 import { CreateVisitUseCase } from "../app/create-visit";
+import { AddReturnTripUseCase } from "../app/add-return-trip";
 import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
+import { DrizzleJobBillingReader } from "../infra/drizzle-job-billing-reader";
 import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
@@ -100,6 +103,26 @@ const fieldSignQuoteInput = z.object({
   // Optional, exactly as on the web path: a typed name IS the signature, and requiring a drawing
   // would gate approval on the weakest evidence and lock out anyone who cannot draw.
   signatureSvg: z.string().trim().max(100_000).optional(),
+  /**
+   * Discount / tax / deposit set at the door, in basis points. All three default to zero, which is
+   * what every field sale was before these controls existed — an omitting client keeps its exact
+   * current behaviour.
+   *
+   * These are the shop's OWN numbers, decided by a technician the assignment gate above has
+   * already established is on this job, so they legitimately come from the client — the office
+   * composer sends the same three the same way. What does NOT come from the client is anything
+   * derived from them: the total, the tax amount, the deposit and the sentence the customer signs
+   * are all computed server-side from these rates and the line set, so a tablet cannot show one
+   * figure and store another.
+   *
+   * Discount and deposit are capped at 100% because either one above that inverts the bill. Tax
+   * is capped at 2500 bps for the SAME reason the office setting is (updateConfigInput): no US
+   * state, county and city combination reaches half of 25%, so a larger number is a typed "825"
+   * that lost its decimal point. One cap, one rationale, both surfaces.
+   */
+  discBps: z.number().int().min(0).max(10_000).default(0),
+  taxBps: z.number().int().min(0).max(2_500).default(0),
+  depBps: z.number().int().min(0).max(10_000).default(0),
 });
 
 // Scope notes from the walkthrough — the field half of the estimating split. The visit's notes
@@ -367,7 +390,7 @@ export const createFieldRouter = () =>
 
       if (closing) {
         const job = orThrow(
-          await new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({
+          await new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock, new DrizzleCostRateReader(ctx.tx, ctx.principal.orgId)).exec({
             jobId,
             visitId: closing,
             status: "complete",
@@ -408,13 +431,24 @@ export const createFieldRouter = () =>
     }),
 
     /**
-     * "Need to come back" — the return trip, booked from the doorstep.
+     * "Need to come back" — the return trip, booked from the doorstep, INCLUDING after Done.
      *
      * A technician could not create a visit at all: every procedure in visit-router.ts is
      * ownerOrOffice. So the commitment made at the customer's kitchen table — and it IS made,
      * software or no software — lived in his head until he remembered to tell the office. Since
      * found work started billing (#389) it got worse: he can sign a customer for extra work and
      * then have no way to book the trip that performs it.
+     *
+     * AND THE MOMENT IT IS MOST NEEDED IS AFTER HE TAPS DONE. "just clicked done and theres no way
+     * to add another visit, just take payment." He finishes, packs up, and finds out the fitting is
+     * wrong. This used to refuse outright, because `Job.withVisits` rejects a terminal job. It now
+     * reopens the job and appends the trip in ONE aggregate save (AddReturnTripUseCase) — the same
+     * mechanism SetVisitStatusUseCase already uses to reopen a finished job for a visit.
+     *
+     * WHEN IT MAY REOPEN IS A QUESTION ABOUT MONEY, and `decideReturnTrip` owns it: paid,
+     * part-paid, sent and voided bills all refuse; no bill and an untouched draft allow. The rule
+     * lives in the use-case, NOT in whichever control happens to be on screen — a hidden button is
+     * not enforcement, and the office surface reaches this same endpoint.
      *
      * WHAT HE CREATES IS UNPLACED, AND THAT IS THE DESIGN. He records that a return is needed and
      * why; the office picks the slot. Choosing a time is a shop-level decision — when the part
@@ -431,37 +465,43 @@ export const createFieldRouter = () =>
      */
     addFollowUpVisit: anyRole
       .input(fieldAddFollowUpVisitInput)
-      .output(jobDTO)
+      .output(jobDTO.extend({ reopened: z.boolean(), billIsStale: z.boolean() }))
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const jobId = asJobId(input.jobId);
-        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
-        const before = techJob ?? (await repo.findById(jobId));
-        if (!before) throw new TRPCError({ code: "NOT_FOUND", message: "Job not found." });
-        // Guarded here rather than left to withVisits' terminal refusal, so the sheet can say why.
-        if (before.isTerminal()) {
-          throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
-        }
+        await assertOnJobIfTech(repo, jobId, ctx.principal);
 
-        const job = orThrow(
-          await new CreateVisitUseCase(repo, ctx.deps.clock, ctx.deps.ids).exec({
-            jobId,
-            assigneeUserId: null,
-            scheduledDate: null,
-            scheduledStart: null,
-            durationHours: input.durationHours,
-            notes: input.reason,
-          }),
+        const booked = orThrow(
+          await new AddReturnTripUseCase(
+            repo,
+            new DrizzleJobBillingReader(ctx.tx, ctx.principal.orgId),
+            ctx.deps.clock,
+            ctx.deps.ids,
+          ).exec({ jobId, reason: input.reason, durationHours: input.durationHours }),
         );
 
         logger.info(
-          { jobId: input.jobId, orgId: ctx.principal.orgId },
-          "job_visit.follow_up_created",
+          {
+            jobId: input.jobId,
+            orgId: ctx.principal.orgId,
+            reopened: booked.reopened,
+            billIsStale: booked.billIsStale,
+          },
+          booked.reopened ? "job.reopened_for_return_trip" : "job_visit.follow_up_created",
         );
-        const dto = await toJobDTOWithExecution(repo, job);
-        if (ctx.principal.role !== "tech") return dto;
-        const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION);
+        const dto = await toJobDTOWithExecution(repo, booked.job);
+        const body =
+          ctx.principal.role !== "tech"
+            ? dto
+            : redactMoneyForTech(
+                dto,
+                await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice(),
+                FIELD_SURFACE_REDACTION,
+              );
+        // `billIsStale` is the honest half of allowing a reopen behind a draft: createFromJob is
+        // idempotent on source_job_id, so that draft will NOT pick this trip's work up. It rides
+        // the response so the surface that booked can say so on the spot.
+        return { ...body, reopened: booked.reopened, billIsStale: booked.billIsStale };
       }),
 
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
@@ -479,7 +519,7 @@ export const createFieldRouter = () =>
         if (techJob?.isTerminal()) {
           throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
         }
-        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock, new DrizzleCostRateReader(ctx.tx, ctx.principal.orgId));
         const job = orThrow(
           await useCase.exec({ jobId, visitId, status: input.status }),
         );
@@ -677,12 +717,21 @@ export const createFieldRouter = () =>
         // sent by the tablet: a client-supplied counterparty on a signed document is a hole.
         const orgName = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getOrgName();
 
+        // ONE rates object, built once and handed to both writes below, so the job row, the job's
+        // signature snapshot and the estimate can never end up describing three different prices.
+        const rates: PricingRates = {
+          discBps: input.discBps,
+          taxBps: input.taxBps,
+          depBps: input.depBps,
+        };
+
         const useCase = new SetJobLinesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
           await useCase.exec(
             {
               jobId,
               lines: input.lines,
+              rates,
               signature: {
                 signerName: input.signerName,
                 signatureSvg: input.signatureSvg ?? "",
@@ -738,6 +787,7 @@ export const createFieldRouter = () =>
             signerName: input.signerName,
             signatureSvg: input.signatureSvg ?? "",
             orgName,
+            rates,
           }),
         );
         if (sale.kind === "created") {

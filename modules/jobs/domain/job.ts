@@ -176,6 +176,15 @@ export interface JobVisitProps {
   readonly enrouteAt: Date | null;
   readonly startedAt: Date | null;
   readonly completedAt: Date | null;
+  /**
+   * The assignee's burdened cost per hour, cents, snapshotted when this visit completed.
+   *
+   * Job costing multiplies hours by this rather than by whatever the person costs TODAY, so a
+   * raise stops silently re-pricing every week already worked. Null on a visit that never
+   * completed, on legacy rows, and when the shop has set no rate for that person — the reader
+   * falls back to their current rate for those, which is exactly the old behaviour.
+   */
+  readonly costRateCents?: number | null;
   readonly notes: string | null;
   readonly position: number;
 }

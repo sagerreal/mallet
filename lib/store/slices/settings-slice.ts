@@ -112,6 +112,14 @@ export interface BookingCfg {
 
 export interface SettingsToggles {
   techSeesPrice: boolean;
+  /**
+   * Does the crew punch a clock, or type their week in?
+   *
+   * A SURFACE switch, not a payroll one: `time_entries.src` has always allowed both
+   * (`manual | clock | timer`), and nothing about hours, approval or the QuickBooks push changes
+   * with it. Off hides the day clock on My day and makes adding a day the primary action.
+   */
+  timesheetClock: boolean;
   frontDesk: boolean;
   /** Money's "Auto-remind" switch. It was useState(true) in that header — a control promising
    *  reminder texts on a schedule and wired to nothing at all. */
@@ -162,10 +170,17 @@ const EMPTY_BOOKING: BookingCfg = {
 };
 
 const EMPTY_MARKUP = 35;
+/**
+ * The shop's default sales-tax rate, as a PERCENT (8.75 = 8.75%) — the store's unit for a rate,
+ * matching `markup`. 0 until a hydrator lands, which is the honest placeholder: a shop with no rate
+ * on file genuinely charges none, and seeding a guess onto a quote would be a number nobody chose.
+ */
+const EMPTY_TAX_RATE = 0;
 const EMPTY_TRADE = "plumbing";
 
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
+  timesheetClock: true,
   frontDesk: true,
   autoRemind: true,
   // "unknown", NOT false. This placeholder used to be `false`, which made a settings read that
@@ -279,6 +294,8 @@ export interface SettingsSlice {
   sources: SourceItem[];
   booking: BookingCfg;
   markup: number;
+  /** Default sales-tax rate, PERCENT. Seeds a new quote's tax in the composer and the field builder. */
+  taxRate: number;
   trade: string;
   toggles: SettingsToggles;
 
@@ -289,6 +306,7 @@ export interface SettingsSlice {
     sources: SourceItem[];
     booking: BookingCfg;
     markup: number;
+    taxRate: number;
     trade: string;
     toggles: SettingsToggles;
   }) => void;
@@ -345,6 +363,14 @@ export interface SettingsSlice {
    * landing, not an edit.
    */
   setMeasurementGate: (gate: MeasurementGate) => void;
+  /**
+   * Store-only write of the org's default sales-tax rate (PERCENT) from a settings read. The field
+   * twin of the measurement gate above and for the identical reason: `v1.settings.get` is
+   * ownerOrOffice, so a technician's copy of this number can only arrive through the narrow
+   * `fieldPricingDefaults` read that FieldTogglesHydrator makes. Persists nothing — a read landing,
+   * not an edit.
+   */
+  setDefaultTaxRate: (percent: number) => void;
 }
 
 // ---- slice -----------------------------------------------------------------
@@ -358,6 +384,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   sources: EMPTY_SOURCES,
   booking: EMPTY_BOOKING,
   markup: EMPTY_MARKUP,
+  taxRate: EMPTY_TAX_RATE,
   trade: EMPTY_TRADE,
   toggles: EMPTY_TOGGLES,
 
@@ -653,6 +680,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     // measurementEstimating is absent by type (BooleanToggleKey) — it is not a hand switch.
     const toggleToField: Record<BooleanToggleKey, string> = {
       techSeesPrice: "techSeesPrice",
+      timesheetClock: "timesheetClock",
       frontDesk: "frontDesk",
       autoRemind: "autoRemind",
     };
@@ -664,5 +692,9 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
 
   setMeasurementGate: (gate) => {
     set((s) => ({ toggles: { ...s.toggles, measurementEstimating: gate } }));
+  },
+
+  setDefaultTaxRate: (percent) => {
+    set({ taxRate: Math.max(0, Number(percent) || 0) });
   },
 });

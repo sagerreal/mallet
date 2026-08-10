@@ -37,8 +37,8 @@ export function StillOpenBanner({ entry, suggestedEnd, saving, error, onEnd }: S
     <Card className="mh-open">
       <p className="mh-h">Your day is still open</p>
       <p className="mh-s">
-        {KIND_LABELS[entry.kind]} started {clockLabel(entry.startTime)} on {dayLabel(entry.workDate)} and
-        has no end time. These hours can&rsquo;t be approved until it&rsquo;s closed.
+        {KIND_LABELS[entry.kind]} started {clockLabel(entry.startTime)} on {dayLabel(entry.workDate)}{" "}
+        and has no end time. These hours can&rsquo;t be approved until it&rsquo;s closed.
       </p>
       {suggestedEnd === null ? (
         <p className="mh-s">Nothing later that day to suggest an end from — set the time yourself.</p>

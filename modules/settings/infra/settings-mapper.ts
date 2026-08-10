@@ -24,6 +24,7 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     visitScopeMinutes: row.visitScopeMinutes,
     visitRepairMinutes: row.visitRepairMinutes,
     visitInstallMinutes: row.visitInstallMinutes,
+    timesheetClock: row.timesheetClock,
     techSeesPrice: row.techSeesPrice,
     techTexts: row.techTexts,
     frontDesk: row.frontDesk,

@@ -57,6 +57,33 @@ export async function login(page: Page, who: { email: string; password: string }
  * unfrozen run would diff every single morning.
  */
 export async function prepare(page: Page, theme: "light" | "dark"): Promise<void> {
+  /**
+   * HIDE THE NEXT DEV-TOOLS OVERLAY.
+   *
+   * `playwright.config.ts` boots `pnpm dev`, so every screenshot is taken against a dev server —
+   * and the moment the app has anything for the dev indicator to report, Next paints a badge into
+   * the bottom-left corner of EVERY page. The baselines predate that, so the whole net went red:
+   * 78 of 78, `login · desktop` included, all of them a 3,427-pixel diff in one corner and
+   * identical everywhere else. Read quickly it looks like a catastrophic regression; it is a
+   * button that says "1 Issue".
+   *
+   * Hidden rather than masked. A mask paints its own rectangle, which would differ from the clean
+   * corner the baselines actually hold — so masking would need a re-baseline to fix a problem that
+   * is not in the app. Hiding restores exactly what the baselines were captured against.
+   */
+  await page.addStyleTag({ content: "nextjs-portal{display:none!important}" }).catch(() => {});
+  await page.addInitScript(() => {
+    const hide = () => {
+      const id = "e2e-hide-next-overlay";
+      if (document.getElementById(id)) return;
+      const style = document.createElement("style");
+      style.id = id;
+      style.textContent = "nextjs-portal{display:none!important}";
+      document.head?.appendChild(style);
+    };
+    if (document.head) hide();
+    else document.addEventListener("DOMContentLoaded", hide, { once: true });
+  });
   await page.addInitScript(
     ({ theme: themeName, frozen }: { theme: string; frozen: number }) => {
       window.localStorage.setItem("mallet-theme", themeName);

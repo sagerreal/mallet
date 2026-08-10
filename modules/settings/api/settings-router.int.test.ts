@@ -297,12 +297,18 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     });
   });
 
-  it("fieldToggles leaks NOTHING else — the payload is exactly two keys", async () => {
+  it("fieldToggles leaks NOTHING else — the payload is exactly the allow-list", async () => {
     const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     const toggles = await tech.v1.settings.fieldToggles();
     // The output zod schema strips unknown keys, so this asserts the schema, not the mapper.
     // Anything added to it becomes readable by every technician in the org.
-    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating"]);
+    //
+    // `timesheetClock` was added deliberately: whether the shop punches a clock is a working
+    // practice every technician learns on their first morning, and the field surface cannot render
+    // correctly without it (`settings.get` is ownerOrOffice and always will be). Not money, not a
+    // credential, not a permission. The bar for the next one is the same question — would a
+    // technician learn something here they could not learn by doing their job?
+    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating", "timesheetClock"]);
   });
 
   it("fieldToggles is org-scoped — org B never sees org A's flag", async () => {

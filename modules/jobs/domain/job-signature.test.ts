@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { asJobId, money, zeroMoney, isOk } from "@mallet/shared/types";
+import { asJobId, money, zeroMoney, isOk, deriveTotals, type PricingRates } from "@mallet/shared/types";
 import { JobLine } from "./job-execution";
 import { buildJobSignature } from "./job-signature";
 
@@ -65,12 +65,14 @@ describe("buildJobSignature", () => {
     expect(text).toMatch(/both the quote and the final bill/i);
   });
 
-  it("records no deposit, tier or terms rather than inventing them", () => {
-    // An on-site approval is the whole price agreed on the spot. Empty is the honest value, and it
-    // keeps the shape identical to the web snapshot so one reader serves both.
+  it("records no deposit, tier or terms when no rates were set", () => {
+    // A sale with nothing set is the whole price agreed on the spot. Zero is the honest value, and
+    // it keeps the shape identical to the web snapshot so one reader serves both.
     const r = buildJobSignature({ draft: DRAFT, lines: [line(50_000)], orgName: "Bay Plumbing", signedAt: NOW });
     if (!isOk(r)) throw new Error(r.error.message);
     expect(r.value.snapshot.depositCents).toBe(0);
+    expect(r.value.snapshot.discountCents).toBe(0);
+    expect(r.value.snapshot.taxCents).toBe(0);
     expect(r.value.snapshot.chosenTier).toBeNull();
     expect(r.value.snapshot.termsText).toBeNull();
     expect(r.value.snapshot.authorizationText).not.toContain("deposit");
@@ -96,5 +98,71 @@ describe("buildJobSignature", () => {
     });
     expect(isOk(r)).toBe(false);
     if (!isOk(r)) expect(r.error.field).toBe("signerName");
+  });
+
+  /**
+   * The whole point of the field pricing controls: the sentence must move with the numbers. If a
+   * tech charges tax, the customer authorises the tax-inclusive figure — not the pre-tax one they
+   * would otherwise be handed and later billed above.
+   */
+  describe("with rates", () => {
+    const withRates = (rates: PricingRates, rateCents = 50_000) =>
+      buildJobSignature({ draft: DRAFT, lines: [line(rateCents)], orgName: "Bay Plumbing", signedAt: NOW, rates });
+
+    it("authorises the TAX-INCLUSIVE total", () => {
+      const r = withRates({ discBps: 0, taxBps: 875, depBps: 0 });
+      if (!isOk(r)) throw new Error(r.error.message);
+      expect(r.value.snapshot.subtotalCents).toBe(50_000);
+      expect(r.value.snapshot.taxCents).toBe(4_375);
+      expect(r.value.snapshot.totalCents).toBe(54_375);
+      expect(r.value.snapshot.authorizationText).toContain("$543.75");
+      expect(r.value.snapshot.authorizationText).not.toContain("$500.00");
+    });
+
+    it("names the deposit in the sentence and derives it from the total", () => {
+      const r = withRates({ discBps: 0, taxBps: 875, depBps: 2_000 });
+      if (!isOk(r)) throw new Error(r.error.message);
+      expect(r.value.snapshot.depositCents).toBe(10_875);
+      expect(r.value.snapshot.authorizationText).toContain("deposit of $108.75");
+      expect(r.value.snapshot.authorizationText).toContain("balance when the work is complete");
+    });
+
+    it("takes the discount off before the tax", () => {
+      const r = withRates({ discBps: 1_000, taxBps: 875, depBps: 0 });
+      if (!isOk(r)) throw new Error(r.error.message);
+      expect(r.value.snapshot.discountCents).toBe(5_000);
+      expect(r.value.snapshot.taxCents).toBe(3_938);
+      expect(r.value.snapshot.totalCents).toBe(48_938);
+    });
+
+    it("matches the estimate's chain figure for figure", () => {
+      // The job snapshot and the estimate snapshot describe ONE sale. Same lines, same rates, same
+      // total — if these two ever disagree the customer has signed two different documents.
+      const rates: PricingRates = { discBps: 1_000, taxBps: 875, depBps: 2_000 };
+      const r = withRates(rates);
+      if (!isOk(r)) throw new Error(r.error.message);
+      const expected = deriveTotals(money(50_000), money(50_000), rates);
+      expect(r.value.snapshot.totalCents).toBe(expected.total);
+      expect(r.value.snapshot.depositCents).toBe(expected.depositDue);
+    });
+
+    it("leaves a no-rates sale bit-for-bit as it was", () => {
+      const withNone = buildJobSignature({
+        draft: DRAFT,
+        lines: [line(50_000)],
+        orgName: "Bay Plumbing",
+        signedAt: NOW,
+        rates: { discBps: 0, taxBps: 0, depBps: 0 },
+      });
+      const without = buildJobSignature({
+        draft: DRAFT,
+        lines: [line(50_000)],
+        orgName: "Bay Plumbing",
+        signedAt: NOW,
+      });
+      if (!isOk(withNone) || !isOk(without)) throw new Error("expected both to build");
+      expect(withNone.value.snapshot.authorizationText).toBe(without.value.snapshot.authorizationText);
+      expect(withNone.value.snapshot.totalCents).toBe(without.value.snapshot.totalCents);
+    });
   });
 });

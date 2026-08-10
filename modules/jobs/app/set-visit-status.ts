@@ -3,6 +3,7 @@ import { notFound, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus } from "@mallet/shared/ports";
 import { JobVisit, type VisitStatus, type JobVisitProps } from "../domain/job";
 import type { JobRepository } from "../domain/job-repository";
+import { NO_COST_RATES, type CostRateReader } from "../domain/cost-rate-reader";
 import type { Job } from "../domain/job";
 
 export interface SetVisitStatusCommand {
@@ -49,6 +50,14 @@ export class SetVisitStatusUseCase {
     private readonly repo: JobRepository,
     private readonly bus: EventBus,
     private readonly clock: Clock,
+    /**
+     * Optional, and it defaults to "no rates known" on purpose. A dozen call sites construct this
+     * use-case to MOVE A VISIT and have nothing to do with money; forcing each to wire a database
+     * reader would be a required dependency added for one branch of one transition. Omitted, the
+     * stamp is null and costing keeps reading the person's current rate — the pre-snapshot
+     * behaviour, unchanged.
+     */
+    private readonly costRates: CostRateReader = NO_COST_RATES,
   ) {}
 
   async exec(cmd: SetVisitStatusCommand): Promise<Result<Job, AppError>> {
@@ -80,9 +89,31 @@ export class SetVisitStatusUseCase {
     }
 
     const now = this.clock.now();
+
+    /**
+     * THE COST OF AN HOUR IS FIXED WHEN THE HOUR IS WORKED.
+     *
+     * Read at COMPLETION and only at completion. Costing used to multiply hours by whatever the
+     * person costs today, so the week somebody got a raise, every week they had ever worked
+     * re-priced itself. Stamping here is what stops history moving.
+     *
+     * Reopening clears it, exactly as it clears completedAt: a reopened visit has not finished, so
+     * it has no settled cost, and leaving the old figure behind would price the NEXT trip at the
+     * rate of the one that was undone.
+     */
+    const costRateCents =
+      cmd.status === "complete"
+        ? visit.props.assigneeUserId
+          ? await this.costRates.rateFor(visit.props.assigneeUserId)
+          : null
+        : cmd.status === "pending"
+          ? null
+          : (visit.props.costRateCents ?? null);
+
     const newProps = {
       ...visit.props,
       status: cmd.status,
+      costRateCents,
       ...stampsFor(cmd.status, visit.props, now),
     };
 

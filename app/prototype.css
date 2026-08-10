@@ -1601,6 +1601,30 @@
   .mh-acts .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
   .mh-err{color:var(--red);font-size:var(--type-base);margin-top:var(--space-2)}
   .mh-lock{font-size:var(--type-xs);color:var(--ink-2);background:var(--paper);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);margin-top:var(--space-2xs)}
+  /* The office's "fix before approving" strip. Sits above the crew chips because an approver is
+     scanning for problems, and everything below it is known-good. */
+  .ts-exc{border:1px solid var(--amber);border-radius:var(--radius-sm);overflow:hidden;margin:var(--space-3) 0}
+  .ts-exc-h{
+    display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);
+    background:var(--amber-bg);padding:var(--space-2) var(--space-3);
+    font-size:var(--type-base);font-weight:650;color:var(--ink)
+  }
+  .ts-exc-n{font-size:var(--type-sm);font-weight:400;color:var(--amber)}
+  .ts-exc-row{
+    display:flex;justify-content:space-between;align-items:center;gap:var(--space-3);
+    padding:var(--space-2) var(--space-3);background:var(--card);font-size:var(--type-base)
+  }
+  .ts-exc-row + .ts-exc-row{border-top:1px solid var(--line-2)}
+  /* A day he worked and sent no hours for. Amber, not red: nothing is broken and nothing has been
+     lost — a figure is missing and he is the one who can supply it. Red is for a failure. */
+  .mh-unreported{
+    display:flex;flex-direction:column;gap:var(--space-2);
+    background:var(--amber-bg);border:1px solid var(--amber);
+    border-radius:var(--radius-sm);padding:var(--space-3) var(--space-3);
+    margin-bottom:var(--space-3);font-size:var(--type-base)
+  }
+  .mh-unreported .muted{font-size:var(--type-sm)}
+  .mh-unreported-acts{display:flex;gap:var(--space-2);flex-wrap:wrap}
   .mh-nav{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3);margin:var(--space-3) 0}
   .mh-nav b{font-weight:700}
   .mh-total{margin-left:auto;color:var(--ink-2);font-size:var(--type-sm);font-variant-numeric:tabular-nums}

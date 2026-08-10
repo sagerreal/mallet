@@ -113,6 +113,7 @@ export interface OrgSettingsProps {
   readonly visitRepairMinutes: number;
   /** Duration of an install visit (clamped to ≥ VISIT_FLOOR_MINUTES). */
   readonly visitInstallMinutes: number;
+  readonly timesheetClock: boolean;
   readonly techSeesPrice: boolean;
   readonly techTexts: boolean;
   readonly frontDesk: boolean;
@@ -416,6 +417,8 @@ export class OrgSettings {
         fields.visitInstallMinutes !== undefined
           ? fields.visitInstallMinutes
           : this.p.visitInstallMinutes,
+      timesheetClock:
+        fields.timesheetClock !== undefined ? fields.timesheetClock : this.p.timesheetClock,
       techSeesPrice:
         fields.techSeesPrice !== undefined ? fields.techSeesPrice : this.p.techSeesPrice,
       techTexts: fields.techTexts !== undefined ? fields.techTexts : this.p.techTexts,

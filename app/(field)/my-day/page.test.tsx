@@ -44,6 +44,8 @@ vi.mock("@/lib/trpc/client", () => ({
       },
     }),
     v1: {
+      // The field surface's only settings read — punch clock vs sheet. Defaults on.
+      settings: { fieldToggles: { useQuery: () => ({ data: { timesheetClock: true } }) } },
       field: {
         myDay: { useQuery: () => ({ ...queryState, refetch }) },
         start: {

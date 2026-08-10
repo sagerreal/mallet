@@ -6,6 +6,7 @@ import { asTimeEntryId, asUserId, asJobId, toPage } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleTimeEntryRepository } from "../infra/drizzle-time-entry-repository";
+import { DrizzleUnreportedDaysReader } from "../infra/drizzle-unreported-days-reader";
 import { CreateTimeEntryUseCase } from "../app/create-time-entry";
 import { ListTimeEntriesUseCase } from "../app/list-time-entries";
 import { CountTimeEntriesUseCase } from "../app/count-time-entries";
@@ -106,6 +107,51 @@ const clockStateDTO = z.object({
 // own-entry authz guard (tech may only touch their own entries; owner/office may touch any).
 export const createTimesheetRouter = () =>
   router({
+    /**
+     * Days somebody evidently worked and sent in no hours — the one timesheet gap worth
+     * interrupting anyone about.
+     *
+     * A hole INSIDE a day is usually correct (they got off the clock), and flagging correct
+     * behaviour teaches people to ignore the flag. Visits stamped to somebody on a day with no
+     * time entry at all is different: they were on jobs and their paycheck is short.
+     *
+     * Read-only, and it never writes the day it suggests. Inventing hours on a worker's behalf is
+     * how a timesheet stops being their own statement of what they did.
+     */
+    unreportedDays: anyRole
+      .input(
+        z.object({
+          fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          techUserId: z.string().uuid().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          items: z.array(
+            z.object({
+              userId: z.string().uuid(),
+              date: z.string(),
+              visits: z.number().int(),
+              firstAt: z.string().nullable(),
+              lastAt: z.string().nullable(),
+            }),
+          ),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        // Same guard as `list`, and for the same reason: a tech asking about a colleague's missing
+        // days is asking about a colleague's pay.
+        const scoped =
+          ctx.principal.role === "tech"
+            ? asUserId(ctx.principal.userId)
+            : input.techUserId
+              ? asUserId(input.techUserId)
+              : undefined;
+        const reader = new DrizzleUnreportedDaysReader(ctx.tx, ctx.principal.orgId);
+        return { items: await reader.find(input.fromDate, input.toDate, scoped) };
+      }),
+
     list: anyRole
       .input(listInput)
       .output(paginatedDTO)

@@ -1,5 +1,5 @@
 {
-  "id": "78f42ec4-0faf-43f0-a6f1-292b66cf648f",
+  "id": "a3ebc07d-b06b-4a31-90c4-2de990019413",
   "prevId": "e5f4bbf0-ce6d-400a-aafc-77ea7d89f7c9",
   "version": "7",
   "dialect": "postgresql",
@@ -621,27 +621,6 @@
           "method": "btree",
           "with": {}
         },
-        "leads_org_stage_idx": {
-          "name": "leads_org_stage_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "stage",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "leads_org_created_active_idx": {
           "name": "leads_org_created_active_idx",
           "columns": [
@@ -1226,27 +1205,6 @@
             },
             {
               "expression": "lead_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "estimates_org_status_idx": {
-          "name": "estimates_org_status_idx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "status",
               "isExpression": false,
               "asc": true,
               "nulls": "last"
@@ -4751,12 +4709,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "idempotency_key": {
-          "name": "idempotency_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -4823,28 +4775,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "messages_org_idem_uidx": {
-          "name": "messages_org_idem_uidx",
-          "columns": [
-            {
-              "expression": "org_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "idempotency_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"messages\".\"idempotency_key\" is not null",
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -5785,6 +5715,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": 240
+        },
+        "timesheet_clock": {
+          "name": "timesheet_clock",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
         },
         "tech_sees_price": {
           "name": "tech_sees_price",

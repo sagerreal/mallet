@@ -592,6 +592,7 @@ function TeamRolesBlock() {
   const { data, isLoading, isError } = api.v1.identity.members.useQuery();
   const setToggle = useAppStore((s) => s.setToggle);
   const techSeesPrice = useAppStore((s) => s.toggles.techSeesPrice);
+  const timesheetClock = useAppStore((s) => s.toggles.timesheetClock);
   // Same key as SettingsHydrator (deduped) — read purely to know when toggles are real.
   const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
   const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
@@ -635,6 +636,30 @@ function TeamRolesBlock() {
               checked={techSeesPrice}
               disabled={settingsLoading}
               onChange={(e) => setToggle("techSeesPrice", e.target.checked)}
+            />
+            <i />
+          </label>
+        </div>
+      </FoldCard>
+
+      {/* Not "sensitive data" — how the shop RECORDS hours, which is a working practice rather
+          than a permission. Its own card so it is not read as another thing being withheld from
+          the crew. */}
+      <FoldCard title="How your crew records hours" summary={timesheetClock ? "punch clock" : "written in"}>
+        <div className="stage-row" style={{ borderTop: "none", marginTop: "0" }}>
+          <div style={{ flex: 1 }}>
+            <b>Crew punch a clock</b>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              On, the crew tap start, break and end on My day. Off, they type their week on My
+              hours instead — the same hours, approved and sent to QuickBooks the same way.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={timesheetClock}
+              disabled={settingsLoading}
+              onChange={(e) => setToggle("timesheetClock", e.target.checked)}
             />
             <i />
           </label>

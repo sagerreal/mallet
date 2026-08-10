@@ -36,6 +36,7 @@ vi.mock("@/lib/trpc/client", () => ({
         // A non-zero all-time count: the grid renders, rather than the first-run screen. The rows
         // under test come from the store, which is what the panel reads and what its edits write.
         count: { useQuery: () => ({ isFetched: true, isError: false, data: { total: 1 } }) },
+        unreportedDays: { useQuery: () => ({ data: { items: [] } }) },
       },
     },
   },

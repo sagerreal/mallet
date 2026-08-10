@@ -25,6 +25,7 @@ import {
   settingsDTO,
   orgSettingsDTO,
   fieldTogglesDTO,
+  fieldPricingDefaultsDTO,
   businessIdentityDTO,
   pricebookItemDTO,
   laborRateDTO,
@@ -75,6 +76,7 @@ const updateConfigInput = z.object({
   visitScopeMinutes: z.number().int().min(0).max(1440).optional(),
   visitRepairMinutes: z.number().int().min(0).max(1440).optional(),
   visitInstallMinutes: z.number().int().min(0).max(1440).optional(),
+  timesheetClock: z.boolean().optional(),
   techSeesPrice: z.boolean().optional(),
   techTexts: z.boolean().optional(),
   frontDesk: z.boolean().optional(),
@@ -147,6 +149,22 @@ export const createSettingsRouter = () =>
           isSmsA2pActive(ctx.tx, ctx.principal.orgId),
         ]);
         return { ...orThrow(toggles), canText };
+      }),
+
+    /**
+     * The shop's default sales-tax rate — `anyRole`, one integer wide.
+     *
+     * The office composer seeds a new quote's Tax % from the same org setting (`config.taxBps`)
+     * via `get`, which is ownerOrOffice. A field quote is the same document born at a door, so
+     * the technician's builder needs the same seed or it prices every job at no tax. Served
+     * through the repository's focused `getTaxBps` read — no lazy row creation, and none of the
+     * office payload comes with it. See fieldPricingDefaultsDTO for what may go in here.
+     */
+    fieldPricingDefaults: anyRole
+      .output(fieldPricingDefaultsDTO)
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        return { taxBps: await repo.getTaxBps() };
       }),
 
     /**
