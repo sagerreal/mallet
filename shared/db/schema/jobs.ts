@@ -221,6 +221,19 @@ export const jobVisits = pgTable(
     enrouteAt: timestamp("enroute_at", { withTimezone: true }),
     startedAt: timestamp("started_at", { withTimezone: true }),
     completedAt: timestamp("completed_at", { withTimezone: true }),
+    /**
+     * What an hour of THIS visit's assignee cost the shop, cents, burdened — snapshotted when the
+     * visit completed.
+     *
+     * Costing computed live off `users.cost_rate_cents` re-priced every past week the moment
+     * somebody got a raise. Jobber's rule is the right one and this is how it is kept: the cost of
+     * an hour is fixed at the moment the hour is worked, so history stops moving.
+     *
+     * NULLABLE, and null is not zero. Legacy rows and visits whose assignee had no rate set fall
+     * back to that person's CURRENT rate at read time — which is the old behaviour, kept only for
+     * rows that never got a stamp, never as a way of costing an unknown at $0.
+     */
+    costRateCents: integer("cost_rate_cents"),
     notes: text("notes"),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

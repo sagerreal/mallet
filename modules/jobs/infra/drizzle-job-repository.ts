@@ -124,6 +124,7 @@ export class DrizzleJobRepository implements JobRepository {
       enrouteAt: vp.enrouteAt,
       startedAt: vp.startedAt,
       completedAt: vp.completedAt,
+      costRateCents: vp.costRateCents ?? null,
       notes: vp.notes,
       position: vp.position,
       updatedAt,

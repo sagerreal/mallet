@@ -14,6 +14,7 @@ import { RecordFieldSaleUseCase, DrizzleEstimateRepository } from "@mallet/quoti
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
+import { DrizzleCostRateReader } from "../infra/drizzle-cost-rate-reader";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
@@ -367,7 +368,7 @@ export const createFieldRouter = () =>
 
       if (closing) {
         const job = orThrow(
-          await new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({
+          await new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock, new DrizzleCostRateReader(ctx.tx, ctx.principal.orgId)).exec({
             jobId,
             visitId: closing,
             status: "complete",
@@ -479,7 +480,7 @@ export const createFieldRouter = () =>
         if (techJob?.isTerminal()) {
           throw new TRPCError({ code: "BAD_REQUEST", message: CLOSED_JOB_MESSAGE });
         }
-        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock);
+        const useCase = new SetVisitStatusUseCase(repo, ctx.deps.bus, ctx.deps.clock, new DrizzleCostRateReader(ctx.tx, ctx.principal.orgId));
         const job = orThrow(
           await useCase.exec({ jobId, visitId, status: input.status }),
         );

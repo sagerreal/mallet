@@ -27,6 +27,7 @@ const toVisit = (row: JobVisitRow): JobVisit => {
     enrouteAt: row.enrouteAt ?? null,
     startedAt: row.startedAt ?? null,
     completedAt: row.completedAt ?? null,
+    costRateCents: row.costRateCents ?? null,
     notes: row.notes ?? null,
     position: row.position,
   });
