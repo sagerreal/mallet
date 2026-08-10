@@ -7,7 +7,18 @@ import type {
   Result,
   ValidationError,
 } from "@mallet/shared/types";
-import { money, zeroMoney, addMoney, validation, ok, err } from "@mallet/shared/types";
+import type { PricingRates, PricedTotals } from "@mallet/shared/types";
+import {
+  money,
+  zeroMoney,
+  addMoney,
+  validation,
+  ok,
+  err,
+  deriveTotals,
+  ZERO_RATES,
+  BPS_DENOMINATOR,
+} from "@mallet/shared/types";
 import type { SignatureDraft, SignedSnapshot } from "./signature";
 import { createSignature } from "./signature";
 import { authorizationText } from "./authorization-text";
@@ -55,17 +66,8 @@ export interface TierNames {
 }
 
 // One tier's full money derivation — produced by the SAME rounding chain as the
-// estimate-level totals (totalsFrom), never a parallel implementation.
-export interface TierTotals {
-  readonly subtotal: Money;
-  readonly discount: Money;
-  readonly net: Money;
-  readonly tax: Money;
-  readonly total: Money;
-  readonly depositDue: Money;
-}
-
-const BPS_DENOMINATOR = 10_000; // basis points: 10000 bps = 100%
+// estimate-level totals (deriveTotals), never a parallel implementation.
+export type TierTotals = PricedTotals;
 
 export interface EstimateLineProps {
   readonly id: EstimateLineId;
@@ -337,22 +339,17 @@ export class Estimate {
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 
+  /** This estimate's three rates, as the shared chain takes them. */
+  rates(): PricingRates {
+    return { discBps: this.p.discBps, taxBps: this.p.taxBps, depBps: this.p.depBps };
+  }
+
   // THE rounding chain: discount on the subtotal, tax on the discounted taxable base, deposit
-  // on the total — each step rounded to whole cents. Every total (estimate-level or per-tier)
-  // runs through here so there is exactly one money implementation.
+  // on the total — each step rounded to whole cents. Delegated to deriveTotals so the quote, the
+  // on-glass signature snapshot and the invoice cannot drift into three different answers; the
+  // order and the rounding are documented there.
   private totalsFrom(subtotal: Money, taxableBase: Money): TierTotals {
-    const discount = money(Math.round((subtotal * this.p.discBps) / BPS_DENOMINATOR));
-    const net = money(subtotal - discount);
-    // The discount comes off the taxable base at the same rate it comes off the bill. Charging
-    // tax on the undiscounted base would tax money the customer never paid; the two divide by
-    // the same denominator and round the same way, so on an all-taxable document
-    // taxableNet === net and the tax is bit-for-bit what it was before taxability existed.
-    const taxableDiscount = money(Math.round((taxableBase * this.p.discBps) / BPS_DENOMINATOR));
-    const taxableNet = money(taxableBase - taxableDiscount);
-    const tax = money(Math.round((taxableNet * this.p.taxBps) / BPS_DENOMINATOR));
-    const total = money(net + tax);
-    const depositDue = money(Math.round((total * this.p.depBps) / BPS_DENOMINATOR));
-    return { subtotal, discount, net, tax, total, depositDue };
+    return deriveTotals(subtotal, taxableBase, this.rates());
   }
 
   // A line set's full derivation. The ONE place subtotal and taxable base are paired, so a
@@ -579,8 +576,15 @@ export class Estimate {
    * state, and `origin: "field"` says so honestly. sentAt is stamped too: presenting the tablet IS
    * the presentation, and downstream reads treat sentAt as "when the customer first saw it".
    *
-   * No discount/tax/deposit percentages — the on-site price is the flat number the customer signed
-   * (identical to the job-line snapshot), not a derivation they never saw.
+   * `rates` carries the discount, tax and deposit the TECH set at the door, and defaults to none.
+   * It used to be hard-coded to zero, which meant a technician standing in a customer's kitchen
+   * could not knock anything off, could not charge the sales tax his shop is legally collecting,
+   * and could not ask for a deposit — all three of which the office composer has always had. The
+   * default keeps every field sale taken before this shipped reading exactly as it did: no rates,
+   * so total === subtotal, bit-for-bit.
+   *
+   * Whatever is passed here is what the customer signs: `withOnSiteSignature` freezes the snapshot
+   * from THIS estimate, so the authorised figure is the tax-inclusive total these rates produce.
    */
   static sellOnSite(args: {
     readonly id: EstimateId;
@@ -602,7 +606,10 @@ export class Estimate {
      * into the job's authorised amount.
      */
     readonly changeOrderForJobId?: string | null;
+    /** Discount / tax / deposit agreed at the door. Absent means none — see the doc above. */
+    readonly rates?: PricingRates;
   }): Result<Estimate, ValidationError> {
+    const rates = args.rates ?? ZERO_RATES;
     const base = Estimate.create({
       id: args.id,
       orgId: args.orgId,
@@ -611,9 +618,9 @@ export class Estimate {
       title: args.title,
       status: "accepted",
       origin: "field",
-      discBps: 0,
-      taxBps: 0,
-      depBps: 0,
+      discBps: rates.discBps,
+      taxBps: rates.taxBps,
+      depBps: rates.depBps,
       depPaid: zeroMoney,
       validDays: null,
       sentAt: args.now,
@@ -644,12 +651,18 @@ export class Estimate {
    * price on the same job. The estimate is REPLACED, not duplicated: one job, one field quote,
    * whatever was signed last. Refused on office-born estimates (their signed evidence is frozen —
    * a re-priced office sale must not rewrite the document the customer originally signed).
+   *
+   * `rates` REPLACES the previous ones rather than merging with them: a re-sign is the customer
+   * agreeing to a whole new document, and a discount the tech deliberately removed must not
+   * survive because the second call happened to omit it. Absent falls back to what is on the
+   * estimate — the shape a caller that has not been taught about rates yet still means.
    */
   resignOnSite(
     lines: readonly EstimateLine[],
     signature: SignatureDraft,
     orgName: string,
     now: Date,
+    rates?: PricingRates,
   ): Result<Estimate, ValidationError> {
     if (this.origin() !== "field") {
       return err(validation("only a field-born estimate can be re-signed on site", "origin"));
@@ -657,7 +670,16 @@ export class Estimate {
     if (this.p.status !== "accepted") {
       return err(validation("only an accepted field estimate can be re-signed", "status"));
     }
-    const replaced = Estimate.create({ ...this.p, lines, acceptedAt: now, updatedAt: now });
+    const next = rates ?? this.rates();
+    const replaced = Estimate.create({
+      ...this.p,
+      lines,
+      discBps: next.discBps,
+      taxBps: next.taxBps,
+      depBps: next.depBps,
+      acceptedAt: now,
+      updatedAt: now,
+    });
     if (!replaced.ok) return replaced;
     return replaced.value.withOnSiteSignature(signature, orgName, now);
   }
