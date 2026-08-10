@@ -112,11 +112,13 @@ const fieldSignQuoteInput = z.object({
    * are all computed server-side from these rates and the line set, so a tablet cannot show one
    * figure and store another.
    *
-   * Tax is unbounded above (rates vary by jurisdiction and Mallet is national); discount and
-   * deposit are capped at 100% because either one above that inverts the bill.
+   * Discount and deposit are capped at 100% because either one above that inverts the bill. Tax
+   * is capped at 2500 bps for the SAME reason the office setting is (updateConfigInput): no US
+   * state, county and city combination reaches half of 25%, so a larger number is a typed "825"
+   * that lost its decimal point. One cap, one rationale, both surfaces.
    */
   discBps: z.number().int().min(0).max(10_000).default(0),
-  taxBps: z.number().int().min(0).max(100_000).default(0),
+  taxBps: z.number().int().min(0).max(2_500).default(0),
   depBps: z.number().int().min(0).max(10_000).default(0),
 });
 

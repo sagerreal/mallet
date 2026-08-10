@@ -395,12 +395,22 @@ export interface JobsSlice {
    * Resolves { ok, error } and never rejects; `error` carries the server's own sentence so a
    * refusal ("type the customer's name to sign") reaches the tech instead of a generic retry.
    */
+  /**
+   * The FIELD money+signature write. Rates ride in BASIS POINTS, like every other wire field on
+   * this action (rateCents is cents, not dollars): this is the transport shape, and the surface
+   * that owns the percent inputs converts at its own edge — the same seam the office composer
+   * converts at.
+   */
   signJobQuote: (
     jobId: string,
     input: {
       lines: { description: string; quantity: number; rateCents: number; costCents: number }[];
       signerName: string;
       signatureSvg?: string;
+      /** Discount / sales tax / deposit set at the door, in bps. Omitted reads as none. */
+      discBps?: number;
+      taxBps?: number;
+      depBps?: number;
     },
   ) => Promise<{ ok: boolean; error?: string }>;
   addVisit: (jobId: string, dur?: number) => Visit | null;
@@ -925,8 +935,19 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: optimistic } : j)) }));
     _recentLineWrites.set(jobId, Date.now());
 
+    // Rebuilt field by field rather than spread, so an optional that is absent stays absent on the
+    // wire (the router defaults it) instead of arriving as an explicit undefined.
+    const wire = {
+      jobId,
+      lines: input.lines,
+      signerName: input.signerName,
+      ...(input.signatureSvg ? { signatureSvg: input.signatureSvg } : {}),
+      ...(input.discBps ? { discBps: input.discBps } : {}),
+      ...(input.taxBps ? { taxBps: input.taxBps } : {}),
+      ...(input.depBps ? { depBps: input.depBps } : {}),
+    };
     return trpcVanilla.v1.field.signQuote
-      .mutate(input.signatureSvg ? { jobId, ...input } : { jobId, lines: input.lines, signerName: input.signerName })
+      .mutate(wire)
       .then((dto) => {
         _recentLineWrites.set(jobId, Date.now());
         set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));

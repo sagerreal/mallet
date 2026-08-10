@@ -111,6 +111,28 @@ export const fieldTogglesDTO = z.object({
  * Anything added here becomes readable by every technician in the org. Keep it to facts that
  * appear on a customer document — never prices, credentials, or office configuration.
  */
+/**
+ * The shop's DEFAULT sales-tax rate, for the field quote builder — `anyRole`, one integer wide.
+ *
+ * Same bar as the two DTOs above and a third reason for existing. `settingsDTO` is owner/office
+ * only, and the office composer seeds a new quote's Tax % from `config.taxBps` by reading it. The
+ * field builder is the SAME document born on a technician's phone, so without this read a tech
+ * quoting at a door either charged no tax at all or had to know his own state's rate by heart and
+ * type it — and one typo becomes a figure a customer signs.
+ *
+ * It is org CONFIGURATION rather than a capability flag, which is why it does not join
+ * fieldTogglesDTO: that contract says capability flags only, and widening it here would make the
+ * next person's judgement call harder rather than easier. It is not a price and not a credential —
+ * a sales-tax rate is a public statutory figure that is already printed, itemised, on every
+ * invoice the technician hands the customer.
+ *
+ * Anything added here becomes readable by every technician in the org. Keep it to figures a
+ * technician must have in hand to price a job correctly at a door.
+ */
+export const fieldPricingDefaultsDTO = z.object({
+  taxBps: z.number().int().min(0),
+});
+
 export const businessIdentityDTO = z.object({
   name: z.string(),
   address: z.string().nullable(),
