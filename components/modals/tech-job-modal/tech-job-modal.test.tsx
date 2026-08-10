@@ -342,13 +342,16 @@ describe("TechJobModalContent — tech", () => {
       }),
     ];
     render(<TechJobModalContent />);
-    // Both visits are on the sheet (useful context — "my stop is the second one today"), but
-    // there is exactly one foot and it moves v1, the tech's own. The two steppers are NUMBERED —
-    // two lists both announcing "Visit progress" left a screen-reader user unable to tell which
-    // stop was which, the same defect the visible "Visit 1 of 2" caption fixes.
+    // Both visits are on the sheet (useful context — "my stop is the second one today"), but only
+    // the tech's OWN one draws a stepper: one bar, on the stop this sheet is about. The
+    // colleague's is a summary line whose record opens on demand, and the steppers stay NUMBERED
+    // so a screen-reader user can tell which stop a bar belongs to.
     expect(screen.getByRole("list", { name: "Visit 1 progress" })).toBeTruthy();
-    expect(screen.getByRole("list", { name: "Visit 2 progress" })).toBeTruthy();
+    expect(screen.queryByRole("list", { name: "Visit 2 progress" })).toBeNull();
     expect(screen.getByText("Visit 1 of 2")).toBeTruthy();
+    // …and it is one tap away, not gone.
+    fireEvent.click(screen.getAllByText("Details")[0]!);
+    expect(screen.getByRole("list", { name: "Visit 2 progress" })).toBeTruthy();
     fireEvent.click(screen.getByText("Start driving →"));
     expect(mockSetVisitStatus).toHaveBeenCalledWith("job-1", "v1", "enroute", "field");
   });
@@ -718,8 +721,8 @@ describe("TechJobModalContent — visit stepper", () => {
       // A live node says what tapping it does rather than only that it has not happened.
       "On the way, not yet — tap to move the visit heretap to record",
       "On site, not yet — tap to move the visit heretap to record",
-      // Done is a readout, so it never carries the "tap to record" affordance line.
-      "Done, not yet",
+      // Done is a forward jump like the two before it, so it carries the same affordance line.
+      "Done, not yet — tap to move the visit heretap to record",
     ]);
     expect(nodes[0]?.getAttribute("aria-current")).toBe("step");
   });
@@ -750,6 +753,10 @@ describe("TechJobModalContent — visit stepper", () => {
       }),
     ];
     render(<TechJobModalContent />);
+    // A finished job has no stop in progress, so the bar is behind the row's own summary —
+    // the record is kept, it is just not the top of the sheet any more.
+    expect(screen.queryAllByText("skipped")).toHaveLength(0);
+    fireEvent.click(screen.getByText("Details"));
     expect(screen.getAllByText("skipped")).toHaveLength(2);
   });
 });

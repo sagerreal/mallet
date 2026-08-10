@@ -122,7 +122,37 @@ describe("SchedulePanel — the two-step is on the card you actually see", () =>
   it("names the tap-then-tap path on a single-unplaced-visit card", () => {
     withTrayCard();
     render(<SchedulePanel />);
-    expect(screen.getByText(/Tap a visit, then a crew & time/)).toBeTruthy();
+    expect(screen.getByText(/Tap this card, then a crew & time/)).toBeTruthy();
+  });
+
+  /**
+   * THE CARD ITSELF PICKS THE JOB UP. It used to open the job record, so the only way to arm was
+   * the "Place on board" button — and arming is what compacts the tray. Until you found that
+   * button the tray held 44vh and the board 62vh, which is more than one screen.
+   */
+  it("tapping the card arms the visit and gives the board its height back", () => {
+    withTrayCard();
+    const { container } = render(<SchedulePanel />);
+    expect(container.querySelector(".tray-grid.compact")).toBeNull();
+
+    fireEvent.click(screen.getByText("Water heater"));
+
+    expect(container.querySelector(".tray-grid.compact")).toBeTruthy();
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("keeps the record one tap away, on the customer's name", () => {
+    withTrayCard();
+    // The name is what opens the record, so this case needs a customer to name.
+    storeState = store(
+      [{ id: "j1", leadId: "l1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 2 }] }],
+      [{ id: "l1", name: "Dana Alvarez" }],
+    );
+    render(<SchedulePanel />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Dana Alvarez" }));
+
+    expect(openModal).toHaveBeenCalledWith("job", { jobId: "j1" });
   });
 
   it("labels the button with what it does, not a bare verb", () => {

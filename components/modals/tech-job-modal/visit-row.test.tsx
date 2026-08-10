@@ -27,7 +27,8 @@ const visit = (over: Partial<Visit> = {}): Visit => ({
 });
 
 const row = (v: Visit, seq?: { n: number; of: number }) =>
-  render(<VisitRow visit={v} seq={seq} canReopen={false} canStep={false} onStatus={vi.fn()} />);
+  render(<VisitRow visit={v} seq={seq} canReopen={false} canStep={false}
+      isCurrent onStatus={vi.fn()} />);
 
 describe("VisitRow — the one big figure", () => {
   it("leads with the appointment before the visit has started", () => {

@@ -5,13 +5,16 @@
  * Four nodes: Scheduled → On the way → On site → Done. Every node is a READOUT of what was
  * recorded; a node still AHEAD of the visit is additionally a forward jump (`jumpTo`).
  *
- * DONE IS A READOUT AND NOTHING ELSE. It stopped at "On site" until Aug 2026, and a finished visit
- * that skipped the middle two then rendered pixel-identically to a scheduled one — the only thing
- * on the sheet saying it had ended was the office's ↩ Reopen, which reads as a contradiction
- * rather than as a control. Finishing is a recorded event with a real stamp, so it belongs on the
- * line. It is deliberately NOT a forward jump: the foot already carries Finish as a full-width
- * primary that is always one tap (tech-job-foot.ts, rule 2), and a second finish on a
- * third-of-the-sheet node would be the smaller, worse one.
+ * DONE IS A NODE LIKE THE OTHERS — a readout AND, from ahead, a forward jump. It stopped at "On
+ * site" until Aug 2026, and a finished visit that skipped the middle two then rendered
+ * pixel-identically to a scheduled one; the only thing saying it had ended was the office's
+ * ↩ Reopen, which reads as a contradiction rather than a control.
+ *
+ * It shipped non-tappable for one day, on the reasoning that the foot already carries Finish as a
+ * full-width primary. Owen's answer, from the truck: three dots respond and the fourth does not,
+ * which reads as broken rather than as restraint — and the dots are how you say where you are.
+ * The foot keeps its primary; this is the same move by the other hand, exactly as On the way and
+ * On site already are.
  *
  * FORWARD ONLY, AND ONLY AHEAD. A technician who forgot to tap "Start driving" is already on the
  * customer's doorstep, and the foot's ladder offered "I've arrived →" only once the visit was
@@ -81,8 +84,7 @@ const JUMP_TO: Record<VisitStep["key"], string | null> = {
   scheduled: null,
   enroute: STORE_VISIT_STATUS.ENROUTE,
   onsite: STORE_VISIT_STATUS.ONSITE,
-  // Not a jump — see the Done note in the file header. The foot owns finishing.
-  done: null,
+  done: STORE_VISIT_STATUS.DONE,
 };
 
 /**

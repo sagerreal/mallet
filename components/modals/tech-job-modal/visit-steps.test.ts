@@ -36,8 +36,7 @@ describe("visitSteps", () => {
       { key: "scheduled", label: "Scheduled", state: "current", time: null, jumpTo: null },
       { key: "enroute", label: "On the way", state: "pending", time: null, jumpTo: "enroute" },
       { key: "onsite", label: "On site", state: "pending", time: null, jumpTo: "onsite" },
-      // Done is a readout, never a jump — the foot owns finishing.
-      { key: "done", label: "Done", state: "pending", time: null, jumpTo: null },
+      { key: "done", label: "Done", state: "pending", time: null, jumpTo: "done" },
     ]);
   });
 
@@ -93,19 +92,20 @@ describe("visitSteps", () => {
 describe("visitSteps — forward jumps", () => {
   it("from scheduled, BOTH steps ahead are jumpable — including skipping straight to On site", () => {
     const steps = visitSteps(visit());
-    expect(steps.map((s) => s.jumpTo)).toEqual([null, "enroute", "onsite", null]);
+    expect(steps.map((s) => s.jumpTo)).toEqual([null, "enroute", "onsite", "done"]);
   });
 
   it("from enroute, only On site is left to jump to", () => {
     const steps = visitSteps(visit({ status: "enroute", enrouteAt: at(14, 41) }));
-    expect(steps.map((s) => s.jumpTo)).toEqual([null, null, "onsite", null]);
+    expect(steps.map((s) => s.jumpTo)).toEqual([null, null, "onsite", "done"]);
   });
 
   // Backwards is not "refused", it is absent: the office's ↩ Reopen is the only way back, because
   // un-finishing a visit rewrites hours somebody may already have been paid for.
-  it("on site: nothing is jumpable — every remaining node would be a step BACKWARDS", () => {
+  it("on site: only Done is left ahead — everything behind is a step BACKWARDS", () => {
     const steps = visitSteps(visit({ status: "onsite", enrouteAt: at(14, 41), startedAt: at(14, 58) }));
-    expect(steps.every((s) => s.jumpTo === null)).toBe(true);
+    // Was "nothing is jumpable", which was true only while On site was the last node.
+    expect(steps.map((s) => s.jumpTo)).toEqual([null, null, null, "done"]);
   });
 
   it("done: nothing is jumpable, skipped nodes included", () => {
@@ -157,13 +157,13 @@ describe("visitSteps — the Done node", () => {
     expect(done.time).toBe("1:47p");
   });
 
-  it("an unfinished visit shows Done as pending, and it is NOT tappable", () => {
+  it("an unfinished visit shows Done as pending, and it IS tappable from anywhere ahead", () => {
     for (const status of ["scheduled", "enroute", "onsite"] as const) {
       const done = visitSteps(visit({ status }))[3]!;
       expect(done.state).toBe("pending");
-      // Finishing is the FOOT's job — one full-width target, always one tap (tech-job-foot.ts).
-      // A second finish on a third-of-the-sheet node would be the smaller, worse one.
-      expect(done.jumpTo).toBeNull();
+      // Three dots responding and a fourth that does not reads as broken, not as restraint.
+      // The foot keeps its primary; this is the same move by the other hand.
+      expect(done.jumpTo).toBe("done");
     }
   });
 

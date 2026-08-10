@@ -46,9 +46,11 @@ describe("VisitStepper — forward jumps", () => {
     expect(onJump).toHaveBeenCalledWith("enroute");
   });
 
-  it("from enroute only On site is live — Scheduled is behind the visit", () => {
+  it("from enroute, On site AND Done are live — Scheduled is behind the visit", () => {
     render(<VisitStepper visit={visit({ status: "enroute", enrouteAt: "2026-08-04T18:41:00Z" })} onJump={vi.fn()} />);
-    expect(buttonLabels()).toEqual(["On site"]);
+    // Done is the fourth node and a forward jump like the others: three dots responding and a
+    // fourth that does not reads as broken. The foot keeps its own Finish primary.
+    expect(buttonLabels()).toEqual(["On site", "Done"]);
   });
 
   // Backwards is not refused, it is absent. Un-finishing a visit rewrites hours somebody may
