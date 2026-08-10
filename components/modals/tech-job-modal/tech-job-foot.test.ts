@@ -176,8 +176,16 @@ describe("footActions — a done job settles", () => {
 // The invariant, stated once over every state this sheet can be in.
 describe("footActions — the invariants", () => {
   const states: Visit["status"][] = ["scheduled", "enroute", "onsite", "done"];
+  /**
+   * The states a visit can still be MOVED from — which is what "Finish" moves it to. `done` is
+   * not one of them and never was; it sat in the loop below only because nobody had asked, and
+   * the assertion it satisfied ("a done visit is offered Finish") was the live-testing bug: the
+   * tap wrote `done` onto a done visit, so the button took the tap and changed nothing.
+   * Invariant 4 still covers every status — see the primary test above, which keeps the full set.
+   */
+  const movableStates = states.filter((s) => s !== "done");
 
-  it("always offers a primary", () => {
+  it("always offers a primary — in every visit state, including a finished one", () => {
     for (const status of states) {
       const foot = footActions(facts({ actVisit: visit({ status }) }), handlers());
       expect(foot.primary.label).toBeTruthy();
@@ -186,7 +194,7 @@ describe("footActions — the invariants", () => {
   });
 
   it("on an open job with a movable visit, Finish is always exactly one tap away", () => {
-    for (const status of states) {
+    for (const status of movableStates) {
       const on = handlers();
       const foot = footActions(facts({ actVisit: visit({ id: "v9", status }) }), on);
       const finish = foot.primary.label.startsWith("Finish") ? foot.primary : foot.quiet;
@@ -272,5 +280,41 @@ describe("footActions — a job with more than one visit", () => {
     );
 
     expect(foot.primary.label).toBe("Finish visit →");
+  });
+});
+
+describe("footActions — a visit that has already finished", () => {
+  /**
+   * The live-testing bug. Stop 1 ran and is done; stop 2 is the return trip booked from the field
+   * and has no slot yet, so the JOB is still open and `done` is false. The foot used to hand that
+   * finished visit a "Finish visit →" whose tap wrote `done` onto a visit that was already done:
+   * the write succeeded, changed nothing, and the sheet re-rendered identically. A live-looking
+   * button that takes the tap and does nothing is exactly what this file exists to prevent.
+   */
+  const finishedFirstStop = () =>
+    facts({
+      job: job({
+        visits: [
+          visit({ id: "v1", status: "done" }),
+          visit({ id: "v2", status: "scheduled", date: undefined, start: undefined, techId: undefined }),
+        ],
+      }),
+      actVisit: visit({ id: "v1", status: "done" }),
+    });
+
+  it("offers no Finish — there is nothing left to finish on it", () => {
+    const foot = footActions(finishedFirstStop(), handlers());
+
+    expect(foot.primary.label).not.toBe("Finish visit →");
+    expect(foot.quiet).toBeNull();
+  });
+
+  it("keeps a primary (invariant 4) and it does not re-write the status it already has", () => {
+    const on = handlers();
+    const foot = footActions(finishedFirstStop(), on);
+
+    expect(foot.primary.label).toBe("Done");
+    foot.primary.run();
+    expect(on.calls).toEqual(["dismiss"]);
   });
 });

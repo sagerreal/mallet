@@ -1562,3 +1562,82 @@ describe("opening close-out from the done hero", () => {
     });
   });
 });
+
+/**
+ * THE SHEET MUST SURVIVE ITS JOB LEAVING THE STORE.
+ *
+ * Both hydrators call `setJobs`, which REPLACES the collection — so a job dropping out of the
+ * store while its sheet is open is an ordinary event: a myDay refetch on window focus once the
+ * visit is finished, a scoped read, a page boundary. The sheet's `job` is a by-id selector, so it
+ * simply goes undefined and the guarded `return null` takes over.
+ *
+ * That was fine until a `useCallback` was declared BELOW the guard. Then the two paths ran a
+ * different NUMBER of hooks, React threw "Rendered fewer hooks than expected" and discarded the
+ * tree — which on a phone is the sheet blinking out and rebuilding itself, and the tap that
+ * triggered the refetch looking like it did nothing.
+ */
+describe("TechJobModalContent — the job disappears from the store", () => {
+  it("renders null instead of crashing when a snapshot drops the open job", () => {
+    const { rerender } = render(<TechJobModalContent />);
+    expect(screen.getByText("Start driving →")).toBeTruthy();
+
+    mockJobs = [];
+
+    expect(() => rerender(<TechJobModalContent />)).not.toThrow();
+    expect(screen.queryByText("Start driving →")).toBeNull();
+  });
+
+  it("comes back when the next snapshot carries it again", () => {
+    const { rerender } = render(<TechJobModalContent />);
+    mockJobs = [];
+    rerender(<TechJobModalContent />);
+
+    mockJobs = [makeJob()];
+
+    expect(() => rerender(<TechJobModalContent />)).not.toThrow();
+    expect(screen.getByText("Start driving →")).toBeTruthy();
+  });
+});
+
+/**
+ * The second live-testing bug on this sheet: stop 1 is finished, stop 2 is the return trip booked
+ * from the field with no slot yet, so the JOB is still open. The foot handed that finished visit a
+ * "Finish visit →" whose tap re-wrote the status it already had — the button took the tap, the
+ * write changed nothing, and the sheet re-rendered identically.
+ */
+describe("TechJobModalContent — a finished stop on a still-open job", () => {
+  const FINISHED_FIRST_STOP = () =>
+    makeJob({
+      status: "scheduled",
+      visits: [
+        { id: "v1", date: "2026-07-12", techId: "tech-1", start: 12, dur: 1.5, status: "done" },
+        { id: "v2", date: null, techId: null, start: null, dur: 1, status: "scheduled" },
+      ] as unknown as Job["visits"],
+    });
+
+  it("offers no Finish on the stop that already ended", () => {
+    mockJobs = [FINISHED_FIRST_STOP()];
+    render(<TechJobModalContent />);
+
+    expect(screen.queryByText("Finish visit →")).toBeNull();
+    expect(screen.queryByText("Finish job →")).toBeNull();
+  });
+
+  it("never re-writes done onto a done visit", () => {
+    mockJobs = [FINISHED_FIRST_STOP()];
+    render(<TechJobModalContent />);
+
+    const foot = screen.getByText("Done", { selector: "button.sheet-pri" });
+    fireEvent.click(foot);
+
+    expect(mockSetVisitStatus).not.toHaveBeenCalled();
+    expect(mockCloseModal).toHaveBeenCalled();
+  });
+
+  it("still offers the office its ↩ Reopen on that stop", () => {
+    mockJobs = [FINISHED_FIRST_STOP()];
+    render(<TechJobModalContent />);
+
+    expect(screen.getByText("↩ Reopen")).toBeTruthy();
+  });
+});
