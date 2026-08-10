@@ -61,8 +61,10 @@ export interface SendMessageCmd {
 //   • A duplicate of an IN-FLIGHT send (a concurrent request) is deduped the same way: the second
 //     claim sees a queued row and returns it without calling Twilio.
 //   • A FAILED send deliberately leaves the key reusable. Nothing reached the customer, and the
-//     board's keys are deterministic ("<okItemKey>-fu<stage>"), so a burnt key would strand that
-//     follow-up permanently. The claim reclaims the same row and sends again.
+//     board's keys are deterministic ("<okItemKey>-d<YYYYMMDD>" — the record plus the shop's own
+//     day, see features/home/send.ts okSendKey), so a burnt key would strand that reminder for the
+//     REST OF THE DAY: the salt turns over at midnight, so the office could not retry until
+//     tomorrow. The claim reclaims the same row and sends again.
 //   • An UNKNOWN outcome is the accepted gap. Twilio can accept a message and still fail us — a
 //     10s timeout, a 5xx, an open breaker — and that request rolls back (the orgTx middleware
 //     re-throws inside the tx), releasing the key. A user who then retries manually can produce a

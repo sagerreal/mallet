@@ -317,6 +317,34 @@ describe("WorkBoard — the undo window", () => {
     expect(sendButton()).toBeTruthy();
   });
 
+  it("flushes the pending drop when the board unmounts mid-window — the send stands", () => {
+    const { unmount } = render(<WorkBoard data={boardWithDraft} firstRun={false} onOpen={vi.fn()} ctx={{}} />);
+    fireEvent.click(sendButton());
+    expect(spies.dismiss).not.toHaveBeenCalled();
+
+    unmount();
+
+    // Cancelling here would leave the item in the queue: the card would come back reading
+    // "Reminder due" with a live Send over a text the customer already has, and that stale
+    // reminder would re-enter the Counter's money run. The text went; the dismissal is owed.
+    expect(spies.dismiss).toHaveBeenCalledWith("okq-e1");
+    // Flushed, not rolled back — nobody un-sends a text because a route changed.
+    expect(spies.undo).not.toHaveBeenCalled();
+  });
+
+  it("undo before unmount still cancels it — there is nothing left to flush", () => {
+    const { unmount } = render(<WorkBoard data={boardWithDraft} firstRun={false} onOpen={vi.fn()} ctx={{}} />);
+    fireEvent.click(sendButton());
+    fireEvent.click(screen.getByRole("button", { name: /undo/i }));
+
+    unmount();
+
+    expect(spies.undo).toHaveBeenCalledTimes(1);
+    expect(spies.dismiss).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(UNDO_WINDOW_MS * 2));
+    expect(spies.dismiss).not.toHaveBeenCalled();
+  });
+
   it("counts the window down out loud", () => {
     render(<WorkBoard data={boardWithDraft} firstRun={false} onOpen={vi.fn()} ctx={{}} />);
     fireEvent.click(sendButton());

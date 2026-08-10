@@ -274,8 +274,10 @@ describe("SendMessageUseCase", () => {
   });
 
   it("a failed claim is reclaimable — the same key sends again, on the same row", async () => {
-    // Deterministic follow-up keys ("<okItemKey>-fu<stage>") must survive a carrier rejection: if
-    // a failure burnt the key, that follow-up could never be sent at all.
+    // Deterministic day keys ("<okItemKey>-d<YYYYMMDD>") must survive a carrier rejection: if a
+    // failure burnt the key, that reminder could not be sent again until the salt turned over at
+    // midnight. The literal below predates the date salt; the behaviour under test is the key
+    // being reclaimable, whatever shape the caller's token has.
     const transport: SmsTransport = vi
       .fn()
       .mockRejectedValueOnce(Object.assign(new Error("twilio rejection"), { status: 400, code: 21211 }))

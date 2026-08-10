@@ -63,9 +63,11 @@ const sendInput = z.object({
   // editable number). Validated server-side via Phone.parse; falls back to the lead's
   // on-file phone when absent.
   to: z.string().min(7).max(25).optional(),
-  // Caller-supplied dedupe token (the board sends "<okItemKey>-fu<stage>"). Two sends carrying
-  // the same key produce ONE text; the second returns the first one's message. Absent, every
-  // send goes out — an ad-hoc text from the inbox is never deduped against an earlier one.
+  // Caller-supplied dedupe token (the board sends "<okItemKey>-d<YYYYMMDD>" — the record plus the
+  // shop's own day, see features/home/send.ts okSendKey). Two sends carrying the same key produce
+  // ONE text; the second returns the first one's message. The date salt is what keeps a legitimate
+  // reminder sendable TOMORROW while a double-click today still lands once. Absent, every send goes
+  // out — an ad-hoc text from the inbox is never deduped against an earlier one.
   idempotencyKey: z.string().min(8).max(64).optional(),
 });
 

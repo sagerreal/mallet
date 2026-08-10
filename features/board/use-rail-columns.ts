@@ -4,12 +4,18 @@ import { useMemo } from "react";
 import { api } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { dtoEstimateSummaryToStore } from "@/lib/store/dto-mapper";
-import { railRowsFor, wonRowsFor, deltaOf, type RailRow, type WonRow } from "@/features/quotes/derive";
+import { railRowsFor, deltaOf, type RailRow } from "@/features/quotes/derive";
 import { deriveGetting, type GettingRow } from "@/features/board/working";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 
 /**
- * The work board's Out and Won columns, fetched for those columns.
+ * The work board's Quoting and Out columns, fetched for those columns.
+ *
+ * WHAT IS NOT HERE ANY MORE. This hook also fetched ACCEPTED quotes and derived a `won` row list,
+ * for a Won column on `/pipeline`. That page is retired to a redirect, the board is the only
+ * consumer left, and it never read `won` — so every mount was paying for a 200-row read whose
+ * result nothing rendered. The board's own won FIGURE comes from the server's lead view counts
+ * (`customers.viewCounts` → `leads.won`, see use-work-board.ts), not from these rows.
  *
  * WHAT WAS WRONG. Both columns were built by taking the loaded quotes and looking each one's
  * customer up in the loaded customers. Both collections are capped at one page, so a quote whose
@@ -26,8 +32,8 @@ import { toStoreLead } from "@/features/customers/leads-hydrator";
  * archiveByLead), so the server does not return them — the filter now only removes rows whose
  * customer merely had not loaded, which is exactly the bug.
  *
- * NOT paginated. These are worklists — quotes a shop is chasing and deals it just won — and both
- * are capped with the cap reported rather than hidden.
+ * NOT paginated. These are worklists — the prices a shop is building and the quotes it is chasing
+ * — and both are capped with the cap reported rather than hidden.
  */
 
 /** Past this many, a column is a backlog rather than a worklist, and the header says so. */
@@ -41,12 +47,10 @@ export interface RailColumns {
   /** The Quoting column — customers with a price being built, chosen by the database. */
   readonly getting: GettingRow[];
   readonly out: RailRow[];
-  readonly won: WonRow[];
   /** Dollars sitting on customers' phones — the strip's headline figure. */
   readonly outSum: number;
   readonly outCount: number;
   readonly outTruncated: boolean;
-  readonly wonTruncated: boolean;
   /** The newest customer act, named — or null when nothing has happened worth saying. */
   readonly delta: string | null;
   readonly isFetched: boolean;
@@ -63,7 +67,7 @@ export interface RailColumns {
 
 export function useRailColumns(): RailColumns {
   // Leads and jobs are still read from the store, but only to ENRICH a row — the card's send
-  // actions want the full customer, and the Won card wants the job to offer "Pick the day".
+  // actions want the full customer, and a Quoting card shows how long the work has been sitting.
   // Neither is required for the row to exist any more, which is the whole point.
   const leads = useAppStore((s) => s.leads);
   const jobs = useAppStore((s) => s.jobs);
@@ -85,10 +89,6 @@ export function useRailColumns(): RailColumns {
     { status: "sent", limit: COLUMN_CAP },
     { refetchOnWindowFocus: true },
   );
-  const accepted = api.v1.quoting.list.useQuery(
-    { status: "accepted", limit: COLUMN_CAP },
-    { refetchOnWindowFocus: true },
-  );
 
   const getting = useMemo(() => {
     const leadRows = (quotingLeads.data?.items ?? []).map(toStoreLead);
@@ -102,7 +102,6 @@ export function useRailColumns(): RailColumns {
   }, [quotingLeads.data, drafts.data, jobs]);
 
   const sentItems = sent.data?.items;
-  const acceptedItems = accepted.data?.items;
 
   const out = useMemo(() => {
     const rows = (sentItems ?? []).map((dto) => ({
@@ -113,18 +112,9 @@ export function useRailColumns(): RailColumns {
     return railRowsFor(rows, leads);
   }, [sentItems, leads]);
 
-  const won = useMemo(() => {
-    const rows = (acceptedItems ?? []).map((dto) => ({
-      est: dtoEstimateSummaryToStore(dto, { on: false, stage: 0 }),
-      customerName: dto.customerName,
-    }));
-    return wonRowsFor(rows, leads, jobs);
-  }, [acceptedItems, leads, jobs]);
-
   return {
     getting,
     out,
-    won,
     // Summed from the rows this column is actually showing, so the headline figure and the cards
     // under it can never disagree. Totals come from the DTO — the domain computed them, and
     // re-deriving lines → discount → tax here would be the same money maths in a second place.
@@ -132,9 +122,8 @@ export function useRailColumns(): RailColumns {
     outCount: out.length,
     delta: deltaOf(out),
     outTruncated: (sentItems?.length ?? 0) >= COLUMN_CAP,
-    wonTruncated: (acceptedItems?.length ?? 0) >= COLUMN_CAP,
-    isFetched: sent.isFetched && accepted.isFetched && quotingLeads.isFetched && drafts.isFetched,
-    isError: sent.isError || accepted.isError || quotingLeads.isError || drafts.isError,
-    hasData: landed(sent, accepted, quotingLeads, drafts),
+    isFetched: sent.isFetched && quotingLeads.isFetched && drafts.isFetched,
+    isError: sent.isError || quotingLeads.isError || drafts.isError,
+    hasData: landed(sent, quotingLeads, drafts),
   };
 }

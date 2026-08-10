@@ -163,9 +163,11 @@ function TodayPane({ onFrontDesk }: { onFrontDesk: () => void }) {
   // ---- real identity — org name + owner's first name from the DB -----------
   const me = useMe();
   const orgName = me.data?.orgName ?? "My Business";
+  // Truthiness, not `??` — the same "blank is not a name" guard as nameOr in features/board/derive.
+  // A stored name of "" is a value, so `??` kept it and greeted the owner with "Welcome, .".
   const ownerFirst =
-    (me.data?.name?.split(" ")[0]) ??
-    (me.data?.email?.split("@")[0]) ??
+    me.data?.name?.trim().split(" ")[0] ||
+    me.data?.email?.split("@")[0] ||
     "there";
 
   const report = deriveShiftReport(leads, jobs, estimates);

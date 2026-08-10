@@ -6,10 +6,11 @@ import type { MessageDirection } from "./message";
 /**
  * An outbound send being CLAIMED before the provider is called.
  *
- * `idempotencyKey` is the caller's dedupe token (Task 6 sends `"<okItemKey>-fu<stage>"`); the
- * repository inserts on `(org_id, idempotency_key)` with ON CONFLICT DO NOTHING, so a second
- * claim on the same key can never become a second text. `id` comes from the injected id
- * generator (never the DB default) so the use case can settle the row without a re-read.
+ * `idempotencyKey` is the caller's dedupe token (the board sends `"<okItemKey>-d<YYYYMMDD>"` — the
+ * record plus the shop's own day, see `features/home/send.ts` okSendKey); the repository inserts on
+ * `(org_id, idempotency_key)` with ON CONFLICT DO NOTHING, so a second claim on the same key can
+ * never become a second text. `id` comes from the injected id generator (never the DB default) so
+ * the use case can settle the row without a re-read.
  */
 export interface ClaimOutboundCmd {
   readonly id: string;

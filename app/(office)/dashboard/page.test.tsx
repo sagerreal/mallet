@@ -39,7 +39,9 @@ vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(storeState),
   useOpenModal: () => openModal,
 }));
-vi.mock("@/features/identity/hooks", () => ({ useMe: () => ({ data: { orgName: "Rivera Plumbing", name: "Owen D", email: "o@x.com" } }) }));
+/** Mutable so a shop whose owner never filled in a name can be asserted, not assumed. */
+let meData: { orgName: string; name?: string; email?: string };
+vi.mock("@/features/identity/hooks", () => ({ useMe: () => ({ data: meData }) }));
 vi.mock("@/features/home/derive", () => ({ deriveShiftReport: () => ({}) }));
 // Kept as a stub, but one that reports its own gate: the testid says which branch the REAL
 // component would take, so "the hero is loading" is asserted rather than assumed.
@@ -75,6 +77,7 @@ import OfficePage from "./page";
 
 describe("Office page — one tab bar, four panes", () => {
   beforeEach(() => {
+    meData = { orgName: "Rivera Plumbing", name: "Owen D", email: "o@x.com" };
     storeState = {
       toggles: { frontDesk: true }, services: [{ id: "s1" }], checklists: [],
       leads: [], estimates: [], jobs: [],
@@ -180,6 +183,7 @@ describe("Office Today — the first-run setup brief", () => {
       toggles: { frontDesk: false }, services: [], checklists: [],
       leads: [], estimates: [], jobs: [],
     };
+    meData = { orgName: "Rivera Plumbing", name: "Owen D", email: "o@x.com" };
     boardState = { columns: columnsHolding(0), needsYou: { count: 0, valueDollars: 0, textsReady: 0 }, wonCount: 0, isFetched: true, isError: false };
     boardFirstRun = undefined;
     openModal.mockClear();
@@ -192,6 +196,20 @@ describe("Office Today — the first-run setup brief", () => {
     expect(screen.queryByTestId("handoff-loading")).toBeNull();
     expect(screen.getByRole("heading", { name: "Welcome, Owen." })).toBeTruthy();
     expect(screen.getByText(/board fills itself as work comes in/i)).toBeTruthy();
+  });
+
+  // A blank name is a VALUE, so `??` kept it and the very first screen of the product read
+  // "Welcome, ." — the brief greets a brand-new shop, which is exactly where the field is empty.
+  it("falls through a blank name to the email handle — never 'Welcome, .'", () => {
+    meData = { orgName: "Rivera Plumbing", name: "", email: "dana@riveraplumbing.com" };
+    render(<OfficePage />);
+    expect(screen.getByRole("heading", { name: "Welcome, dana." })).toBeTruthy();
+  });
+
+  it("falls all the way through to 'there' when there is no name and no email", () => {
+    meData = { orgName: "Rivera Plumbing", name: "   ", email: "" };
+    render(<OfficePage />);
+    expect(screen.getByRole("heading", { name: "Welcome, there." })).toBeTruthy();
   });
 
   it("keeps the board — it is the columns, drawn — and tells it that it is first-run", () => {

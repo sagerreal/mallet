@@ -686,7 +686,7 @@ With a fresh org (seed script's empty-org fixture if present; otherwise create v
 git commit -m "test: golden, visual and first-run coverage for the work board"
 ```
 
-PR body: link this plan + the mockup file; note the flag (`NEXT_PUBLIC_WORK_BOARD=0` kill switch), the two open decisions (top of this doc), and that `/pipeline` is intentionally untouched.
+PR body: link this plan + the mockup file; state that there is NO feature flag — the Today pane is hard-swapped and `HomePipe`/`OkQueue` are deleted in this same PR (Resolved decision 2) — and that `/pipeline` is RETIRED here: the route becomes a redirect stub to `/dashboard`, its nav entries go, and `features/pipeline/` is deleted once its reusable hooks have moved into `features/board/` (Resolved decision 1). Rollback is a revert, not a toggle.
 
 ---
 

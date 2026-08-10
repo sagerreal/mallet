@@ -32,6 +32,18 @@ interface SentEntry {
   expiresAt: number;
 }
 
+/**
+ * A dismissal waiting out its window: the timer to stop, and the key it owes the queue.
+ *
+ * The key is held HERE, next to the handle, and not read back off `entries` at the moment of
+ * flushing — unmount cleanup sees the state of the render it was created in, and a ledger entry
+ * recorded after that render would be invisible to it. The registry is imperative on purpose.
+ */
+interface PendingDismissal {
+  okKey: string;
+  timer: ReturnType<typeof setTimeout>;
+}
+
 /** What a card needs to draw the confirmation line. */
 export interface BoardSent {
   when: string;
@@ -70,8 +82,15 @@ const without = (entries: Record<string, SentEntry>, key: string): Record<string
 export function useBoardSends(): BoardSends {
   const dismissAttention = useAppStore((s) => s.dismissAttention);
   const [entries, setEntries] = useState<Record<string, SentEntry>>({});
-  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const pending = useRef<Record<string, PendingDismissal>>({});
   const [, tick] = useState(0);
+
+  // The unmount cleanup below runs once, with the closure of the FIRST render. It dismisses, so it
+  // needs the action as it stands at unmount rather than as it stood at mount.
+  const dismissRef = useRef(dismissAttention);
+  useEffect(() => {
+    dismissRef.current = dismissAttention;
+  }, [dismissAttention]);
 
   // One second tick while any window is open — the countdown has to actually count.
   const anyOpen = Object.keys(entries).length > 0;
@@ -81,20 +100,32 @@ export function useBoardSends(): BoardSends {
     return () => clearInterval(iv);
   }, [anyOpen]);
 
-  // A pending dismissal must not outlive the board: it would remove an item from a queue nobody
-  // is looking at, on a screen the owner has already left.
+  // Unmount inside an open window — the owner navigates away, or the pane is replaced — FLUSHES
+  // every pending dismissal instead of cancelling it.
+  //
+  // The send already happened. The click committed the text and put it on the wire; the only thing
+  // deferred to the end of the window was the card's MOVE. Cancelling would drop the move and leave
+  // the item in the OK queue, so the record comes back reading "Reminder due" with a live Send over
+  // a text the customer already has — and that stale reminder re-enters the Counter's money run.
+  //
+  // Undo is not a live option past this point either way: the ledger is component state, and the
+  // callback that would take the send back dies with the component. So the send stands, and the one
+  // consequence still owed — the dismissal — is paid here rather than dropped.
   useEffect(() => {
-    const pending = timers.current;
+    const live = pending.current;
     return () => {
-      for (const t of Object.values(pending)) clearTimeout(t);
+      for (const { okKey, timer } of Object.values(live)) {
+        clearTimeout(timer);
+        dismissRef.current(okKey);
+      }
     };
   }, []);
 
   const clearTimer = useCallback((itemKey: string) => {
-    const t = timers.current[itemKey];
-    if (!t) return;
-    clearTimeout(t);
-    delete timers.current[itemKey];
+    const p = pending.current[itemKey];
+    if (!p) return;
+    clearTimeout(p.timer);
+    delete pending.current[itemKey];
   }, []);
 
   const drop = useCallback(
@@ -111,12 +142,13 @@ export function useBoardSends(): BoardSends {
         ...prev,
         [itemKey]: { okKey, when: clockNow(), undo, expiresAt: Date.now() + UNDO_WINDOW_MS },
       }));
-      timers.current[itemKey] = setTimeout(() => {
+      const timer = setTimeout(() => {
         // The window closed and the send stands. NOW the item leaves the queue — which is what
         // moves the card, once, where the owner can see it happen.
         dismissAttention(okKey);
         drop(itemKey);
       }, UNDO_WINDOW_MS);
+      pending.current[itemKey] = { okKey, timer };
     },
     [dismissAttention, drop],
   );
