@@ -132,7 +132,10 @@ export function useJobsQuery(state: JobsQueryState) {
 
 /** The list's own filter/sort state, kept out of the component so it can be tested. */
 export function useJobsQueryState() {
-  const [view, setView] = useState<JobView | null>(null);
+  // "today" by default (Owen, Aug 11): a dispatcher opens Jobs to run the day. The old null
+  // default ("All", WHEN-ascending) opened on the whole book — undated work first, then the
+  // OLDEST dates, so today's jobs sat hundreds of rows deep behind anything stale.
+  const [view, setView] = useState<JobView | null>("today");
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<JobSort | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);

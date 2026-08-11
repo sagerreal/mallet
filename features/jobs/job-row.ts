@@ -10,7 +10,8 @@ import type { Job, Tech } from "@/lib/store/types";
 import type { BandKey } from "./today-derive";
 import { todayVisit } from "./today-derive";
 import { jobNextVisit, jobDatedUnassignedVisit, techById } from "./jobs-helpers";
-import { colLabel, timeLabelShort } from "@/lib/time";
+import { whenDateLabel, timeLabelShort } from "@/lib/time";
+import { todayISO } from "@/lib/clock";
 
 /** The right-hand "when" text: appointment time, the live on-site pill, done date,
  *  or (for an unscheduled sold job) how long it's been sold. */
@@ -31,8 +32,8 @@ export interface WhenLabel {
 function soldWhen(job: Job, leadAge: number): WhenLabel {
   const half = jobDatedUnassignedVisit(job);
   if (half?.date) {
-    const at = half.start != null ? ` ${timeLabelShort(half.start)}` : "";
-    return { label: `${colLabel(half.date)}${at} · no crew`, live: false };
+    const at = half.start != null ? ` · ${timeLabelShort(half.start)}` : "";
+    return { label: `${whenDateLabel(half.date, todayISO())}${at} · no crew`, live: false };
   }
   return { label: leadAge >= 1 ? `sold ${leadAge}d ago` : "sold today", live: false };
 }
@@ -40,17 +41,17 @@ function soldWhen(job: Job, leadAge: number): WhenLabel {
 function todayWhen(job: Job): WhenLabel {
   const tv = todayVisit(job);
   if (tv?.status === "onsite") return { label: "on site", live: true, onsiteAt: tv.onsiteAt ?? "now" };
-  return { label: tv ? timeLabelShort(tv.start ?? 0) : "", live: false };
+  return { label: tv ? `Today · ${timeLabelShort(tv.start ?? 0)}` : "", live: false };
 }
 
 function doneWhen(job: Job): WhenLabel {
   const dv = [...(job.visits ?? [])].reverse().find((x) => x.status === "done");
-  return { label: dv?.date ? `done ${colLabel(dv.date)}` : "done", live: false };
+  return { label: dv?.date ? `done ${whenDateLabel(dv.date, todayISO())}` : "done", live: false };
 }
 
 function scheduledWhen(job: Job): WhenLabel {
   const v = jobNextVisit(job);
-  return { label: v ? `${colLabel(v.date ?? "")} ${timeLabelShort(v.start ?? 0)}` : "", live: false };
+  return { label: v ? `${whenDateLabel(v.date ?? "", todayISO())} · ${timeLabelShort(v.start ?? 0)}` : "", live: false };
 }
 
 export function jobWhenLabel(bandKey: BandKey, job: Job, leadAge: number): WhenLabel {
