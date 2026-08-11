@@ -21,6 +21,12 @@
  *
  * The count and the total are computed over exactly the lines this section RENDERS, so the header
  * always adds up to what is beneath it.
+ *
+ * THE TOTAL IS THE BILLED TOTAL. When the job stores a discount or sales-tax rate (`job.pricing`
+ * — the same pair the price sheet edits), the plain Total row becomes the field builder's
+ * Subtotal → Discount → Sales tax → Total breakdown, derived through the one money chain
+ * (lib/store/job-pricing.ts). The raw line sum here once disagreed with the invoice by exactly
+ * the tax, on the sheet a technician reads out at the customer's door.
  */
 
 "use client";
@@ -28,7 +34,9 @@
 import { memo } from "react";
 import type { CSSProperties } from "react";
 import type { Job } from "@/lib/store/types";
-import { fmt$ } from "@/lib/format";
+import { fmt$, fmt$2 } from "@/lib/format";
+import { jobHasPricing, jobPricingRates, jobPricedTotals } from "@/lib/store/job-pricing";
+import { PriceBreakdown } from "@/components/modals/pricing/field-pricing";
 import { pricesHidden } from "./helpers";
 
 const SCOPE_HEAD: CSSProperties = {
@@ -66,6 +74,7 @@ export function workOrderPropsEqual(a: WorkOrderSecProps, b: WorkOrderSecProps):
   return (
     a.seesPrice === b.seesPrice &&
     a.job.lines === b.job.lines &&
+    a.job.pricing === b.job.pricing &&
     a.job.photos === b.job.photos &&
     // job.title is deliberately NOT compared: this section stopped rendering it when the heading
     // and the sheet header were found to be saying the same thing three inches apart. A stale
@@ -87,13 +96,22 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
   // disagree with the four numbers between them.
   const total = scope.reduce((sum, l) => sum + (l.q ?? 1) * (l.r ?? 0), 0);
   const items = `${scope.length} item${scope.length === 1 ? "" : "s"}`;
+  // The job's stored discount/tax — the same rates the price sheet edits, run through the ONE
+  // money chain the invoice bills. With either rate set, the plain Total row becomes the full
+  // Subtotal → Discount → Sales tax → Total derivation (the field builder's own breakdown), and
+  // the header carries the BILLED total: this section used to print the raw line sum while the
+  // invoice billed line sum + tax — two totals for the same job, read out at the door.
+  // Derived from the SAME `scope` lines the section renders, keeping the header honest.
+  const rates = jobPricingRates(job);
+  const priced = jobHasPricing(job);
+  const totals = jobPricedTotals({ lines: scope, pricing: job.pricing });
 
   return (
     <div className="fsec">
       <div className="fsec-h">
         <span>Work order</span>
         <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
-          {showMoney ? `${items} · ${fmt$(total)}` : items}
+          {showMoney ? `${items} · ${priced ? fmt$2(totals.total / 100) : fmt$(total)}` : items}
         </span>
       </div>
       {/* NO job title and NO "Scope — what was sold" subhead. The section head already says WORK
@@ -116,7 +134,10 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
               )}
             </div>
           ))}
-          {showMoney ? (
+          {showMoney && priced ? (
+            // A rate is stored → the full derivation, cent-precise, matching the bill.
+            <PriceBreakdown totals={totals} rates={rates} ruleColor="var(--line)" />
+          ) : showMoney ? (
             <div style={TOTAL_ROW}>
               <span style={{ flex: 1 }}>Total</span>
               <span className="fig">{fmt$(total)}</span>

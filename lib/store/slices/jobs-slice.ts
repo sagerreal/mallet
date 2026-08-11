@@ -147,6 +147,14 @@ const invalidateJobLists = (): void => invalidateLists("jobs", "invoices");
 // predates the adopting mutation's commit must not sweep the job out.
 const _recentAdoptions = new Map<string, number>();
 
+// Jobs whose v1.jobs.create has not settled, keyed by the client-authored id to the create's own
+// promise. The create→price flow opens the price builder on that id WITHOUT awaiting the create,
+// so a save inside the round-trip window finds `origin !== "db"` — which used to be read as "pure
+// local draft" and answered { ok:true } while persisting NOTHING (a silent price loss on the next
+// refetch). setJobLines consults this map and queues its persist behind the pending create
+// instead. Entries clear when the create settles either way (mirrors _pendingVisitCreates).
+const _pendingJobCreates = new Map<string, Promise<Job>>();
+
 // Jobs whose checklist was just written through updateJob, keyed to the write
 // time. Visit mutations and hydrator snapshots reconcile the WHOLE job from a
 // server read that may predate the checklist commit — without this guard a
@@ -877,6 +885,15 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         throw err instanceof Error ? err : new Error("addJob failed");
       });
 
+    // Track the in-flight create so a save landing inside the round-trip window can queue
+    // behind it (see _pendingJobCreates). Settlement handling on a SIDE chain — the returned
+    // `persisted` keeps its reject-on-failure contract for callers.
+    _pendingJobCreates.set(id, persisted);
+    void persisted.then(
+      () => _pendingJobCreates.delete(id),
+      () => _pendingJobCreates.delete(id),
+    );
+
     return { job: newJob, persisted };
   },
 
@@ -974,11 +991,6 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
       ),
     }));
 
-    const job = get().jobs.find((j) => j.id === jobId);
-    // A pure local draft (never persisted — no lead FK) has no DB row to write
-    // lines to; keep them store-only, matching updateJob's local-only short-circuit.
-    if (!job || job.origin !== JOB_ORIGIN.DB) return Promise.resolve({ ok: true });
-
     // Map store lines (dollars) → wire lines (integer cents).
     const wireLines = persistable
       .map((l) => ({
@@ -988,31 +1000,54 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
         costCents: l.c != null ? Math.round(l.c * 100) : 0,
       }));
 
-    // Guard the optimistic lines against a stale hydrator snapshot from now on.
-    _recentLineWrites.set(jobId, Date.now());
+    const persistLines = (): Promise<{ ok: boolean }> => {
+      // Guard the optimistic lines against a stale hydrator snapshot from now on.
+      _recentLineWrites.set(jobId, Date.now());
 
-    return trpcVanilla.v1.jobs.setLines
-      .mutate({
-        jobId,
-        lines: wireLines,
-        ...(rates ? { discBps: rates.discBps, taxBps: rates.taxBps } : {}),
-        ...(rates?.book ? { book: true } : {}),
-      })
-      .then((dto) => {
-        // Re-stamp so the window is measured from the reconcile, then reconcile
-        // the full job (server line ids replace optimistic; merge-guarded).
-        _recentLineWrites.set(jobId, Date.now());
-        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
-        // Pricing changes the Amount column and the ready-to-bill total on Money.
-        invalidateJobLists();
-        return { ok: true };
-      })
-      .catch((err: unknown) => {
-        _recentLineWrites.delete(jobId);
-        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
-        reportWriteError("setJobLines", err);
-        return { ok: false };
-      });
+      return trpcVanilla.v1.jobs.setLines
+        .mutate({
+          jobId,
+          lines: wireLines,
+          ...(rates ? { discBps: rates.discBps, taxBps: rates.taxBps } : {}),
+          ...(rates?.book ? { book: true } : {}),
+        })
+        .then((dto) => {
+          // Re-stamp so the window is measured from the reconcile, then reconcile
+          // the full job (server line ids replace optimistic; merge-guarded).
+          _recentLineWrites.set(jobId, Date.now());
+          set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+          // Pricing changes the Amount column and the ready-to-bill total on Money.
+          invalidateJobLists();
+          return { ok: true };
+        })
+        .catch((err: unknown) => {
+          _recentLineWrites.delete(jobId);
+          if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+          reportWriteError("setJobLines", err);
+          return { ok: false };
+        });
+    };
+
+    const job = get().jobs.find((j) => j.id === jobId);
+    if (!job || job.origin !== JOB_ORIGIN.DB) {
+      // The job's OWN create is still in flight (the create→price flow opens the builder on the
+      // client-authored id without awaiting v1.jobs.create) — queue the persist behind it. The
+      // old unconditional { ok:true } here was a silent price loss for exactly this window: the
+      // save "succeeded" store-only and the next refetch erased it. A failed create fails the
+      // save out loud instead; the builder keeps its lines and offers the retry.
+      const pendingCreate = _pendingJobCreates.get(jobId);
+      if (pendingCreate) {
+        return pendingCreate.then(
+          () => persistLines(),
+          () => ({ ok: false }),
+        );
+      }
+      // A pure local draft (never persisted — no lead FK) has no DB row to write
+      // lines to; keep them store-only, matching updateJob's local-only short-circuit.
+      return Promise.resolve({ ok: true });
+    }
+
+    return persistLines();
   },
 
   // ---------------------------------------------------------------------------

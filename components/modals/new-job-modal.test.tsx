@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { NewJobModalContent } from "./new-job-modal";
+import { MODAL } from "@/lib/store/modal-ids";
 
 // Store actions captured so the test can assert ordering (create lead → then job).
 const addLead = vi.fn();
@@ -207,8 +208,40 @@ describe("NewJobModalContent — the priced exit (Create & price it)", () => {
     updateLead.mockReset();
     addJob.mockReset();
     addVisit.mockReset();
+    openModalMock.mockReset();
+    routerPush.mockReset();
     closeMock = vi.fn();
     storeLeads = [];
+  });
+
+  it("opens the price builder on the client-authored id BEFORE the create settles", async () => {
+    // Existing customer matched locally — the common case, and the one with zero
+    // required round trips between the tap and the sheet.
+    storeLeads = [{ id: "lead-fast", name: "Bob Smith", phone: "9255550100", archived: false }];
+    let resolveJob!: (j: unknown) => void;
+    addJob.mockReturnValue({
+      job: { id: "job-fast", origin: "manual", visits: [] },
+      persisted: new Promise((res) => { resolveJob = res; }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "fix boiler" } });
+    fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Bob Smith" } });
+    fireEvent.blur(screen.getByPlaceholderText("search or add"));
+    createPriced();
+
+    // The builder opens while the job create is STILL IN FLIGHT — the client-authored id
+    // is exactly what makes the optimistic hand-off possible.
+    await waitFor(() =>
+      expect(openModalMock).toHaveBeenCalledWith(MODAL.PRICE_BUILDER, { jobId: "job-fast" }),
+    );
+    expect(closeMock).toHaveBeenCalled();
+    expect(routerPush).toHaveBeenCalledWith(expect.stringContaining("place=job-fast"));
+
+    // Visits still wait for the create — addVisit is store-only before origin flips to db.
+    expect(addVisit).not.toHaveBeenCalled();
+    resolveJob({ id: "job-fast", origin: "db", visits: [] });
+    await waitFor(() => expect(addVisit).toHaveBeenCalledWith("job-fast", 1.5));
   });
 
   it("creates a lead first for a new customer, then addJob receives the server-assigned leadId", async () => {
@@ -319,28 +352,66 @@ describe("NewJobModalContent — the priced exit (Create & price it)", () => {
     });
   });
 
-  it("surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
+  it("a rejected create mints no visits — the builder's not-loaded notice is the failure surface", async () => {
+    // The priced exit is OPTIMISTIC: the modal has already closed and the builder is open on
+    // the client-authored id when the create comes back refused. The slice rolls the job back
+    // (the builder then renders its not-loaded notice — see price-builder-modal.test.tsx);
+    // this test pins the modal side: no visits on a job that never persisted.
     addLead.mockReturnValue({
       lead: { id: "lead-fail-30", name: "Fail User" },
       persisted: Promise.resolve({ id: "lead-fail-30", name: "Fail User" }),
     });
-    const optimisticJob = { id: "job-fail-30", origin: "manual", visits: [] };
+    let rejectJob!: (e: Error) => void;
     addJob.mockReturnValue({
-      job: optimisticJob,
-      persisted: Promise.reject(new Error("db error")),
+      job: { id: "job-fail-30", origin: "manual", visits: [] },
+      persisted: new Promise((_res, rej) => { rejectJob = rej; }),
     });
 
     render(<NewJobModalContent />);
     fireEvent.change(titleInput(), { target: { value: "repair sink" } });
     createPriced();
 
+    await waitFor(() =>
+      expect(openModalMock).toHaveBeenCalledWith(MODAL.PRICE_BUILDER, { jobId: "job-fail-30" }),
+    );
+    expect(closeMock).toHaveBeenCalled();
+
+    rejectJob(new Error("db error"));
+    // Flush the rejection — visits must never ride a job that failed to persist.
+    await waitFor(() => expect(addVisit).not.toHaveBeenCalled());
+  });
+});
+
+describe("NewJobModalContent — the plain exit keeps its awaited failure surface", () => {
+  beforeEach(() => {
+    addLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    openModalMock.mockReset();
+    closeMock = vi.fn();
+    storeLeads = [];
+  });
+
+  it("surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
+    // The plain exit lands on the board, which has nowhere to say "the job didn't save" —
+    // so it still awaits the create and names the failure HERE.
+    addLead.mockReturnValue({
+      lead: { id: "lead-fail-31", name: "Fail User" },
+      persisted: Promise.resolve({ id: "lead-fail-31", name: "Fail User" }),
+    });
+    addJob.mockReturnValue({
+      job: { id: "job-fail-31", origin: "manual", visits: [] },
+      persisted: Promise.reject(new Error("db error")),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "repair sink" } });
+    createPlain();
+
     await waitFor(() => {
       expect(screen.getByText(/the customer was saved, but the job wasn't/i)).toBeTruthy();
     });
-
-    // Modal must NOT close on failure.
     expect(closeMock).not.toHaveBeenCalled();
-    // Visits must NOT be created when the job failed to persist.
     expect(addVisit).not.toHaveBeenCalled();
   });
 });
@@ -939,7 +1010,10 @@ describe("NewJobModalContent — the two exits", () => {
     expect(pushModalMock).not.toHaveBeenCalled();
   });
 
-  it("navigates nowhere when the create failed — the form stays put with its error", async () => {
+  it("the PLAIN exit navigates nowhere when the create failed — the form stays put with its error", async () => {
+    // The plain exit still awaits the create: the board it lands on has nowhere to say "the
+    // job didn't save". (The priced exit is optimistic and its failure surface is the price
+    // builder's not-loaded notice — pinned in the priced-exit describe above.)
     addJob.mockReturnValue({
       job: { id: "job-opt-1", origin: "manual", visits: [] },
       persisted: Promise.reject(new Error("network error")),
@@ -947,7 +1021,7 @@ describe("NewJobModalContent — the two exits", () => {
     render(<NewJobModalContent />);
     fireEvent.change(titleInput(), { target: { value: "fix boiler" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
-    createPriced();
+    createPlain();
 
     await waitFor(() => expect(screen.getByText(/the customer was saved, but the job wasn't/i)).toBeTruthy());
     expect(routerPush).not.toHaveBeenCalled();

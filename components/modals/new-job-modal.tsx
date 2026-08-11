@@ -301,9 +301,20 @@ export function NewJobModalContent() {
    *
    * For the "new customer" path (typed name with no matching lead) the lead is
    * created FIRST and its server-assigned id awaited — the job's lead FK must
-   * reference a real row. Visits are added only after the job reconciles to
+   * reference a real row (customers.create assigns the id; jobs.create is the one
+   * with a client-authored id). Visits are added only after the job reconciles to
    * origin "db" (addVisit guards on that before firing v1.visits.createVisit;
    * earlier, and they'd be silently dropped on refresh).
+   *
+   * THE PRICED, NO-CHECKLIST EXIT DOES NOT AWAIT THE JOB CREATE. The price builder
+   * needs only the client-authored id, which exists synchronously — so the sheet
+   * opens NOW and the create settles behind it (visits queue on it; a save inside
+   * the window queues on it too — see setJobLines' pending-create gate). A refused
+   * create rolls the job back and the builder switches to its not-loaded notice:
+   * visible, never silent. The other two paths keep their await, deliberately —
+   * the plain exit's failure surface is THIS modal (the board it lands on has
+   * nowhere to say "the job didn't save"), and a picked checklist keeps the
+   * attach-failure retry UX that lives here.
    *
    * Returns the created job, or null if the server create failed (error already
    * set via setError).
@@ -371,15 +382,30 @@ export function NewJobModalContent() {
       acts: [],
       visits: [],
     });
+    // Each visit is created UNPLACED (hours only) — dragged onto the Schedule later. They queue
+    // behind the create on every path: addVisit is store-only until origin flips to "db", so
+    // firing it earlier silently drops the rows. The board's ?place= arm already retries until
+    // the store shows an unplaced visit, so a visit landing a beat after the nav is fine.
+    const settled = jobPersisted.then((persistedJob) => {
+      rows.forEach((v) => addVisit(created.id, v.h));
+      return persistedJob;
+    });
+
+    if (priced && !checklistSnapshot()) {
+      // The optimistic hand-off (see the function comment): the builder opens on the
+      // client-authored id now. A refused create rolls back in the slice (dev-logged there)
+      // and the builder renders its not-loaded notice — swallow here only to keep the
+      // rejection from surfacing as unhandled.
+      void settled.catch(() => undefined);
+      return { ok: true, createdJob: created };
+    }
+
     try {
-      await jobPersisted;
+      await settled;
     } catch (err) {
       setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
       return { ok: false, createdJob: null };
     }
-
-    // Each visit is created UNPLACED (hours only) — dragged onto the Schedule later.
-    rows.forEach((v) => addVisit(created.id, v.h));
 
     // The picked checklist rides the job either way — a scoping list on an unpriced
     // job exactly as a before-you-leave list rides booked work.
