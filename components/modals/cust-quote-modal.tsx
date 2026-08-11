@@ -521,18 +521,27 @@ export function CustQuoteModalContent() {
   const estId = activeModal?.params?.estId as string | undefined;
   const estimate = estimates.find((x) => x.id === estId);
 
-  // FETCH-ON-MISS. Estimates hydrate one page like everything else, and this sheet is opened from
-  // the Pipeline rail and from links a customer follows — an empty render here is a quote that
-  // "disappeared". adoptEstimate takes the DTO without firing a write.
+  // FETCH-ON-MISS — and on HEADER-ONLY. Estimates hydrate one page of HEADERS (no lines), so this
+  // sheet had two ways to open wrong: a quote outside the page rendered as "disappeared", and a
+  // quote INSIDE it rendered instantly as an empty line table with a $0 total, then reflowed
+  // wholesale when the full record landed — the same glitch the office estimate modal had, worse
+  // here because this sheet is the one shown ON GLASS to the customer. adoptEstimate takes the
+  // DTO without firing a write.
   const missing = Boolean(estId) && !estimate;
+  const needsFull = missing || (Boolean(estimate) && estimate!.lines.length === 0);
   const estQ = api.v1.quoting.get.useQuery(
     { estimateId: estId ?? "" },
-    { enabled: missing, staleTime: 30_000, refetchOnWindowFocus: false },
+    { enabled: Boolean(estId) && needsFull, staleTime: 30_000, refetchOnWindowFocus: false },
   );
   useEffect(() => {
-    // fu is client-local follow-up state; a freshly fetched estimate has none yet.
-    if (missing && estQ.data) adoptEstimate(estQ.data, { on: false, stage: 0 });
-  }, [missing, estQ.data, adoptEstimate]);
+    // fu is client-local follow-up state; a freshly fetched estimate has none yet — and an
+    // in-store header copy keeps whatever fu it already carried.
+    if (needsFull && estQ.data) {
+      adoptEstimate(estQ.data, estimate?.fu ?? { on: false, stage: 0 });
+    }
+    // estimate?.fu intentionally not a dep — adopt fires once per fetched record.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [needsFull, estQ.data, adoptEstimate]);
 
   // This surface IS the customer's phone in the sample world. Opening it records
   // a read (live while the session is open — the Rail's breathing dot); closing
@@ -552,6 +561,9 @@ export function CustQuoteModalContent() {
     }
     return null;
   }
+
+  // The HEADER-ONLY beat — same wait as absent, same answer. Never an empty $0 sheet on glass.
+  if (needsFull && estQ.isLoading) return <ModalLoading size="lg" />;
 
   const lead = leads.find((l) => l.id === estimate.leadId);
   // Pre-accept GBB: the picker structure from the real tier-tagged lines.

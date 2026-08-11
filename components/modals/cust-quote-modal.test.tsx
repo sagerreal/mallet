@@ -21,6 +21,11 @@ import type { Brand, Estimate, EstimateLine, Lead } from "@/lib/store/types";
 // ---------------------------------------------------------------------------
 
 let mockEstimates: Estimate[] = [];
+let mockEstQ: { data: unknown; isLoading: boolean; isError: boolean } = {
+  data: undefined,
+  isLoading: false,
+  isError: false,
+};
 let mockLeads: Lead[] = [];
 const updateEstimate = vi.fn();
 const declineEstimate = vi.fn();
@@ -67,7 +72,7 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
       quoting: {
-        get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) },
+        get: { useQuery: () => mockEstQ },
       },
     },
   },
@@ -107,6 +112,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockLeads = [];
   mockEstimates = [makeEstimate()];
+  mockEstQ = { data: undefined, isLoading: false, isError: false };
 });
 
 // ---------------------------------------------------------------------------
@@ -232,5 +238,26 @@ describe("CustQuoteModalContent — single-format estimate", () => {
     ];
     render(<CustQuoteModalContent />);
     expect(screen.getByText(/Approved — thank you!/)).toBeTruthy();
+  });
+});
+
+
+/**
+ * THE HEADER-ONLY BEAT. Estimates hydrate one page of HEADERS — no lines — so this sheet used to
+ * render an empty table with a $0 total for the beat the full record took to land, and this is
+ * the sheet handed to a CUSTOMER on glass. While its own fetch is in flight it shows the loading
+ * state, exactly as it already did when the record was absent.
+ */
+describe("CustQuoteModalContent — the header-only copy waits for the record", () => {
+  it("shows loading — never an empty $0 sheet — while the full record is fetching", () => {
+    mockEstimates = [makeEstimate({ lines: [] })];
+    mockEstQ = { data: undefined, isLoading: true, isError: false };
+    render(<CustQuoteModalContent />);
+
+    expect(screen.queryByText(/\$0/)).toBeNull();
+    expect(screen.queryByRole("button", { name: /Approve/ })).toBeNull();
+    // The settled no-lines case keeps its functional error (asserted above); this is the
+    // IN-FLIGHT case, which must read as waiting, not as broken.
+    expect(screen.queryByText(/Couldn’t load the quote options/)).toBeNull();
   });
 });
