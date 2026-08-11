@@ -182,6 +182,17 @@ export interface SetJobLinesCommand {
    * holding a discounted total with no discount rate gets billed at the undiscounted sum.
    */
   readonly rates?: PricingRates;
+  /**
+   * BOOK the price: flip an estimate-kind job to "work" in the SAME transaction as the lines.
+   * The office price builder's Save sets this — under the one-job-type model that save is the
+   * commitment point, and `jobPriceCommitted` derives from kind × lines, so the two writes
+   * must land together: lines-without-flip reads as a technician's editable draft, and the
+   * field draft endpoint would happily overwrite it. It shipped briefly as a second client
+   * round-trip; a ✕/Escape between the two stranded exactly that state.
+   *
+   * A no-op on non-estimate jobs. Never set by the field draft stash (a draft is not a booking).
+   */
+  readonly bookPrice?: boolean;
 }
 
 // Bulk-replace a job's lines in one atomic swap (soft-delete current + insert new). Used by
@@ -219,6 +230,17 @@ export class SetJobLinesUseCase {
       built.push(line.value);
     }
     const now = this.clock.now();
+
+    // The BOOKING flip, before the line write and inside the same tenant transaction (the orgTx
+    // middleware re-throws resolver errors, so a failed replaceLines below rolls this back with
+    // it — the two writes are atomic by construction). BEFORE replaceLines on purpose: repo.save
+    // persists the loaded job's full row, and after replaceLines that row would carry a stale
+    // total_cents over the one syncTotalFromLines just derived.
+    if (cmd.bookPrice && job.props.kind === "estimate") {
+      const flipped = job.patchFields({ kind: "work" }, now);
+      if (!flipped.ok) return flipped;
+      await this.repo.save(flipped.value);
+    }
 
     // Signature FIRST, before anything is written. buildJobSignature freezes the snapshot from
     // `built` — the exact lines about to be persisted — and rejects a blank name. Validating after

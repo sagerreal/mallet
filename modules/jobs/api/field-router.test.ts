@@ -150,4 +150,25 @@ describe("redactMoneyForTech", () => {
     expect(() => redactMoneyForTech(dto, false)).not.toThrow();
     expect(redactMoneyForTech(dto, false).total).toBeNull();
   });
+
+  describe("the stored discount/tax rate pair (rode through unredacted when first added)", () => {
+    const withRates = () => ({ ...makeDto(), discBps: 1_000, taxBps: 875 });
+
+    it("zeroes both rates when the org hid prices — a redacted device reads NO money facts", () => {
+      const result = redactMoneyForTech(withRates(), false);
+      expect(result.discBps).toBe(0);
+      expect(result.taxBps).toBe(0);
+    });
+
+    it("passes both through untouched when the tech may see prices", () => {
+      const result = redactMoneyForTech(withRates(), true);
+      expect(result.discBps).toBe(1_000);
+      expect(result.taxBps).toBe(875);
+    });
+
+    it("leaves shapes without the fields alone", () => {
+      const result = redactMoneyForTech(makeDto(), false);
+      expect("discBps" in result).toBe(false);
+    });
+  });
 });

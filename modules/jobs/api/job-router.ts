@@ -199,6 +199,9 @@ const setLinesInput = z.object({
   // about rates (the close-out's BillAsk) must leave stored rates untouched, not zero them.
   discBps: z.number().int().min(0).max(10_000).optional(),
   taxBps: z.number().int().min(0).max(2_500).optional(),
+  // BOOK the price in the same transaction (estimate-kind → work). The office price
+  // builder's Save; never the close-out. See SetJobLinesCommand.bookPrice.
+  book: z.boolean().optional(),
 });
 const addAddonInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), description: z.string().min(1).max(2000), quantity: z.number().min(0).default(1), rateCents: z.number().int().min(0), costCents: z.number().int().min(0).default(0), isOptional: z.boolean().optional() });
 const setAddonStatusInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), status: z.enum(["proposed", "approved", "declined"]) });
@@ -589,7 +592,12 @@ export const createJobRouter = () =>
             : undefined;
         const r = orThrow(
           await useCase.exec(
-            { jobId: asJobId(input.jobId), lines: input.lines, ...(rates ? { rates } : {}) },
+            {
+              jobId: asJobId(input.jobId),
+              lines: input.lines,
+              ...(rates ? { rates } : {}),
+              ...(input.book ? { bookPrice: true } : {}),
+            },
             ctx.principal.orgId,
           ),
         );

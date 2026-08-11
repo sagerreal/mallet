@@ -45,7 +45,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { isEstimateJob } from "@/features/jobs/job-status-meta";
 import type { Job, JobLine, Service } from "@/lib/store/types";
 import type { LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
 import {
@@ -80,7 +79,6 @@ export function PriceBuilderModalContent() {
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const setJobLines = useAppStore((s) => s.setJobLines);
-  const updateJob = useAppStore((s) => s.updateJob);
   // Reference data straight from the store (raw arrays — never derived in the
   // selector). Adapted below to the shared PricebookItem / LaborRate shape.
   const servicesRaw = useAppStore((s) => s.services);
@@ -197,44 +195,44 @@ export function PriceBuilderModalContent() {
   // office-set price survives the next jobs.list refetch. Await the write and
   // only return on success — surface a retryable error otherwise.
   //
-  // SAVING BOOKS THE PRICE. The rates ride the same write (derived from the same line
-  // set, so they cannot describe a different subtotal), and an unpriced job's kind
-  // flips estimate → work — the one-job-type model's commitment point. That flip is
-  // what routes the tech's Quote tab to the booked read-back + change orders; a tech's
-  // own draft stash never flips it, which is how a draft stays editable.
+  // SAVING BOOKS THE PRICE — in ONE call. The rates ride the same write (derived from
+  // the same line set, so they cannot describe a different subtotal), and `book: true`
+  // flips an estimate-kind job to "work" inside the same server transaction. It shipped
+  // briefly as a second round-trip; review caught the stranded state that leaves: lines
+  // saved + flip failed (or a ✕/Escape between them) reads to the tech as an editable
+  // draft over a price the office believes is booked, and the field draft endpoint
+  // would overwrite it. Atomic on the server, or not at all.
+  //
+  // The ref guard is synchronous — `disabled` lands a render late, and this modal's
+  // save is a full round-trip (the same incident class as the New-job triple-click).
+  const saveInFlightRef = useRef(false);
   async function savePrice() {
-    if (!job || saving) return;
-    const jobLines: JobLine[] = lines
-      .map((l) => ({ d: l.d || "Line item", q: 1, r: lineAmt(l), c: l.c ?? 0 }))
-      .filter((l) => (l.r ?? 0) > 0);
+    if (!job || saveInFlightRef.current) return;
+    saveInFlightRef.current = true;
     setSaving(true);
     setSaveError(null);
-    const rates = fieldPricingRates(
-      pricing,
-      jobLines.reduce((sum, l) => sum + Math.round((l.r ?? 0) * (l.q ?? 1) * 100), 0),
-    );
-    const { ok } = await setJobLines(job.id, jobLines, {
-      discBps: rates.discBps,
-      taxBps: rates.taxBps,
-    });
-    if (!ok) {
-      setSaving(false);
-      setSaveError("Couldn't save the price — check your connection and try again.");
-      return;
-    }
-    if (isEstimateJob(job)) {
-      const flip = await updateJob(job.id, { kind: "work" });
-      if (!flip.ok) {
-        // The price saved; the kind didn't. Booking is the point of the save, so surface it
-        // for a retry rather than closing with the job half-flipped (the tech would still
-        // see an editable draft over a price the office believes is booked).
-        setSaving(false);
-        setSaveError("The price saved, but booking it didn't stick — try Save again.");
+    try {
+      const jobLines: JobLine[] = lines
+        .map((l) => ({ d: l.d || "Line item", q: 1, r: lineAmt(l), c: l.c ?? 0 }))
+        .filter((l) => (l.r ?? 0) > 0);
+      const rates = fieldPricingRates(
+        pricing,
+        jobLines.reduce((sum, l) => sum + Math.round((l.r ?? 0) * (l.q ?? 1) * 100), 0),
+      );
+      const { ok } = await setJobLines(job.id, jobLines, {
+        discBps: rates.discBps,
+        taxBps: rates.taxBps,
+        book: true,
+      });
+      if (!ok) {
+        setSaveError("Couldn't save the price — check your connection and try again.");
         return;
       }
+      dismiss();
+    } finally {
+      saveInFlightRef.current = false;
+      setSaving(false);
     }
-    setSaving(false);
-    dismiss();
   }
 
   return (
