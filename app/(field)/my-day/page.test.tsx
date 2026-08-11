@@ -277,6 +277,42 @@ describe("My day — the time on the card", () => {
     expect(screen.getByText("11:15a")).toBeTruthy();
   });
 
+  // The return-trip shape (owenduggan, Aug 11): visit 1 done yesterday noon, visit 2 booked today
+  // 9a. "Earliest non-canceled" picked the DONE visit, so the card read yesterday's date and time
+  // while the board — correctly — showed today 9a. The visit already worked is history; the card
+  // reads the next one to drive to.
+  it("shows the NEXT live visit on a half-done job, not the visit already worked", () => {
+    withVisits([
+      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete" }),
+      visit({ id: "v2", scheduledDate: "2026-07-01", scheduledStart: "09:00", status: "pending" }),
+    ]);
+    render(<MyDayPage />);
+    // Today's pending visit, printed as today prints: time alone, no day label.
+    expect(screen.getByText("9a")).toBeTruthy();
+    expect(screen.queryByText("12p")).toBeNull();
+    expect(screen.queryByText("Tue 30")).toBeNull();
+  });
+
+  it("falls back to the completed visit's time when nothing is left to drive to", () => {
+    withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "08:00", status: "complete" })]);
+    render(<MyDayPage />);
+    expect(screen.getByText("8a")).toBeTruthy();
+  });
+
+  // The return-trip shape: AddReturnTripUseCase lands the new visit UNPLACED (no date, pending)
+  // on a job whose first visit is complete. The card must say the true thing — the return trip
+  // has no slot yet — not quietly re-adopt the done visit's stale day and time.
+  it("says 'Not scheduled' when the only LIVE visit is unplaced, not the done visit's old slot", () => {
+    withVisits([
+      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete" }),
+      visit({ id: "v2", status: "pending" }),
+    ]);
+    render(<MyDayPage />);
+    expect(screen.getByText("Not scheduled")).toBeTruthy();
+    expect(screen.queryByText("12p")).toBeNull();
+    expect(screen.queryByText("Tue 30")).toBeNull();
+  });
+
   it("names the gap rather than guessing when the job has no dated visit", () => {
     withVisits([visit({ scheduledStart: "09:00" })]);
     render(<MyDayPage />);

@@ -20,18 +20,39 @@ import type { Job } from "../domain/job";
  * board uses.
  */
 
-/** Zero-padded, lexicographically sortable. Null when the job has no live, dated visit. */
+/** Zero-padded, lexicographically sortable. Null when the job has no dated visit worth keying on. */
 export function earliestLiveVisitAt(job: Job): string | null {
-  let earliest: string | null = null;
+  let earliestLive: string | null = null;
+  let earliestDone: string | null = null;
+  let unplacedLive = false;
   for (const visit of job.props.visits) {
     const v = visit.props;
-    // Canceled visits are not work. A COMPLETE one still is: Job.complete() closes its open visits
-    // to `complete`, so a finished job keeps its slot in the route rather than jumping to the end.
-    if (v.status === "canceled" || v.scheduledDate === null) continue;
+    // Canceled visits are not work.
+    if (v.status === "canceled") continue;
+    // A live visit with no date is the return-trip shape (AddReturnTripUseCase lands it unplaced,
+    // pending). It has no slot in the route — but it DOES mean the job's next work is unscheduled,
+    // so a done visit's old slot must not answer for it below.
+    if (v.scheduledDate === null) {
+      if (v.status !== "complete") unplacedLive = true;
+      continue;
+    }
     const at = `${v.scheduledDate}T${v.scheduledStart ?? "00:00"}`;
-    if (earliest === null || at < earliest) earliest = at;
+    // LIVE (pending / in-progress) visits outrank COMPLETE ones outright: a half-done multi-visit
+    // job keys on the visit the tech still has to drive to, not the one already worked — otherwise
+    // a Monday visit marked complete pins the job to Monday while its return trip sits on today's
+    // board. COMPLETE is the fallback, not discarded: Job.complete() closes open visits to
+    // `complete`, so a fully finished job still keeps its slot in the route rather than jumping to
+    // the end of the day.
+    if (v.status === "complete") {
+      if (earliestDone === null || at < earliestDone) earliestDone = at;
+    } else if (earliestLive === null || at < earliestLive) {
+      earliestLive = at;
+    }
   }
-  return earliest;
+  // No dated live visit: if live work exists but is unplaced, the job is honestly "not scheduled"
+  // (sorts to the end like every undated job) — only a job with NOTHING left to drive to keeps its
+  // finished slot.
+  return earliestLive ?? (unplacedLive ? null : earliestDone);
 }
 
 /**
