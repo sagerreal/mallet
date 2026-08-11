@@ -2221,3 +2221,81 @@ describe("setJobLines behind a pending addJob create", () => {
     expect(mockSetLines).toHaveBeenCalledOnce();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The board-placement flicker (Owen, Aug 11): arm a tray card (addVisit → create in
+// flight), tap a cell within the round trip. The createVisit reconcile carries the
+// visit UNPLACED — the server row predates the placement — and the wholesale visit
+// replace erased the optimistic {techId, date, start}. The block vanished from the
+// board until scheduleVisit's own reconcile landed, one full RTT of nothing.
+// ---------------------------------------------------------------------------
+
+describe("placeVisit vs in-flight createVisit — placement survives the create's reconcile", () => {
+  beforeEach(() => {
+    // vi.waitFor drains with REAL timers; an earlier suite's fake clock would hang it.
+    vi.useRealTimers();
+    mockCreateVisit.mockReset();
+    mockScheduleVisit.mockReset();
+  });
+
+  it("keeps the optimistic placement when the create reconciles UNPLACED", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    mockScheduleVisit.mockReturnValue(deferred<unknown>().promise); // schedule stays pending
+    const { get } = makeStore();
+    seedDbJob(get, "j-place");
+
+    const visit = get().addVisit("j-place")!; // create pending
+    get().placeVisit("j-place", visit.id, { techId: "t1", date: "2026-08-11", start: 10 });
+
+    create.resolve(makeJobDTO("j-place", { visits: [makeVisitDTO(visit.id)] }));
+    await flush();
+
+    const v = get().jobs.find((j) => j.id === "j-place")!.visits.find((x) => x.id === visit.id)!;
+    expect(v.date).toBe("2026-08-11");
+    expect(v.techId).toBe("t1");
+    expect(v.start).toBe(10);
+  });
+
+  it("a hydrator snapshot inside the same window cannot strip the placement either", async () => {
+    const create = deferred<unknown>();
+    mockCreateVisit.mockReturnValue(create.promise);
+    mockScheduleVisit.mockReturnValue(deferred<unknown>().promise);
+    const { get } = makeStore();
+    seedDbJob(get, "j-place2");
+
+    const visit = get().addVisit("j-place2")!;
+    get().placeVisit("j-place2", visit.id, { techId: "t1", date: "2026-08-11", start: 10 });
+    create.resolve(makeJobDTO("j-place2", { visits: [makeVisitDTO(visit.id)] }));
+    await flush();
+
+    // A list snapshot read before the schedule committed still shows the visit unplaced.
+    get().setJobs([toStoreJob(makeJobDTO("j-place2", { visits: [makeVisitDTO(visit.id)] }) as never)]);
+
+    const v = get().jobs.find((j) => j.id === "j-place2")!.visits.find((x) => x.id === visit.id)!;
+    expect(v.date).toBe("2026-08-11");
+    expect(v.techId).toBe("t1");
+  });
+
+  it("clears the guard once the schedule settles — later snapshots are authoritative again", async () => {
+    mockCreateVisit.mockResolvedValue(makeJobDTO("j-place3", { visits: [] }));
+    const scheduled = makeJobDTO("j-place3", {
+      visits: [makeVisitDTO("dummy", { assigneeUserId: "t1", scheduledDate: "2026-08-11", scheduledStart: "10:00" })],
+    });
+    mockScheduleVisit.mockResolvedValue(scheduled);
+    const { get } = makeStore();
+    seedDbJob(get, "j-place3");
+
+    const visit = get().addVisit("j-place3")!;
+    get().placeVisit("j-place3", visit.id, { techId: "t1", date: "2026-08-11", start: 10 });
+    // Drain the FULL settle chain (create → chained schedule → its reconcile) — the guard
+    // clears in the schedule's .then, several microtask hops past one flush().
+    await vi.waitFor(() => expect(mockScheduleVisit).toHaveBeenCalledTimes(1));
+    await flush();
+
+    // The office un-schedules it server-side; the next snapshot must win now.
+    get().setJobs([toStoreJob(makeJobDTO("j-place3", { visits: [makeVisitDTO(visit.id)] }) as never)]);
+    const v = get().jobs.find((j) => j.id === "j-place3")!.visits.find((x) => x.id === visit.id)!;
+    expect(v.date ?? null).toBeNull();
+  });
+});
