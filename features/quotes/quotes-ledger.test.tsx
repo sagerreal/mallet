@@ -113,3 +113,31 @@ describe("QuotesLedger — the other three list states", () => {
     expect(routerPush).toHaveBeenCalledWith("/composer");
   });
 });
+
+// Owen, Aug 11: change requests need an APPARENT home. The chip appears — with its count —
+// only when a sent quote carries one; a permanent "(0)" chip would be furniture for a state
+// that is usually empty.
+describe("QuotesLedger — the Changes-asked chip", () => {
+  it("absent while nobody has asked for anything", () => {
+    render(<QuotesLedger />);
+    const chips = screen.getByRole("group", { name: "Filter quotes" });
+    expect(within(chips).queryByRole("button", { name: /Changes asked/ })).toBeNull();
+  });
+
+  it("appears with its count and filters the book to the asks", () => {
+    mockEstimates = [
+      est(),
+      est({ id: "e9", title: "Sewer line spot repair", changeRequestedAt: "2026-08-11T09:00:00Z" }),
+    ];
+    render(<QuotesLedger />);
+    const chips = screen.getByRole("group", { name: "Filter quotes" });
+    // Accessible-name computation collapses the count span's leading space — match the
+    // label, read the count from the text.
+    const chip = within(chips).getByRole("button", { name: /^Changes asked/ });
+    expect(chip.textContent).toContain("(1)");
+    fireEvent.click(chip);
+
+    expect(screen.getByText("Sewer line spot repair")).toBeTruthy();
+    expect(screen.queryByText("Water heater swap")).toBeNull();
+  });
+});

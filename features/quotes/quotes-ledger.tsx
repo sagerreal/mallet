@@ -124,6 +124,20 @@ export function QuotesLedger() {
                   {f === "all" ? null : <span className="chip-n"> ({counts[f]})</span>}
                 </button>
               ))}
+              {/* The exception chip: a customer answered a sent quote with a request, and that
+                  is the office's move now. Appears only when the count is real — a permanent
+                  "(0)" would be furniture for a state that is usually empty (Owen, Aug 11:
+                  change requests need an APPARENT home). */}
+              {counts.changes > 0 && (
+                <button
+                  type="button"
+                  className={`chip${filter === "changes" ? " on" : ""}`}
+                  onClick={() => setFilter("changes")}
+                >
+                  Changes asked
+                  <span className="chip-n"> ({counts.changes})</span>
+                </button>
+              )}
             </div>
             {/* The page's one figure: the money sitting on customers' phones. */}
             <span className="muted" style={{ marginLeft: "auto" }}>
