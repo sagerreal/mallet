@@ -69,6 +69,14 @@ class FakeRepo implements Partial<JobRepository> {
   lastTotalCents: number | undefined;
   lastPricing: JobPricingPatch | undefined;
   lastSignature: JobSignature | undefined;
+  /** Write order, for the booking-flip atomicity contract (save BEFORE replaceLines). */
+  writeLog: string[] = [];
+  /** The last job entity handed to save() — the booking flip's write. */
+  lastSaved: Job | undefined;
+  async save(job: Job): Promise<void> {
+    this.lastSaved = job;
+    this.writeLog.push("save");
+  }
   async replaceLines(
     _j: JobId,
     lines: readonly JobLine[],
@@ -81,6 +89,7 @@ class FakeRepo implements Partial<JobRepository> {
     this.lines = [...lines];
     this.lastTotalCents = totalCents;
     this.lastPricing = pricing;
+    this.writeLog.push("replaceLines");
   }
   async saveOnSiteSignature(_j: JobId, signature: JobSignature): Promise<void> {
     this.lastSignature = signature;
@@ -290,6 +299,55 @@ describe("job execution use-cases", () => {
       );
       expect(isErr(r)).toBe(true);
       if (isErr(r) && r.error.kind === "validation") expect(r.error.field).toBe("taxBps");
+    });
+  });
+
+  /**
+   * BOOKING — the one-job-type commitment point. `bookPrice` flips an estimate-kind job to
+   * "work" in the SAME use-case execution (one tenant tx via orgTx), never as a second client
+   * round-trip: lines-without-flip reads to the tech as an editable draft over a price the
+   * office believes is booked, and the field draft endpoint would overwrite it.
+   */
+  describe("SetJobLines bookPrice", () => {
+    const priced = { description: "Water heater", quantity: 1, rateCents: 50_000, costCents: 0 };
+
+    /** A minimal estimate-kind job whose patchFields behaves like the entity's (returns a new
+     *  aggregate with the patch applied). */
+    const estimateJob = () =>
+      ({
+        props: { id: JOB, kind: "estimate" },
+        patchFields(patch: { kind?: string }) {
+          return { ok: true, value: { props: { id: JOB, kind: patch.kind ?? "estimate" } } };
+        },
+        isTerminal: () => false,
+      }) as unknown as Job;
+
+    it("flips an estimate-kind job to work, BEFORE the line write", async () => {
+      repo.jobs.set(JOB, estimateJob());
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec({ jobId: JOB, lines: [priced], bookPrice: true }, ORG);
+      expect(isOk(r)).toBe(true);
+      expect(repo.lastSaved?.props.kind).toBe("work");
+      // save() runs before replaceLines: save persists the whole job row, and after the swap
+      // that row would carry a stale total over the one the swap just derived.
+      expect(repo.writeLog).toEqual(["save", "replaceLines"]);
+    });
+
+    it("is a no-op on a job that is already work-kind", async () => {
+      repo.jobs.set(JOB, { props: { id: JOB, kind: "work" } } as unknown as Job);
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec({ jobId: JOB, lines: [priced], bookPrice: true }, ORG);
+      expect(isOk(r)).toBe(true);
+      expect(repo.lastSaved).toBeUndefined();
+      expect(repo.writeLog).toEqual(["replaceLines"]);
+    });
+
+    it("never flips without the flag — the field draft stash is not a booking", async () => {
+      repo.jobs.set(JOB, estimateJob());
+      const uc = new SetJobLinesUseCase(repo as unknown as JobRepository, clock, ids());
+      const r = await uc.exec({ jobId: JOB, lines: [priced] }, ORG);
+      expect(isOk(r)).toBe(true);
+      expect(repo.lastSaved).toBeUndefined();
     });
   });
 

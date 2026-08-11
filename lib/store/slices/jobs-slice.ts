@@ -399,10 +399,12 @@ export interface JobsSlice {
   setJobLines: (
     jobId: string,
     lines: JobLine[],
-    /** Discount / sales tax in basis points. OMIT to leave the job's stored rates untouched
-     *  (the close-out's BillAsk); pass to state them (the office price builder, which now
-     *  books the price). */
-    rates?: { discBps: number; taxBps: number },
+    /** Discount / sales tax in basis points — OMIT to leave the job's stored rates untouched
+     *  (the close-out's BillAsk); pass to state them. `book: true` additionally flips an
+     *  estimate-kind job to "work" IN THE SAME server transaction (the office price builder's
+     *  Save — the one-job-type commitment point; it must never be a second round-trip, which
+     *  is exactly the stranded booked-as-draft state a ✕ mid-save produced). */
+    rates?: { discBps: number; taxBps: number; book?: boolean },
   ) => Promise<{ ok: boolean }>;
   /**
    * On-glass sign-off from the FIELD surface: the priced lines and the customer's signature, in
@@ -598,7 +600,14 @@ function withRecentLines(prior: Job, incoming: Job): Job {
     return incoming;
   }
   if (incoming.lines === prior.lines) return incoming;
-  return { ...incoming, lines: prior.lines };
+  // `pricing` rides the SAME setLines write as the lines, so it gets the same guard — a stale
+  // snapshot that predates the commit would otherwise keep the protected lines but wipe the
+  // just-saved discount/tax out from under them until the write's own reconcile lands.
+  return {
+    ...incoming,
+    lines: prior.lines,
+    ...(prior.pricing !== undefined ? { pricing: prior.pricing } : {}),
+  };
 }
 
 /**
@@ -948,6 +957,8 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const persistable = lines.filter(isPersistableLine);
     // 1. Optimistic set (filtered — matches what the DB will hold). Stated rates ride it in
     //    the store's percent convention; omitted rates leave the job's stored pair untouched.
+    //    A booking flips the kind optimistically too, so the office sees the job leave the
+    //    estimate lane the moment they save (reconciled from the DTO, rolled back on failure).
     const optimisticPricing = rates
       ? {
           pricing:
@@ -956,8 +967,11 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
               : undefined,
         }
       : {};
+    const optimisticKind = rates?.book ? { kind: "work" as const } : {};
     set((s) => ({
-      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: persistable, ...optimisticPricing } : j)),
+      jobs: s.jobs.map((j) =>
+        j.id === jobId ? { ...j, lines: persistable, ...optimisticPricing, ...optimisticKind } : j,
+      ),
     }));
 
     const job = get().jobs.find((j) => j.id === jobId);
@@ -978,7 +992,12 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     _recentLineWrites.set(jobId, Date.now());
 
     return trpcVanilla.v1.jobs.setLines
-      .mutate({ jobId, lines: wireLines, ...(rates ?? {}) })
+      .mutate({
+        jobId,
+        lines: wireLines,
+        ...(rates ? { discBps: rates.discBps, taxBps: rates.taxBps } : {}),
+        ...(rates?.book ? { book: true } : {}),
+      })
       .then((dto) => {
         // Re-stamp so the window is measured from the reconcile, then reconcile
         // the full job (server line ids replace optimistic; merge-guarded).

@@ -40,7 +40,13 @@ const redactRow = <T extends PricedRow>(row: T, seesPrice: boolean): T => ({
 });
 
 export const redactMoneyForTech = <
-  T extends { lines: PricedRow[]; addons: PricedRow[]; total: { cents: number; currency: "USD" } | null },
+  T extends {
+    lines: PricedRow[];
+    addons: PricedRow[];
+    total: { cents: number; currency: "USD" } | null;
+    discBps?: number;
+    taxBps?: number;
+  },
 >(
   dto: T,
   seesPrice: boolean,
@@ -54,6 +60,12 @@ export const redactMoneyForTech = <
   // signal for "price hidden" rather than a fabricated zero. Visible found-work rates
   // do not reopen it: the total is the JOB's price, not the add-ons'.
   total: seesPrice ? dto.total : null,
+  // The stored discount/tax rates are price information too — a percent without a base
+  // reveals less than a rate, but the contract is that a redacted device reads NO money
+  // facts, and these two fields rode through untouched when they were added. Zero, not
+  // null: the DTO declares them as plain ints and nothing renders them tech-side.
+  ...(dto.discBps !== undefined ? { discBps: seesPrice ? dto.discBps : 0 } : {}),
+  ...(dto.taxBps !== undefined ? { taxBps: seesPrice ? dto.taxBps : 0 } : {}),
 });
 
 /**
