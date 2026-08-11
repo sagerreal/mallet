@@ -2631,6 +2631,11 @@
      the card instead of popping. */
   @keyframes overlayin{from{opacity:0}to{opacity:1}}
   .overlay.open{animation:overlayin .15s ease}
+  /* A modal SWITCH (one sheet replacing another in the same commit) skips the entrance —
+     replaying it painted a frame of bare page then a translucent fade (the modal-hop
+     "glitch"). Covers the desktop modalin and the mobile sheetin alike. */
+  .overlay.open.swap{animation:none}
+  .overlay.open.swap .modal{animation:none}
 
   /* Phones: backdrop blur is GPU-expensive mid-range jank — a deeper flat scrim
      composites free. It has to be deeper than the desktop value, not equal to it:

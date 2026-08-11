@@ -53,7 +53,7 @@ type CreatedCustomer = RouterOutputs["v1"]["customers"]["create"];
 /** Default estimate-visit length in hours (mirrors new-job-modal's NJ_HOURS.estimate). */
 const ESTIMATE_VISIT_HOURS = 0.5;
 
-export function NewCustomerModal({ open }: { open: boolean }) {
+export function NewCustomerModal({ open, instant }: { open: boolean; instant?: boolean }) {
   const router = useRouter();
   const close = useCloseModal();
   const openModal = useOpenModal();
@@ -420,7 +420,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   const busy = submitting || createMutation.isPending;
 
   return (
-    <Modal open={open} onClose={handleClose}>
+    <Modal open={open} onClose={handleClose} instant={instant}>
       {/* Sticky sheet header — the shell renders the ✕; .sheet-head's own
           padding clears it. NO subtitle — prototype has none. */}
       <div className="sheet-head">
