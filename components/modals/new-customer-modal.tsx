@@ -28,7 +28,15 @@ import { Field, FieldGroup } from "@/components/ui/input";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 
-type VisitPurpose = "job" | "look" | null;
+/**
+ * Book a visit alongside the new customer, or not. ONE booking shape — an unpriced job
+ * (kind "estimate": someone goes out, the price comes after) — because the Job/Estimate
+ * fork is gone everywhere: kind derives from whether a price is committed, and nothing
+ * in this modal commits one. The priced path from here is "✦ Build the price →", which
+ * deliberately goes to the COMPOSER (customer alone + a quote; the job is born when the
+ * quote is accepted).
+ */
+type VisitPurpose = "book" | null;
 
 /** The staged (below-the-essentials) rows — one open at a time. */
 type RowKey = "type" | "source" | "book" | "more";
@@ -159,8 +167,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
 
   // Button label
   function submitLabel(): string {
-    if (visitPurpose === "job") return "Create job";
-    if (visitPurpose === "look") return "Create estimate visit";
+    if (visitPurpose === "book") return "Create job";
     return "Add customer";
   }
 
@@ -201,78 +208,48 @@ export function NewCustomerModal({ open }: { open: boolean }) {
   }
 
   /**
-   * Create the booked work for a just-created customer — the submit button's
-   * "Create job" / "Create estimate visit" paths. Returns false when the job
-   * persist failed: the error is surfaced and the modal must stay open (no
-   * silent failures on interactive paths).
+   * Create the booked visit for a just-created customer — the submit button's
+   * "Create job" path. ONE shape: an unpriced job (kind "estimate") with an
+   * unplaced visit — a REAL job, never a client-store-only evisit (those were
+   * gone on refresh and invisible to the schedule window / crew-load / conflict
+   * checks). Returns false when the job persist failed: the error is surfaced
+   * and the modal must stay open (no silent failures on interactive paths).
    */
   async function createBookedWork(data: CreatedCustomer): Promise<boolean> {
-    if (visitPurpose === "job") {
-      // addJob returns { job, persisted }; the lead (data.id) is already
-      // persisted by createMutation, so addJob fires v1.jobs.create immediately.
-      const { job: created, persisted } = addJob({
-        leadId: data.id,
-        svc: "service",
-        origin: "manual",
-        title: jobDesc.trim() || data.name,
-        // The single top-level Service address IS the job site (one-off ICP:
-        // customer address == job site). Mirrors new-job-modal's addr fallback.
-        addr: address.trim() || "",
-        phone: data.phone ?? "",
-        status: "unscheduled",
-        archived: false,
-        lines: [],
-        addons: [],
-        photos: [],
-        notes: notes.trim(),
-        acts: [],
-        visits: [],
-      });
-      // Await the job persist BEFORE closing — a v1.jobs.create failure only
-      // rolls back the store with a dev log, so closing here would swallow it.
-      // Mirrors new-job-modal's awaited jobPersisted.
-      try {
-        await persisted;
-      } catch (err) {
-        setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
-        return false;
-      }
-      // Every job starts with one editable unplaced visit (same default as
-      // quote-created jobs and the other manual-create flows). addVisit only
-      // persists once the job is DB-origin, so it must run after the reconcile.
-      addVisit(created.id);
-      return true;
+    if (visitPurpose !== "book") return true;
+    // addJob returns { job, persisted }; the lead (data.id) is already
+    // persisted by createMutation, so addJob fires v1.jobs.create immediately.
+    const { job: created, persisted } = addJob({
+      leadId: data.id,
+      kind: "estimate",
+      svc: "",
+      origin: "manual",
+      title: jobDesc.trim() || data.name,
+      // The single top-level Service address IS the job site (one-off ICP:
+      // customer address == job site). Mirrors new-job-modal's addr fallback.
+      addr: address.trim() || "",
+      phone: data.phone ?? "",
+      status: "unscheduled",
+      archived: false,
+      lines: [],
+      addons: [],
+      photos: [],
+      notes: notes.trim(),
+      acts: [],
+      visits: [],
+    });
+    // Await the job persist BEFORE closing — a v1.jobs.create failure only
+    // rolls back the store with a dev log, so closing here would swallow it.
+    // Mirrors new-job-modal's awaited jobPersisted.
+    try {
+      await persisted;
+    } catch (err) {
+      setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
+      return false;
     }
-    if (visitPurpose === "look") {
-      // "Create estimate visit" — a REAL job (kind "estimate") with an unplaced visit.
-      // It used to be a client-store-only evisit: gone on refresh and invisible to the
-      // schedule window / crew-load / conflict checks.
-      const { job: created, persisted } = addJob({
-        leadId: data.id,
-        kind: "estimate",
-        svc: "",
-        origin: "manual",
-        title: jobDesc.trim() || "Estimate visit",
-        addr: address.trim() || "",
-        phone: data.phone ?? "",
-        status: "unscheduled",
-        archived: false,
-        lines: [],
-        addons: [],
-        photos: [],
-        notes: notes.trim(),
-        acts: [],
-        visits: [],
-      });
-      try {
-        await persisted;
-      } catch (err) {
-        setError(userMessage(err, "The customer was saved, but the estimate visit wasn't — check your connection and try again."));
-        return false;
-      }
-      addVisit(created.id, ESTIMATE_VISIT_HOURS);
-      return true;
-    }
+    // Unplaced, at the unpriced default length — dragged onto the Schedule later.
+    // addVisit only persists once the job is DB-origin, so it runs after the reconcile.
+    addVisit(created.id, ESTIMATE_VISIT_HOURS);
     return true;
   }
 
@@ -322,10 +299,10 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       utils.v1.customers.invalidate();
       return;
     }
-    // The "look" path skips the list invalidate: the refetch would rehydrate the
-    // store and wipe the just-attached store-local evisit. createBookedWork
-    // already inserted the lead into the store, so the list stays current.
-    if (visitPurpose !== "look") utils.v1.customers.invalidate();
+    // Always refresh the customers list. The old "look"-path skip existed to protect a
+    // store-local evisit from the refetch — evisits are long dead (bookings are REAL
+    // jobs), so the guard only left the list stale.
+    utils.v1.customers.invalidate();
     reset();
     close();
   }
@@ -430,9 +407,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
       : "Business"
     : "Person";
   const bookSummary =
-    visitPurpose === null
-      ? "No"
-      : `${visitPurpose === "job" ? "Job" : "Estimate visit"}${jobDesc.trim() ? ` · ${clip(jobDesc)}` : ""}`;
+    visitPurpose === null ? "No" : `Visit${jobDesc.trim() ? ` · ${clip(jobDesc)}` : ""}`;
   const moreParts = [
     email.trim() ? "email" : null,
     notes.trim() ? "notes" : null,
@@ -603,25 +578,25 @@ export function NewCustomerModal({ open }: { open: boolean }) {
               />
             </Field>
 
-            {/* Purpose toggle: Job / Estimate visit */}
+            {/* ONE yes/no, no Job/Estimate fork — the booking is an unpriced job either
+                way (kind derives from the price, and nothing in this modal commits one;
+                pricing from here is "✦ Build the price →", the composer's quote). */}
             <div className="chips" style={{ marginBottom: "0" }}>
               <button
                 type="button"
-                className={`chip${visitPurpose === "job" ? " sel" : ""}`}
-                onClick={() =>
-                  setVisitPurpose((p) => (p === "job" ? null : "job"))
-                }
+                className={`chip${visitPurpose === null ? " sel" : ""}`}
+                onClick={() => setVisitPurpose(null)}
+                aria-pressed={visitPurpose === null}
               >
-                Job
+                No
               </button>
               <button
                 type="button"
-                className={`chip${visitPurpose === "look" ? " sel" : ""}`}
-                onClick={() =>
-                  setVisitPurpose((p) => (p === "look" ? null : "look"))
-                }
+                className={`chip${visitPurpose === "book" ? " sel" : ""}`}
+                onClick={() => setVisitPurpose("book")}
+                aria-pressed={visitPurpose === "book"}
               >
-                Estimate visit
+                Yes — book a visit
               </button>
             </div>
 
@@ -631,7 +606,7 @@ export function NewCustomerModal({ open }: { open: boolean }) {
                 A caption over a button, not a form field: the button names itself
                 ("Build the price"), so htmlFor would name it twice and say nothing
                 about the hint beneath. The caption names a group instead. */}
-            {visitPurpose === "job" && (
+            {visitPurpose === "book" && (
               <FieldGroup
                 label="Price"
                 style={{ margin: "var(--space-4) 0 0" }}

@@ -2,11 +2,10 @@
 /**
  * components/modals/visit-modal.test.tsx
  *
- * Guards the visit-after-job race fix in createJobForLead:
- *  - addVisit must NOT be called until `persisted` resolves (job has origin "db").
- *  - On addJob failure, an error is surfaced and the modal stays open.
+ * Guards the visit-after-job race fix in createJobForLead, and the one-job-type
+ * foot: no Job/Estimate chips — the kind derives from which exit ran.
  *
- * Mirrors the new-job-modal.test.tsx createJob patterns.
+ * Mirrors the new-job-modal.test.tsx patterns.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
@@ -71,10 +70,11 @@ describe("VisitModalContent — createJobForLead race fix", () => {
     addJob.mockReturnValue({ job: optimisticJob, persisted: jobPersistedPromise });
 
     render(<VisitModalContent />);
-    // Default purpose is "job" (guessPurpose("fix boiler") → "job").
-    fireEvent.click(screen.getByText("Create the job →"));
+    fireEvent.click(screen.getByRole("button", { name: "Create & price it →" }));
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    // The priced exit derives booked work.
+    expect(addJob).toHaveBeenCalledWith(expect.objectContaining({ kind: "work" }));
 
     // addVisit must NOT have been called yet — still waiting on jobPersisted.
     expect(addVisit).not.toHaveBeenCalled();
@@ -87,11 +87,26 @@ describe("VisitModalContent — createJobForLead race fix", () => {
       expect(addVisit).toHaveBeenCalledWith("job-opt-1");
     });
 
-    // Modal closes and navigates to the job after persistence.
+    // Modal closes and lands the price builder ON the new job's sheet.
     await waitFor(() => {
       expect(closeMock).toHaveBeenCalledOnce();
     });
     expect(openModalMock).toHaveBeenCalledWith("job", { jobId: "job-opt-1" });
+    expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-opt-1" });
+  });
+
+  it("Create job derives the unpriced kind and pops back to the lead — no builder", async () => {
+    addJob.mockReturnValue({
+      job: { id: "job-est-1", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-est-1", origin: "db", visits: [] }),
+    });
+
+    render(<VisitModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+
+    await waitFor(() => expect(closeMock).toHaveBeenCalledOnce());
+    expect(addJob).toHaveBeenCalledWith(expect.objectContaining({ kind: "estimate" }));
+    expect(openModalMock).not.toHaveBeenCalled();
   });
 
   it("surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
@@ -102,7 +117,7 @@ describe("VisitModalContent — createJobForLead race fix", () => {
     });
 
     render(<VisitModalContent />);
-    fireEvent.click(screen.getByText("Create the job →"));
+    fireEvent.click(screen.getByRole("button", { name: "Create & price it →" }));
 
     await waitFor(() => {
       expect(screen.getByText(/couldn't save the job/i)).toBeTruthy();
@@ -114,13 +129,46 @@ describe("VisitModalContent — createJobForLead race fix", () => {
     // addVisit must NOT be called when the job failed.
     expect(addVisit).not.toHaveBeenCalled();
   });
+
+  it("one press, one job — a second press while in flight is ignored", async () => {
+    let release!: (j: unknown) => void;
+    addJob.mockReturnValue({
+      job: { id: "job-slow", origin: "manual", visits: [] },
+      persisted: new Promise((res) => { release = res; }),
+    });
+
+    render(<VisitModalContent />);
+    const pri = screen.getByRole("button", { name: "Create & price it →" });
+    fireEvent.click(pri);
+    fireEvent.click(pri);
+    fireEvent.click(screen.getByText("Create job"));
+
+    release({ id: "job-slow", origin: "db", visits: [] });
+    await waitFor(() => expect(closeMock).toHaveBeenCalled());
+    expect(addJob).toHaveBeenCalledTimes(1);
+  });
 });
 
-describe("VisitModalContent — two-button sheet foot (#362)", () => {
-  // .sheet-pri is width:100% at the class level; beside Cancel that over-constrains
-  // the flex line. The cure: Cancel keeps its intrinsic width (flexShrink 0),
-  // the primary takes the remaining space (flex 1, width auto).
-  it("Cancel keeps its intrinsic width and the primary takes the remaining space", () => {
+describe("VisitModalContent — the one-job foot", () => {
+  beforeEach(() => {
+    addJob.mockReset();
+    addVisit.mockReset();
+    closeMock = vi.fn();
+    openModalMock = vi.fn();
+  });
+
+  it("has no Job/Estimate chips — the fork is the foot", () => {
+    render(<VisitModalContent />);
+    expect(screen.queryByText("Estimate visit")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Job$/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Create job" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create & price it →" })).toBeTruthy();
+  });
+
+  // .sheet-pri is width:100% at the class level; in a shared foot that over-constrains
+  // the flex line. The cure: Cancel keeps its intrinsic width (flexShrink 0), the
+  // creates take the remaining space (flex 1, width auto), all on one 44px line.
+  it("Cancel keeps its intrinsic width and the creates split the remaining space", () => {
     render(<VisitModalContent />);
     const cancel = document.querySelector<HTMLButtonElement>(".sheet-foot .btn.ghost");
     const pri = document.querySelector<HTMLButtonElement>(".sheet-foot .sheet-pri");
