@@ -90,3 +90,21 @@ describe("test factory", () => {
     expect(mkTech({ color: "#abc" }).color).toBe("#abc");
   });
 });
+
+// The board block prints the job's TITLE now — "JOB" over a customer name said nothing about
+// the work. boardItemsFor carries it so both board views read the same field.
+import { boardItemsFor } from "./jobs-helpers";
+
+describe("boardItemsFor — the block's title", () => {
+  it("carries the job title alongside the customer name", () => {
+    const jobs = [
+      {
+        id: "j1", title: "Water heater swap", status: "scheduled",
+        visits: [{ id: "v1", techId: "t1", date: "2026-08-11", start: 9, dur: 1.5, status: "scheduled" }],
+      },
+    ] as never;
+    const items = boardItemsFor(jobs, [], "t1", "2026-08-11");
+    expect(items).toHaveLength(1);
+    expect(items[0]?.title).toBe("Water heater swap");
+  });
+});

@@ -19,6 +19,8 @@
 
 "use client";
 
+import { DraftNumberInput } from "@/components/shared/draft-number-input";
+import { fmt$2 } from "@/lib/format";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useAppStore,
@@ -470,7 +472,9 @@ function DueCard({ invoice }: { invoice: Invoice }) {
           {total <= 0 ? (
             <span style={{ fontSize: "var(--type-lg)", color: "var(--ink-3)" }}>No bill set yet</span>
           ) : due > 0 ? (
-            fmt$(due)
+            // Cent-precise on purpose: the local fmt$ rounds to whole dollars, which printed "$10"
+            // over an invoice genuinely due $10.40 — a money figure may never disagree with the charge.
+            fmt$2(due)
           ) : (
             "Paid ✓"
           )}
@@ -558,11 +562,11 @@ function PayBlock({
   const amtIn = (
     <>
       <span className="muted">$</span>
-      <input
-        type="number"
-        inputMode="decimal"
+      <DraftNumberInput
         value={p.amt || due}
-        onChange={(e) => setP((s) => ({ ...s, amt: +e.target.value || 0 }))}
+        decimals={2}
+        aria-label="Amount due in dollars"
+        onCommit={(n) => setP((s) => ({ ...s, amt: n }))}
         style={{
           width: 118,
           border: "1.5px solid var(--line)",

@@ -30,6 +30,7 @@ import type { CSSProperties } from "react";
 import type { PricingRates, PricedTotals } from "@mallet/shared/types";
 import { money, deriveTotals, BPS_DENOMINATOR } from "@mallet/shared/types";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
+import { DraftNumberInput } from "@/components/shared/draft-number-input";
 import { Segmented } from "@/app/(office)/settings/segmented";
 import { COMPACT_INPUT } from "@/components/ui/input";
 import { fmt$2 } from "@/lib/format";
@@ -176,17 +177,12 @@ function AmountEditor({
   return (
     <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "var(--space-2)" }}>
       <Segmented value={mode} onChange={onMode} options={MODES} aria-label={`${label} — percent or dollars`} />
-      <input
-        type="number"
-        inputMode="decimal"
-        min={0}
-        max={mode === "pct" ? maxPct : undefined}
-        step={mode === "pct" ? 0.25 : 1}
+      <DraftNumberInput
+        value={mode === "pct" ? pct : amt}
         disabled={disabled}
         aria-label={mode === "pct" ? `${label} percent` : `${label} amount in dollars`}
-        value={(mode === "pct" ? pct : amt) || ""}
         placeholder="0"
-        onChange={(ev) => (mode === "pct" ? onPct(numberOrZero(ev.target.value)) : onAmt(numberOrZero(ev.target.value)))}
+        onCommit={(n) => (mode === "pct" ? onPct(Math.min(maxPct, n)) : onAmt(n))}
         style={RATE_INPUT}
       />
       <span className="fig" style={{ fontWeight: 700 }}>
@@ -220,17 +216,12 @@ function TaxRow({ pct, bps, taxCents, disabled, open, onToggle, onPct }: TaxRowP
       onToggle={onToggle}
     >
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
-        <input
-          type="number"
-          inputMode="decimal"
-          min={0}
-          max={MAX_TAX_PCT}
-          step={0.25}
+        <DraftNumberInput
+          value={pct}
           disabled={disabled}
           aria-label="Sales tax percent"
-          value={pct || ""}
           placeholder="0"
-          onChange={(ev) => onPct(Math.min(MAX_TAX_PCT, numberOrZero(ev.target.value)))}
+          onCommit={(n) => onPct(Math.min(MAX_TAX_PCT, n))}
           style={RATE_INPUT}
         />
         <span aria-hidden="true" style={{ fontWeight: 700 }}>

@@ -308,7 +308,7 @@ export function SchedulePanel() {
                   />
                 ))}
                 {/* visit blocks (jobs + estimate visits) */}
-                {items.map(({ kind, ownerId, name, mode, v }) => {
+                {items.map(({ kind, ownerId, name, title, mode, v }) => {
                   const vStart = v.start ?? 0;
                   const left = Math.max(0, (vStart - START) * WPX);
                   const w = Math.max(MIN_BLOCK_WIDTH_PX, (v.dur ?? 1) * WPX - BLOCK_GAP_PX);
@@ -329,11 +329,13 @@ export function SchedulePanel() {
                       onClick={(e) => { e.stopPropagation(); openIt(); }}
                       title={`${name} · ${timeLabelShort(vStart)}–${timeLabelShort(vStart + (v.dur ?? 0))}`}
                     >
+                      {/* The block prints the JOB TITLE — "JOB" over a customer name said nothing
+                          about the work. The kind still reads from the block's color/est styling,
+                          and the customer stays one hover away in the title attribute. */}
                       <div className="gv-bt" style={{ color: m.c }}>
-                        {m.word ?? m.tag}
+                        {title || (m.word ?? m.tag)}
                         {v.status === "done" ? " ✓" : ""}
                       </div>
-                      <div className="gv-bn">{name}</div>
                       <div className="gv-btm">
                         {timeLabelShort(vStart)}–{timeLabelShort(vStart + (v.dur ?? 0))}
                       </div>
@@ -381,7 +383,7 @@ export function SchedulePanel() {
             entries.length === 0 ? (
               <div className="wk-empty">—</div>
             ) : (
-              entries.map(({ kind, ownerId, name, mode, v }) => {
+              entries.map(({ kind, ownerId, name: _name, title, mode, v }) => {
                 const vStart = v.start ?? 0;
                 const m = svcMeta(mode);
                 const tc = v.techId != null ? techById(techs, v.techId) : undefined;
@@ -396,9 +398,8 @@ export function SchedulePanel() {
                     }}
                   >
                     <div className="wk-bt" style={{ color: m.c }}>
-                      {m.word ?? m.lbl}
+                      {title || (m.word ?? m.lbl)}
                     </div>
-                    <div className="wk-nm">{name}</div>
                     <div className="wk-tm">
                       {timeLabelShort(vStart)}–{timeLabelShort(vStart + (v.dur ?? 0))}
                       {tc ? ` · ${tc.name.split(" ")[0]}` : ""}
