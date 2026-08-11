@@ -18,6 +18,8 @@ export interface BoardItem {
   kind: "job";
   ownerId: string;
   name: string;
+  /** The job's own title — what the block prints. The customer name stays in the tooltip. */
+  title: string | null;
   mode: string;
   v: Visit;
 }
@@ -112,7 +114,7 @@ export function boardItemsFor(jobs: Job[], leads: Lead[], techId: string, iso: s
   liveJobs(jobs).forEach((j) =>
     (j.visits ?? []).forEach((v) => {
       if (v.techId === techId && v.date === iso)
-        items.push({ kind: "job", ownerId: j.id, name: custName(j, leads), mode: jobMode(j), v });
+        items.push({ kind: "job", ownerId: j.id, name: custName(j, leads), title: j.title ?? null, mode: jobMode(j), v });
     })
   );
   return items.sort((a, b) => (a.v.start ?? 0) - (b.v.start ?? 0));

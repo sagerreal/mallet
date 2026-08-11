@@ -221,7 +221,7 @@ describe("CloseOutModalContent — the visit-fee flow's invoiceId param", () => 
     render(<CloseOutModalContent />);
     // DueCard rendered with the fee invoice's amount — proof it was actually found, not just
     // silently blocked from auto-creating a replacement.
-    expect(screen.getByText("$89")).toBeTruthy();
+    expect(screen.getByText("$89.00")).toBeTruthy();
     expect(mockAddInvoice).not.toHaveBeenCalled();
   });
 

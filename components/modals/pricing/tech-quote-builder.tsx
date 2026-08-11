@@ -360,6 +360,24 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
     setPricing((prev) => (prev.taxPct > 0 ? prev : { ...prev, taxPct: orgTaxRate }));
   }, [orgTaxRate]);
 
+  // THE JOB ARRIVES LATE. The useState initializer above runs once, on mount — and this sheet can
+  // mount before the job (and its stored pricing) has hydrated into the store, so a saved discount
+  // and tax rendered as "None" until the user happened to touch a control (Owen, Aug 11: "the
+  // sales tax and discount is not initially showing up"). Re-seed exactly once when a job's stored
+  // rates first become visible, and never over anything already typed or already seeded.
+  const seededJobPricing = useRef(false);
+  const jobDisc = job?.pricing?.disc ?? 0;
+  const jobTax = job?.pricing?.tax ?? 0;
+  useEffect(() => {
+    if (seededJobPricing.current || (jobDisc <= 0 && jobTax <= 0)) return;
+    seededJobPricing.current = true;
+    setPricing((prev) => ({
+      ...prev,
+      ...(prev.discPct > 0 || prev.discAmt > 0 ? {} : { discPct: jobDisc, discMode: "pct" as const }),
+      ...(prev.taxPct > 0 ? {} : { taxPct: jobTax }),
+    }));
+  }, [jobDisc, jobTax]);
+
   /**
    * SAVE THE PRICE WHEN THE TECHNICIAN LEAVES IT.
    *
