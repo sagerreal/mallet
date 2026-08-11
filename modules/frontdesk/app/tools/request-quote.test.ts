@@ -107,6 +107,11 @@ class FakeLeadRepository implements LeadRepository {
     return null;
   }
 
+  // Not exercised here: the voice front desk always resolves a caller by phone, never by name.
+  async findByNames(): Promise<Lead[]> {
+    return [];
+  }
+
   async findByIds(ids: readonly LeadId[]): Promise<Lead[]> {
     const found: Lead[] = [];
     for (const id of ids) {

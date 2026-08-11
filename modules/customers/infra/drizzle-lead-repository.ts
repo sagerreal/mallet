@@ -117,6 +117,25 @@ export class DrizzleLeadRepository implements LeadRepository {
     return rows.map(toDomain);
   }
 
+  async findByNames(names: readonly string[]): Promise<Lead[]> {
+    if (names.length === 0) return [];
+    // Compare on lower(name) so "Gary Pratt" and "gary pratt" are one customer. Deduped first so a
+    // chunk repeating the same name doesn't inflate the IN list.
+    const wanted = [...new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean))];
+    if (wanted.length === 0) return [];
+    const rows = await this.tx
+      .select()
+      .from(leads)
+      .where(
+        and(
+          eq(leads.orgId, this.orgId),
+          inArray(sql`lower(${leads.name})`, wanted),
+          isNull(leads.deletedAt),
+        ),
+      );
+    return rows.map(toDomain);
+  }
+
   /** Predicates shared by list() and count(), so the two can never answer different questions. */
   private listConds(filter?: LeadFilter): SQL[] {
     const conds: SQL[] = [isNull(leads.deletedAt)];
