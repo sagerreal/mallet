@@ -115,12 +115,25 @@ beforeEach(() => {
 // Normal (repair) job — Scope + the embedded builder, no dual exit
 // ---------------------------------------------------------------------------
 
+// Scope UI lives ONLY on the estimate chooser now (Owen's picked design) — these helpers
+// render that surface and open the relevant row for the scope/photos/scan suites below.
+const estChooserJob = (overrides: Partial<Job> = {}) =>
+  makeJob({ svc: "estimate", kind: "estimate", visits: [makeVisit()], ...overrides });
+function renderChooserWithRow(row: "Scope" | "Photos", job = estChooserJob(), readOnly = false) {
+  mockJobs = [job];
+  const r = render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={readOnly} onSigned={mockOnSigned} />);
+  fireEvent.click(screen.getByRole("button", { name: new RegExp("^" + row) }));
+  return r;
+}
+
 describe("QuoteTab — normal job", () => {
-  it("renders Scope and the embedded builder with the present primary", () => {
+  it("renders the embedded builder with the present primary — and NO scope furniture", () => {
     const job = makeJob();
     mockJobs = [job];
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
-    expect(screen.getByText("Scope")).toBeTruthy();
+    // Scope serves the send-to-office flow, which a repair job does not have (Owen, Aug 11:
+    // scope headlining every variant "considering in only one of the flows we send it").
+    expect(screen.queryByText("Scope")).toBeNull();
     expect(screen.getByText("The price")).toBeTruthy();
     expect(screen.getByText("Present to customer →")).toBeTruthy();
     // No estimate exits on a repair.
@@ -244,9 +257,8 @@ describe("QuoteTab — after the customer signs", () => {
 
 describe("QuoteTab — scope save", () => {
   it("tap → edit → Save writes through setVisitNotes with the visit id", async () => {
-    const job = makeJob();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    const job = estChooserJob();
+    renderChooserWithRow("Scope", job);
     fireEvent.click(screen.getByText(/What you saw on site/));
     const box = screen.getByLabelText("Scope notes");
     fireEvent.change(box, { target: { value: "Two doors, tight attic access" } });
@@ -262,9 +274,8 @@ describe("QuoteTab — scope save", () => {
 
   it("surfaces the server's refusal instead of closing the editor", async () => {
     mockSetVisitNotes.mockResolvedValue({ ok: false, error: "this job isn't assigned to you" });
-    const job = makeJob();
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    const job = estChooserJob();
+    renderChooserWithRow("Scope", job);
     fireEvent.click(screen.getByText(/What you saw on site/));
     fireEvent.change(screen.getByLabelText("Scope notes"), { target: { value: "x" } });
     fireEvent.click(screen.getByText("Save scope"));
@@ -273,9 +284,8 @@ describe("QuoteTab — scope save", () => {
   });
 
   it("shows saved scope notes with an Edit affordance", () => {
-    const job = makeJob({ visits: [makeVisit({ scopeNotes: "40 ft of baseboard" })] });
-    mockJobs = [job];
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    const job = estChooserJob({ visits: [makeVisit({ scopeNotes: "40 ft of baseboard" })] });
+    renderChooserWithRow("Scope", job);
     expect(screen.getByText("40 ft of baseboard")).toBeTruthy();
     expect(screen.getByText("Edit →")).toBeTruthy();
   });
@@ -325,9 +335,10 @@ describe("QuoteTab — estimate dual exit", () => {
     render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
     expect(screen.getByText(/the office builds the quote from your scope/)).toBeTruthy();
     expect(screen.queryByText("Send scope to the office")).toBeNull();
-    // Still editable, and quoting on site stays open.
-    expect(screen.getByText("Edit →")).toBeTruthy();
     expect(screen.getByText("Quote it now")).toBeTruthy();
+    // Still editable — the notes live behind the Scope row, marked written.
+    fireEvent.click(screen.getByRole("button", { name: /^Scope/ }));
+    expect(screen.getByText("Edit →")).toBeTruthy();
   });
 
   it("an already-quoted estimate job goes straight to the builder (no dual exit)", () => {
@@ -346,12 +357,10 @@ describe("QuoteTab — estimate dual exit", () => {
 // ---------------------------------------------------------------------------
 
 describe("QuoteTab — scan a room", () => {
-  function renderScanRow(scan: RoomScanAvailability) {
-    const job = makeJob();
-    mockJobs = [job];
+  function renderScanRow(scan: RoomScanAvailability, readOnly = false) {
     mockMeasurementEstimating = "on";
     mockScan = scan;
-    return render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    return renderChooserWithRow("Photos", estChooserJob(), readOnly);
   }
 
   it("state 1 — live on a LiDAR device, drilling into the room-card scan mode", () => {
@@ -428,11 +437,9 @@ describe("QuoteTab — scan a room", () => {
    * why costs a reload; live costs rows in someone's database.
    */
   it("renders DISABLED with its reason when settings have NOT loaded — visible, never live", () => {
-    const job = makeJob();
-    mockJobs = [job];
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    renderChooserWithRow("Photos");
 
     const button = screen.getByRole("button", { name: "Scan a room" });
     expect(button).toHaveProperty("disabled", true);
@@ -446,32 +453,26 @@ describe("QuoteTab — scan a room", () => {
   });
 
   it("an unknown gate cannot open the room card — no estimate job is created", () => {
-    const job = makeJob();
-    mockJobs = [job];
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    renderChooserWithRow("Photos");
     fireEvent.click(screen.getByRole("button", { name: "Scan a room" }));
     expect(mockPushModal).not.toHaveBeenCalled();
   });
 
   it("the DEVICE still outranks an unknown gate — a browser is told to open the app", () => {
-    const job = makeJob();
-    mockJobs = [job];
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "no-native-app" };
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    renderChooserWithRow("Photos");
     expect(
       screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
     ).toBeTruthy();
   });
 
   it("an unknown gate outranks a CLOSED job — reopening it would not make the scan work", () => {
-    const job = makeJob({ status: "done" });
-    mockJobs = [job];
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} onSigned={mockOnSigned} />);
+    renderChooserWithRow("Photos", estChooserJob({ status: "done", visits: [makeVisit({ status: "done" })] }), true);
     expect(
       screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
     ).toBeTruthy();
@@ -485,11 +486,10 @@ describe("QuoteTab — scan a room", () => {
 
 describe("QuoteTab — closed job", () => {
   it("offers no write controls, only Done", () => {
-    const job = makeJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
-    mockJobs = [job];
+    const job = estChooserJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
     mockMeasurementEstimating = "on";
     mockScan = { status: "ready" };
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} onSigned={mockOnSigned} />);
+    renderChooserWithRow("Scope", job, true);
     expect(screen.getByText("as found")).toBeTruthy();
     expect(screen.queryByText("Edit →")).toBeNull();
     expect(screen.queryByText(/Add photo/)).toBeNull();
@@ -504,11 +504,10 @@ describe("QuoteTab — closed job", () => {
    * reason instead.
    */
   it("shows the scanner DISABLED with the job-closed reason, never absent", () => {
-    const job = makeJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
-    mockJobs = [job];
+    const job = estChooserJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
     mockMeasurementEstimating = "on";
     mockScan = { status: "ready" };
-    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={true} onSigned={mockOnSigned} />);
+    renderChooserWithRow("Photos", job, true);
 
     const button = screen.getByRole("button", { name: "Scan a room" });
     expect(button).toHaveProperty("disabled", true);
@@ -844,5 +843,67 @@ describe("QuoteTab — the builder has a way back to the chooser", () => {
     // …but the chooser stays one tap away.
     fireEvent.click(screen.getByRole("button", { name: "← Back" }));
     expect(screen.getByText("Quote it now")).toBeTruthy();
+  });
+});
+
+// Owen's picked design (Aug 11 mockups): walkthrough = actions first, Scope/Photos as quiet
+// level-0 rows beneath; committed job = money only; scope UI exists ONLY where the
+// send-to-office flow lives.
+describe("QuoteTab — scope follows its flow", () => {
+  const estJob = (overrides: Partial<Job> = {}) =>
+    makeJob({ svc: "estimate", kind: "estimate", visits: [makeVisit()], ...overrides });
+
+  it("walkthrough: the two actions lead; Scope and Photos are rows beneath them", () => {
+    const job = estJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+
+    const quoteBtn = screen.getByText("Quote it now");
+    const scopeRow = screen.getByRole("button", { name: /^Scope/ });
+    // DOM order: the action precedes the row.
+    expect(quoteBtn.compareDocumentPosition(scopeRow) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Photos/ })).toBeTruthy();
+    // The old standing section head is gone.
+    expect(screen.queryByText("What you saw on site — sizes, access, materials.")).toBeNull();
+  });
+
+  it("the Scope row expands in-flow into the editor", () => {
+    const job = estJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /^Scope/ }));
+    expect(screen.getByText("What you saw on site — sizes, access, materials.")).toBeTruthy();
+  });
+
+  it("committed job: money only — no Scope row, no Photos row, no scope card", () => {
+    const job = estJob({ sourceEstimateId: "est-1" });
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+
+    expect(screen.queryByRole("button", { name: /^Scope/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Photos/ })).toBeNull();
+    expect(screen.queryByText("What you saw on site — sizes, access, materials.")).toBeNull();
+  });
+
+  it("the builder after 'Quote it now' carries no scope furniture — Back reaches it", () => {
+    const job = estJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+
+    fireEvent.click(screen.getByText("Quote it now"));
+    expect(screen.queryByRole("button", { name: /^Scope/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "← Back" })).toBeTruthy();
+  });
+
+  it("'Send scope to the office' with nothing written opens the Scope row and names the problem", () => {
+    const job = estJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+
+    fireEvent.click(screen.getByText("Send scope to the office"));
+    // The row expanded straight into the EDITOR — no second tap — and the refusal says why.
+    expect(screen.getByLabelText("Scope notes")).toBeTruthy();
+    expect(screen.getByText("Write what you saw first — the office quotes from your notes.")).toBeTruthy();
   });
 });

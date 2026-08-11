@@ -42,6 +42,7 @@ import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
 import { jobPriceCommitted } from "@/features/jobs/job-status-meta";
+import { SheetRow } from "@/components/modals/sheet-row";
 import type { Job, Visit } from "@/lib/store/types";
 import { jobMode, jobQuoted, AO_INPUT } from "./helpers";
 
@@ -69,8 +70,10 @@ function ScopeNotesRow({ scopeNotes, disabled, openSignal = 0, onSave }: ScopeNo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   // Host-forced open: "Send scope to the office" with nothing written lands the
-  // tech in the editor instead of at a dead error.
-  const lastSignal = useRef(openSignal);
+  // tech in the editor instead of at a dead error. Initialized to ZERO, not the current
+  // signal: the editor now lives inside the Scope row's accordion, whose body mounts on
+  // open — a signal bumped in the same commit that opens the row must still land here.
+  const lastSignal = useRef(0);
   if (openSignal !== lastSignal.current) {
     lastSignal.current = openSignal;
     if (!disabled && !editing) {
@@ -285,6 +288,8 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
   const [builderMode, setBuilderMode] = useState<TechQuoteMode>("edit");
   const [sendError, setSendError] = useState("");
   const [scopeOpenSignal, setScopeOpenSignal] = useState(0);
+  // The Scope row's accordion — controlled so "Send scope" with nothing written can open it.
+  const [scopeRowOpen, setScopeRowOpen] = useState(false);
 
   // `committed` is listed on its own: a booked job on a price-redacted device reads null
   // rates, so `quoted` (which sums them) misses it and the tab would offer an editable draft
@@ -314,6 +319,7 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
   function sendToOffice() {
     if (!sentToOffice) {
       setSendError(SCOPE_EMPTY_SEND_COPY);
+      setScopeRowOpen(true);
       setScopeOpenSignal((n) => n + 1);
       return;
     }
@@ -325,49 +331,6 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
 
   return (
     <>
-      {!presenting && (
-        <div className="fsec">
-          <div className="fsec-h">
-            <span>Scope</span>
-          </div>
-          <ScopeNotesRow
-            scopeNotes={scopeVisit?.scopeNotes ?? ""}
-            disabled={readOnly}
-            openSignal={scopeOpenSignal}
-            onSave={saveScope}
-          />
-          <ScopePhotos job={job} disabled={readOnly} />
-          {/* Scanning is offered unless the org's settings have arrived and said this shop does
-              not measure. NOTHING else hides this row — every other "no" renders the control
-              disabled with its reason:
-                · this device/browser cannot scan  → the device blocker;
-                · the job is CLOSED                → the job-closed blocker. It used to be
-                  `!readOnly`, i.e. gone. This is the office job sheet too, and the demo shop
-                  seeds completed jobs, so an owner opening one got Scope, photos and a silently
-                  missing scanner — the exact absence this whole component exists to kill;
-                · settings never loaded            → `"unknown"`, which fails OPEN
-                  (lib/measurement-gate.ts) into a DISABLED row with the settings-unknown reason.
-                  One 500 from v1.settings.get used to remove the row from every surface in the app
-                  with no explanation anywhere; failing open the other way — leaving it live —
-                  would hand a non-measuring shop a button that writes an estimate job. */}
-          {measurementSurfacesVisible(measurementGate) && (
-            <div style={{ marginTop: "var(--space-3)" }}>
-              {scanBlocker === null ? (
-                <button
-                  type="button"
-                  className="btn sm scanbtn"
-                  onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
-                >
-                  Scan a room
-                </button>
-              ) : (
-                <ScanUnavailable blocker={scanBlocker} label="Scan a room" />
-              )}
-            </div>
-          )}
-        </div>
-      )}
-
       {/* Estimate visit, not yet quoting: the dual exit. */}
       {!presenting && isEstimate && !showBuilder && (
         <div className="fsec">
@@ -410,6 +373,50 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
               {sendError}
             </div>
           )}
+          {/* Scope and photos are quiet level-0 rows BENEATH the actions (Owen's picked design,
+              Aug 11 mockups): the walkthrough's job is choosing what happens next, and scope
+              only matters to the send-to-office path above it. This chooser is now the ONLY
+              home of scope UI — the builder and a committed job are money only. */}
+          <div style={{ marginTop: "var(--space-4)" }}>
+            <SheetRow
+              label="Scope"
+              value={(scopeVisit?.scopeNotes ?? "").trim() ? "written" : "Add"}
+              valueIsHint={!(scopeVisit?.scopeNotes ?? "").trim()}
+              expandable
+              open={scopeRowOpen}
+              onOpenChange={setScopeRowOpen}
+            >
+              <ScopeNotesRow
+                scopeNotes={scopeVisit?.scopeNotes ?? ""}
+                disabled={readOnly}
+                openSignal={scopeOpenSignal}
+                onSave={saveScope}
+              />
+            </SheetRow>
+            <SheetRow
+              label="Photos"
+              value={(job.photos ?? []).length > 0 ? String((job.photos ?? []).length) : "Add"}
+              valueIsHint={(job.photos ?? []).length === 0}
+              expandable
+            >
+              <ScopePhotos job={job} disabled={readOnly} />
+              {measurementSurfacesVisible(measurementGate) && (
+                <div style={{ marginTop: "var(--space-3)" }}>
+                  {scanBlocker === null ? (
+                    <button
+                      type="button"
+                      className="btn sm scanbtn"
+                      onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
+                    >
+                      Scan a room
+                    </button>
+                  ) : (
+                    <ScanUnavailable blocker={scanBlocker} label="Scan a room" />
+                  )}
+                </div>
+              )}
+            </SheetRow>
+          </div>
         </div>
       )}
 
