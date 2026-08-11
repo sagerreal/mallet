@@ -98,6 +98,7 @@ export function EstimateModalContent() {
   const pushModal = usePushModal();
   const estimates = useAppStore((s) => s.estimates);
   const leads = useAppStore((s) => s.leads);
+  const jobs = useAppStore((s) => s.jobs);
   const updateEstimate = useAppStore((s) => s.updateEstimate);
   const deleteEstimate = useAppStore((s) => s.deleteEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
@@ -168,6 +169,12 @@ export function EstimateModalContent() {
     return null;
   }
 
+  // The HEADER-ONLY beat. List hydration carries no lines, so a quote opened from the ledger
+  // rendered instantly as an empty table with a $0 total, then reflowed wholesale when the full
+  // record landed — the "glitch" (Owen). The absent case above already showed the loading state;
+  // the header-only case is the same wait and gets the same answer.
+  if (needsFull && fullQuery.isLoading) return <ModalLoading size="lg" />;
+
   // L2: surface a non-not_found query error inline rather than silently leaving the table empty.
   if (fullQuery.isError && fullQuery.error?.data?.code !== "NOT_FOUND") {
     return (
@@ -188,6 +195,7 @@ export function EstimateModalContent() {
   // Tier-aware lines: a pre-accept GBB estimate shows the RECOMMENDED tier only
   // (effectiveEstLines) so the table and total match the pipeline card's figure —
   // never the sum of all three tiers. Single/resolved quotes pass through as-is.
+  const wonJob = jobs.find((j) => j.sourceEstimateId === e.id && !j.archived);
   const displayLines = effectiveEstLines(e);
   const m = calcQuote(displayLines, e.pricing);
   const p = e.pricing ?? { disc: 0, dep: 0, tax: 0 };
@@ -662,6 +670,35 @@ export function EstimateModalContent() {
             }}
           >
             Edit &amp; resend
+          </button>
+        </div>
+      )}
+
+      {/* A WON quote's next move is the JOB it became (accept converts; job.sourceEstimateId is
+          the link written by both sale directions). Pushed, not swapped — back returns to the
+          quote. No job in the store gets no button: a primary that opens nothing is worse than
+          the quiet read-back this modal already is. The terminal states had NO foot at all,
+          which is what read as "just a viewing modal" (Owen). */}
+      {e.status === "accepted" && wonJob && (
+        <div className="sheet-foot">
+          <button className="sheet-pri" onClick={() => pushModal(MODAL.JOB, { jobId: wonJob.id })}>
+            Open the job &rarr;
+          </button>
+        </div>
+      )}
+
+      {/* A LOST quote's honest next move: another attempt. Same composer path Revise uses —
+          the original stays live until the revision sends. */}
+      {e.status === "declined" && (
+        <div className="sheet-foot">
+          <button
+            className="sheet-pri"
+            onClick={() => {
+              close();
+              router.push(`/composer?revise=${e.id}`);
+            }}
+          >
+            Revise &amp; try again
           </button>
         </div>
       )}
