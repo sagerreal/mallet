@@ -35,10 +35,11 @@ describe("Topbar", () => {
   it("renders the breadcrumb and the standing controls", () => {
     render(<Topbar />);
     expect(screen.getByText("Office")).toBeTruthy();
-    expect(screen.getByTitle("Light / dark")).toBeTruthy();
-    // No notifications bell. It was a control with no handler — nothing opened, nothing counted —
-    // and an icon that does nothing teaches people not to trust the ones that do.
+    // No notifications bell, and no light/dark toggle (cut Aug 2026 — the app commits to its
+    // one look). A corner icon that does nothing for the work teaches people not to trust the
+    // icons that do.
     expect(screen.queryByTitle("Notifications")).toBeNull();
+    expect(screen.queryByTitle("Light / dark")).toBeNull();
   });
 
   it("carries the More overflow (phone-only via CSS) so dropping the More tab lost no reach", () => {

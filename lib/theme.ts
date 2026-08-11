@@ -1,60 +1,28 @@
 /**
  * lib/theme.ts
- * Which theme to show, and how the toggle moves.
+ * The app is LIGHT. One look, committed.
  *
- * Dark mode used to be opt-in only — `html{color-scheme:light}` plus a toggle that
- * wrote localStorage — so a phone set to dark still got a bright cream app. Apple's
- * HIG expects the system setting to be honoured.
+ * Dark mode had a full stack here once — a system-preference resolver, a topbar toggle, a
+ * localStorage choice, a pre-paint script. Cut Aug 2026 (Owen): the app commits to its one
+ * look, and the corner toggle was chrome nobody asked for. The dark token block in
+ * prototype.css stays dormant behind [data-theme="dark"], which nothing sets any more.
  *
- * Two rules, and their order is the design: an explicit choice always beats the
- * system, and the system is the default. Someone who deliberately picked light must
- * not be flipped to dark at sunset.
- *
- * Deliberately NOT done in CSS. The obvious approach —
- * `@media (prefers-color-scheme: dark) { :root:not([data-theme]) { … } }` — would
- * require duplicating the entire dark token block that already exists under
- * `[data-theme="dark"]`, and two copies of a palette drift. Instead the theme is
- * resolved to an attribute BEFORE first paint (see the inline script in
- * app/layout.tsx), so prototype.css keeps exactly one dark block and one source of
- * truth.
+ * What remains is the CLEAN-UP script: anyone who ever tapped the old toggle has
+ * `mallet-theme: dark` in localStorage and `data-theme` stamped by the old pre-paint script —
+ * without this, removing the toggle would LOCK those users in dark with no way back. It runs
+ * pre-paint for the same reason the old resolver did: an effect runs after paint, and a dark
+ * flash on a cream app is the exact class of bug this file exists to prevent.
  */
 
-export type Theme = "light" | "dark";
-
-/** localStorage key. Shared by the pre-paint script and the toggle, so it cannot drift. */
+/** localStorage key the retired toggle wrote — the clean-up script clears it. */
 export const THEME_STORAGE_KEY = "mallet-theme";
 
-const isTheme = (value: unknown): value is Theme => value === "light" || value === "dark";
-
 /**
- * @param stored      raw localStorage value — untrusted: user-writable, survives
- *                    deploys, and may be stale or hand-edited.
- * @param prefersDark the system preference.
- */
-export function resolveInitialTheme(stored: string | null, prefersDark: boolean): Theme {
-  if (isTheme(stored)) return stored;
-  return prefersDark ? "dark" : "light";
-}
-
-/** The toggle flips whatever is EFFECTIVE, which is not necessarily light. */
-export function nextTheme(current: Theme): Theme {
-  return current === "dark" ? "light" : "dark";
-}
-
-/**
- * Runs in `<head>` before first paint, so a system-dark phone never flashes cream.
- * Kept as a string because it must be inlined and blocking — a React effect runs
- * after paint, which is the flash we are avoiding.
- *
- * Mirrors resolveInitialTheme above. It is duplicated ON PURPOSE (this has to be
- * dependency-free, pre-hydration, ES5-safe) and lib/theme.test.ts documents the
- * behaviour both must share. Wrapped in try/catch because localStorage throws
- * outright in some privacy modes, and a theme is never worth a blank page.
+ * Runs in `<head>` before first paint. Dependency-free, pre-hydration, ES5-safe; wrapped in
+ * try/catch because localStorage throws outright in some privacy modes, and theme hygiene is
+ * never worth a blank page.
  */
 export const THEME_INIT_SCRIPT = `(function(){try{
-var d=document.documentElement;
-if(d.getAttribute('data-theme')==='light'||d.getAttribute('data-theme')==='dark')return;
-var s=localStorage.getItem('${THEME_STORAGE_KEY}');
-var t=(s==='light'||s==='dark')?s:(window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');
-d.setAttribute('data-theme',t);
+document.documentElement.removeAttribute('data-theme');
+localStorage.removeItem('${THEME_STORAGE_KEY}');
 }catch(e){}})();`;
