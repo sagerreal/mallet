@@ -11,6 +11,7 @@ import { useNavCounts } from "@/components/shell/use-nav-counts";
 import { signOut } from "@/features/auth/hooks";
 import {
   selectOpenTaskCount,
+  selectSentQuoteCount,
   selectCustomerCount,
   selectJobsCount,
   selectUnscheduledCount,
@@ -126,7 +127,7 @@ function NavSub({ href, label, count, active }: NavSubProps) {
 }
 
 // Routes that belong to the Customers group (its sidebar sub-nav).
-const CUSTOMER_AREA = ["/customers", "/tasks"];
+const CUSTOMER_AREA = ["/customers", "/tasks", "/quotes"];
 
 // Routes that belong to the Office group — the shop's own surfaces: today's brief
 // (Home content), the AI Front Desk, and the Pricebook.
@@ -157,6 +158,7 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
   // Primitive selectors — each returns a number, so referential equality stops
   // re-renders when unrelated slices (e.g. messages, timesheets) are written.
   const openTaskCount = useAppStore(selectOpenTaskCount);
+  const sentQuoteCount = useAppStore(selectSentQuoteCount);
   const unscheduledCount = useAppStore(selectUnscheduledCount);
   // Counted by the database, not by what the browser has loaded — see useNavCounts.
   const navCounts = useNavCounts();
@@ -217,6 +219,14 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
             />
             {customersActive && (
               <div className="navsubs">
+                {/* The paper under the people — the ledger the board's Quoting column is not.
+                    Badge = SENT quotes awaiting an answer, the count worth glancing at. */}
+                <NavSub
+                  href="/quotes"
+                  label="Quotes"
+                  count={sentQuoteCount > 0 ? sentQuoteCount : undefined}
+                  active={pathname.startsWith("/quotes")}
+                />
                 <NavSub
                   href="/tasks"
                   label="Tasks"
