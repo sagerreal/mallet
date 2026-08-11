@@ -936,11 +936,11 @@ describe("TechJobModalContent — tabs", () => {
     expect(screen.getByRole("tab", { name: "Quote" }).getAttribute("aria-controls")).toBe(quotePanel.id);
   });
 
-  it("owner: the Quote tab opens with Scope + the embedded builder", () => {
+  it("owner: the Quote tab opens with the embedded builder — no scope furniture on a repair", () => {
     mockRole = "owner";
     render(<TechJobModalContent />);
     fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
-    expect(screen.getByText("Scope")).toBeTruthy();
+    expect(screen.queryByText("Scope")).toBeNull();
     expect(screen.getByText("The price")).toBeTruthy();
     expect(screen.getByText("Present to customer →")).toBeTruthy();
   });
@@ -964,11 +964,11 @@ describe("TechJobModalContent — tabs", () => {
     expect(screen.queryByText("Pricing")).toBeNull();
   });
 
-  it("tech: the Quote tab shows Scope + the builder and takes over the foot", () => {
+  it("tech: the Quote tab shows the builder and takes over the foot", () => {
     mockRole = "tech";
     render(<TechJobModalContent />);
     fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
-    expect(screen.getByText("Scope")).toBeTruthy();
+    expect(screen.queryByText("Scope")).toBeNull();
     expect(screen.getByText("The price")).toBeTruthy();
     expect(screen.getByText("Present to customer →")).toBeTruthy();
     // The Job tab's spine is hidden while the Quote tab is up.
@@ -1017,8 +1017,10 @@ describe("TechJobModalContent — tabs", () => {
 
   it("tech: the Quote tab's scope save reaches setVisitNotes with the tech's own visit", async () => {
     mockRole = "tech";
+    mockJobs = [makeJob({ svc: "estimate", kind: "estimate" })];
     render(<TechJobModalContent />);
     fireEvent.click(screen.getByRole("tab", { name: "Quote" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Scope/ }));
     fireEvent.click(screen.getByText(/What you saw on site/));
     fireEvent.change(screen.getByLabelText("Scope notes"), { target: { value: "two doors" } });
     fireEvent.click(screen.getByText("Save scope"));
