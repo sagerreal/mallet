@@ -59,21 +59,39 @@ function timeLabel(hhmm: string | null): string {
  * It also used to return the time ALONE, throwing the date away — which is what made yesterday's
  * 8:30a and today's 8:30a render identically on a list that deliberately carries both (see the
  * heading note below). The date comes back out with it.
+ *
+ * LIVE visits outrank COMPLETE ones — the client twin of earliestLiveVisitAt in
+ * modules/jobs/api/my-day-order.ts, so the card and its position in the list can never disagree.
+ * A half-done multi-visit job reads the visit the tech still has to drive to, not the one already
+ * worked; a fully finished job falls back to its completed visits and keeps its slot in the day.
  */
+type VisitWhen = { at: string; day: string; start: string | null };
+
 function agendaWhen(job: JobSummary): { day: string | null; time: string } {
-  let earliestAt: string | null = null;
-  let earliestDay: string | null = null;
-  let earliestStart: string | null = null;
+  let live: VisitWhen | null = null;
+  let done: VisitWhen | null = null;
+  let unplacedLive = false;
   for (const v of job.visits) {
-    if (v.status === "canceled" || !v.scheduledDate) continue;
-    const at = `${v.scheduledDate}T${v.scheduledStart ?? "00:00"}`;
-    if (earliestAt === null || at < earliestAt) {
-      earliestAt = at;
-      earliestDay = v.scheduledDate;
-      earliestStart = v.scheduledStart;
+    if (v.status === "canceled") continue;
+    // A live visit with no date is the return-trip shape: the next work exists but has no slot
+    // yet, so a done visit's old slot must not answer for it below — the card says "Not scheduled".
+    if (!v.scheduledDate) {
+      if (v.status !== "complete") unplacedLive = true;
+      continue;
+    }
+    const cand: VisitWhen = {
+      at: `${v.scheduledDate}T${v.scheduledStart ?? "00:00"}`,
+      day: v.scheduledDate,
+      start: v.scheduledStart,
+    };
+    if (v.status === "complete") {
+      if (done === null || cand.at < done.at) done = cand;
+    } else if (live === null || cand.at < live.at) {
+      live = cand;
     }
   }
-  return { day: earliestDay, time: timeLabel(earliestStart) };
+  const pick = live ?? (unplacedLive ? null : done);
+  return pick === null ? { day: null, time: timeLabel(null) } : { day: pick.day, time: timeLabel(pick.start) };
 }
 
 /**

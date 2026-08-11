@@ -118,6 +118,50 @@ describe("earliestLiveVisitAt", () => {
     const job = makeJob({ visits: [makeVisit({ scheduledDate: "2026-08-04" })] });
     expect(earliestLiveVisitAt(job)).toBe("2026-08-04T00:00");
   });
+
+  // The return-trip shape (owenduggan, Aug 11): visit 1 done Monday noon, visit 2 booked Tuesday
+  // 9a. "Earliest non-canceled" keyed on the DONE Monday visit, so the job sorted — and printed —
+  // as Monday forever. The visit already worked is history; the key is the next one to drive to.
+  it("keys a half-done multi-visit job on its next LIVE visit, not the one already worked", () => {
+    const job = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: "2026-08-10", scheduledStart: "12:00", status: "complete" }),
+        makeVisit({ scheduledDate: "2026-08-11", scheduledStart: "09:00", status: "pending" }),
+      ],
+    });
+    expect(earliestLiveVisitAt(job)).toBe("2026-08-11T09:00");
+  });
+
+  // AddReturnTripUseCase lands the new visit UNPLACED (no date, pending) on a job whose first
+  // visit is complete. Falling back to the done visit would pin the job to that stale past slot —
+  // near the head of the route, under a day already worked. Unplaced live work has no slot: null,
+  // so it sorts to the end like every other undated job, until the office places the return trip.
+  it("is null when the only LIVE visit is unplaced — a done visit's old slot is not the answer", () => {
+    const job = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: "2026-08-10", scheduledStart: "12:00", status: "complete" }),
+        makeVisit({ status: "pending" }),
+      ],
+    });
+    expect(earliestLiveVisitAt(job)).toBeNull();
+  });
+
+  it("counts an in-progress visit as live", () => {
+    const job = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: "2026-08-10", scheduledStart: "12:00", status: "complete" }),
+        makeVisit({ scheduledDate: "2026-08-11", scheduledStart: "09:00", status: "in_progress" }),
+      ],
+    });
+    expect(earliestLiveVisitAt(job)).toBe("2026-08-11T09:00");
+  });
+
+  it("is null when every visit is canceled", () => {
+    const job = makeJob({
+      visits: [makeVisit({ scheduledDate: "2026-08-10", scheduledStart: "12:00", status: "canceled" })],
+    });
+    expect(earliestLiveVisitAt(job)).toBeNull();
+  });
 });
 
 describe("byAgenda", () => {
@@ -144,6 +188,20 @@ describe("byAgenda", () => {
     expect([nextAtTen, doneAtEight].sort(byAgenda).map((j) => j.props.num)).toEqual([
       doneAtEight.props.num,
       nextAtTen.props.num,
+    ]);
+  });
+
+  it("sorts a half-done job by its NEXT visit, so it lands where the tech will actually be", () => {
+    const halfDone = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: "2026-08-04", scheduledStart: "07:00", status: "complete" }),
+        makeVisit({ scheduledDate: "2026-08-04", scheduledStart: "13:00", status: "pending" }),
+      ],
+    });
+    const ten = at("2026-08-04", "10:00");
+    expect([halfDone, ten].sort(byAgenda).map((j) => j.props.num)).toEqual([
+      ten.props.num,
+      halfDone.props.num,
     ]);
   });
 
