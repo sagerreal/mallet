@@ -17,11 +17,13 @@ import type { Estimate, Lead } from "@/lib/store/types";
 // Mocks — store selector state + the tRPC hooks the modal wires
 // ---------------------------------------------------------------------------
 
+let mockJobs: unknown[] = [];
 let mockEstimates: Estimate[] = [];
 let mockLeads: Lead[] = [];
 
 const storeState = () => ({
   estimates: mockEstimates,
+      jobs: mockJobs,
   leads: mockLeads,
   updateEstimate: vi.fn(),
   deleteEstimate: vi.fn(),
@@ -30,16 +32,24 @@ const storeState = () => ({
   adoptEstimate: vi.fn(),
 });
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+const routerPush = vi.fn();
+const pushModal = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush }) }));
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "est", params: { estId: "est-1" } }),
   useCloseModal: () => vi.fn(),
   useOpenModal: () => vi.fn(),
-  usePushModal: () => vi.fn(),
+  usePushModal: () => pushModal,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) => selector(storeState()),
 }));
 
 const idleMutation = () => ({ mutateAsync: vi.fn(), isPending: false });
+let mockFullQuery: { data: unknown; isError: boolean; error: null; isLoading?: boolean } = {
+  data: undefined,
+  isError: false,
+  error: null,
+  isLoading: false,
+};
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
@@ -48,7 +58,7 @@ vi.mock("@/lib/trpc/client", () => ({
       notifications: { send: { useMutation: () => idleMutation() } },
       quoting: {
         clearChangeRequest: { useMutation: () => idleMutation() },
-        get: { useQuery: () => ({ data: undefined, isError: false, error: null }) },
+        get: { useQuery: () => mockFullQuery },
       },
     },
   },
@@ -146,5 +156,73 @@ describe("EstimateModalContent — single-format and resolved estimates", () => 
     expect(screen.getByText("Replace run")).toBeTruthy();
     expect(screen.getAllByText("$1,450").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Accepted: Best")).toBeTruthy();
+  });
+});
+
+
+/**
+ * THE OPENING BEAT. List hydration carries no lines, so a quote opened from the ledger used to
+ * render instantly as an empty table with a $0 total, then reflow wholesale when the full record
+ * landed — Owen's "glitch". While the modal's own fetch is in flight, it shows the loading state.
+ */
+describe("EstimateModalContent — the header-only copy waits for the record", () => {
+  beforeEach(() => {
+    mockLeads = [{ id: "lead-1", name: "Dana" } as unknown as Lead];
+    mockJobs = [];
+  });
+
+  it("shows loading — never an empty $0 sheet — while the full record is fetching", () => {
+    mockEstimates = [
+      { id: "est-1", leadId: "lead-1", num: "EST-1040", title: "flat rate test 09",
+        status: "accepted", age: 0, lines: [] } as unknown as Estimate,
+    ];
+    mockFullQuery = { data: undefined, isError: false, error: null, isLoading: true };
+    render(<EstimateModalContent />);
+
+    expect(screen.queryByText(/\$0/)).toBeNull();
+    expect(screen.queryByText("Total")).toBeNull();
+  });
+});
+
+/**
+ * THE TERMINAL STATES HAD NO FOOT — a won quote offered nothing but a quiet red Delete, which
+ * read as "just a viewing modal" (Owen). A won quote's next move is the JOB it became; a lost
+ * one's is another attempt.
+ */
+describe("EstimateModalContent — terminal-state feet", () => {
+  beforeEach(() => {
+    mockLeads = [{ id: "lead-1", name: "Dana" } as unknown as Lead];
+    mockFullQuery = { data: undefined, isError: false, error: null, isLoading: false };
+    pushModal.mockClear();
+    routerPush.mockClear();
+  });
+
+  const won = () =>
+    ({ id: "est-1", leadId: "lead-1", num: "EST-1040", title: "flat rate test 09",
+       status: "accepted", age: 0,
+       lines: [{ d: "Annual plumbing inspection", q: 1, r: 185 }] }) as unknown as Estimate;
+
+  it("a WON quote opens the job it became", () => {
+    mockEstimates = [won()];
+    mockJobs = [{ id: "job-9", sourceEstimateId: "est-1", archived: false }];
+    render(<EstimateModalContent />);
+
+    screen.getByText("Open the job →").click();
+    expect(pushModal).toHaveBeenCalledWith("job", { jobId: "job-9" });
+  });
+
+  it("no job in the store → no button — a primary that opens nothing is worse than none", () => {
+    mockEstimates = [won()];
+    mockJobs = [];
+    render(<EstimateModalContent />);
+    expect(screen.queryByText("Open the job →")).toBeNull();
+  });
+
+  it("a LOST quote offers another attempt through the composer's revise path", () => {
+    mockEstimates = [{ ...won(), status: "declined" } as unknown as Estimate];
+    render(<EstimateModalContent />);
+
+    screen.getByText("Revise & try again").click();
+    expect(routerPush).toHaveBeenCalledWith("/composer?revise=est-1");
   });
 });
