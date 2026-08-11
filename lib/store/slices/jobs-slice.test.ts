@@ -812,6 +812,58 @@ describe("setVisitStatus — On my way (office surface)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// ↩ Reopen on a DONE job. The server promises "a visit reopened on a complete job →
+// the job returns to in_progress" (set-visit-status.ts) — and the client recalc used
+// to hold "done" as terminal, so the whole sheet sat frozen in its done chrome for
+// the round-trip after the tap (Owen: "it delayed for a second and then did it").
+// ---------------------------------------------------------------------------
+
+describe("setVisitStatus — ↩ Reopen lifts the done chrome optimistically", () => {
+  // Distinct visit ids per test: the per-visit op chain is MODULE state, and the frame test
+  // below deliberately leaves a never-resolving persist parked on its visit — a second test
+  // reusing that id would queue behind it forever and its rollback would never run.
+  const doneVisit = (id: string) => ({
+    id,
+    date: "2026-08-11",
+    techId: "t1",
+    start: 9,
+    dur: 2,
+    status: "done",
+  });
+
+  beforeEach(() => {
+    mockSetVisitStatus.mockReset();
+  });
+
+  it("the job leaves 'done' in the SAME frame as the tap — before any server answer", () => {
+    mockSetVisitStatus.mockReturnValue(new Promise(() => {})); // never resolves
+    const v = doneVisit("aaaaaaaa-0000-0000-0000-0000000000d1");
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-reopen", origin: "db", status: "done", visits: [v] }]);
+
+    get().setVisitStatus("j-reopen", v.id, "scheduled", "office");
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("scheduled");
+    // The chrome key: done gates the whole sheet (readOnly, foot, done-block).
+    expect(get().jobs[0]!.status).not.toBe("done");
+  });
+
+  it("rolls the whole tap back — visit AND job status — when the server refuses", async () => {
+    mockSetVisitStatus.mockRejectedValue(new Error("offline"));
+    const v = doneVisit("aaaaaaaa-0000-0000-0000-0000000000d2");
+    const { get } = makeStore();
+    get().setJobs([{ ...draft, id: "j-reopen2", origin: "db", status: "done", visits: [v] }]);
+
+    get().setVisitStatus("j-reopen2", v.id, "scheduled", "office");
+    await flush();
+
+    expect(get().jobs[0]!.visits[0]!.status).toBe("done");
+    // The rollback restores the visit; the same recalc that lifted done derives it right back.
+    expect(get().jobs[0]!.status).toBe("done");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // The field surface. A technician's endpoints are assignment-gated (the office's
 // are ownerOrOffice and would refuse his token) and they are the ones that move
 // his clock — so the wrong endpoint is a lost timesheet segment, not just a 403.
