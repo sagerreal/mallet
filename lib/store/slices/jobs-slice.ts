@@ -338,6 +338,10 @@ function isPersistableLine(l: JobLine): boolean {
  * this function has been getting wrong.
  */
 function recalcStatus(job: Job, visits: Visit[]): string {
+  // Terminal stays terminal HERE — placement math must never derive a done job away from
+  // done (an unplaced done visit's duration edit is not a reopening). The one legitimate
+  // exit from "done" is an explicit ↩ Reopen, and setVisitStatus lifts the guard for
+  // exactly that tap before calling this — see the `reopening` note there.
   if (isTerminalStoreJobStatus(job.status)) return job.status;
   const placed = visits.filter(isVisitPlaced);
   if (!placed.length) return "unscheduled";
@@ -1416,16 +1420,27 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
 
     // 1. Optimistic update — the status AND the stamp that status records. Status alone made the
     // stepper report the tap just made as "skipped" until the DTO landed; see visit-stamps.ts.
+    //
+    // ↩ REOPEN LIFTS THE DONE CHROME IN THE SAME FRAME. recalcStatus holds terminal statuses
+    // (correctly — placement math must never un-complete a job), so a done job's status could
+    // not follow this tap and the whole sheet sat frozen in its done chrome for the round-trip
+    // (Owen: "it delayed for a second and then did it"). An explicit reopen is the one exit the
+    // server itself takes — "a visit reopened on a complete job → the job returns to
+    // in_progress" (set-visit-status.ts) — so for exactly this tap the guard is stepped over
+    // and the recalc runs on the reopened visit set. A failed write still rolls back whole:
+    // the catch restores the visit to done and the same recalc derives "done" right back.
     const tappedAt = new Date();
     set((s) => ({
-      jobs: s.jobs.map((j) =>
-        j.id === jobId
-          ? withVisits(
-              j,
-              j.visits.map((v) => (v.id === visitId ? optimisticVisit(v, status, tappedAt) : v)),
-            )
-          : j
-      ),
+      jobs: s.jobs.map((j) => {
+        if (j.id !== jobId) return j;
+        const wasDone = j.visits.find((v) => v.id === visitId)?.status === "done";
+        const reopening = j.status === "done" && wasDone && status !== "done";
+        const base = reopening ? { ...j, status: "scheduled" } : j;
+        return withVisits(
+          base,
+          j.visits.map((v) => (v.id === visitId ? optimisticVisit(v, status, tappedAt) : v)),
+        );
+      }),
     }));
 
     const job = get().jobs.find((j) => j.id === jobId);
