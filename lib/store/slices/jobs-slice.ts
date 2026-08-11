@@ -131,6 +131,14 @@ const _pendingVisitCreates = new Set<string>();
 // — the queued delete then skips its mutate).
 const _pendingVisitRemovals = new Set<string>();
 
+// Visit ids whose PLACEMENT (scheduleVisit) has not settled, with the local patch. The
+// createVisit reconcile carries the visit UNPLACED — the server row predates the placement —
+// so without this the wholesale visit replace erased the optimistic {techId, date, start} and
+// the board block vanished for a full round trip (the Aug 11 "delay" report: arm a tray card,
+// tap a cell before its create settles). Snapshot merges re-apply the patch until the
+// schedule op settles either way.
+const _pendingVisitSchedules = new Map<string, { techId: string; date: string; start: number }>();
+
 /**
  * Refetch every list a job write can move a row in or out of.
  *
@@ -568,6 +576,19 @@ function snapshot(jobs: Job[], jobId: string): Job | undefined {
  * optimistic removal is unsettled (the createVisit reconcile's DTO still
  * contains it, and a stale hydrator snapshot may too) — those are stripped.
  */
+/** Re-apply in-flight placement patches to snapshot visits (see _pendingVisitSchedules). */
+function withPendingSchedules(incoming: Job): Job {
+  if (_pendingVisitSchedules.size === 0) return incoming;
+  let touched = false;
+  const visits = incoming.visits.map((v) => {
+    const p = _pendingVisitSchedules.get(v.id);
+    if (!p) return v;
+    touched = true;
+    return { ...v, ...p };
+  });
+  return touched ? withVisits(incoming, visits) : incoming;
+}
+
 function withPendingCreateVisits(prior: Job, incoming: Job): Job {
   const kept = incoming.visits.filter((v) => !_pendingVisitRemovals.has(v.id));
   const survivors = prior.visits.filter(
@@ -714,7 +735,10 @@ function mergeIncomingJob(prior: Job, incoming: Job): Job {
     prior,
     withRecentLines(
       prior,
-      withRecentChecklist(prior, withRecentVisitStatus(prior, withPendingCreateVisits(prior, incoming))),
+      withRecentChecklist(
+        prior,
+        withRecentVisitStatus(prior, withPendingSchedules(withPendingCreateVisits(prior, incoming))),
+      ),
     ),
   );
 }
@@ -1266,11 +1290,18 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     const visit = job.visits.find((v) => v.id === visitId);
     const durationHours = visit?.dur ?? 2;
 
+    // Guard the placement against snapshot merges until the schedule op settles — the
+    // createVisit reconcile this may be queued behind carries the visit UNPLACED.
+    _pendingVisitSchedules.set(visitId, at);
+
     // Fix 2b: chain scheduleVisit after any pending createVisit for this visitId.
     chain(visitId, () => {
       // Execution-time re-check: the create this op was queued behind may have
       // rolled back and removed the visit — nothing to schedule.
-      if (!visitExists(get().jobs, jobId, visitId)) return Promise.resolve();
+      if (!visitExists(get().jobs, jobId, visitId)) {
+        _pendingVisitSchedules.delete(visitId);
+        return Promise.resolve();
+      }
       return trpcVanilla.v1.visits.scheduleVisit
         .mutate({
           jobId,
@@ -1281,10 +1312,12 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
           durationHours,
         })
         .then((dto) => {
+          _pendingVisitSchedules.delete(visitId);
           set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
           invalidateJobLists();
         })
         .catch((err: unknown) => {
+          _pendingVisitSchedules.delete(visitId);
           // Skip the restore when the visit is gone — the snapshot predates
           // its removal and restoring it would resurrect a phantom.
           if (prior && visitExists(get().jobs, jobId, visitId)) {
