@@ -805,3 +805,44 @@ describe("QuoteTab — a closed job reads its quote back", () => {
   });
 });
 
+
+// Owen, Aug 11: "no back button when I hit quote it now." The reveal was one-way — quoteItNow
+// flipped true and nothing ever unset it, so the chooser (and the send-to-office path) became
+// unreachable without closing the whole sheet.
+describe("QuoteTab — the builder has a way back to the chooser", () => {
+  const estJob = (overrides: Partial<Job> = {}) =>
+    makeJob({ svc: "estimate", kind: "estimate", visits: [makeVisit()], ...overrides });
+
+  it("shows ← Back after 'Quote it now', and it returns to the dual exit", () => {
+    const job = estJob();
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    fireEvent.click(screen.getByText("Quote it now"));
+
+    const back = screen.getByRole("button", { name: "← Back" });
+    fireEvent.click(back);
+
+    expect(screen.getByText("Quote it now")).toBeTruthy();
+    expect(screen.getByText("Send scope to the office")).toBeTruthy();
+    expect(screen.queryByText("Present to customer →")).toBeNull();
+  });
+
+  it("offers no Back on a committed job — the builder is its standing surface", () => {
+    // Signed on site: sourceEstimateId set → jobPriceCommitted true.
+    const job = estJob({ sourceEstimateId: "est-1" });
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    expect(screen.queryByRole("button", { name: "← Back" })).toBeNull();
+  });
+
+  it("a resumed draft still offers Back — the tech may switch to sending scope instead", () => {
+    const job = estJob({ lines: [{ d: "rough-in", q: 1, r: 100, c: 0 }] });
+    mockJobs = [job];
+    render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />);
+    // Draft lines resume straight into the builder…
+    expect(screen.queryByText("Quote it now")).toBeNull();
+    // …but the chooser stays one tap away.
+    fireEvent.click(screen.getByRole("button", { name: "← Back" }));
+    expect(screen.getByText("Quote it now")).toBeTruthy();
+  });
+});

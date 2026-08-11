@@ -276,17 +276,23 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
   // renders its committed read-back + change-order surface, never an editable draft.
   const committed = jobPriceCommitted(job);
 
-  // The dual exit's "Quote it now" reveal (estimate visits only). A job that already
-  // carries priced lines has been quoted — the builder is its standing surface.
-  const [quoteItNow, setQuoteItNow] = useState(false);
+  // The dual exit's reveal (estimate visits only), THREE-STATE: null derives from the job
+  // (a resumed draft with priced lines lands in the builder), true/false record an explicit
+  // choice. It was a one-way boolean — "Quote it now" flipped it and nothing ever unset it,
+  // so the chooser (and the send-scope path with it) was unreachable without closing the
+  // sheet (Owen, Aug 11: "no back button when I hit quote it now").
+  const [choosing, setChoosing] = useState<boolean | null>(null);
   const [builderMode, setBuilderMode] = useState<TechQuoteMode>("edit");
   const [sendError, setSendError] = useState("");
   const [scopeOpenSignal, setScopeOpenSignal] = useState(0);
 
   // `committed` is listed on its own: a booked job on a price-redacted device reads null
   // rates, so `quoted` (which sums them) misses it and the tab would offer an editable draft
-  // over a price the office already booked.
-  const showBuilder = !isEstimate || quoteItNow || quoted || committed;
+  // over a price the office already booked. An explicit Back (choosing === true) outranks a
+  // resumed draft; a committed price outranks everything — its builder is the standing surface.
+  const showBuilder = !isEstimate || committed || (choosing === null ? quoted : !choosing);
+  // Back to the chooser exists only where the chooser exists: an uncommitted estimate.
+  const canGoBack = isEstimate && !committed && showBuilder;
   // Sent-ness is DERIVED: the visit carrying scope notes IS the handoff record.
   const sentToOffice = Boolean(scopeVisit?.scopeNotes?.trim());
 
@@ -382,7 +388,7 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
               type="button"
               className="btn primary"
               style={{ width: "100%", fontSize: "var(--type-md)", padding: "var(--space-3)" }}
-              onClick={() => setQuoteItNow(true)}
+              onClick={() => setChoosing(false)}
               disabled={readOnly}
             >
               Quote it now
@@ -413,6 +419,16 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
           exists. */}
       {showBuilder && !readOnly && (
         <>
+          {canGoBack && builderMode === "edit" && (
+            <button
+              type="button"
+              className="btn ghost sm"
+              style={{ alignSelf: "flex-start", marginBottom: "var(--space-2)" }}
+              onClick={() => setChoosing(true)}
+            >
+              ← Back
+            </button>
+          )}
           {builderMode === "edit" && !committed && (
             <div className="fsec" style={{ marginBottom: 0 }}>
               <div className="fsec-h">
