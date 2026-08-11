@@ -162,15 +162,21 @@ export function SchedulePanel() {
     const nv = addVisit(jobId, dur);
     if (nv) setPlacing({ kind: "job", ownerId: jobId, visitId: nv.id });
   }
-  // "+" on a TRAY card (prototype visitAddTray): split the job's unplaced hours
-  // into one more visit — total preserved, each snapped to the quarter hour.
+  // "+" on a TRAY card (prototype visitAddTray): split the job's unplaced hours into one more
+  // visit — total preserved, each snapped to the quarter hour. REUSE, never remove-and-recreate:
+  // the old delete-everything-then-add-N loop collapsed under addVisit's pending-create dedupe
+  // (only ONE visit ever came back, so totals shrank), and its delete+create storm raced the
+  // snapshot merges — a rolled-back delete resurrected chips the user watched disappear. Resizing
+  // the visits that exist and creating exactly one more leaves nothing to race or resurrect.
   function splitTray(j: Job) {
     const unplaced = (j.visits ?? []).filter((v) => !isVisitPlaced(v));
     const total = unplaced.length ? unplaced.reduce((a, v) => a + (v.dur ?? 0), 0) : 2;
-    const n = (unplaced.length || 1) + 1;
-    const each = snapDuration(total / n);
-    unplaced.forEach((v) => removeVisit(j.id, v.id));
-    for (let i = 0; i < n; i++) addVisit(j.id, each);
+    const each = snapDuration(total / (unplaced.length + 1));
+    unplaced.forEach((v) => {
+      if ((v.dur ?? 0) !== each) updateVisit(j.id, v.id, { dur: each });
+    });
+    // The new visit carries the remainder, so the card's total survives the snap rounding.
+    addVisit(j.id, snapDuration(total - each * unplaced.length));
     setPlacing(null);
   }
   // Drag the block's right edge to change its hours (Google-Calendar gesture).

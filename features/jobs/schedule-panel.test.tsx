@@ -232,3 +232,50 @@ describe("SchedulePanel — ?place= arms the job that was just created", () => {
     expect(screen.queryByText(/Tap a crew & time on the board to place/)).toBeNull();
   });
 });
+
+// The Aug 11 tray flicker: splitTray removed every unplaced visit and re-added N in a loop —
+// but addVisit's pending-create dedupe collapses the loop to ONE visit (totals shrank,
+// 2h15m → 45m), and the delete+create storm raced the snapshot merges (rolled-back deletes
+// resurrected removed chips). The split must REUSE what exists: resize the visits it has,
+// create exactly one more, delete nothing.
+describe("SchedulePanel — the tray '+' splits without destroying", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  const dtoVisit = (id: string, durationMinutes: number) => ({
+    id, assigneeUserId: null, scheduledDate: null, scheduledStart: null, scheduledEnd: null,
+    durationMinutes, status: "pending", enrouteAt: null, startedAt: null, completedAt: null,
+    notes: null, position: 1,
+  });
+
+  it("keeps the existing visit, resizes it, and adds exactly one more — no removals", () => {
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 1.5 }] }]);
+    // The card renders from the server tray read — keep the DTO's minutes in step with the store.
+    q = { isFetched: true, isError: false, data: { items: [trayDTO({ visits: [dtoVisit("v1", 90)] })] } };
+    render(<SchedulePanel />);
+
+    fireEvent.click(screen.getByTitle("Add another visit"));
+
+    expect(storeState.removeVisit).not.toHaveBeenCalled();
+    expect(storeState.updateVisit).toHaveBeenCalledWith("j1", "v1", { dur: 0.75 });
+    expect(storeState.addVisit).toHaveBeenCalledTimes(1);
+    expect(storeState.addVisit).toHaveBeenCalledWith("j1", 0.75);
+  });
+
+  it("splits a two-visit card into three, preserving the total", () => {
+    storeState = store([
+      { id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 1.5 }, { id: "v2", dur: 0.75 }] },
+    ]);
+    q = { isFetched: true, isError: false, data: { items: [trayDTO({ visits: [dtoVisit("v1", 90), dtoVisit("v2", 45)] })] } };
+    render(<SchedulePanel />);
+
+    fireEvent.click(screen.getByTitle("Add another visit"));
+
+    expect(storeState.removeVisit).not.toHaveBeenCalled();
+    expect(storeState.updateVisit).toHaveBeenCalledWith("j1", "v1", { dur: 0.75 });
+    // v2 already sits at 0.75 — resizing it to its own value would be a pointless write.
+    expect(storeState.updateVisit).toHaveBeenCalledTimes(1);
+    // 2.25 total − two 0.75 resizes → the new visit carries the remaining 0.75.
+    expect(storeState.addVisit).toHaveBeenCalledTimes(1);
+    expect(storeState.addVisit).toHaveBeenCalledWith("j1", 0.75);
+  });
+});
