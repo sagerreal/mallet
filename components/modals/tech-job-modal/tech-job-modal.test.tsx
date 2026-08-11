@@ -29,6 +29,8 @@ let mockLeads: Lead[] = [];
 let mockInvoices: Invoice[] = [];
 let mockSeesPrice = true;
 let mockRole: "owner" | "office" | "tech" | undefined = "owner";
+// The signed-record fetch-on-miss — idle unless a test arms it.
+const mockJobGetQuery = vi.fn((..._a: unknown[]) => ({ data: undefined, isFetched: false }));
 // The field shell never hydrates the settings slice (SettingsHydrator mounts only in the
 // office layout) — the tech job modal reads the org's visit fee via useOrgServiceFee instead.
 // Mocked directly here (see use-org-service-fee.test.ts for the hook's own fetch/fallback tests).
@@ -125,6 +127,14 @@ vi.mock("@/lib/store/app-store", () => ({
 vi.mock("@/lib/native/room-scan", () => ({ useRoomScanAvailability: () => ({ status: "no-native-app" }) }));
 vi.mock("@/lib/store/upload-field-photo", () => ({ uploadFieldPhoto: vi.fn() }));
 vi.mock("@/lib/images/downscale", () => ({ downscaleImage: vi.fn() }));
+
+// The signed-record fetch-on-miss (office only). Idle by default; tests that exercise the
+// adopt path swap the return.
+vi.mock("@/lib/trpc/client", () => ({
+  api: {
+    v1: { jobs: { get: { useQuery: (...a: unknown[]) => mockJobGetQuery(...a) } } },
+  },
+}));
 
 vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({

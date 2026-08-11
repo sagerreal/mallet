@@ -30,7 +30,8 @@
 
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { api } from "@/lib/trpc/client";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import {
   useActiveModal,
@@ -97,6 +98,26 @@ export function TechJobModalContent() {
   const lead = useAppStore((s) => s.leads.find((l) => l.id === leadId));
   // The job's invoice links via invoice.jobId (NOT job.invoiceId).
   const invoice = useAppStore((s) => s.invoices.find((i) => i.jobId === jobId));
+
+  // THE SIGNED RECORD RIDES THE FULL JOB ONLY. Every list this sheet hydrates from
+  // (myDay, jobs.list) returns summaries, which deliberately omit the signature — so a
+  // sold job opened here had a "Sold — signed" heading and no way to produce the
+  // evidence behind it. Fetch-on-miss for OFFICE viewers (v1.jobs.get is ownerOrOffice;
+  // a tech token would 403): one 30s-stale read, adopted whole so the signature — and
+  // anything else the summary thinned — lands on the store record. Enabled only while
+  // the signature is actually missing on a job that claims one.
+  const adoptJob = useAppStore((s) => s.adoptJob);
+  const needsSignedRecord =
+    isOffice && Boolean(job?.sourceEstimateId) && !job?.signature && job?.origin === "db";
+  const fullJobQ = api.v1.jobs.get.useQuery(
+    { jobId: jobId ?? "" },
+    { enabled: needsSignedRecord, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (needsSignedRecord && fullJobQ.data) {
+      adoptJob(fullJobQ.data as unknown as Parameters<typeof adoptJob>[0]);
+    }
+  }, [needsSignedRecord, fullJobQ.data, adoptJob]);
 
   // Store actions — stable function references (Zustand guarantees action
   // identity across renders; selecting them here avoids re-subscribing the

@@ -41,6 +41,7 @@ vi.mock("@/lib/store/app-store", () => ({
     selector({
       jobs: mockJobs,
       leads: [],
+      estimates: [],
       services: [],
       laborRates: [],
       brand: { name: "E2E Plumbing" },
@@ -59,6 +60,12 @@ vi.mock("@/lib/store/app-store", () => ({
 
 vi.mock("@/lib/native/room-scan", () => ({
   useRoomScanAvailability: () => mockScan,
+}));
+
+// SignedRecordRow (rendered inside the committed read-back) asks the viewer's role for its
+// office-only quote-sheet pointer. Office by default; irrelevant to most of these tests.
+vi.mock("@/features/identity/hooks", () => ({
+  useMe: () => ({ data: { role: "owner" } }),
 }));
 
 // Keep supabase/browser out of jsdom — the strip's upload path is exercised elsewhere.
