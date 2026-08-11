@@ -255,66 +255,72 @@ export function ThreadModalContent() {
     <>
       <div className="sheet-head">
         <h2>{lead.name}</h2>
-        {hasPhone(lead) && (
-          <div className="sheet-meta">
-            <span>
-              {lead.phone} · texting from your <b>business number</b> — quote links and
-              reminders land in this same thread, marked ✦
-            </span>
-          </div>
-        )}
+        <div className="sheet-meta">
+          {/* The meta line is the state: the number + transport, or the fact there's no number. */}
+          <span>
+            {hasPhone(lead) ? (
+              <>
+                {lead.phone} · texting from your <b>business number</b> — quote links and
+                reminders land in this same thread, marked ✦
+              </>
+            ) : (
+              "No phone number yet"
+            )}
+          </span>
+        </div>
       </div>
 
-      {!hasPhone(lead) && (
-        // No number on file — the modal becomes the add-a-phone prompt (big, legible). The
-        // optimistic store write enables the composer immediately; unlike the call modal this
-        // does NOT race its own save, because the send passes the fresh number forward rather
-        // than having the server look it up. Lives in the body flow, not the sticky head —
-        // a form pinned in the header would eat the thread on small screens.
+      {!hasPhone(lead) ? (
+        // No number on file — the WHOLE sheet is the add-a-phone ask, in the standard grammar
+        // (labeled field + [Cancel][Save & text] foot). The thread panel and composer do not
+        // render here: an empty thread under the ask says nothing, and a disabled composer
+        // with a dead Send is exactly the dead-control shape the house bans. The optimistic
+        // store write flips hasPhone the moment the number saves, and the thread takes over.
         <PhoneAddInput
-          label="No phone number yet"
-          sub={`Add ${firstName(lead.name)}'s mobile and your text goes out from your business number.`}
+          label="Mobile number"
+          sub="Texts go out from your business number."
           cta="Save & text"
           onSave={(phone) => updateLead(lead!.id, { phone })}
           onCancel={close}
         />
-      )}
-
-      <div className="thread" ref={scrollRef}>
-        {isLoading ? (
-          <div className="thread-empty">
-            <div className="thread-empty-sub">Loading…</div>
+      ) : (
+        <>
+          <div className="thread" ref={scrollRef}>
+            {isLoading ? (
+              <div className="thread-empty">
+                <div className="thread-empty-sub">Loading…</div>
+              </div>
+            ) : allRows.length > 0 ? (
+              allRows.map((row) => <ThreadRow key={row.id} row={row} lead={lead} />)
+            ) : (
+              <div className="thread-empty">
+                <div className="thread-empty-title">No messages yet</div>
+                <div className="thread-empty-sub">Send a text to start the conversation.</div>
+              </div>
+            )}
           </div>
-        ) : allRows.length > 0 ? (
-          allRows.map((row) => <ThreadRow key={row.id} row={row} lead={lead} />)
-        ) : (
-          <div className="thread-empty">
-            <div className="thread-empty-title">No messages yet</div>
-            <div className="thread-empty-sub">Send a text to start the conversation.</div>
+
+          {sendError && (
+            <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--red)", padding: "var(--space-1) 0" }}>
+              {sendError}
+            </div>
+          )}
+
+          <div className="composer">
+            <input
+              value={draft}
+              placeholder={`Text ${firstName(lead.name)}…`}
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void send();
+              }}
+            />
+            <button className="btn primary" onClick={() => void send()}>
+              Send
+            </button>
           </div>
-        )}
-      </div>
-
-      {sendError && (
-        <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--red)", padding: "var(--space-1) 0" }}>
-          {sendError}
-        </div>
+        </>
       )}
-
-      <div className="composer">
-        <input
-          value={draft}
-          placeholder={hasPhone(lead) ? `Text ${firstName(lead.name)}…` : "Add a number above to text"}
-          disabled={!hasPhone(lead)}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void send();
-          }}
-        />
-        <button className="btn primary" onClick={() => void send()} disabled={!hasPhone(lead)}>
-          Send
-        </button>
-      </div>
     </>
   );
 }

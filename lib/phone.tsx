@@ -76,11 +76,11 @@ export function formatPhone(e164: string | null | undefined): string {
 }
 
 interface PhoneAddInputProps {
-  /** Big heading, e.g. "No phone number for Dana yet". */
+  /** The field label, e.g. "Mobile number". */
   label: string;
-  /** One plain sentence under the heading, e.g. "Add their mobile to call them." */
+  /** One plain sentence naming what saving does, e.g. "Add it and the call starts right away." */
   sub?: string;
-  /** Button copy — says what happens next: "Save & call" / "Save & text". */
+  /** Foot primary copy — says what happens next: "Save & call" / "Save & text". */
   cta?: string;
   /** Called with the validated raw number when the user saves. */
   onSave: (phone: string) => void;
@@ -93,15 +93,31 @@ interface PhoneAddInputProps {
   busy?: boolean;
   /** Replaces the button copy while `busy`, e.g. "Saving…". */
   busyLabel?: string;
+  /** A failure from the CALLER's save (e.g. the write rolled back) — named in the same slot. */
+  saveError?: string | null;
 }
 
 /**
- * The add-a-phone prompt — deliberately BIG. The ICP is a 55-year-old plumber
- * in sunlight: 19px heading, 17px tel input, one full-width primary button that
- * names the next action. Renders inside the call/thread modals (the "popup"
- * Owen asked for) and in-flow on the OK-queue cards.
+ * The add-a-phone ask, in the SHEET GRAMMAR — its only two homes are the call and thread
+ * modals, and it used to bring its own register instead: a second XL heading fighting the
+ * sheet's h2, a full-width primary loose in the body, and a centered link for Cancel
+ * (Owen: "properly formatted"). Now it is a plain labeled field with the standard sticky
+ * foot — Cancel quiet at its intrinsic width, the one primary taking the rest. The state
+ * headline ("No phone number yet") belongs to the caller's sheet-meta line, not here.
+ *
+ * Still deliberately BIG where it counts — the ICP is a 55-year-old plumber in sunlight:
+ * a 17px tel input and a 44px foot.
  */
-export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel, busy = false, busyLabel = "Saving…" }: PhoneAddInputProps) {
+export function PhoneAddInput({
+  label,
+  sub,
+  cta = "Save",
+  onSave,
+  onCancel,
+  busy = false,
+  busyLabel = "Saving\u2026",
+  saveError = null,
+}: PhoneAddInputProps) {
   const [value, setValue] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -115,7 +131,7 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel, busy
     // Validate through the same value object the send endpoints use.
     const parsed = Phone.parse(trimmed);
     if (!parsed.ok) {
-      setError("That number doesn't look right — 10 digits, US.");
+      setError("That number doesn't look right \u2014 10 digits, US.");
       return;
     }
     setError(null);
@@ -125,67 +141,70 @@ export function PhoneAddInput({ label, sub, cta = "Save", onSave, onCancel, busy
     onSave(trimmed);
   }
 
+  const shownError = error ?? saveError;
+
   return (
-    <div style={{ marginTop: "var(--space-3)", maxWidth: 440 }}>
-      <div style={{ fontSize: "var(--type-xl)", fontWeight: 800, color: "var(--ink)", lineHeight: 1.25 }}>
-        {label}
+    <>
+      <div className="field">
+        <label htmlFor="phone-add-input">{label}</label>
+        <input
+          id="phone-add-input"
+          type="tel"
+          inputMode="tel"
+          autoComplete="tel"
+          value={value}
+          autoFocus
+          placeholder="(925) 555-0123"
+          disabled={busy}
+          onChange={(e) => {
+            setValue(e.target.value);
+            if (error) setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              save();
+            }
+            if (e.key === "Escape") onCancel();
+          }}
+        />
+        {sub && (
+          <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
+            {sub}
+          </div>
+        )}
       </div>
-      {sub && (
-        <div style={{ fontSize: "var(--type-md)", color: "var(--ink-2)", marginTop: "var(--space-1)" }}>{sub}</div>
+      {shownError && (
+        <p className="werr" role="alert" style={{ marginTop: "var(--space-2)" }}>
+          {shownError}
+        </p>
       )}
-      <input
-        type="tel"
-        value={value}
-        autoFocus
-        placeholder="(925) 555-0123"
-        aria-label={label}
-        onChange={(e) => {
-          setValue(e.target.value);
-          if (error) setError(null);
-        }}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            save();
-          }
-          if (e.key === "Escape") onCancel();
-        }}
-        style={{
-          display: "block",
-          width: "100%",
-          boxSizing: "border-box",
-          marginTop: "var(--space-3)",
-          border: `2px solid ${error ? "var(--red)" : "var(--line)"}`,
-          borderRadius: "var(--radius)",
-          padding: "var(--space-3) var(--space-4)",
-          fontFamily: "inherit",
-          fontSize: "var(--type-lg)",
-          background: "var(--card)",
-          color: "var(--ink)",
-        }}
-      />
-      {error && (
-        <div style={{ marginTop: "var(--space-2)", fontSize: "var(--type-md)", color: "var(--red)" }}>{error}</div>
-      )}
-      <button
-        type="button"
-        className="btn primary"
-        style={{ width: "100%", marginTop: "var(--space-3)", padding: "var(--space-3) var(--space-4)", fontSize: "var(--type-md)" }}
-        onClick={save}
-        disabled={busy}
-        aria-busy={busy}
-      >
-        {busy ? busyLabel : cta}
-      </button>
-      <button
-        type="button"
-        className="linklike"
-        style={{ display: "block", margin: "var(--space-3) auto 0", fontSize: "var(--type-md)", color: "var(--ink-2)" }}
-        onClick={onCancel}
-      >
-        Cancel
-      </button>
-    </div>
+
+      {/* The canonical two-button sheet foot: Cancel keeps its intrinsic width, the one
+          primary takes the remaining space (the .sheet-pri class is width:100% for a foot
+          it has to itself; flex:1/width:auto gives it its share beside Cancel). */}
+      <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
+        <button
+          type="button"
+          className="btn ghost"
+          style={{ flexShrink: 0, minHeight: 44 }}
+          onClick={onCancel}
+          disabled={busy}
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          className="sheet-pri"
+          style={{ flex: 1, width: "auto", minHeight: 44 }}
+          onClick={save}
+          disabled={busy}
+          aria-busy={busy}
+        >
+          {busy ? busyLabel : cta}
+        </button>
+      </div>
+    </>
   );
 }
 
