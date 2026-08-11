@@ -20,6 +20,7 @@ import { useState, type FormEvent } from "react";
 import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
+import { ModalLoading } from "./modal-loading";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useRoomScanAvailability, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
 import { ScanUnavailable } from "@/components/shared/scan-unavailable";
@@ -665,7 +666,7 @@ export function RoomCardModalContent() {
   const captureId = activeModal?.params?.captureId as string | undefined;
   const mode = activeModal?.params?.mode as string | undefined;
 
-  useJobRooms(jobId);
+  const roomsQ = useJobRooms(jobId);
 
   const room = useAppStore((s) =>
     jobId && captureId ? s.roomsByJob[jobId]?.find((r) => r.id === captureId) : undefined,
@@ -689,6 +690,9 @@ export function RoomCardModalContent() {
   }
 
   if (!room) {
+    // While the rooms read is still in flight, "no longer available" is a false claim about a
+    // room that is merely loading — the same wait-vs-error split every detail sheet makes.
+    if (roomsQ.isLoading) return <ModalLoading size="md" />;
     return (
       <div>
         <div className="sheet-head">
