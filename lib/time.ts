@@ -35,6 +35,19 @@ export function colLabel(iso: string): string {
   return new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
 }
 
+/**
+ * ISO date → a SPECIFIC date label: "Today", "May 8", or "May 8, 2025" across a year boundary.
+ * A bare weekday is week-scale vocabulary — printed over an arbitrary date it lies: a stale
+ * May 8 row read "Fri 11a" on the Jobs list, indistinguishable from the coming Friday.
+ */
+export function whenDateLabel(iso: string, todayIso: string): string {
+  if (iso === todayIso) return "Today";
+  const d = new Date(iso + "T12:00:00");
+  if (isNaN(d.getTime())) return "";
+  const sameYear = iso.slice(0, 4) === todayIso.slice(0, 4);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", ...(sameYear ? {} : { year: "numeric" }) });
+}
+
 /** "HH:MM" → decimal hours (timesheet clock strings). */
 export function timeToH(s: string): number {
   const p = (s || "").split(":");

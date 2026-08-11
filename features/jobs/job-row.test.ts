@@ -20,7 +20,8 @@ describe("jobWhenLabel", () => {
     const j = mkJob({ visits: [mkVisit({ date: dPlus(0), techId: "1", start: 13 })] });
     const w = jobWhenLabel("today", j, 0);
     expect(w.live).toBe(false);
-    expect(w.label).toBe("1p");
+    // "Today ·" prefix since Aug 11 — the WHEN column always names the date, never a bare time.
+    expect(w.label).toBe("Today · 1p");
   });
 
   it("done shows the day it was finished", () => {
@@ -88,5 +89,30 @@ describe("jobCrewTech", () => {
 
   it("returns null when no visit carries a crew", () => {
     expect(jobCrewTech("needsSlot", mkJob({ visits: [] }), techs)).toBeNull();
+  });
+});
+
+// Owen, Aug 11: "the WHEN should show a specific date and time not just the time." The old label
+// printed a bare weekday — a May 8 row read "Fri 11a", indistinguishable from this Friday, which
+// is how 493 stale seeded jobs impersonated the coming week.
+describe("jobWhenLabel — a specific date, never a bare weekday", () => {
+  it("scheduled bands print month + day + time", () => {
+    const j = mkJob({ visits: [mkVisit({ date: dPlus(2), techId: "1", start: 10 })] });
+    expect(jobWhenLabel("thisWeek", j, 0).label).toMatch(/^[A-Z][a-z]{2} \d{1,2} · 10a$/);
+  });
+
+  it("today prints the word Today with the time — specific, and still scannable", () => {
+    const j = mkJob({ visits: [mkVisit({ date: dPlus(0), techId: "1", start: 13 })] });
+    expect(jobWhenLabel("today", j, 0).label).toBe("Today · 1p");
+  });
+
+  it("done prints the real date it finished", () => {
+    const j = mkJob({ visits: [mkVisit({ date: dPlus(-1), techId: "1", start: 9, status: "done" })] });
+    expect(jobWhenLabel("done", j, 0).label).toMatch(/^done [A-Z][a-z]{2} \d{1,2}$/);
+  });
+
+  it("a half-planned slot names its pencilled-in date, not a weekday", () => {
+    const j = mkJob({ visits: [mkVisit({ date: dPlus(3), techId: null, start: 11 })] });
+    expect(jobWhenLabel("needsSlot", j, 0).label).toMatch(/^[A-Z][a-z]{2} \d{1,2} · 11a · no crew$/);
   });
 });

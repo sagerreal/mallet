@@ -125,6 +125,11 @@ export function PriceBuilderModalContent() {
   // rate already stored or typed.
   const orgTaxRate = useAppStore((s) => s.taxRate);
   const seededOrgTax = useRef(false);
+  // The save re-entry guard is synchronous — `disabled` lands a render late, and this modal's
+  // save is a full round-trip (the same incident class as the New-job triple-click). Declared
+  // HERE, above the not-loaded early return: hooks after a conditional return broke the rules
+  // of hooks the moment #421 and #422 merged around each other.
+  const saveInFlightRef = useRef(false);
   useEffect(() => {
     if (seededOrgTax.current || orgTaxRate <= 0) return;
     seededOrgTax.current = true;
@@ -222,9 +227,6 @@ export function PriceBuilderModalContent() {
   // draft over a price the office believes is booked, and the field draft endpoint
   // would overwrite it. Atomic on the server, or not at all.
   //
-  // The ref guard is synchronous — `disabled` lands a render late, and this modal's
-  // save is a full round-trip (the same incident class as the New-job triple-click).
-  const saveInFlightRef = useRef(false);
   async function savePrice() {
     if (!job || saveInFlightRef.current) return;
     saveInFlightRef.current = true;

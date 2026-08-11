@@ -26,7 +26,7 @@ vi.mock("@/lib/trpc/client", () => ({
 // The debounce is timing, not filtering — the hook's arguments are what this file is about.
 vi.mock("@/lib/use-debounced-value", () => ({ useDebouncedValue: (v: string) => v }));
 
-import { useJobsQuery, localToday, type JobsQueryState } from "./use-jobs-query";
+import { useJobsQuery, useJobsQueryState, localToday, type JobsQueryState } from "./use-jobs-query";
 
 const state = (over: Partial<JobsQueryState> = {}): JobsQueryState => ({
   view: null,
@@ -86,5 +86,14 @@ describe("useJobsQuery — the Active filter reaches the server", () => {
     // moment a search matched nothing.
     const { bookCount } = run(state({ activeOnly: true, search: "heater", view: "done" }));
     expect(bookCount).toEqual({});
+  });
+});
+
+// Owen, Aug 11: "the default view should probably be today" — a dispatcher opens Jobs to run the
+// day, not to scroll a 688-row book that buries today's work under months of older dates.
+describe("useJobsQueryState — the list opens on Today", () => {
+  it("defaults the view to 'today', not All", () => {
+    const { result } = renderHook(() => useJobsQueryState());
+    expect(result.current.view).toBe("today");
   });
 });
