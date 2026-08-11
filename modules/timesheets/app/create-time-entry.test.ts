@@ -90,8 +90,23 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
     return 0;
   }
 
-  async list(): Promise<{ items: TimeEntry[]; nextCursor: null }> {
-    return { items: [], nextCursor: null };
+  /** Rows the fake's list() can return — the overlap gate reads the day through this. Filtered
+   *  the way the real repository filters, so a use-case querying the wrong tech or day would
+   *  fetch nothing and the overlap tests would catch it. */
+  readonly listRows: TimeEntry[] = [];
+  /** Set to simulate a day too big for one page — the gate must refuse, not trust page 1. */
+  listNextCursor: string | null = null;
+
+  async list(
+    filter: Parameters<TimeEntryRepository["list"]>[0],
+  ): Promise<{ items: TimeEntry[]; nextCursor: string | null }> {
+    const items = this.listRows.filter(
+      (e) =>
+        (filter.techUserId === undefined || e.props.techUserId === filter.techUserId) &&
+        (filter.fromDate === undefined || e.props.workDate >= filter.fromDate) &&
+        (filter.toDate === undefined || e.props.workDate <= filter.toDate),
+    );
+    return { items, nextCursor: this.listNextCursor };
   }
   async save(): Promise<void> {
     // no-op
@@ -318,5 +333,127 @@ describe("CreateTimeEntryUseCase — happy path", () => {
     expect(repo.createCalls[0]?.endTime).toBeNull();
     expect(repo.createCalls[0]?.running).toBe(true);
     expect(repo.createCalls[0]?.src).toBe("timer");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The overlap gate: one person cannot be two places at once. The 12.02h Tuesday
+// was Shop 10:00–22:00 plus Shop 10:37–10:38, both summed into payroll.
+// ---------------------------------------------------------------------------
+
+describe("CreateTimeEntryUseCase — one person cannot be two places at once", () => {
+  const cmd = (over: Partial<CreateTimeEntryCommand> = {}): CreateTimeEntryCommand => ({
+    techUserId: USER_ID,
+    jobId: null,
+    workDate: "2026-07-07",
+    kind: "shop",
+    startTime: "10:37",
+    endTime: "10:38",
+    note: "",
+    src: "manual",
+    running: false,
+    ...over,
+  });
+
+  it("refuses a row inside an existing one, naming the clash", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd(), ORG);
+
+    expect(isOk(result)).toBe(false);
+    if (!isOk(result)) {
+      expect(result.error.message).toContain("Overlaps Shop 10:00–22:00");
+    }
+    expect(repo.createCalls).toHaveLength(0);
+  });
+
+  it("refuses a row that collides with the OPEN clock segment, saying the day is still open", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.listRows.push(makeEntry({ startTime: "13:00", endTime: null, running: true, src: "clock" }));
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd({ startTime: "14:00", endTime: "15:00" }), ORG);
+
+    expect(isOk(result)).toBe(false);
+    if (!isOk(result)) {
+      expect(result.error.message).toContain("Still on the clock since 13:00");
+    }
+  });
+
+  it("still creates when rows only touch", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
+    repo.willReturn(makeEntry({ startTime: "08:00", endTime: "10:00" }));
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd({ startTime: "08:00", endTime: "10:00" }), ORG);
+
+    expect(isOk(result)).toBe(true);
+    expect(repo.createCalls).toHaveLength(1);
+  });
+});
+
+// Review findings, Aug 11: the gate must not misfire on retries, inverted windows, other days,
+// or a day too big for one page.
+describe("CreateTimeEntryUseCase — overlap gate edge cases", () => {
+  const cmd = (over: Partial<CreateTimeEntryCommand> = {}): CreateTimeEntryCommand => ({
+    techUserId: USER_ID,
+    jobId: null,
+    workDate: "2026-07-07",
+    kind: "shop",
+    startTime: "10:00",
+    endTime: "22:00",
+    note: "",
+    src: "manual",
+    running: false,
+    ...over,
+  });
+
+  it("never clashes a retried create with its own already-landed row", async () => {
+    const repo = new FakeTimeEntryRepository();
+    // The first attempt landed; the retry carries the same client-authored id and times.
+    repo.listRows.push(makeEntry({ id: CLIENT_ID as TimeEntryId, kind: "shop", startTime: "10:00", endTime: "22:00" }));
+    repo.willReturn(makeEntry({ id: CLIENT_ID as TimeEntryId }));
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd({ id: CLIENT_ID }), ORG);
+
+    // Not an overlap refusal — the duplicate id is the database's unambiguous problem to name.
+    expect(isOk(result)).toBe(true);
+  });
+
+  it("refuses an inverted window BEFORE the gate, naming the actual problem", async () => {
+    const repo = new FakeTimeEntryRepository();
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd({ startTime: "16:00", endTime: "08:00" }), ORG);
+
+    expect(isOk(result)).toBe(false);
+    if (!isOk(result)) expect(result.error.message).toContain("endTime must be after startTime");
+    expect(repo.createCalls).toHaveLength(0);
+  });
+
+  it("ignores rows on a DIFFERENT day — the gate reads only the day being written", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.listRows.push(makeEntry({ workDate: "2026-07-06", kind: "shop", startTime: "10:00", endTime: "22:00" }));
+    repo.willReturn(makeEntry());
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd(), ORG);
+
+    expect(isOk(result)).toBe(true);
+  });
+
+  it("refuses loudly when the day cannot be read in one page, rather than trusting page 1", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.listNextCursor = "more";
+    const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
+
+    const result = await useCase.exec(cmd(), ORG);
+
+    expect(isOk(result)).toBe(false);
+    if (!isOk(result)) expect(result.error.message).toContain("too many rows");
   });
 });

@@ -26,9 +26,20 @@ import type { MyHoursEntry } from "./my-hours-derive";
  */
 export const EDIT_WINDOW_DAYS = 7;
 
+/**
+ * How far AHEAD hours may be booked: the next seven days (Owen, Aug 11: "I should be able to
+ * add future time"). Symmetric with the back window — one week each way — so planned time for
+ * the week being scheduled can be typed in before it happens. The overlap gate applies to a
+ * future day exactly as it does to today.
+ */
+export const FUTURE_WINDOW_DAYS = 7;
+
 /** The dates a technician may still author or correct, most recent first. */
 export function editWindowDates(today: string): string[] {
-  return Array.from({ length: EDIT_WINDOW_DAYS }, (_, i) => addDaysISO(today, -i));
+  // Today first — it stays the default selection — then the week ahead, then the week behind.
+  const ahead = Array.from({ length: FUTURE_WINDOW_DAYS }, (_, i) => addDaysISO(today, i + 1));
+  const behind = Array.from({ length: EDIT_WINDOW_DAYS - 1 }, (_, i) => addDaysISO(today, -(i + 1)));
+  return [today, ...ahead, ...behind];
 }
 
 /**
@@ -37,7 +48,8 @@ export function editWindowDates(today: string): string[] {
  */
 export function isWithinEditWindow(workDate: string, today: string): boolean {
   const oldest = addDaysISO(today, -(EDIT_WINDOW_DAYS - 1));
-  return workDate >= oldest && workDate <= today;
+  const farthest = addDaysISO(today, FUTURE_WINDOW_DAYS);
+  return workDate >= oldest && workDate <= farthest;
 }
 
 /** Editable, or locked with the reason stated. Never merely disabled — silence reads as a bug. */
@@ -50,6 +62,8 @@ const EDITABLE: Editability = Object.freeze({ editable: true });
 const NOT_YOURS = "These aren't your hours — the office timesheet edits them.";
 
 const TOO_OLD = `Older than ${EDIT_WINDOW_DAYS} days — ask the office to change it.`;
+
+const TOO_FAR_AHEAD = `More than ${FUTURE_WINDOW_DAYS} days ahead — ask the office to change it.`;
 
 /** "21 Jul" / "Jul 21" — whichever the technician's own device calls that date. */
 const approvedOn = (approvedAt: string | null): string =>
@@ -89,7 +103,7 @@ export function editabilityOf(
   // the office to fix a punch he forgot last Friday is exactly the failure this page removes.
   if (entry.running) return EDITABLE;
   if (!isWithinEditWindow(entry.workDate, today)) {
-    return { editable: false, reason: TOO_OLD };
+    return { editable: false, reason: entry.workDate > today ? TOO_FAR_AHEAD : TOO_OLD };
   }
   return EDITABLE;
 }

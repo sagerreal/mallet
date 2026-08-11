@@ -1,5 +1,6 @@
 import type { TimeEntryId, JobId, Result, AppError } from "@mallet/shared/types";
 import { notFound, err, ok, conflict } from "@mallet/shared/types";
+import { overlapGateError } from "./overlap-gate";
 import type { Clock } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { TimeEntry, TimeEntryKind, TimeEntrySrc } from "../domain/time-entry";
@@ -55,6 +56,19 @@ export class UpdateTimeEntryUseCase {
       now,
     );
     if (!patched.ok) return patched;
+
+    // One person cannot be two places at once — the same gate as create, run against the day
+    // the row is landing ON (workDate may itself be the patch). The row never clashes with itself.
+    const p = patched.value.props;
+    const gate = await overlapGateError(this.entries, {
+      id: p.id,
+      techUserId: p.techUserId,
+      workDate: p.workDate,
+      startTime: p.startTime,
+      endTime: p.endTime,
+      running: p.running,
+    });
+    if (gate !== null) return err(gate);
 
     await this.entries.save(patched.value);
 

@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   EDIT_WINDOW_DAYS,
+  FUTURE_WINDOW_DAYS,
   editWindowDates,
   isWithinEditWindow,
   editabilityOf,
@@ -35,12 +36,17 @@ const entry = (over: Partial<MyHoursEntry> = {}): MyHoursEntry => ({
 });
 
 describe("the editing window", () => {
-  it("covers the current day and the previous six", () => {
+  // Owen, Aug 11: "I should be able to add future time." The window now runs both ways —
+  // today first (the default selection), then the week ahead, then the week behind.
+  it("offers today, then the next seven days ascending, then the previous six descending", () => {
     const dates = editWindowDates(TODAY);
 
-    expect(dates).toHaveLength(EDIT_WINDOW_DAYS);
+    expect(dates).toHaveLength(EDIT_WINDOW_DAYS + FUTURE_WINDOW_DAYS);
     expect(dates[0]).toBe("2026-07-01");
-    expect(dates[EDIT_WINDOW_DAYS - 1]).toBe("2026-06-25");
+    expect(dates[1]).toBe("2026-07-02");
+    expect(dates[FUTURE_WINDOW_DAYS]).toBe("2026-07-08");
+    expect(dates[FUTURE_WINDOW_DAYS + 1]).toBe("2026-06-30");
+    expect(dates[dates.length - 1]).toBe("2026-06-25");
   });
 
   it("admits the oldest day in the window and refuses the day before it", () => {
@@ -48,8 +54,9 @@ describe("the editing window", () => {
     expect(isWithinEditWindow("2026-06-24", TODAY)).toBe(false);
   });
 
-  it("refuses a date after today — hours cannot be booked in advance", () => {
-    expect(isWithinEditWindow("2026-07-02", TODAY)).toBe(false);
+  it("admits the farthest day ahead and refuses the day after it", () => {
+    expect(isWithinEditWindow("2026-07-08", TODAY)).toBe(true);
+    expect(isWithinEditWindow("2026-07-09", TODAY)).toBe(false);
   });
 
   it("locks a row older than the window, naming the next step", () => {
@@ -58,6 +65,15 @@ describe("the editing window", () => {
     expect(result.editable).toBe(false);
     expect(result.editable === false && result.reason).toBe(
       "Older than 7 days — ask the office to change it.",
+    );
+  });
+
+  it("locks a row beyond the future window with the FORWARD reason, not 'older than'", () => {
+    const result = editabilityOf(entry({ workDate: "2026-07-09" }), TODAY, ME);
+
+    expect(result.editable).toBe(false);
+    expect(result.editable === false && result.reason).toBe(
+      "More than 7 days ahead — ask the office to change it.",
     );
   });
 

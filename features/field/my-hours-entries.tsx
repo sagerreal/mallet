@@ -38,6 +38,7 @@ export interface MyHoursWeekProps {
   readonly suggestEndFor: (entry: MyHoursEntry) => string | null;
   readonly onEdit: (entryId: string | null) => void;
   readonly onSave: (entryId: string, patch: { kind: EntryKind; jobId: string | null; startTime: string; endTime: string }) => void;
+  readonly onDelete: (entryId: string) => void;
 }
 
 interface RowProps extends Omit<MyHoursWeekProps, "entries" | "weekStartISO"> {
@@ -45,7 +46,7 @@ interface RowProps extends Omit<MyHoursWeekProps, "entries" | "weekStartISO"> {
 }
 
 function EntryRow(props: RowProps) {
-  const { entry, today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave } = props;
+  const { entry, today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave, onDelete } = props;
   const lock = editabilityOf(entry, today, myUserId);
   const editing = editingId === entry.id;
   // Inside an expanded run the kind is worth showing again: it is the only thing distinguishing
@@ -125,6 +126,7 @@ function EntryRow(props: RowProps) {
           saving={saving}
           serverError={saveError}
           onSave={(patch) => onSave(entry.id, patch)}
+          onDelete={() => onDelete(entry.id)}
           onCancel={() => onEdit(null)}
         />
       ) : null}

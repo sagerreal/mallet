@@ -96,10 +96,10 @@ function NoHoursYet({ onAdd }: { onAdd: () => void }) {
   return (
     <FirstRunEmptyState
       heading="No hours yet"
-      subtext="Hours are recorded as you start your day and tap through your jobs. Anything the clock missed, you can add here."
+      subtext="Hours are recorded as you start your day and tap through your jobs. Anything the clock missed — or time planned ahead — you can add here."
       paths={[
         {
-          title: "Add hours you already worked",
+          title: "Add hours",
           description: "Pick the day and the times. The office reviews it before it reaches payroll.",
           actionLabel: "Add hours",
           onAction: onAdd,
@@ -173,11 +173,12 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         today={today}
         myUserId={myUserId}
         editingId={editingId}
-        saving={writes.saving}
-        saveError={writes.updateError}
+        saving={writes.saving || writes.removing}
+        saveError={writes.updateError ?? writes.removeError}
         suggestEndFor={suggestEndFor}
         onEdit={setEditingId}
         onSave={(entryId, patch) => writes.saveEntry(entryId, patch, () => setEditingId(null))}
+        onDelete={(entryId) => writes.removeEntry(entryId, () => setEditingId(null))}
       />
       {addSlot}
     </>
@@ -283,7 +284,7 @@ export default function MyHoursPage() {
                   recorded — so it leads rather than sits quietly at the bottom, and it says what
                   it does rather than apologising for being after the fact. */}
               <Button variant={hasClock ? "quiet" : "primary"} onClick={() => setAddOpen(true)}>
-                {hasClock ? "Add hours you already worked" : "Add a day"}
+                {hasClock ? "Add hours" : "Add a day"}
               </Button>
             </div>
           )

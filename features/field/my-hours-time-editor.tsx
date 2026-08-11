@@ -43,6 +43,8 @@ export interface MyHoursTimeEditorProps {
   readonly serverError: string | null;
   readonly onSave: (patch: { kind: EntryKind; jobId: string | null; startTime: string; endTime: string }) => void;
   readonly onCancel: () => void;
+  /** Soft-delete this row. Armed two-tap inside the editor — destruction is never one tap. */
+  readonly onDelete: () => void;
 }
 
 export function MyHoursTimeEditor({
@@ -55,8 +57,11 @@ export function MyHoursTimeEditor({
   serverError,
   onSave,
   onCancel,
+  onDelete,
 }: MyHoursTimeEditorProps) {
   const [kind, setKind] = useState<EntryKind>(initialKind);
+  // Destruction is never one tap: first Delete arms, second executes (the sweep modals' grammar).
+  const [deleteArmed, setDeleteArmed] = useState(false);
   const kindGroup = useGroupLabel();
   const jobField = useFieldId();
   const [jobId, setJobId] = useState<string | null>(initialJobId);
@@ -156,6 +161,20 @@ export function MyHoursTimeEditor({
         </Button>
         <Button variant="quiet" size="sm" onClick={onCancel}>
           Cancel
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={saving}
+          onClick={() => {
+            if (!deleteArmed) {
+              setDeleteArmed(true);
+              return;
+            }
+            onDelete();
+          }}
+        >
+          {deleteArmed ? "⚠ Really delete? Tap again" : "Delete"}
         </Button>
       </div>
     </div>
