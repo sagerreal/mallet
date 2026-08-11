@@ -109,7 +109,7 @@ function callLabel(lead: Lead): string {
   return looksLikePerson ? `Call ${first}` : "Call";
 }
 
-export function LeadModal({ open }: { open: boolean }) {
+export function LeadModal({ open, instant }: { open: boolean; instant?: boolean }) {
   const close = useCloseModal();
   const activeModal = useActiveModal();
   const pushModal = usePushModal();
@@ -209,7 +209,7 @@ export function LeadModal({ open }: { open: boolean }) {
     // Three genuinely different states, said apart. Claiming "archived" while a fetch is still in
     // flight is what made this modal lie.
     return (
-      <Modal open={open} onClose={close} wide label="Customer">
+      <Modal open={open} onClose={close} wide label="Customer" instant={instant}>
         <h2>Customer</h2>
         {missing && leadQ.isLoading ? (
           <ModalLoading size="lg" />
@@ -240,7 +240,7 @@ export function LeadModal({ open }: { open: boolean }) {
   const openTasks = Math.max(openTasksStore.length, leadTasksQ.data?.items.length ?? 0);
 
   return (
-    <Modal open={open} onClose={close} wide label={lead.name}>
+    <Modal open={open} onClose={close} wide label={lead.name} instant={instant}>
       <LeadSheetHeader lead={lead} />
 
       {/* Quiet secondaries — every contact/advance action that is NOT the primary.

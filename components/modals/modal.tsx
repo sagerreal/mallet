@@ -28,9 +28,16 @@ interface ModalProps {
   maxWidth?: number;
   /** Accessible name for the dialog, announced on open. */
   label?: string;
+  /**
+   * This mount replaces another open modal in the same commit (ModalHost's switch
+   * detection) — skip the entrance animation. Replaying it on a switch painted a full
+   * frame of bare page (outgoing gone, incoming at the keyframes' opacity 0) and then a
+   * translucent fade over it: the "glitch" on every modal→modal hop.
+   */
+  instant?: boolean;
 }
 
-export function Modal({ open, onClose, children, wide, maxWidth, label }: ModalProps) {
+export function Modal({ open, onClose, children, wide, maxWidth, label, instant }: ModalProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
 
@@ -114,7 +121,7 @@ export function Modal({ open, onClose, children, wide, maxWidth, label }: ModalP
 
   return (
     <div
-      className="overlay open"
+      className={`overlay open${instant ? " swap" : ""}`}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
