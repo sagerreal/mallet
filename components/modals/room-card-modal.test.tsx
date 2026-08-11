@@ -91,6 +91,7 @@ beforeEach(() => {
   closeMock.mockReset();
   pushModalMock.mockReset();
   useJobRoomsMock.mockReset();
+  useJobRoomsMock.mockReturnValue({ isLoading: false });
   useRoomScanAvailabilityMock.mockReset();
   // A browser is the honest default for this suite — the office opens room cards on a desktop.
   useRoomScanAvailabilityMock.mockReturnValue({ status: "no-native-app" });
@@ -623,5 +624,27 @@ describe("RoomCardModalContent — scan mode", () => {
 
     await waitFor(() => expect(screen.getByText(/Couldn't save this scan/)).toBeTruthy());
     expect(closeMock).not.toHaveBeenCalled();
+  });
+});
+
+
+/**
+ * THE LOAD BEAT. "This room is no longer available" was shown while the rooms read was still in
+ * flight — a false claim about a room that was merely loading. The wait and the absence are
+ * different facts and get different screens.
+ */
+describe("RoomCardModalContent — a room still loading is not 'removed'", () => {
+  it("waits while the rooms query is in flight", () => {
+    activeModalParams = { jobId: JOB_ID, captureId: "cap-missing" };
+    useJobRoomsMock.mockReturnValue({ isLoading: true });
+    render(<RoomCardModalContent />);
+    expect(screen.queryByText(/no longer available/)).toBeNull();
+  });
+
+  it("says removed only once the read has settled without it", () => {
+    activeModalParams = { jobId: JOB_ID, captureId: "cap-missing" };
+    useJobRoomsMock.mockReturnValue({ isLoading: false });
+    render(<RoomCardModalContent />);
+    expect(screen.getByText(/no longer available/)).toBeTruthy();
   });
 });
