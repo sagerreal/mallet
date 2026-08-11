@@ -57,14 +57,14 @@ describe("CallModalContent — phoneless reachability", () => {
   it("with NO phone: hides the call path, shows the add-number prompt, does not start a blank call", () => {
     render(<CallModalContent />);
     expect(screen.queryByText("Call from Mallet")).toBeNull();
-    expect(screen.getByLabelText(/No phone number yet/i)).toBeTruthy();
+    expect(screen.getByLabelText("Mobile number")).toBeTruthy();
     // No blank call bar opened.
     expect(startCall).not.toHaveBeenCalled();
   });
 
   it("saving a number persists it and starts the call with the fresh value", async () => {
     render(<CallModalContent />);
-    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+    fireEvent.change(screen.getByLabelText("Mobile number"), {
       target: { value: "(925) 555-0100" },
     });
     fireEvent.click(screen.getByText(/^Save/));
@@ -84,7 +84,7 @@ describe("CallModalContent — phoneless reachability", () => {
     updateLead.mockReturnValueOnce(new Promise<boolean>((res) => { settle = res; }));
 
     render(<CallModalContent />);
-    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+    fireEvent.change(screen.getByLabelText("Mobile number"), {
       target: { value: "(925) 555-0100" },
     });
     fireEvent.click(screen.getByText(/^Save/));
@@ -101,7 +101,7 @@ describe("CallModalContent — phoneless reachability", () => {
   it("does not place a call when the number failed to save, and says so", async () => {
     updateLead.mockResolvedValueOnce(false);
     render(<CallModalContent />);
-    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+    fireEvent.change(screen.getByLabelText("Mobile number"), {
       target: { value: "(925) 555-0100" },
     });
     fireEvent.click(screen.getByText(/^Save/));
@@ -176,7 +176,7 @@ describe("CallModalContent — no callback number on file", () => {
   it("adding the customer's number does not sneak past the missing callback number", async () => {
     mockLeads = [{ id: "lead-1", name: "Dana Alvarez", phone: "" }];
     render(<CallModalContent />);
-    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+    fireEvent.change(screen.getByLabelText("Mobile number"), {
       target: { value: "(925) 555-0100" },
     });
     fireEvent.click(screen.getByText(/^Save/));

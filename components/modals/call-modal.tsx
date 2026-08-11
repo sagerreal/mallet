@@ -10,9 +10,9 @@
  * card is where the transport explanation lives (rings YOUR phone / through this
  * computer, business-number caller ID), and the foot is where the thumb is.
  *
- * Phoneless state: PhoneAddInput IS the sheet — its own full-width "Save & call"
- * is the terminal action (the draft lives inside the primitive), so no foot
- * renders there; docking a second Save & call would race or duplicate it.
+ * Phoneless state: the head's meta line names it ("No phone number yet") and
+ * PhoneAddInput renders the labeled field + the sheet foot ([Cancel][Save & call])
+ * — the primitive owns the one foot, so this modal docks none of its own there.
  */
 
 "use client";
@@ -111,32 +111,29 @@ export function CallModalContent() {
     <>
       <div className="sheet-head">
         <h2>{lead.name}</h2>
-        {phoneOnFile && (
-          <div className="sheet-meta">
-            <span>{lead.phone}</span>
-          </div>
-        )}
+        <div className="sheet-meta">
+          {/* The meta line is the state: the number on file, or the fact there isn't one. */}
+          <span>{phoneOnFile ? lead.phone : "No phone number yet"}</span>
+        </div>
       </div>
       {!phoneOnFile && (
-        // No number on file — the modal becomes the add-a-phone prompt (big,
-        // legible). Saving persists + starts the call with the fresh number.
-        <>
-          <PhoneAddInput
-            label="No phone number yet"
-            sub={`Add ${lead.name.split(" ")[0]}'s mobile and the call starts right away.`}
-            cta="Save & call"
-            busy={savingPhone}
-            busyLabel="Saving the number…"
-            onSave={savePhoneAndCall}
-            onCancel={close}
-          />
-          {phoneSaveFailed && (
-            <p className="werr" role="alert">
-              The number didn&apos;t save, so the call can&apos;t go out. Check your connection and
-              press Save &amp; call again.
-            </p>
-          )}
-        </>
+        // No number on file — the sheet becomes the add-a-phone ask, in the standard
+        // grammar (labeled field + [Cancel][Save & call] foot). Saving persists + starts
+        // the call with the fresh number.
+        <PhoneAddInput
+          label="Mobile number"
+          sub="Add it and the call starts right away."
+          cta="Save & call"
+          busy={savingPhone}
+          busyLabel="Saving the number…"
+          onSave={savePhoneAndCall}
+          onCancel={close}
+          saveError={
+            phoneSaveFailed
+              ? "The number didn't save, so the call can't go out. Check your connection and press Save & call again."
+              : null
+          }
+        />
       )}
 
       {phoneOnFile && (

@@ -43,26 +43,28 @@ beforeEach(() => {
 });
 
 describe("ThreadModalContent — phoneless reachability", () => {
-  it("with NO phone: shows the add-number prompt and disables the composer send", () => {
+  it("with NO phone: the sheet IS the add-number ask — no dead composer under it", () => {
     render(<ThreadModalContent />);
-    expect(screen.getByLabelText(/No phone number yet/i)).toBeTruthy();
-    const sendBtn = screen.getByText("Send") as HTMLButtonElement;
-    expect(sendBtn.disabled).toBe(true);
-    // Sending is refused — no message goes to the wire.
-    fireEvent.click(sendBtn);
+    // The state lives in the head's meta line; the field carries a plain label.
+    expect(screen.getByText("No phone number yet")).toBeTruthy();
+    expect(screen.getByLabelText("Mobile number")).toBeTruthy();
+    // The composer does not render at all — a disabled Send was a dead control,
+    // and an empty thread under the ask said nothing.
+    expect(screen.queryByText("Send")).toBeNull();
+    expect(screen.queryByText("No messages yet")).toBeNull();
     expect(sendMutate).not.toHaveBeenCalled();
   });
 
   it("with a phone: no add prompt and the composer send is enabled", () => {
     h.leads = [{ id: "lead-1", name: "Dana Alvarez", phone: "555-0101", acts: [] }];
     render(<ThreadModalContent />);
-    expect(screen.queryByLabelText(/No phone number yet/i)).toBeNull();
+    expect(screen.queryByLabelText("Mobile number")).toBeNull();
     expect((screen.getByText("Send") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("saving a number persists it (composer then enables on the store update)", () => {
+  it("saving a number persists it (the thread then takes over on the store update)", () => {
     render(<ThreadModalContent />);
-    fireEvent.change(screen.getByLabelText(/No phone number yet/i), {
+    fireEvent.change(screen.getByLabelText("Mobile number"), {
       target: { value: "(925) 555-0100" },
     });
     fireEvent.click(screen.getByText(/^Save/));
