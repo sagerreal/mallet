@@ -132,7 +132,11 @@ export function QuotesLedger() {
             </span>
           </div>
 
-          <table className="list-tbl cols-sized">
+          {/* The WHITE CARD is the register — Customers, Jobs and Money all sit their tables in
+              this exact container, and shipping the bare table on the dotted ground was the one
+              visible way this page broke the family resemblance (Owen caught it on sight). */}
+          <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
+            <table className="list-tbl cols-sized">
             <colgroup>
               {COLS.map((w, i) => (
                 <col key={i} style={{ width: w }} />
@@ -178,7 +182,8 @@ export function QuotesLedger() {
                 </tr>
               ) : null}
             </tbody>
-          </table>
+            </table>
+          </div>
         </>
       )}
     </div>
