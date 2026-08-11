@@ -109,24 +109,62 @@ describe("VisitModalContent — createJobForLead race fix", () => {
     expect(openModalMock).not.toHaveBeenCalled();
   });
 
-  it("surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
-    const optimisticJob = { id: "job-fail-1", origin: "manual", visits: [] };
+  it("the priced exit opens the builder on the client-authored id BEFORE the create settles", async () => {
+    let resolveJobPersisted!: (j: unknown) => void;
     addJob.mockReturnValue({
-      job: optimisticJob,
-      persisted: Promise.reject(new Error("network error")),
+      job: { id: "job-fast-1", origin: "manual", visits: [] },
+      persisted: new Promise((res) => { resolveJobPersisted = res; }),
     });
 
     render(<VisitModalContent />);
     fireEvent.click(screen.getByRole("button", { name: "Create & price it →" }));
 
+    // The builder lands while the create is STILL IN FLIGHT.
+    await waitFor(() =>
+      expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-fast-1" }),
+    );
+    expect(closeMock).toHaveBeenCalled();
+
+    // Visits still queue behind the create (store-only before origin flips to db).
+    expect(addVisit).not.toHaveBeenCalled();
+    resolveJobPersisted({ id: "job-fast-1", origin: "db", visits: [] });
+    await waitFor(() => expect(addVisit).toHaveBeenCalledWith("job-fast-1"));
+  });
+
+  it("the priced exit mints no visits on a rejected create — the builder's notice is the surface", async () => {
+    let rejectJob!: (e: Error) => void;
+    addJob.mockReturnValue({
+      job: { id: "job-fail-1", origin: "manual", visits: [] },
+      persisted: new Promise((_res, rej) => { rejectJob = rej; }),
+    });
+
+    render(<VisitModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: "Create & price it →" }));
+
+    await waitFor(() =>
+      expect(openModalMock).toHaveBeenCalledWith("price-builder", { jobId: "job-fail-1" }),
+    );
+    rejectJob(new Error("network error"));
+    // The slice rolls the job back (the builder then shows its not-loaded notice);
+    // this sheet's job is only to never mint a visit on a job that never persisted.
+    await waitFor(() => expect(addVisit).not.toHaveBeenCalled());
+  });
+
+  it("the PLAIN exit surfaces an error and keeps the modal open when addJob persisted rejects", async () => {
+    // The unpriced exit pops back to the lead sheet, which has nowhere to say "the job
+    // didn't save" — so it still awaits the create and names the failure HERE.
+    addJob.mockReturnValue({
+      job: { id: "job-fail-2", origin: "manual", visits: [] },
+      persisted: Promise.reject(new Error("network error")),
+    });
+
+    render(<VisitModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+
     await waitFor(() => {
       expect(screen.getByText(/couldn't save the job/i)).toBeTruthy();
     });
-
-    // Modal must NOT close on failure.
     expect(closeMock).not.toHaveBeenCalled();
-
-    // addVisit must NOT be called when the job failed.
     expect(addVisit).not.toHaveBeenCalled();
   });
 

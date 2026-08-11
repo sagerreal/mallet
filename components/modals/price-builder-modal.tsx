@@ -131,7 +131,26 @@ export function PriceBuilderModalContent() {
     setPricing((prev) => (prev.taxPct > 0 ? prev : { ...prev, taxPct: orgTaxRate }));
   }, [orgTaxRate]);
 
-  if (!job) return null;
+  if (!job) {
+    // Not a `return null`: this sheet can be open on a job whose create is still in flight
+    // (the New-job modal's "Create & price it" hands off on the client-authored id without
+    // awaiting the create), so a refused create rolls the job out of the store UNDER this
+    // sheet. A blank white panel with a ✕ is the anti-pattern the close-out already fixed —
+    // name the problem and the next step instead.
+    return (
+      <>
+        <div className="sheet-head">
+          <h2>Build the price</h2>
+        </div>
+        <div className="loadfail" role="alert">
+          <p className="loadfail-h">This job isn&rsquo;t loaded</p>
+          <p className="loadfail-s">
+            It may not have saved — close this, then create the job again from the board.
+          </p>
+        </div>
+      </>
+    );
+  }
 
   const lead = leads.find((l) => l.id === job.leadId);
   const total = linesTotal(lines);

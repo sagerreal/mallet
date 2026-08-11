@@ -2101,3 +2101,71 @@ describe("signChangeOrder", () => {
     expect(mockFieldAddAddon).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// setJobLines while the job's own create is still in flight. The create→price flow opens the
+// price builder on the client-authored id BEFORE v1.jobs.create settles; a save inside that
+// window used to hit the `origin !== "db"` short-circuit and answer { ok:true } while writing
+// NOTHING — a silent price loss on the next refetch. The write now queues behind the pending
+// create: it persists once the row exists, and a failed create fails the save out loud.
+// ---------------------------------------------------------------------------
+describe("setJobLines behind a pending addJob create", () => {
+  beforeEach(() => {
+    mockCreate.mockReset();
+    mockSetLines.mockReset();
+    mockInvalidate.mockReset();
+  });
+
+  const priced = [{ d: "Drain clear", q: 1, r: 100 }];
+
+  it("queues the persist behind the in-flight create — never a silent store-only success", async () => {
+    let resolveCreate!: (dto: unknown) => void;
+    mockCreate.mockReturnValue(new Promise((res) => { resolveCreate = res; }));
+    const { get } = makeStore();
+    const { job } = get().addJob(draft);
+
+    mockSetLines.mockResolvedValue(makeJobDTO(job.id, {
+      lines: [{ id: "srv-l1", description: "Drain clear", quantity: 1, rate: { cents: 10_000, currency: "USD" }, cost: null }],
+    }));
+
+    const pendingSave = get().setJobLines(job.id, priced, { discBps: 0, taxBps: 845 });
+    // The save waits for the create — nothing is on the wire yet.
+    expect(mockSetLines).not.toHaveBeenCalled();
+
+    resolveCreate(makeJobDTO(job.id));
+    const res = await pendingSave;
+    expect(res.ok).toBe(true);
+    expect(mockSetLines).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: job.id, taxBps: 845 }),
+    );
+  });
+
+  it("a failed create fails the queued save out loud — { ok:false }, nothing written", async () => {
+    let rejectCreate!: (e: Error) => void;
+    mockCreate.mockReturnValue(new Promise((_res, rej) => { rejectCreate = rej; }));
+    const { get } = makeStore();
+    const { job, persisted } = get().addJob(draft);
+    persisted.catch(() => undefined); // the caller-side handler; the slice rethrows by contract
+
+    const pendingSave = get().setJobLines(job.id, priced);
+    rejectCreate(new Error("db down"));
+
+    const res = await pendingSave;
+    expect(res.ok).toBe(false);
+    expect(mockSetLines).not.toHaveBeenCalled();
+  });
+
+  it("a settled create leaves no pending entry — a later save persists directly", async () => {
+    mockCreate.mockResolvedValue(makeJobDTO("direct-1"));
+    const { get } = makeStore();
+    const { job, persisted } = get().addJob(draft);
+    await persisted;
+
+    mockSetLines.mockResolvedValue(makeJobDTO(job.id, {
+      lines: [{ id: "srv-l1", description: "Drain clear", quantity: 1, rate: { cents: 10_000, currency: "USD" }, cost: null }],
+    }));
+    const res = await get().setJobLines(job.id, priced);
+    expect(res.ok).toBe(true);
+    expect(mockSetLines).toHaveBeenCalledOnce();
+  });
+});

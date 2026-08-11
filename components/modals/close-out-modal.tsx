@@ -35,6 +35,7 @@ import { ListLoading } from "@/components/shared/list-loading";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
+import { jobPricedTotals } from "@/lib/store/job-pricing";
 import { readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import type {
@@ -1113,6 +1114,13 @@ export function CloseOutModalContent() {
     if (creatingRef.current === job.id) return;
     creatingRef.current = job.id;
     setCreateError(null);
+    // The optimistic figure is the BILLED figure. This draw used to carry `jobTotal(job)` — the
+    // raw line sum — so a job with a stored tax rate flashed "$100" and snapped to "$108.45"
+    // when the server's answer landed (the hydration-flash law, applied to money). The chain
+    // below is deriveTotals over the same lines and the same `job.pricing` rates the server
+    // bills with (CreateInvoiceFromJobUseCase), so the number never changes on reconcile.
+    // The one client-underivable figure — an estimate's deposit credit — is gated below instead.
+    const optimistic = jobPricedTotals(job);
     const { persisted } = addInvoice(
       {
         jobId: job.id,
@@ -1124,7 +1132,10 @@ export function CloseOutModalContent() {
         // and answers with them, so a device that cannot see rates (`r: null` → 0 here) never
         // writes a fabricated $0 anywhere — this shape is replaced wholesale by the reconcile.
         lines: (job.lines ?? []).map((l) => ({ d: l.d, q: l.q ?? 1, r: l.r ?? 0, c: l.c ?? 0 })),
-        total: jobTotal(job),
+        ...(job.pricing ? { pricing: job.pricing } : {}),
+        total: optimistic.total / 100,
+        tax: optimistic.tax / 100,
+        disc: optimistic.discount / 100,
         depPaid: 0,
         payments: [],
         status: "draft",
@@ -1221,10 +1232,17 @@ export function CloseOutModalContent() {
   // The gate is the SURFACE, not `pricesHidden`: the deposit skew has nothing to do with redaction,
   // and `pricesHidden` is false for a job with no lines at all, which is reachable. The server's
   // answer always carries the balance (modules/invoicing/api/field-invoice-dto.ts), so wait for it
-  // and say what is happening. The office is untouched — its invoices are hydrated, so it rarely
-  // draws an optimistic row at all, and every existing expectation of its behaviour is unchanged.
+  // and say what is happening. The office is near-untouched — its invoices are hydrated, so it
+  // rarely draws an optimistic row at all, and every existing expectation of its behaviour holds.
   // A failed create rolls the row back, so this state never outlives the error notice above.
-  if (invoice.origin !== "db" && surface === "field") {
+  //
+  // ESTIMATE-SOURCED JOBS GATE ON EVERY SURFACE. The optimistic total is now the full
+  // discount→tax chain (see the draw above), which the client CAN derive — but the deposit the
+  // customer already paid on the source estimate is credited server-side (depositPaidCents), and
+  // a figure missing that credit is exactly the "$1,000 asked against an $880 balance" skew this
+  // gate exists for. Never show a number that will change; one honest "Reading the balance…"
+  // beat instead.
+  if (invoice.origin !== "db" && (surface === "field" || job.sourceEstimateId)) {
     return (
       <>
         <div className="sheet-head">

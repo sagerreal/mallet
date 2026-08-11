@@ -146,17 +146,25 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
   const q = query.trim().toLowerCase();
   const visible = q ? active.filter((m) => m.name.toLowerCase().includes(q)) : active;
 
-  async function handleAdd() {
+  /**
+   * OPTIMISTIC (the house store pattern): addMaterial inserts the row in the same tick, so the
+   * composer clears NOW — clearing on success left the same part in the input AND the list for
+   * the whole round trip. A refusal names the reason and restores the typed values (unless the
+   * office has already typed the next part — theirs wins).
+   */
+  function handleAdd() {
     const name = newName.trim();
     if (!name) return;
+    const cost = newCost;
     setAddError(null);
-    const r = await addMaterial({ name, unitCost: Math.max(0, Number(newCost) || 0) });
-    if (!r.ok) {
-      setAddError(r.reason === "duplicate" ? "That material is already in your book." : "Couldn’t add it — check your connection and try again.");
-      return;
-    }
     setNewName("");
     setNewCost("");
+    void addMaterial({ name, unitCost: Math.max(0, Number(cost) || 0) }).then((r) => {
+      if (r.ok) return;
+      setAddError(r.reason === "duplicate" ? "That material is already in your book." : "Couldn’t add it — check your connection and try again.");
+      setNewName((cur) => (cur ? cur : name));
+      setNewCost((cur) => (cur ? cur : cost));
+    });
   }
 
   return (

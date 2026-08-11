@@ -75,12 +75,17 @@ export function VisitModalContent() {
    *  create; the crew & time get set on the Schedule board. The kind derives from
    *  which exit ran: priced → "work", plain → "estimate".
    *
-   *  addJob returns { job, persisted } — we MUST await `persisted` before calling
-   *  addVisit so the job has origin === "db" and addVisit fires v1.visits.createVisit.
-   *  Without the await the visit is added while the job is still "manual" and is
-   *  silently dropped by addVisit's origin guard on the next page refresh.
+   *  addJob returns { job, persisted } — addVisit MUST run after `persisted` settles
+   *  so the job has origin === "db" and addVisit fires v1.visits.createVisit.
+   *  Earlier, and the visit is added while the job is still "manual" and is
+   *  silently dropped by addVisit's origin guard on the next page refresh. The
+   *  QUEUE is the requirement, not the caller waiting: the priced exit returns
+   *  immediately (the builder opens on the client-authored id) while the visit
+   *  still rides the settled create in the background.
    *
-   *  Returns the optimistic Job on success, or null on failure (error already set).
+   *  Returns the optimistic Job on success, or null on failure (plain exit only —
+   *  its error lands in this modal; the priced exit's failure surface is the
+   *  builder's not-loaded notice).
    */
   async function createJobForLead(priced: boolean): Promise<Job | null> {
     const { job, persisted } = addJob({
@@ -101,16 +106,31 @@ export function VisitModalContent() {
       visits: [],
     });
 
-    // Await the job reconcile (origin flips to "db") before adding the visit so that
-    // addVisit sees origin === "db" and fires v1.visits.createVisit.
+    // The visit queues behind the job reconcile (origin flips to "db") on every path —
+    // addVisit is store-only before that, and the row would be silently dropped on refresh.
+    const settled = persisted.then((persistedJob) => {
+      addVisit(job.id); // unplaced — dragged onto the Schedule later
+      return persistedJob;
+    });
+
+    if (priced) {
+      // The priced exit is OPTIMISTIC — the price builder needs only the client-authored id,
+      // which exists now, so the sheets land without waiting the create's round trip (same
+      // hand-off as the New-job modal's "Create & price it"). A save inside the window queues
+      // behind the create (setJobLines' pending-create gate); a refused create rolls the job
+      // back and the builder shows its not-loaded notice — visible, never silent.
+      void settled.catch(() => undefined);
+      return job;
+    }
+
+    // The plain exit pops back to the lead sheet, which has nowhere to say "the job didn't
+    // save" — so it keeps its await and names the failure here.
     try {
-      await persisted;
+      await settled;
     } catch {
       setError("Couldn't save the job — check your connection and try again.");
       return null;
     }
-
-    addVisit(job.id); // unplaced — dragged onto the Schedule later
     return job;
   }
 

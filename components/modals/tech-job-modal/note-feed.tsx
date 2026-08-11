@@ -87,13 +87,22 @@ export function noteFeedPropsEqual(a: NoteFeedProps, b: NoteFeedProps): boolean 
 
 function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
   const [text, setText] = useState("");
-  const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const entries = jobNoteEntries(job);
 
-  async function addNote() {
+  /**
+   * OPTIMISTIC, the house store pattern. updateJob's own optimistic set puts the note in the
+   * feed in the same tick, so the input clears NOW — it used to clear on the mutation's
+   * success, which left the same words sitting in the input AND the list for the whole round
+   * trip. On a refusal the slice rolls the feed back and the text returns to the input (unless
+   * the tech has already typed the next note — theirs wins), with the failure named in place.
+   *
+   * The cleared input is also the double-tap guard: a second Enter submits an empty string and
+   * returns here. No `saving` state, no disabled button — there is nothing to wait for.
+   */
+  function addNote() {
     const t = text.trim();
-    if (!t || saving) return;
+    if (!t) return;
     // Append one stamped line ("[Jul 13] …") to the job's notes blob; the
     // feed's .ntext renders white-space:pre-line so each line reads separately.
     const stamp = new Date(todayISO() + "T12:00:00").toLocaleDateString("en-US", {
@@ -102,15 +111,13 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
     });
     const existing = (job.notes ?? "").trim();
     const next = existing ? `${existing}\n[${stamp}] ${t}` : `[${stamp}] ${t}`;
-    setSaving(true);
-    setError("");
-    const { ok } = await updateJob(job.id, { notes: next });
-    setSaving(false);
-    if (!ok) {
-      setError(NOTE_SAVE_FAILED_COPY);
-      return;
-    }
     setText("");
+    setError("");
+    void updateJob(job.id, { notes: next }).then(({ ok }) => {
+      if (ok) return;
+      setError(NOTE_SAVE_FAILED_COPY);
+      setText((cur) => (cur ? cur : t));
+    });
   }
 
   return (
@@ -145,7 +152,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void addNote();
+                if (e.key === "Enter") addNote();
               }}
               placeholder="add a note…"
               aria-label="Add a note"
@@ -155,8 +162,7 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
               type="button"
               className="btn sm primary"
               aria-label="Add note"
-              disabled={saving}
-              onClick={() => void addNote()}
+              onClick={addNote}
             >
               Add
             </button>

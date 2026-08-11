@@ -1006,3 +1006,63 @@ describe("CloseOutModalContent — where Done lands", () => {
     expect(mockDismissModals).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// The optimistic due figure — the hydration-flash law applied to money. The sheet raises the
+// invoice on mount and draws the row it just asked for; that draw used to carry the RAW LINE SUM
+// (`jobTotal`), so a $100 job with the shop's stored 8.45% sales tax flashed "$100" and snapped
+// to "$108.45" when the server's answer landed. The draw now derives the same discount → tax
+// chain the server bills (job.pricing through deriveTotals), so the figure never changes — and
+// the one figure the client genuinely cannot derive (an estimate's deposit credit) is GATED
+// behind the server's answer instead of guessed at.
+// ---------------------------------------------------------------------------
+
+describe("CloseOutModalContent — the optimistic due figure is the BILLED total", () => {
+  const pricedJob: Job = {
+    ...cardJob,
+    lines: [{ d: "Drain clear", q: 1, r: 100 }],
+    pricing: { disc: 0, tax: 8.45 },
+  };
+
+  beforeEach(() => {
+    mockRole = "owner";
+    mockActiveParams = { jobId: "job-1" };
+    mockJobs = [pricedJob];
+    mockLeads = [feeLead];
+    mockInvoices = [];
+    mockAddInvoice.mockClear();
+    mockCreatePersisted = () => Promise.resolve({ ok: true });
+  });
+
+  it("raises the invoice carrying the tax-inclusive total, never the raw line sum", () => {
+    render(<CloseOutModalContent />);
+    expect(mockAddInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ total: 108.45, tax: 8.45 }),
+      "office",
+    );
+  });
+
+  it("a stored discount rides the same chain (discount → net → tax)", () => {
+    mockJobs = [{ ...pricedJob, pricing: { disc: 10, tax: 8.45 } }];
+    render(<CloseOutModalContent />);
+    expect(mockAddInvoice).toHaveBeenCalledWith(
+      expect.objectContaining({ total: 97.61, disc: 10 }),
+      "office",
+    );
+  });
+
+  it("an optimistic row on a NON-estimate job still renders the money card (no new gate)", () => {
+    mockJobs = [{ ...cardJob }];
+    mockInvoices = [{ ...cardInvoice, origin: "manual" } as unknown as Invoice];
+    render(<CloseOutModalContent />);
+    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+  });
+
+  it("an ESTIMATE-SOURCED job's optimistic row is gated — the deposit credit is server knowledge", () => {
+    mockJobs = [{ ...cardJob, sourceEstimateId: "est-1" }];
+    mockInvoices = [{ ...cardInvoice, origin: "manual" } as unknown as Invoice];
+    render(<CloseOutModalContent />);
+    expect(screen.getByText("Reading the balance…")).toBeTruthy();
+    expect(screen.queryByText(/Take payment/)).toBeNull();
+  });
+});
