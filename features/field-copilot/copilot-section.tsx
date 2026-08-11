@@ -5,7 +5,11 @@
  * Layout (.fsec chrome):
  *   - Transcript area: user questions (right-aligned), assistant answers (left),
  *     AiThinkingBlock while pending.
- *   - FOUND WORK card: one-tap "Add to found work" → Added ✓ state.
+ *   - EXTRA WORK card (the parsed FOUND WORK marker): one-tap "Add to change order" →
+ *     Added ✓ state. The tap stages a PROPOSED add-on via addAddonField (v1.field.addAddon);
+ *     the office OKs it and the next change order picks it up. The tech modal's own Found
+ *     Work section is retired, so the copy points at the change order — the one place the
+ *     technician will see the item again.
  *   - Input row: [📷 camera] [text input] [Ask]
  *   - Photo chips (≤ 3) above the input row.
  *   - Inline errors via the error state (no grey helper text).
@@ -63,7 +67,7 @@ export function copilotPropsEqual(
 }
 
 // ---------------------------------------------------------------------------
-// FOUND WORK card
+// EXTRA WORK card (the parsed FOUND WORK marker — the wire contract keeps that name)
 // ---------------------------------------------------------------------------
 
 interface FoundWorkCardProps {
@@ -83,15 +87,15 @@ function FoundWorkCard({ description, jobId, addAddonField }: FoundWorkCardProps
 
   return (
     <div className="cp-found-card">
-      <span className="cp-found-label">Found work</span>
+      <span className="cp-found-label">Extra work</span>
       <span className="cp-found-desc">{description}</span>
       <button
         className={added ? "tjpaid-btn2 cp-found-added" : "tjpaid-btn2"}
         onClick={handleAdd}
         disabled={added}
-        aria-label={added ? "Added to found work" : "Add to found work"}
+        aria-label={added ? "Added to the change order" : "Add to change order"}
       >
-        {added ? "Added ✓" : "Add to found work"}
+        {added ? "Added ✓" : "Add to change order"}
       </button>
     </div>
   );

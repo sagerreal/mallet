@@ -78,8 +78,7 @@ function mockStoreState(): Record<string, unknown> {
     setVisitStatus: mockSetVisitStatus,
     updateJob: mockUpdateJob,
     recordPayment: noop,
-    addAddon: noop,
-    setAddonStatus: noop,
+    addAddonField: noop,
     checkVerifyItem: noop,
     overrideVerifyItem: noop,
     uncheckVerifyItem: noop,
@@ -99,11 +98,12 @@ function mockStoreState(): Record<string, unknown> {
 }
 
 /**
- * Found work and Job notes are COUNTED ROWS now — collapsed until tapped, so the work order and
- * the foot primary are not pushed off the bottom of a phone by two always-open feeds. Tests that
- * assert on their bodies open them first.
+ * Job notes is a COUNTED ROW — collapsed until tapped, so the work order and the foot primary
+ * are not pushed off the bottom of a phone by an always-open feed. Tests that assert on its
+ * body open it first. (Found work was the other counted row until the section was retired —
+ * change orders carry extra work now.)
  */
-function openSection(label: "Found work" | "Job notes"): void {
+function openSection(label: "Job notes"): void {
   fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}`) }));
 }
 
@@ -208,15 +208,22 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — owner/office", () => {
-  it("shows Call/Text, the advancing foot, and add-on controls", () => {
+  it("shows Call/Text and the advancing foot", () => {
     render(<TechJobModalContent />);
     expect(screen.getByText("Call")).toBeTruthy();
     expect(screen.getByText("Text")).toBeTruthy();
     expect(screen.getByText("Start driving →")).toBeTruthy();
     expect(screen.getByText("Finish job →")).toBeTruthy();
-    openSection("Found work");
-    expect(screen.getByText(/Customer OK/)).toBeTruthy();
-    expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
+  });
+
+  // Found work is RETIRED on this surface — change orders carry extra work (Owen, Aug 2026).
+  // The default fixture job carries a proposed add-on, so this asserts the section stays gone
+  // even with data to show; the add-on itself still reaches the office row and the next
+  // change order through the model, which is untouched.
+  it("renders no Found work section even when the job carries add-ons", () => {
+    render(<TechJobModalContent />);
+    expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
+    expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
   });
 
   it("writes the office's taps through the OFFICE surface (no clock — she wasn't there)", () => {
@@ -385,12 +392,12 @@ describe("TechJobModalContent — tech", () => {
     expect(screen.queryByText("↩ Reopen")).toBeNull();
   });
 
-  it("hides add-on add + status controls but keeps the read-only found-work list", () => {
+  // Retired for techs too — the same rule as the office view above; extra work rides the
+  // change order (Quote tab) and the office's own Found work row, not a list on this sheet.
+  it("renders no Found work section for a tech", () => {
     render(<TechJobModalContent />);
-    openSection("Found work");
-    expect(screen.getByText("Extra shutoff valve")).toBeTruthy(); // read stays
-    expect(screen.queryByText(/Customer OK/)).toBeNull();
-    expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
+    expect(screen.queryByText("Extra shutoff valve")).toBeNull();
   });
 
   it("keeps checklist check-off rows (v1.field.setVerifyAnswer is anyRole)", () => {
@@ -477,85 +484,35 @@ describe("TechJobModalContent — tech", () => {
     expect(screen.getByText("Take payment →")).toBeTruthy();
   });
 
-  it("never renders a server-redacted (null) rate as $0", () => {
-    mockJobs = [
-      makeJob({
-        addons: [{ id: 0, dbId: "a-db-1", d: "Extra shutoff valve", q: 1, r: null, status: "proposed" }],
-      }),
-    ];
-    render(<TechJobModalContent />);
-    openSection("Found work");
-    expect(screen.getByText("Extra shutoff valve")).toBeTruthy();
-    expect(screen.queryByText(/\$0/)).toBeNull();
-  });
-
-  it("hides the empty found-work section for techs (no dead add form)", () => {
-    mockJobs = [makeJob({ addons: [] })];
-    render(<TechJobModalContent />);
-    expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
-  });
 });
 
 // ---------------------------------------------------------------------------
-// FOUND WORK MEANS "EXTRA BEYOND WHAT WAS SOLD".
+// FOUND WORK IS RETIRED ON THIS SURFACE (Owen, Aug 2026): change orders carry extra work.
 //
-// On an estimate walkthrough nothing has been sold, so the add form is not clutter — it is a
-// category error. It gave the person holding the phone TWO places to type a price (here and the
-// Quote tab's builder), and before a sale only one of them is right: a price typed into Found
-// Work on a walkthrough is neither a quote nor billable work, and nothing converts it.
+// The addons MODEL stays — the Quote tab's change order stashes a committed job's unsigned
+// lines as PROPOSED add-ons (v1.field.addAddon), the office OKs them, and the next change
+// order picks them up. What is gone is this sheet's display section and its add form.
 // ---------------------------------------------------------------------------
 
-describe("TechJobModalContent — found work needs something sold to be extra to", () => {
+describe("TechJobModalContent — Found work section retired", () => {
   // An estimate visit with no priced lines — isUnpricedEstimate, the sheet's own `scoping`.
   const walkthrough = (over: Partial<Job> = {}) =>
     makeJob({ svc: "estimate", lines: [], addons: [], ...over });
 
-  it("is absent on an estimate walkthrough, for the owner who WOULD otherwise be able to add", () => {
+  it("renders no Found work section on a sold job with proposed add-ons, for any role", () => {
     mockRole = "owner";
-    mockJobs = [walkthrough()];
+    mockJobs = [
+      makeJob({
+        lines: [{ d: "Repipe", q: 1, r: 4200 }],
+        addons: [{ id: 0, dbId: "a-db-1", d: "Extra shutoff valve", q: 1, r: 120, status: "proposed" }],
+      }),
+    ];
     render(<TechJobModalContent />);
     expect(screen.queryByRole("button", { name: /^Found work/ })).toBeNull();
     expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
   });
 
-  it("comes back the moment the walkthrough sells something — a quote signed on site", () => {
-    mockRole = "owner";
-    // signJobQuote writes real priced lines onto the job; jobQuoted flips true and the estimate
-    // stops being "unpriced".
-    mockJobs = [walkthrough({ lines: [{ d: "Repipe", q: 1, r: 4200 }] })];
-    render(<TechJobModalContent />);
-    openSection("Found work");
-    expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
-  });
-
-  // The third state, and the one that would quietly break this: a shop that hides prices from
-  // techs sends every rate NULL, so a genuinely sold job reads as unpriced to a naive check.
-  // Invisible is not unsold — isUnpricedEstimate carries that, which is why the host passes it.
-  it("stays available when the SOLD price is merely withheld from this device", () => {
-    mockRole = "owner";
-    mockSeesPrice = false;
-    mockJobs = [walkthrough({ lines: [{ d: "Repipe", q: 1, r: null }] })];
-    render(<TechJobModalContent />);
-    openSection("Found work");
-    expect(screen.getByPlaceholderText("extra work found…")).toBeTruthy();
-  });
-
-  // No data is hidden by this: an addon that already exists on such a job is real, and the tech
-  // sheet is the only surface showing it. The FORM goes, the rows stay.
-  it("still lists found work already on a walkthrough — only the add form goes", () => {
-    mockRole = "owner";
-    mockJobs = [
-      walkthrough({
-        addons: [{ id: 0, dbId: "a-db-1", d: "Extra shutoff valve", q: 1, r: 120, status: "proposed" }],
-      }),
-    ];
-    render(<TechJobModalContent />);
-    openSection("Found work");
-    expect(screen.getByText("Extra shutoff valve")).toBeTruthy();
-    expect(screen.queryByPlaceholderText("extra work found…")).toBeNull();
-  });
-
-  // JOB NOTES is not gated on any of this. A note is always worth having.
+  // JOB NOTES is not touched by any of this. A note is always worth having.
   it("keeps Job notes on a walkthrough", () => {
     mockRole = "owner";
     mockJobs = [walkthrough({ notes: "Crawlspace access is round the back" })];
@@ -679,7 +636,7 @@ describe("TechJobModalContent — work order", () => {
 // ---------------------------------------------------------------------------
 
 describe("TechJobModalContent — counted rows", () => {
-  it("collapses Found work and Job notes to a count, and expands them in flow", () => {
+  it("collapses Job notes to a count, and expands it in flow", () => {
     mockJobs = [makeJob({ notes: "Gate code 4411" })];
     render(<TechJobModalContent />);
     const notes = screen.getByRole("button", { name: /^Job notes/ });
@@ -688,14 +645,6 @@ describe("TechJobModalContent — counted rows", () => {
     fireEvent.click(notes);
     expect(notes.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("Gate code 4411")).toBeTruthy();
-  });
-
-  // Whitespace-tolerant: the count, its qualifier and the caret are three flex items separated by
-  // a CSS gap (.tjf-v), and jsdom loads no stylesheet — so the run-together name here is a test
-  // artefact, not what a screen reader gets. The words and their order are the contract.
-  it("counts the found work, and names how many are still awaiting the customer's OK", () => {
-    render(<TechJobModalContent />);
-    expect(screen.getByRole("button", { name: /^Found work\s*1\s*·\s*1 awaiting OK/ })).toBeTruthy();
   });
 });
 
@@ -1410,8 +1359,8 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
 // ---------------------------------------------------------------------------
 // Render-count probe (P4 pattern — Task A2 verification)
 //
-// Method: render the full modal, capture DOM snapshots of the WorkOrderSec and
-// FoundWorkSec regions, then rerender with a job that has ONLY job.verify changed
+// Method: render the full modal, capture a DOM snapshot of the WorkOrderSec
+// region, then rerender with a job that has ONLY job.verify changed
 // (simulating a checklist tap reconcile). Verify: WorkOrderSec DOM is unchanged
 // (custom comparator skipped the re-render) and ChecklistSec DOM is updated
 // (default memo sees new job object and re-renders).

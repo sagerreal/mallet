@@ -832,8 +832,8 @@ function FoundWorkSettle({ pending, onInclude, onSkip, canSettle }: FoundWorkSet
   // `a.r === null` is the server's redaction, not a free add-on (money-redaction.ts nulls addon
   // rates on a techSeesPrice-off device). Reducing it with `?? 0` prints "$0 in found work", which
   // reads as "nothing extra was found" — the opposite of the warning this card exists to give. If
-  // even one rate is withheld the total is unknowable on this device, so name none. Same rule the
-  // job tab's FoundWorkSec already follows.
+  // even one rate is withheld the total is unknowable on this device, so name none — the tech
+  // surface's standing rule for redacted money (work-order-sec follows it too).
   const anyHidden = pending.some((a) => a.r === null);
   const sum = pending.reduce((s, a) => s + (a.q ?? 1) * (a.r ?? 0), 0);
   const what = anyHidden ? "Found work" : `${fmt$(sum)} in found work`;

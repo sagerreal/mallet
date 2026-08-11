@@ -10,7 +10,8 @@
 //   - description is ≤ 80 characters.
 //   - description must NOT include prices or dollar amounts when seesPrice === false.
 //   - The marker is a standalone line at the end of the response.
-//   - The UI (PR3) strips the marker line and renders it as a one-tap "Add to found work" card.
+//   - The UI strips the marker line and renders it as a one-tap "Add to change order" card
+//     (the tap stages a proposed add-on; the office OKs it and the next change order rides it).
 
 // ---------------------------------------------------------------------------
 // Prompt input

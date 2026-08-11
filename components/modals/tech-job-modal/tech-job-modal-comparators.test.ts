@@ -13,7 +13,6 @@
 import { describe, it, expect } from "vitest";
 import { techHeaderPropsEqual } from "./tech-header";
 import { workOrderPropsEqual } from "./work-order-sec";
-import { foundWorkPropsEqual } from "./found-work-sec";
 import { noteFeedPropsEqual } from "./note-feed";
 import { doneBlockPropsEqual } from "./done-block";
 import type { Job } from "@/lib/store/types";
@@ -80,31 +79,6 @@ describe("workOrderPropsEqual", () => {
   });
   it("re-renders when seesPrice flips", () => {
     expect(workOrderPropsEqual(props, { ...props, seesPrice: false })).toBe(false);
-  });
-});
-
-describe("foundWorkPropsEqual", () => {
-  const props = {
-    job: baseJob,
-    seesPrice: true,
-    readOnly: false,
-    hasSoldWork: true,
-    addAddon: noop as never,
-    setAddonStatus: noop as never,
-  };
-  it("SKIPS on a verify-only change", () => {
-    expect(foundWorkPropsEqual(props, { ...props, job: verifyTapped(baseJob) })).toBe(true);
-  });
-  // The add form's second gate: a job that sells something mid-visit (a quote signed on the
-  // doorstep) must grow the form on the spot, so the comparator cannot skip this one.
-  it("re-renders when the job goes from nothing-sold to sold", () => {
-    expect(foundWorkPropsEqual(props, { ...props, hasSoldWork: false })).toBe(false);
-  });
-  it("re-renders when job.addons changes", () => {
-    expect(foundWorkPropsEqual(props, { ...props, job: withField(baseJob, "addons", [{}]) })).toBe(false);
-  });
-  it("re-renders when the handlers are replaced (unstable callback = no silent skip)", () => {
-    expect(foundWorkPropsEqual(props, { ...props, addAddon: (() => null) as never })).toBe(false);
   });
 });
 
