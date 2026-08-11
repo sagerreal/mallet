@@ -35,7 +35,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isEstimateJob, isUnpricedEstimateJob } from "@/features/jobs/job-status-meta";
+import { isUnpricedEstimateJob } from "@/features/jobs/job-status-meta";
 import { useRouter } from "next/navigation";
 import {
   useActiveModal,
@@ -61,7 +61,7 @@ import { JobChecklistBlock } from "./job-checklist-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
-import { Field, FieldGroup } from "@/components/ui/input";
+import { Field } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { ModalLoading } from "./modal-loading";
 import { MoneyPointer } from "./money-pointer";
@@ -76,28 +76,8 @@ const JST: Record<string, { l: string; c: string; bg: string }> = {
   done: { l: "Done", c: "var(--ink-3)", bg: "var(--paper)" },
 };
 
-interface SvcMeta { edge: string }
-
-const SVC_META: Record<string, SvcMeta> = {
-  estimate: { edge: "var(--amber)" },
-  service: { edge: "#9C5B34" },
-  install: { edge: "#4A639E" },
-};
-
-function svcEdge(key: string): string {
-  return (SVC_META[key] ?? SVC_META.service!).edge;
-}
-
-
 function jobTotal(j: Job): number {
   return (j.lines ?? []).reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
-}
-
-/** priced → "install" (blue), unpriced job → "service" (brown), estimate → estimate */
-function jobMode(j: Job): string {
-  if (isEstimateJob(j)) return "estimate";
-  const priced = (j.lines ?? []).some((l) => (l.q ?? 1) * (l.r ?? 0) > 0);
-  return priced ? "install" : "service";
 }
 
 function stpillStyle(status: string): { color: string; background: string } {
@@ -588,54 +568,9 @@ function NoteFeed({ job }: { job: Job }) {
 // ---- money pointer: extracted to ./money-pointer (unpriced-estimate gate +
 // unit tests live there) -----------------------------------------------------
 
-// ---- type chips (prototype openJob §Type, lines 4712-4715) -----------------
-
-interface TypeFieldProps {
-  job: Job;
-  onSetKind: (kind: "work" | "estimate") => void;
-}
-
-// Flat rate first — the common case. "Job" was the old label for it, and it was wrong twice:
-// an estimate visit IS a job, and what the chip really means is that the price is known.
-const TYPE_CHIPS: ReadonlyArray<{ t: string; lbl: string; sub: string }> = [
-  ["service", "Flat rate", "the price is known"],
-  ["estimate", "Estimate", "no price yet — priced at the door, or quoted by the office after"],
-].map(([t, lbl, sub]) => ({ t: t as string, lbl: lbl as string, sub: sub as string }));
-
-/** Always the two-chip toggle — one look for Type everywhere. */
-function TypeField({ job, onSetKind }: TypeFieldProps) {
-  const isEst = isEstimateJob(job);
-
-  return (
-    <FieldGroup label="Type" style={{ margin: "0" }} groupClassName="chips">
-      {TYPE_CHIPS.map(({ t, lbl, sub }) => {
-        const sel = (t === "estimate") === isEst;
-        return (
-            <button
-              key={t}
-              className={`chip ${sel ? "sel" : ""}`}
-              onClick={() => onSetKind(t === "estimate" ? "estimate" : "work")}
-              title={sub}
-              aria-pressed={sel}
-            >
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 8,
-                  height: 8,
-                  borderRadius: "var(--radius-2xs)",
-                  background: svcEdge(t),
-                  marginRight: "var(--space-2)",
-                  verticalAlign: "middle",
-                }}
-              />
-              {lbl}
-            </button>
-        );
-      })}
-    </FieldGroup>
-  );
-}
+// ---- type chips: REMOVED. The kind derives from whether a price is committed (the New job
+// foot at create; Build the price's save thereafter) — a manual Type toggle here was the same
+// Estimate/Flat-rate fork the create form dropped, surfaced post-create.
 
 // ---- the modal body --------------------------------------------------------
 
@@ -911,13 +846,9 @@ export function JobModalContent() {
           </Field>
         </SheetRow>
 
-        <SheetRow
-          label="Type"
-          value={isEstimateJob(job) ? "Estimate" : "Flat rate"}
-          expandable
-        >
-          <TypeField job={job} onSetKind={(kind) => updateJob(job.id, { kind })} />
-        </SheetRow>
+        {/* No Type row. The kind DERIVES from whether a price is committed — the New job
+            foot decides it at create, and Build the price's save flips an unpriced job to
+            booked work. A manual toggle here was the same fork the create form dropped. */}
 
         <SheetRow
           label="Service address"

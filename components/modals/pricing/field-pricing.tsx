@@ -249,10 +249,22 @@ export interface FieldPricingRowsProps {
   /** Pre-discount line sum, in cents — the base every rate is read against. */
   subtotalCents: number;
   disabled?: boolean;
+  /**
+   * Offer the Deposit row (default). The office price builder passes false: a job stores no
+   * deposit rate — a deposit rides the signed/sent document — and a row whose value silently
+   * evaporates on save is worse than no row.
+   */
+  showDeposit?: boolean;
   onChange: (next: FieldPricing) => void;
 }
 
-export function FieldPricingRows({ pricing, subtotalCents, disabled = false, onChange }: FieldPricingRowsProps) {
+export function FieldPricingRows({
+  pricing,
+  subtotalCents,
+  disabled = false,
+  showDeposit = true,
+  onChange,
+}: FieldPricingRowsProps) {
   const [open, setOpen] = useState<OpenRow>(null);
   const totals = fieldPricingTotals(pricing, subtotalCents);
   const rates = fieldPricingRates(pricing, subtotalCents);
@@ -291,6 +303,7 @@ export function FieldPricingRows({ pricing, subtotalCents, disabled = false, onC
         onPct={(taxPct) => patch({ taxPct })}
       />
 
+      {showDeposit ? (
       <DisclosureRow
         label="Deposit required"
         value={rates.depBps > 0 ? fmt$2(totals.depositDue / 100) : "None"}
@@ -321,6 +334,7 @@ export function FieldPricingRows({ pricing, subtotalCents, disabled = false, onC
           Some states limit deposits on home-improvement work. Check your state&rsquo;s rules.
         </p>
       </DisclosureRow>
+      ) : null}
     </div>
   );
 }

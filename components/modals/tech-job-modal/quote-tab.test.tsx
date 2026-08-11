@@ -144,7 +144,11 @@ describe("QuoteTab — normal job", () => {
 // ---------------------------------------------------------------------------
 
 describe("QuoteTab — the customer-choices row", () => {
-  const pricedJob = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
+  // An estimate-kind job carrying lines = the tech's own in-progress DRAFT (the unmount
+  // stash writes those) — the one priced shape that stays editable. Priced lines on a
+  // WORK job are booked now, and the booked surface has its own describe below.
+  const pricedJob = () =>
+    makeJob({ svc: "estimate", lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
 
   it("is absent until something is priced — there is nothing to offer options on", () => {
     const job = makeJob();
@@ -187,7 +191,9 @@ describe("QuoteTab — the customer-choices row", () => {
 // ---------------------------------------------------------------------------
 
 describe("QuoteTab — after the customer signs", () => {
-  const pricedJob = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
+  // A tech DRAFT (estimate-kind + lines) — the editable shape that presents and signs.
+  const pricedJob = () =>
+    makeJob({ svc: "estimate", lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
 
   /** Price → Present → type the name → Accept & sign. */
   async function signIt() {
@@ -525,7 +531,10 @@ describe("QuoteTab — closed job", () => {
  * job from a moving truck, and leaving the tab is the moment the edit is actually finished.
  */
 describe("QuoteTab — the price is saved when the tech leaves", () => {
-  const priced = () => makeJob({ lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
+  // The stash exists for the tech's own DRAFT — estimate-kind lines nobody has committed.
+  // A booked/signed job's builder is a change-order surface and stashes add-ons instead.
+  const priced = () =>
+    makeJob({ svc: "estimate", lines: [{ d: "Flat rate", q: 1, r: 185 }] } as Partial<Job>);
 
   it("writes the changed lines through the field draft endpoint", () => {
     const job = priced();
@@ -701,6 +710,75 @@ describe("QuoteTab — a sold job takes change orders, not edits", () => {
     expect(screen.queryByText("Give the customer choices?")).toBeNull();
     expect(screen.queryByText("Discount")).toBeNull();
     expect(screen.queryByText("Sales tax")).toBeNull();
+  });
+});
+
+/**
+ * THE BOOKED JOB. Priced lines on a WORK job — the office saved a price ("Create & price it",
+ * or the job sheet's Build the price) — are a commitment the customer agreed to on the phone,
+ * signature or not. The tech's builder treats it exactly like a sold one: read-back + change
+ * orders, never an editable draft. Only the words differ ("Booked", and an approval sentence
+ * that does not claim a signature that never happened). The one priced shape that stays
+ * editable is the tech's own estimate-kind draft, covered above.
+ */
+describe("QuoteTab — a BOOKED price takes change orders, not edits", () => {
+  const bookedJob = (over: Partial<Job> = {}) =>
+    makeJob({
+      // svc "service", no sourceEstimateId — the office booked it, nobody signed.
+      lines: [{ d: "Water heater swap", q: 1, r: 1850 }],
+      ...over,
+    } as Partial<Job>);
+
+  const renderBooked = (job = bookedJob()) => {
+    mockJobs = [job];
+    return render(
+      <QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={false} onSigned={mockOnSigned} />,
+    );
+  };
+
+  it("reads the booked price back fixed under its own word — no editable rows", () => {
+    renderBooked();
+    expect(screen.getByText("Booked")).toBeTruthy();
+    expect(screen.queryByText("Sold — signed")).toBeNull();
+    expect(screen.getByText("Water heater swap")).toBeTruthy();
+    expect(screen.queryByDisplayValue("Water heater swap")).toBeNull();
+    expect(screen.getByText("Change order")).toBeTruthy();
+    // The document's own machinery stays with the office, exactly as on a sold job.
+    expect(screen.queryByText("Give the customer choices?")).toBeNull();
+    expect(screen.queryByText("Discount")).toBeNull();
+  });
+
+  it("new work presents as a change order and signs through the addendum — never signQuote", async () => {
+    renderBooked();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getByLabelText("Price"), { target: { value: "40" } });
+    fireEvent.change(screen.getByPlaceholderText(/part, material/), { target: { value: "Extra shutoff valve" } });
+
+    fireEvent.click(screen.getByText("Present change order →"));
+    expect(screen.getByText("Sign change order")).toBeTruthy();
+    // The sentence never claims a prior signature — this job was booked, not signed.
+    expect(screen.queryByText(/already signed/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/full name/), { target: { value: "Dana Alvarez" } });
+    fireEvent.click(screen.getByText(/Approve & sign/));
+    await Promise.resolve();
+
+    expect(mockSignChangeOrder).toHaveBeenCalledTimes(1);
+    expect(mockSignJobQuote).not.toHaveBeenCalled();
+  });
+
+  it("leaving stashes typed work as PROPOSED found work — saveQuoteDraft must not overwrite the booked price", () => {
+    const { unmount } = renderBooked();
+    fireEvent.click(screen.getByRole("button", { name: "+ Add to the quote" }));
+    fireEvent.click(screen.getByText("Custom item"));
+    fireEvent.change(screen.getByLabelText("Price"), { target: { value: "40" } });
+    fireEvent.change(screen.getByPlaceholderText(/part, material/), { target: { value: "Extra shutoff valve" } });
+
+    unmount();
+
+    expect(mockAddAddonField).toHaveBeenCalledWith("job-1", { d: "Extra shutoff valve", r: 40 });
+    expect(mockSaveQuoteDraft).not.toHaveBeenCalled();
   });
 });
 

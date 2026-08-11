@@ -1,29 +1,25 @@
 /**
  * components/modals/new-job-modal.tsx
- * Faithful port of the prototype's openNewJob / saveNewJob (elas-crm-prototype.html
- * lines 4381-4502): a clean job-creation form that mirrors the New-customer modal.
+ * ONE job form — there is no Type chip. A job is a job; whether it is a scoping
+ * visit or booked work DERIVES from whether a price is attached, which the foot
+ * decides:
  *
- * Field order (exact): What's the job? · Type chips (Estimate | Job) · Customer
- * (in-flow search-or-add picker over live leads) + Phone · Service address ·
- * Price (optional, Job only) ·
- * Visits (unplaced hours rows + "Add a visit") · Before-you-leave checklist picker
- * (Job type only; collapsed summary that expands in-flow) · ▸ More reveal (Notes) ·
- * footer.
+ *   Create job          → the job as written, no price yet (kind "estimate" —
+ *                         someone still has to look at the work before there is
+ *                         a price; the tech's Quote tab offers the dual exit).
+ *   Create & price it → → the same create, then straight into Build the price
+ *                         (kind "service" — the price is the point, and saving
+ *                         it BOOKS it).
  *
- * Type model (per product memory): two user-facing types — Estimate and Job — mapped
- * to njType 'estimate' / 'service'. NJ_HOURS defaults the visit length per type.
- * Visits are created UNPLACED (date/techId/start null) — dragged onto the Schedule
- * board later, so there is NO date/crew picker at creation.
+ * Field order: What's the job? · Customer (in-flow search-or-add picker over
+ * live leads) + Phone · Service address · Visits (unplaced hours rows) ·
+ * Checklist picker (both pools — scoping + before-you-leave, labeled) ·
+ * Job notes · the three-button foot.
  *
- * Create behavior:
- *  - Estimate → a LEAD + a real job (svc "estimate") with unplaced visit(s) — it
- *    rides the server schedule window / crew-load / conflict checks like any job.
- *  - Job (service) → addJob(...) + addVisit(...) per visit row + the picked
- *    checklist attached via updateJob AFTER jobPersisted resolves (origin 'db').
- *
- * Deferred (surfaces / data not in the store yet):
- *  - "Build the price →" opens the tech quote builder in the prototype; here it just
- *    creates the job then closes. See handleBuildPrice.
+ * Visits are created UNPLACED (date/techId/start null) — dragged onto the
+ * Schedule board later, so there is NO date/crew picker at creation. The
+ * default visit length derives with the kind: a still-untouched single default
+ * retunes to the priced length when "Create & price it" is the exit.
  */
 
 "use client";
@@ -48,24 +44,14 @@ import { withListBatch } from "@/lib/trpc/list-cache";
 // A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
 const CHK_PHOTO_RE = /photo|picture/i;
 
-// ---- constants (mirror prototype NJ_HOURS + SVC_META dot colors) ------------
+// ---- constants --------------------------------------------------------------
 
-/** njType → default visit length in hours (prototype NJ_HOURS). */
-const NJ_HOURS: Record<NjType, number> = {
-  estimate: 0.5,
-  service: 1.5,
-} as const;
-
-/** The set of visit-hour defaults, used to detect an untouched single visit. */
-const NJ_HOURS_VALUES: readonly number[] = Object.values(NJ_HOURS);
-
-/** njType → chip dot color (prototype SVC_META[t].edge). */
-const TYPE_DOT: Record<NjType, string> = {
-  estimate: "var(--amber)",
-  service: "#9C5B34",
-} as const;
-
-type NjType = "estimate" | "service";
+/** Default visit length while the job is unpriced — a walkthrough, not a work slot. */
+const UNPRICED_VISIT_H = 0.5;
+/** Default visit length once "Create & price it" is the exit — real work takes real time. */
+const PRICED_VISIT_H = 1.5;
+/** Both defaults, used to detect a single still-untouched visit row worth retuning. */
+const DEFAULT_VISIT_HOURS: readonly number[] = [UNPRICED_VISIT_H, PRICED_VISIT_H];
 
 /** The staged (below-the-essentials) disclosure rows — one open at a time. */
 type RowKey = "visits" | "chk" | "notes";
@@ -114,16 +100,14 @@ export function NewJobModalContent() {
 
   // Core fields
   const [title, setTitle] = useState("");
-  const [njType, setNjType] = useState<NjType>("service");
-  // Which template pool the checklist row offers — the type IS the stage.
-  const activeChecklists = njType === "service" ? jobChecklists : scopeChecklists;
   const [customer, setCustomer] = useState("");
   const [phone, setPhone] = useState("");
   const [addr, setAddr] = useState("");
   const [notes, setNotes] = useState("");
 
-  // Visits (unplaced hours rows) — default one row at the type's NJ_HOURS.
-  const [visits, setVisits] = useState<VisitRow[]>([{ h: NJ_HOURS.service }]);
+  // Visits (unplaced hours rows) — default one row at the unpriced length; the priced
+  // exit retunes a still-untouched default at submit (see resolvedVisits).
+  const [visits, setVisits] = useState<VisitRow[]>([{ h: UNPRICED_VISIT_H }]);
 
   // The staged rows (list-first accordion): one open at a time, front-desk
   // RuleRow precedent. The collapsed value is the summary.
@@ -164,22 +148,7 @@ export function NewJobModalContent() {
   // cannot leak into the next open.
   const chkRetryJobRef = useRef<Job | null>(null);
 
-  // ---- type + visit helpers (mirror njSetType / njNudge / njAddVisit) -------
-
-  function selectType(t: NjType) {
-    setNjType(t);
-    // Reset the checklist pick + collapse its row (templates differ by type;
-    // for estimates the row unmounts entirely).
-    setChkTpl(null);
-    setChkItems([]);
-    setOpenRow((prev) => (prev === "chk" ? null : prev));
-    // If the visits are still a single untouched default, retune to the new type.
-    setVisits((prev) =>
-      prev.length === 1 && prev[0] !== undefined && NJ_HOURS_VALUES.includes(prev[0].h)
-        ? [{ h: NJ_HOURS[t] }]
-        : prev,
-    );
-  }
+  // ---- visit helpers (mirror njNudge / njAddVisit) --------------------------
 
   function nudgeVisit(i: number, d: number) {
     setVisits((prev) =>
@@ -194,7 +163,7 @@ export function NewJobModalContent() {
   }
 
   function addVisitRow() {
-    setVisits((prev) => [...prev, { h: NJ_HOURS[njType] }]);
+    setVisits((prev) => [...prev, { h: UNPRICED_VISIT_H }]);
   }
 
   function removeVisitRow(i: number) {
@@ -264,15 +233,24 @@ export function NewJobModalContent() {
         })),
       };
     }
-    const saved = activeChecklists.find((c) => c.id === chkTpl);
+    const saved = checklists.find((c) => c.id === chkTpl);
     return saved ? { name: saved.name, items: saved.items } : null;
   }
 
   // ---- create (mirror saveNewJob) -------------------------------------------
 
-  /** The list of visits to create — always at least one, clamped to quarters. */
-  function resolvedVisits(): VisitRow[] {
-    const rows = visits.length ? visits : [{ h: NJ_HOURS[njType] }];
+  /**
+   * The list of visits to create — always at least one, clamped to quarters.
+   *
+   * A single STILL-UNTOUCHED default retunes to the exit that was chosen: the same
+   * mechanic the old Type chips ran on switch, moved to the only moment the kind is
+   * now known. An edited row is the user's number and is never retuned.
+   */
+  function resolvedVisits(priced: boolean): VisitRow[] {
+    const def = priced ? PRICED_VISIT_H : UNPRICED_VISIT_H;
+    const untouched =
+      visits.length === 1 && visits[0] !== undefined && DEFAULT_VISIT_HOURS.includes(visits[0].h);
+    const rows = untouched || visits.length === 0 ? [{ h: def }] : visits;
     return rows.map((v) => ({ h: clampHours(v.h) }));
   }
 
@@ -311,22 +289,35 @@ export function NewJobModalContent() {
   }
 
   /**
-   * Returns the created job, or null if the server create failed (error already set).
+   * ONE create for both exits — the kind DERIVES from which foot button ran:
    *
-   * It used to return a bare `true` and throw the created job away, and `commit` then hard-coded
-   * `job: null` — so the estimate branch closed onto whatever happened to be behind it, with no
-   * way to reach the thing that had just been created.
+   *   priced=false ("Create job")        → kind "estimate": no price yet, someone
+   *                                        still looks at the work first. A real job
+   *                                        (never a store-only evisit): it rides the
+   *                                        server schedule window / crew-load /
+   *                                        conflict checks like any other.
+   *   priced=true  ("Create & price it") → svc "service": the price is known and
+   *                                        the caller lands in Build the price next.
+   *
+   * For the "new customer" path (typed name with no matching lead) the lead is
+   * created FIRST and its server-assigned id awaited — the job's lead FK must
+   * reference a real row. Visits are added only after the job reconciles to
+   * origin "db" (addVisit guards on that before firing v1.visits.createVisit;
+   * earlier, and they'd be silently dropped on refresh).
+   *
+   * Returns the created job, or null if the server create failed (error already
+   * set via setError).
    */
-  async function createEstimate(job: string): Promise<{ ok: boolean; createdJob: Job | null }> {
-    // Retry after a failed checklist attach — the job and visits already persisted.
+  async function createJobRecord(job: string, priced: boolean): Promise<{ ok: boolean; createdJob: Job | null }> {
+    // Retry after a failed checklist attach: the job (and its visits) already
+    // persisted — only the attach is outstanding, so don't create a duplicate.
     if (chkRetryJobRef.current) return attachPickedChecklist(chkRetryJobRef.current);
-    const rows = resolvedVisits();
+
+    const rows = resolvedVisits(priced);
     const custName = customer.trim();
     const match = await resolveTypedCustomer(custName);
 
     // Resolve the matched lead, or create a new one and AWAIT the server id.
-    // addLead returns { lead, persisted }; the estimate job must attach to the
-    // reconciled (server-assigned) id, so we await before creating it.
     let lead: Lead;
     if (match) {
       lead = match;
@@ -355,22 +346,18 @@ export function NewJobModalContent() {
     // addJob below, and the row says so), and sending it here did the opposite of what the
     // line above promises: buildLeadUpdatePayload skips `notes`, so the write never reached
     // the database, while updateLead's optimistic set overwrote the customer's real notes in
-    // the store for the rest of the session — the gate code typed on the customer record,
-    // replaced by an estimate description. The customer sheet's Notes composer is the way to
-    // write a customer note; it persists through addLeadNote.
+    // the store for the rest of the session. The customer sheet's Notes composer is the way
+    // to write a customer note; it persists through addLeadNote.
     const patch: Partial<Lead> = { job };
     if (phone.trim() && (!lead.phone || lead.phone === "—")) patch.phone = phone.trim();
     if (addr.trim() && !lead.address) patch.address = addr.trim();
     updateLead(lead.id, patch);
 
-    // The estimate visit is a REAL job (kind "estimate") with unplaced visits. It used
-    // to be a client-store-only evisit on the lead: gone on refresh, invisible to the
-    // schedule window, ignored by crew-load and conflict checks — a placed walkthrough
-    // could double-book a tech with no warning (same fix as visit-modal / new-customer).
     const { job: created, persisted: jobPersisted } = addJob({
       leadId: lead.id,
-      kind: "estimate",
-      svc: "",
+      // The derived kind. "service" rides svc (the store's addJob maps a non-estimate
+      // kind off svc); the unpriced create declares kind "estimate" explicitly.
+      ...(priced ? { svc: "service" } : { kind: "estimate", svc: "" }),
       origin: "manual",
       title: job,
       addr: addr.trim() || (lead.address ?? ""),
@@ -387,95 +374,15 @@ export function NewJobModalContent() {
     try {
       await jobPersisted;
     } catch (err) {
-      setError(userMessage(err, "The customer was saved, but the estimate visit wasn't — check your connection and try again."));
-      return { ok: false, createdJob: null };
-    }
-    // Unplaced (hours only) — dragged onto the Schedule later. Must run after the
-    // reconcile: addVisit only persists once the job is DB-origin.
-    rows.forEach((v) => addVisit(created.id, v.h));
-    // The scoping checklist rides the estimate job exactly as the job checklist rides a job.
-    return attachPickedChecklist(created);
-  }
-
-  /** Create a new Job and persist it (along with its visits) to the database.
-   *
-   *  For the "new customer" path (typed name with no matching lead), we first
-   *  create the lead and await the server-assigned id — the job requires a
-   *  non-null lead FK, so we must use the reconciled (server) id, not the
-   *  optimistic one.  This mirrors createEstimate's addLead → await persisted
-   *  pattern from Phase 1.
-   *
-   *  Visit persistence depends on the job having origin === "db" (addVisit guards
-   *  on this before firing v1.visits.createVisit).  addJob now returns
-   *  { job, persisted } — we await persisted (which resolves after v1.jobs.create
-   *  reconciles with origin "db") before calling addVisit so the visits are
-   *  persisted along with the job, not silently dropped.
-   *
-   *  Returns false on failure (error already set via setError).
-   */
-  async function createJob(job: string): Promise<{ ok: boolean; createdJob: Job | null }> {
-    // Retry after a failed checklist attach: the job (and its visits) already
-    // persisted — only the attach is outstanding, so don't create a duplicate.
-    if (chkRetryJobRef.current) return attachPickedChecklist(chkRetryJobRef.current);
-
-    const rows = resolvedVisits();
-    const custName = customer.trim();
-    const match = await resolveTypedCustomer(custName);
-
-    // Resolve the lead — either an existing match (already in the DB) or a newly
-    // created one.  For a new lead we MUST await the server-assigned id before
-    // creating the job, because the job's lead_id FK must reference a real row.
-    let lead: Lead;
-    if (match) {
-      lead = match;
-    } else {
-      const { persisted: leadPersisted } = addLead({
-        name: custName || "New customer",
-        phone: phone.trim(),
-        source: "Added manually",
-        stage: "Contacted",
-        job,
-        address: addr.trim() || undefined,
-      });
-      try {
-        lead = await leadPersisted;
-      } catch (err) {
-        setError(userMessage(err, "Couldn't save the customer — check your connection and try again."));
-        return { ok: false, createdJob: null };
-      }
-    }
-
-    const { job: created, persisted: jobPersisted } = addJob({
-      leadId: lead.id,
-      svc: njType, // 'service'
-      origin: "manual",
-      title: job,
-      addr: addr.trim() || (lead.address ?? ""),
-      phone: phone.trim() || (lead.phone && lead.phone !== "—" ? lead.phone : ""),
-      status: "unscheduled",
-      archived: false,
-      lines: [],
-      addons: [],
-      photos: [],
-      notes: notes.trim(),
-      acts: [],
-      visits: [],
-    });
-
-    // Await the job reconcile (origin flips to "db") before adding visits so that
-    // addVisit sees origin === "db" and fires v1.visits.createVisit.  Without this
-    // await, visits are added while the job is still "manual" and are silently
-    // skipped by addVisit's origin guard — they would be lost on a page refresh.
-    try {
-      await jobPersisted;
-    } catch (err) {
-      setError(userMessage(err, "Couldn't save the job — check your connection and try again."));
+      setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
       return { ok: false, createdJob: null };
     }
 
     // Each visit is created UNPLACED (hours only) — dragged onto the Schedule later.
     rows.forEach((v) => addVisit(created.id, v.h));
 
+    // The picked checklist rides the job either way — a scoping list on an unpriced
+    // job exactly as a before-you-leave list rides booked work.
     return attachPickedChecklist(created);
   }
 
@@ -498,10 +405,9 @@ export function NewJobModalContent() {
     return { ok: true, createdJob: created };
   }
 
-  /** Validate + create the job/estimate. For estimates the create is async
-   *  (awaits the persisted lead, then the persisted estimate job); returns a promise
-   *  resolving to { ok, job }. */
-  async function commit(): Promise<{ ok: boolean; job: Job | null }> {
+  /** Validate + create. The create is async (awaits the persisted lead, then the
+   *  persisted job); returns a promise resolving to { ok, job }. */
+  async function commit(priced: boolean): Promise<{ ok: boolean; job: Job | null }> {
     const job = title.trim();
     if (!job) {
       setError("Add what the job is.");
@@ -515,11 +421,7 @@ export function NewJobModalContent() {
       setPhoneError(badPhone);
       return { ok: false, job: null };
     }
-    if (njType === "estimate") {
-      const { ok, createdJob } = await createEstimate(job);
-      return { ok, job: createdJob };
-    }
-    const { ok, createdJob } = await createJob(job);
+    const { ok, createdJob } = await createJobRecord(job, priced);
     return { ok, job: createdJob };
   }
 
@@ -538,12 +440,14 @@ export function NewJobModalContent() {
    * new-customer-modal.tsx.
    */
   const inFlightRef = useRef(false);
-  const [saving, setSaving] = useState(false);
+  // WHICH exit is in flight — the pressed button reads "Creating…", its sibling just disables.
+  const [savingPath, setSavingPath] = useState<null | "plain" | "priced">(null);
+  const saving = savingPath !== null;
 
-  async function submitCreate(openBuilder: boolean): Promise<void> {
+  async function submitCreate(priced: boolean): Promise<void> {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
-    setSaving(true);
+    setSavingPath(priced ? "priced" : "plain");
     try {
       // THE LIST REFETCHES WAIT FOR THE CHAIN, NOT FOR EACH LINK OF IT. commit() is two or three
       // awaited writes in a row, and each one used to refetch every jobs, customers and invoice
@@ -553,7 +457,7 @@ export function NewJobModalContent() {
       // in flight across it on every press. withListBatch holds all of it to the end of the chain
       // and then refetches once: same domains, same keys, so nothing on screen goes stale — it
       // just stops happening three times, and stops happening in front of the create.
-      const { ok, job } = await withListBatch(commit);
+      const { ok, job } = await withListBatch(() => commit(priced));
       if (!ok) return;
       close();
       if (!job) return;
@@ -566,8 +470,8 @@ export function NewJobModalContent() {
       // Already on the board? Same push: the pathname is unchanged, so this only updates the query
       // and arms — it does not yank anyone off the board they are standing on.
       router.push(`/jobs?tab=schedule&place=${job.id}`);
-      if (openBuilder) {
-        // Flat rate means the price is known, so ask for it while it is still in the user's head.
+      if (priced) {
+        // "Create & price it" — ask for the price while it is still in the user's head.
         // A ROOT open, not a drill-in: the builder's own ✕ / Price later / save all call close(),
         // which now reveals the BOARD behind it rather than popping to a job sheet. No new exit
         // control, and ModalHost has no route-change close, so it survives the nav above.
@@ -578,20 +482,20 @@ export function NewJobModalContent() {
       // checklist-attach path re-enters with the job already created), and a stuck guard would
       // leave the modal permanently unable to submit.
       inFlightRef.current = false;
-      setSaving(false);
+      setSavingPath(null);
     }
   }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    // Flat rate lands in the price builder after creating — the price is the point of the type.
-    await submitCreate(njType !== "estimate");
+    // Programmatic submits take the primary exit — create, then straight into the price.
+    await submitCreate(true);
   }
 
   // ---- collapsed row summaries (the value IS the state) ---------------------
 
   const chkIsBlank = chkTpl === "blank";
-  const chkPicked = activeChecklists.find((c) => c.id === chkTpl);
+  const chkPicked = checklists.find((c) => c.id === chkTpl);
   const chkCurName = !chkTpl
     ? "No checklist"
     : chkIsBlank
@@ -628,39 +532,8 @@ export function NewJobModalContent() {
           />
         </Field>
 
-        {/* Type chips — Estimate | Job */}
-        <FieldGroup label="Type" groupClassName="chips">
-          {(
-            // Flat rate first — the common booking. "Job" was the old label, and it was wrong
-            // twice: an estimate visit IS a job, and what this chip really means is that the
-            // price is known.
-            [
-              ["service", "Flat rate"],
-              ["estimate", "Estimate"],
-            ] as const
-          ).map(([t, lbl]) => (
-              <button
-                key={t}
-                type="button"
-                className={`chip${njType === t ? " sel" : ""}`}
-                onClick={() => selectType(t)}
-                aria-pressed={njType === t}
-              >
-                <span
-                  style={{
-                    display: "inline-block",
-                    width: 8,
-                    height: 8,
-                    borderRadius: "var(--radius-2xs)",
-                    background: TYPE_DOT[t],
-                    marginRight: "var(--space-2)",
-                    verticalAlign: "middle",
-                  }}
-                />
-                {lbl}
-              </button>
-          ))}
-        </FieldGroup>
+        {/* No Type chips. Whether this is a scoping visit or booked work derives from the
+            foot: "Create job" (no price yet) vs "Create & price it" (the price is known). */}
 
         {/* Customer (in-flow search-or-add picker) + Phone */}
         <div
@@ -775,14 +648,13 @@ export function NewJobModalContent() {
             </div>
           </DisclosureRow>
 
-          {/* BOTH types. The gate here used to say "estimates attach to the lead, which carries
-              no checklist" — true once, stale since the estimate became a REAL job. A scoping
-              checklist is how the office makes a walkthrough happen a particular way (measure the
-              run, photo the panel, check crawlspace access) — the same job-type-forms mechanic
-              the incumbents gate estimate closeout on. */}
+          {/* BOTH pools, labeled — with no Type chip there is no stage to filter by, and the
+              office's intent lives in which list they pick: a scoping list makes a walkthrough
+              happen a particular way; a before-you-leave list gates booked work's closeout.
+              The group labels render only when both pools actually have templates. */}
           {(
             <DisclosureRow
-              label={njType === "service" ? "Before-you-leave checklist" : "Scoping checklist"}
+              label="Checklist"
               value={chkCurName}
               open={openRow === "chk" || chkIsBlank}
               onToggle={() => toggleRow("chk")}
@@ -796,18 +668,37 @@ export function NewJobModalContent() {
                   <span className="njchk-dot">✓</span>
                   <span style={{ flex: 1 }}>No checklist</span>
                 </button>
-                {activeChecklists.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
-                    onClick={() => pickChecklist(c.id)}
-                  >
-                    <span className="njchk-dot">✓</span>
-                    <span style={{ flex: 1 }}>{c.name}</span>
-                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
-                  </button>
-                ))}
+                {(
+                  [
+                    ["Scoping", scopeChecklists],
+                    ["Before you leave", jobChecklists],
+                  ] as const
+                ).map(([groupLabel, pool]) =>
+                  pool.length === 0 ? null : (
+                    <div key={groupLabel}>
+                      {scopeChecklists.length > 0 && jobChecklists.length > 0 && (
+                        <div
+                          className="muted"
+                          style={{ fontSize: "var(--type-sm)", fontWeight: 700, margin: "var(--space-2) 0 var(--space-1)" }}
+                        >
+                          {groupLabel}
+                        </div>
+                      )}
+                      {pool.map((c) => (
+                        <button
+                          key={c.id}
+                          type="button"
+                          className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
+                          onClick={() => pickChecklist(c.id)}
+                        >
+                          <span className="njchk-dot">✓</span>
+                          <span style={{ flex: 1 }}>{c.name}</span>
+                          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
+                        </button>
+                      ))}
+                    </div>
+                  ),
+                )}
               </div>
 
               <button
@@ -882,16 +773,15 @@ export function NewJobModalContent() {
           <p style={{ color: "var(--red)", fontSize: "var(--type-base)", margin: "var(--space-3) 0 0" }}>{error}</p>
         )}
 
-        {/* Sticky footer — exactly Cancel (quiet) + Create job, the canonical
-            two-button sheet-grammar foot (import-customers / price-builder
-            precedent). `.sheet-pri` is width:100% at the class level — correct
-            for a foot it has to itself, but beside Cancel it over-constrains
-            the flex line (base widths sum past the container), which is what
-            crushed/overlapped the buttons and bled the primary past the modal
-            edge. `flex:1, width:auto` gives it the REMAINING space instead;
-            Cancel keeps its intrinsic width (flexShrink 0). NOTE: this form
-            deliberately has NO type="submit" control — Enter must never
-            create the job (see the comment on the <form>). */}
+        {/* Sticky footer — the fork lives HERE, not in a Type chip: Cancel (quiet,
+            intrinsic width) · Create job (bordered — no price yet) · Create & price it
+            (filled primary — creates, then lands in Build the price; closing the builder
+            still leaves the job — a nudge, not a wall). The two creates split the
+            remaining width evenly and all three hold one 44px line. `.sheet-pri` is
+            width:100% at the class level — correct for a foot it has to itself;
+            `flex:1, width:auto` gives it its SHARE here instead. NOTE: this form
+            deliberately has NO type="submit" control — Enter must never create the job
+            (see the comment on the <form>). */}
         <div className="sheet-foot" style={{ display: "flex", alignItems: "center", gap: "var(--space-2)" }}>
           <button
             type="button"
@@ -902,19 +792,23 @@ export function NewJobModalContent() {
           >
             Cancel
           </button>
-          {/* FLAT RATE MEANS THE PRICE IS KNOWN — so for flat rate, creating IS pricing: the
-              primary creates the job and lands in the price builder in one motion. This replaced
-              a cramped in-body "Build the price" row and a "Price (optional)" label that
-              contradicted the type's own definition. Closing the builder still leaves the job —
-              a nudge, not a wall. Estimates create plain: their price comes later by definition. */}
           <button
             type="button"
-            onClick={() => void submitCreate(njType !== "estimate")}
-            className="sheet-pri"
-            style={{ flex: 1, width: "auto" }}
+            className="btn"
+            style={{ flex: 1, width: "auto", minHeight: 44, whiteSpace: "nowrap" }}
+            onClick={() => void submitCreate(false)}
             disabled={saving}
           >
-            {saving ? "Creating…" : njType === "estimate" ? "Create job" : "Create & price it"}
+            {savingPath === "plain" ? "Creating…" : "Create job"}
+          </button>
+          <button
+            type="button"
+            className="sheet-pri"
+            style={{ flex: 1, width: "auto", minHeight: 44, whiteSpace: "nowrap" }}
+            onClick={() => void submitCreate(true)}
+            disabled={saving}
+          >
+            {savingPath === "priced" ? "Creating…" : "Create & price it →"}
           </button>
         </div>
       </form>

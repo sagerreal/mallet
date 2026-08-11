@@ -36,6 +36,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { SignaturePad } from "@/components/shared/signature-pad";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
 import { useAppStore } from "@/lib/store/app-store";
+import { jobPriceCommitted } from "@/features/jobs/job-status-meta";
 import type { Service } from "@/lib/store/types";
 import type { LaborRate as StoreLaborRate } from "@/lib/store/slices/settings-slice";
 import {
@@ -91,10 +92,13 @@ function ModeHead({
   title,
   custName,
   embedded,
+  meta = "Price the repair",
 }: {
   title: string;
   custName: string;
   embedded: boolean;
+  /** The modal home's meta line — a committed job is adding found work, not pricing. */
+  meta?: string;
 }) {
   if (embedded) {
     return (
@@ -110,7 +114,9 @@ function ModeHead({
     <div className="sheet-head">
       <h2>{title}</h2>
       <div className="sheet-meta">
-        <span>Price the repair · {custName}</span>
+        <span>
+          {meta} · {custName}
+        </span>
       </div>
     </div>
   );
@@ -281,21 +287,27 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
 
   const job = jobs.find((j) => j.id === jobId);
   /**
-   * IS THERE A SOLD QUOTE BEHIND THIS JOB? `sourceEstimateId` is stamped by both directions of a
-   * sale — an office quote accepted into a job, and a field sign (signQuote links the accepted
-   * estimate back). When it is set, this builder is NOT a quote editor any more: the price on the
-   * job is a signed document, and a technician adding work is writing a CHANGE ORDER — the
-   * found-work addendum the customer's own signed sentence requires ("work beyond what is listed
-   * above needs my approval"). Editing the sold lines themselves is the office's correction.
+   * IS THE PRICE ON THIS JOB COMMITTED? Two ways it becomes so — the customer SIGNED
+   * (`sourceEstimateId`, stamped by both directions of a sale: an office quote accepted into a
+   * job, and a field sign) or the office BOOKED it (lines saved on a non-estimate job; the
+   * customer agreed on the phone). Either way this builder is NOT a quote editor any more: the
+   * price is a document someone stands behind, and a technician adding work is writing a CHANGE
+   * ORDER — the found-work addendum. Editing the committed lines themselves is the office's
+   * correction (the job sheet's Build the price).
+   *
+   * The one case that stays editable: lines on an ESTIMATE-kind job — the technician's own
+   * in-progress draft (the unmount stash below writes those), which nobody has promised yet.
    */
-  const sold = Boolean(job?.sourceEstimateId);
+  const committed = job ? jobPriceCommitted(job) : false;
+  /** Signed, specifically — picks the WORDS ("Sold — signed" vs "Booked") and the CO sentence. */
+  const signedSold = Boolean(job?.sourceEstimateId);
 
   // ---- LOCAL builder state (prototype state.tq) -----------------------------
   // better is seeded from the job's existing lines; good/best start empty and
   // opt-in. `use.better` is always on. `picking` opens the add menu when better
   // has no seed lines. `mode` drives edit → present → sign.
-  // CO mode starts EMPTY — the sold lines are a document to read back, not a draft to reseed.
-  const seed = useMemo(() => (job && !sold ? seedLines(job) : []), [job, sold]);
+  // CO mode starts EMPTY — the committed lines are a document to read back, not a draft to reseed.
+  const seed = useMemo(() => (job && !committed ? seedLines(job) : []), [job, committed]);
 
   const [tiers, setTiers] = useState<TierLines>(() => ({
     good: [],
@@ -306,7 +318,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const [tier, setTier] = useState<Tier>("better");
   const [mode, setMode] = useState<TechQuoteMode>("edit");
   const [chosen, setChosen] = useState<Tier | null>(null);
-  const [picking, setPicking] = useState<boolean>(() => !sold && seed.length === 0);
+  const [picking, setPicking] = useState<boolean>(() => !committed && seed.length === 0);
   const [add, setAdd] = useState<AddSub>(null);
   // Surfaced when the on-site price fails to persist — the sign view stays open
   // so the tech can retry rather than closing on a lost price (no silent fail).
@@ -318,7 +330,17 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
 
   // Discount / tax / deposit, shared by every tier: they describe the DOCUMENT, not one option on
   // it, exactly as the office composer's single pricing block does for a GBB quote.
-  const [pricing, setPricing] = useState<FieldPricing>(NO_FIELD_PRICING);
+  // Seeded from the JOB's stored rates when it carries any — a stashed draft's discount and tax
+  // come back with its lines (they used to reset to zero on resume while the lines survived).
+  const [pricing, setPricing] = useState<FieldPricing>(() =>
+    job?.pricing && (job.pricing.disc > 0 || job.pricing.tax > 0)
+      ? {
+          ...NO_FIELD_PRICING,
+          discPct: job.pricing.disc,
+          taxPct: job.pricing.tax,
+        }
+      : NO_FIELD_PRICING,
+  );
 
   // The shop's default sales-tax rate, seeded ONCE onto a fresh quote the way a new office quote
   // seeds it — same org setting, same rule, so one document does not depend on where it was born.
@@ -368,7 +390,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const jobIdRef = useRef<string | undefined>(undefined);
   jobIdRef.current = job?.id;
   const coRef = useRef(false);
-  coRef.current = sold;
+  coRef.current = committed;
   useEffect(() => {
     return () => {
       const id = jobIdRef.current;
@@ -378,9 +400,9 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
       // and would stamp the job as edited when it was only looked at.
       if (lineKey(current) === seedKeyRef.current) return;
 
-      // A SOLD job's unsigned lines are found work, not a price draft — saveQuoteDraft would
-      // overwrite the signed document. Stash them as PROPOSED add-ons: they surface in Found
-      // work with the office OK flow, and the next change order picks them up for signature.
+      // A COMMITTED job's unsigned lines are found work, not a price draft — saveQuoteDraft
+      // would overwrite the booked/signed document. Stash them as PROPOSED add-ons: they surface
+      // in Found work with the office OK flow, and the next change order picks them up.
       if (coRef.current) {
         for (const l of current) {
           const d = l.d.trim();
@@ -511,7 +533,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
 
   const chosenTier: Tier = chosen ?? "better";
 
-  // ---- change order (sold job) ----------------------------------------------
+  // ---- change order (committed job — booked or signed) -----------------------
   // The CO's items: add-ons already PROPOSED on the job (found work queued by the office or a
   // prior session — they are on the glass, so they are in the approval), plus the lines typed
   // here. `dbId` present = the server knows the row; a still-persisting optimistic add-on is
@@ -521,9 +543,9 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const coTotal =
     proposedAddons.reduce((sum, a) => sum + (a.r ?? 0) * (a.q ?? 1), 0) + linesTotal(coLines);
   const coCount = proposedAddons.length + coLines.length;
-  const soldTotal = (job?.lines ?? []).reduce((sum, l) => sum + (l.r ?? 0) * (l.q ?? 1), 0);
+  const committedTotal = (job?.lines ?? []).reduce((sum, l) => sum + (l.r ?? 0) * (l.q ?? 1), 0);
   // A redacted device (techSeesPrice off) reads null rates — never print those as $0.
-  const soldRedacted = (job?.lines ?? []).some((l) => l.r == null);
+  const committedRedacted = (job?.lines ?? []).some((l) => l.r == null);
 
   async function signCO() {
     if (!job || signing) return;
@@ -556,7 +578,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
 
   async function sign() {
     if (!job || signing) return;
-    if (sold) return signCO();
+    if (committed) return signCO();
     const name = signerName.trim();
     if (!name) {
       setSignError("Type the customer's name to sign.");
@@ -612,7 +634,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
     // the items are the ADDITION (proposed add-ons + the lines typed here), the figure is the
     // change-order total, and the sentence names an addition to a signed job — no doc rates,
     // which belong to the document already signed.
-    if (sold) {
+    if (committed) {
       return (
         <>
           <ModeHead title="Sign change order" custName={custName} embedded={embedded} />
@@ -650,22 +672,25 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
               <span>Change order</span>
               <span className="fig">{fmt$2(coTotal)}</span>
             </div>
-            {!soldRedacted && (
+            {!committedRedacted && (
               <div
                 style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", color: "var(--ink-2)", paddingTop: "var(--space-1)" }}
               >
                 <span>New job total</span>
-                <span className="fig">{fmt$2(soldTotal + coTotal)}</span>
+                <span className="fig">{fmt$2(committedTotal + coTotal)}</span>
               </div>
             )}
           </div>
 
+          {/* Signed jobs name the prior signature; a BOOKED job has none to name — same
+              approval, honest sentence either way. */}
           <div
             className="muted"
             style={{ fontSize: "var(--type-sm)", margin: "var(--space-4) 0 var(--space-3)", lineHeight: 1.55 }}
           >
-            The customer approves adding the work listed above, at the price shown, to the job
-            they already signed with {brand.name}. It bills with the job.
+            {signedSold
+              ? `The customer approves adding the work listed above, at the price shown, to the job they already signed with ${brand.name}. It bills with the job.`
+              : `The customer approves adding the work listed above, at the price shown, to this job with ${brand.name}. It bills with the job.`}
           </div>
 
           <SignBlock
@@ -835,18 +860,28 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   return (
     <>
       {/* Embedded, the Quote tab's own "The price" section header frames the edit
-          surface — a second "Build the price" heading would say it twice. */}
-      {!embedded && <ModeHead title="Build the price" custName={custName} embedded={false} />}
+          surface — a second "Build the price" heading would say it twice. In the MODAL home a
+          committed job is not building a price — the surface is the change order. */}
+      {!embedded && (
+        <ModeHead
+          title={committed ? "Change order" : "Build the price"}
+          meta={committed ? "Add found work" : "Price the repair"}
+          custName={custName}
+          embedded={false}
+        />
+      )}
 
-      {/* THE SOLD DOCUMENT — read-back, not a draft. A signed price is not this surface's to
-          edit (that correction is the office's); it is here so the change order below is read
-          against the thing it changes. Null rates are a redacted device, never $0. */}
-      {sold ? (
+      {/* THE COMMITTED DOCUMENT — read-back, not a draft. A booked or signed price is not this
+          surface's to edit (that correction is the office's Build the price); it is here so the
+          change order below is read against the thing it changes. "Booked" = the office saved
+          the price (the customer agreed on the phone); "Sold — signed" = a signature stands
+          behind it. Null rates are a redacted device, never $0. */}
+      {committed ? (
         <>
           <div className="fsec" style={{ marginBottom: 0 }}>
             <div className="fsec-h">
-              <span>Sold — signed</span>
-              <span className="fig">{soldRedacted ? "" : fmt$2(soldTotal)}</span>
+              <span>{signedSold ? "Sold — signed" : "Booked"}</span>
+              <span className="fig">{committedRedacted ? "" : fmt$2(committedTotal)}</span>
             </div>
           </div>
           <div className="card" style={{ marginBottom: "var(--space-4)" }}>
@@ -869,7 +904,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
       ) : null}
 
       {/* tier chips (only better + opted-in tiers; each shows label · $total) */}
-      {multi && !sold ? (
+      {multi && !committed ? (
         <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
           {tierChips.map(([k, lbl]) => {
             const t = tierTotal(k);
@@ -896,7 +931,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
         {/* Found work already PROPOSED on the job — queued by the office or a prior session. It
             is on the glass when the customer signs, so it is in the change order; fixed rows,
             because these are persisted records with their own edit surface (Found work). */}
-        {sold
+        {committed
           ? proposedAddons.map((a2) => (
               <div
                 key={a2.dbId}
@@ -943,7 +978,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
             is set the arithmetic becomes the customer's business and it is shown in full.
             An empty quote has no Total at all: nothing has been priced, so there is no figure
             to state and a $0 would be a claim about the job rather than a fact about the list. */}
-        {sold && coCount > 0 ? (
+        {committed && coCount > 0 ? (
           <>
             <div
               style={{
@@ -959,16 +994,16 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
               <span>Change order</span>
               <span className="fig">{fmt$2(coTotal)}</span>
             </div>
-            {!soldRedacted && (
+            {!committedRedacted && (
               <div
                 style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--type-base)", color: "var(--ink-2)", paddingTop: "var(--space-1)" }}
               >
                 <span>New job total</span>
-                <span className="fig">{fmt$2(soldTotal + coTotal)}</span>
+                <span className="fig">{fmt$2(committedTotal + coTotal)}</span>
               </div>
             )}
           </>
-        ) : sold ? null : lines.length === 0 ? null : editPriced ? (
+        ) : committed ? null : lines.length === 0 ? null : editPriced ? (
           <PriceBreakdown totals={editTotals} rates={editRates} ruleColor="var(--line)" />
         ) : (
           <div
@@ -992,7 +1027,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           once a line is priced. See field-pricing.tsx for why this is not the office's three-across
           card: a technician on a doorstep needs one of these, usually none, and the collapsed value
           is the whole summary. */}
-      {anyPriced && !sold ? (
+      {anyPriced && !committed ? (
         <FieldPricingRows
           pricing={pricing}
           subtotalCents={Math.round(tierTotal(tier) * 100)}
@@ -1004,7 +1039,7 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
           it fed, and beneath the three rows that modify that total. It lives in the card now. */}
 
       {/* "Give the customer choices?" — once anything is priced and not all opted */}
-      {anyPriced && !sold && (showGoodOpt || showBestOpt) ? (
+      {anyPriced && !committed && (showGoodOpt || showBestOpt) ? (
         <ChoicesRow
           showGood={showGoodOpt}
           showBest={showBestOpt}
@@ -1019,10 +1054,10 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
         <button
           className="sheet-pri"
           onClick={present}
-          disabled={sold ? coCount === 0 : !anyPriced}
-          style={(sold ? coCount > 0 : anyPriced) ? undefined : { opacity: 0.45 }}
+          disabled={committed ? coCount === 0 : !anyPriced}
+          style={(committed ? coCount > 0 : anyPriced) ? undefined : { opacity: 0.45 }}
         >
-          {sold ? "Present change order →" : multi ? "Present options →" : "Present to customer →"}
+          {committed ? "Present change order →" : multi ? "Present options →" : "Present to customer →"}
         </button>
       </div>
     </>

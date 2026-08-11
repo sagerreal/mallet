@@ -41,6 +41,7 @@ import { useMeasurementGate } from "@/features/settings/measurement-gate-provide
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
+import { jobPriceCommitted } from "@/features/jobs/job-status-meta";
 import type { Job, Visit } from "@/lib/store/types";
 import { jobMode, jobQuoted, AO_INPUT } from "./helpers";
 
@@ -271,6 +272,9 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
 
   const isEstimate = jobMode(job) === "estimate";
   const quoted = jobQuoted(job);
+  // The price is COMMITTED — booked by the office or signed by the customer. The builder
+  // renders its committed read-back + change-order surface, never an editable draft.
+  const committed = jobPriceCommitted(job);
 
   // The dual exit's "Quote it now" reveal (estimate visits only). A job that already
   // carries priced lines has been quoted — the builder is its standing surface.
@@ -279,7 +283,10 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
   const [sendError, setSendError] = useState("");
   const [scopeOpenSignal, setScopeOpenSignal] = useState(0);
 
-  const showBuilder = !isEstimate || quoteItNow || quoted;
+  // `committed` is listed on its own: a booked job on a price-redacted device reads null
+  // rates, so `quoted` (which sums them) misses it and the tab would offer an editable draft
+  // over a price the office already booked.
+  const showBuilder = !isEstimate || quoteItNow || quoted || committed;
   // Sent-ness is DERIVED: the visit carrying scope notes IS the handoff record.
   const sentToOffice = Boolean(scopeVisit?.scopeNotes?.trim());
 
@@ -400,12 +407,13 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
         </div>
       )}
 
-      {/* The price — the embedded builder (its own sticky foot is THE foot). On a SOLD job the
-          builder frames itself ("Sold — signed" / "Change order"), so a "The price" header here
-          would caption a section that no longer exists. */}
+      {/* The price — the embedded builder (its own sticky foot is THE foot). On a COMMITTED job
+          (booked or signed) the builder frames itself ("Booked" / "Sold — signed" over the
+          change order), so a "The price" header here would caption a section that no longer
+          exists. */}
       {showBuilder && !readOnly && (
         <>
-          {builderMode === "edit" && !job.sourceEstimateId && (
+          {builderMode === "edit" && !committed && (
             <div className="fsec" style={{ marginBottom: 0 }}>
               <div className="fsec-h">
                 <span>The price</span>
@@ -429,7 +437,7 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
       {readOnly && (job.lines ?? []).some((l) => (l.d ?? "").trim()) ? (
         <div className="fsec">
           <div className="fsec-h">
-            <span>{job.sourceEstimateId ? "Sold — signed" : "The price"}</span>
+            <span>{job.sourceEstimateId ? "Sold — signed" : committed ? "Booked" : "The price"}</span>
             <span className="fig">
               {(job.lines ?? []).some((l) => l.r == null)
                 ? ""
