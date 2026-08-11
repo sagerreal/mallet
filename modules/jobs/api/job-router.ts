@@ -192,6 +192,13 @@ const removeLineInput = z.object({ jobId: z.string().uuid(), lineId: z.string().
 const setLinesInput = z.object({
   jobId: z.string().uuid(),
   lines: z.array(z.object({ id: z.string().uuid().optional(), ...lineFields })).max(200),
+  // Discount / sales tax set in the office price builder — the same rate pair the field's
+  // saveQuoteDraft writes (the invoice rebuilds the bill from them). Same bounds as the
+  // field inputs; deposit is deliberately absent (jobs store no deposit rate — a deposit
+  // rides the signed/sent document). OPTIONAL with no default: a caller that says nothing
+  // about rates (the close-out's BillAsk) must leave stored rates untouched, not zero them.
+  discBps: z.number().int().min(0).max(10_000).optional(),
+  taxBps: z.number().int().min(0).max(2_500).optional(),
 });
 const addAddonInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), description: z.string().min(1).max(2000), quantity: z.number().min(0).default(1), rateCents: z.number().int().min(0), costCents: z.number().int().min(0).default(0), isOptional: z.boolean().optional() });
 const setAddonStatusInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), status: z.enum(["proposed", "approved", "declined"]) });
@@ -572,7 +579,20 @@ export const createJobRouter = () =>
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new SetJobLinesUseCase(repo, ctx.deps.clock, ctx.deps.ids);
-        const r = orThrow(await useCase.exec({ jobId: asJobId(input.jobId), lines: input.lines }, ctx.principal.orgId));
+        // Office pricing BOOKS the price now (the New-job "Create & price it" path), so when the
+        // caller states rates they ride exactly as the field draft's do; depBps stays 0 — no
+        // deposit column on jobs, deposits ride the signed/sent document. A caller that says
+        // nothing about rates leaves the stored pair alone (absent ≠ zero).
+        const rates =
+          input.discBps !== undefined || input.taxBps !== undefined
+            ? { discBps: input.discBps ?? 0, taxBps: input.taxBps ?? 0, depBps: 0 }
+            : undefined;
+        const r = orThrow(
+          await useCase.exec(
+            { jobId: asJobId(input.jobId), lines: input.lines, ...(rates ? { rates } : {}) },
+            ctx.principal.orgId,
+          ),
+        );
         return toJobDTO(r.job, r.execution);
       }),
 

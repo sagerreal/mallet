@@ -2,8 +2,8 @@
 /**
  * components/modals/new-customer-modal.test.tsx
  * The submit button must actually create the booked work it names:
- *   "Create job"            → addJob + one unplaced visit (after persist reconcile)
- *   "Create estimate visit" → a real estimate job on the created lead
+ *   "Create job" (booking on) → a real unpriced job (kind estimate) + one unplaced
+ *   visit, attached after the persist reconcile — the one-job-type model
  *   dedup hit               → NO work created (the phone belongs to someone else),
  *                             and editing the phone releases the lock
  *   "Build the price"       → customer ONLY, then the composer (?lead=) — the job
@@ -117,7 +117,7 @@ beforeEach(() => {
 
 // ---- tests ----------------------------------------------------------------------
 
-describe("NewCustomerModal — submit with the Job purpose", () => {
+describe("NewCustomerModal — submit with a booked visit", () => {
   it("creates the job on the SERVER lead id and adds the visit after persist resolves", async () => {
     resolveCreateWith(createdDto());
     let resolvePersist: () => void = () => {};
@@ -131,17 +131,17 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
     fireEvent.change(screen.getByPlaceholderText("water heater making noise"), {
       target: { value: "leaky spigot" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: "Create job" }));
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     expect(addJob).toHaveBeenCalledWith(
-      expect.objectContaining({ leadId: "srv-lead-1", title: "leaky spigot", svc: "service" }),
+      expect.objectContaining({ leadId: "srv-lead-1", title: "leaky spigot", kind: "estimate" }),
     );
     // The default unplaced visit only attaches AFTER the job persist reconciles.
     expect(addVisit).not.toHaveBeenCalled();
     resolvePersist();
-    await waitFor(() => expect(addVisit).toHaveBeenCalledWith("job-1"));
+    await waitFor(() => expect(addVisit).toHaveBeenCalledWith("job-1", 0.5));
     await waitFor(() => expect(closeMock).toHaveBeenCalled());
     expect(invalidate).toHaveBeenCalled();
   });
@@ -157,7 +157,7 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
       target: { value: "742 Evergreen Terrace, Springfield" },
     });
     fireEvent.click(screen.getByText("Book a visit"));
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: "Create job" }));
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
@@ -179,7 +179,7 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: "Create job" }));
 
     await waitFor(() =>
@@ -198,7 +198,7 @@ describe("NewCustomerModal — submit with the Job purpose", () => {
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     const submit = screen.getByRole("button", { name: "Create job" });
     fireEvent.click(submit);
     fireEvent.click(submit);
@@ -219,7 +219,7 @@ describe("NewCustomerModal — Build the price (customer only, then the composer
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
 
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/composer?lead=srv-lead-1"));
@@ -242,7 +242,7 @@ describe("NewCustomerModal — Build the price (customer only, then the composer
     fireEvent.change(screen.getByPlaceholderText("water heater making noise"), {
       target: { value: "swap 50-gal water heater" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
 
     await waitFor(() =>
@@ -258,7 +258,7 @@ describe("NewCustomerModal — Build the price (customer only, then the composer
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     const build = screen.getByRole("button", { name: /Build the price/ });
     fireEvent.click(build);
     fireEvent.click(build);
@@ -273,7 +273,7 @@ describe("NewCustomerModal — Build the price (customer only, then the composer
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
 
     await waitFor(() =>
@@ -291,7 +291,7 @@ describe("NewCustomerModal — Build the price (customer only, then the composer
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: /Build the price/ }));
 
     const pending = (await screen.findByRole("button", { name: "Creating…" })) as HTMLButtonElement;
@@ -304,7 +304,7 @@ describe("NewCustomerModal — Build the price (customer only, then the composer
   });
 });
 
-describe("NewCustomerModal — submit with the Estimate-visit purpose", () => {
+describe("NewCustomerModal — the booked visit is an unpriced job", () => {
   it("creates a REAL estimate job with one unplaced visit — never a store-local evisit", async () => {
     resolveCreateWith(createdDto());
 
@@ -313,8 +313,8 @@ describe("NewCustomerModal — submit with the Estimate-visit purpose", () => {
     fireEvent.change(screen.getByPlaceholderText("water heater making noise"), {
       target: { value: "quote a repipe" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Estimate visit" }));
-    fireEvent.click(screen.getByRole("button", { name: "Create estimate visit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create job" }));
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     const [draft] = addJob.mock.calls[0] as [{ svc: string; leadId: string; title: string }];
@@ -394,7 +394,7 @@ describe("NewCustomerModal — dedup hit", () => {
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: "Create job" }));
 
     await waitFor(() =>
@@ -448,7 +448,7 @@ describe("NewCustomerModal — dedup hit", () => {
 
     render(<NewCustomerModal open />);
     fillNameAndOpenBooking("Gary Waters");
-    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes — book a visit" }));
     fireEvent.click(screen.getByRole("button", { name: "Create job" }));
 
     // Close while the create is pending, then let the dedup response land.

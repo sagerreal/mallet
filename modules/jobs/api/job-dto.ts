@@ -151,6 +151,12 @@ export const jobDTO = z.object({
   // Nullable: the tech-facing field surface redacts total server-side when the
   // org's techSeesPrice is off. Office/owner responses are never null.
   total: moneyDTO.nullable(),
+  // The stored discount / sales-tax rates the total was derived with, in basis points.
+  // On BOTH DTO shapes (unlike the signature): the store merges summary rows over full
+  // ones, and a summary that omitted rates would wipe a just-saved discount from the
+  // price builder on the next list refetch.
+  discBps: z.number().int(),
+  taxBps: z.number().int(),
   notes: z.string().nullable(),
   // The address the crew drives to and a job-specific contact, when they differ from the
   // customer's on file. Both were accepted by the create input and dropped for want of a column.
@@ -224,6 +230,10 @@ export const jobSummaryDTO = z.object({
   // Nullable: the tech-facing field surface redacts total server-side when the
   // org's techSeesPrice is off. Office/owner responses are never null.
   total: moneyDTO.nullable(),
+  // Rates ride the summary too — see the full DTO's note (a summary without them
+  // would wipe a saved discount from the store on the next list refetch).
+  discBps: z.number().int(),
+  taxBps: z.number().int(),
   notes: z.string().nullable(),
   // The address the crew drives to and a job-specific contact, when they differ from the
   // customer's on file. Both were accepted by the create input and dropped for want of a column.
@@ -386,6 +396,8 @@ export const toJobDTO = (job: Job, execution: Execution = emptyExecution) => {
     canceledAt: iso(p.canceledAt),
     cancelReason: p.cancelReason,
     total: money(p.total),
+    discBps: p.discBps,
+    taxBps: p.taxBps,
     notes: p.notes,
     addr: p.addr,
     phone: p.phone,
@@ -468,6 +480,8 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution,
     assigneeUserId: p.assigneeUserId,
     scheduledStart: iso(p.scheduledStart),
     total: money(p.total),
+    discBps: p.discBps,
+    taxBps: p.taxBps,
     notes: p.notes,
     addr: p.addr,
     phone: p.phone,

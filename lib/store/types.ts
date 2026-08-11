@@ -417,6 +417,13 @@ export interface Job {
   status: string;
   archived: boolean;
   lines: JobLine[];
+  /**
+   * The job's stored discount / sales-tax rates, in PERCENT (10 = 10%), mirroring
+   * Estimate.pricing. Written by the pricing paths (office Build the price, field
+   * saveQuoteDraft/signQuote); absent when both are zero. No deposit here — jobs
+   * hold no deposit rate; a deposit rides the signed/sent document (estimate).
+   */
+  pricing?: { disc: number; tax: number };
   addons: Addon[];
   photos: string[];
   notes: string;

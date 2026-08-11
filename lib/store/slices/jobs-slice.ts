@@ -396,7 +396,14 @@ export interface JobsSlice {
    * returned full jobDTO; rolls back on failure. Resolves { ok } — never
    * rejects — so interactive callers can surface a failure.
    */
-  setJobLines: (jobId: string, lines: JobLine[]) => Promise<{ ok: boolean }>;
+  setJobLines: (
+    jobId: string,
+    lines: JobLine[],
+    /** Discount / sales tax in basis points. OMIT to leave the job's stored rates untouched
+     *  (the close-out's BillAsk); pass to state them (the office price builder, which now
+     *  books the price). */
+    rates?: { discBps: number; taxBps: number },
+  ) => Promise<{ ok: boolean }>;
   /**
    * On-glass sign-off from the FIELD surface: the priced lines and the customer's signature, in
    * one assignment-gated call.
@@ -933,14 +940,25 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   //
   // Never rejects — returns { ok } — so interactive callers surface the failure.
   // ---------------------------------------------------------------------------
-  setJobLines: (jobId, lines) => {
+  setJobLines: (jobId, lines, rates) => {
     const prior = snapshot(get().jobs, jobId);
     // Persistable lines only — the SAME predicate feeds the optimistic set and
     // the wire payload so a line the wire drops never lingers in the store
     // behind the _recentLineWrites guard (up to the stale window).
     const persistable = lines.filter(isPersistableLine);
-    // 1. Optimistic set (filtered — matches what the DB will hold).
-    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: persistable } : j)) }));
+    // 1. Optimistic set (filtered — matches what the DB will hold). Stated rates ride it in
+    //    the store's percent convention; omitted rates leave the job's stored pair untouched.
+    const optimisticPricing = rates
+      ? {
+          pricing:
+            rates.discBps > 0 || rates.taxBps > 0
+              ? { disc: rates.discBps / 100, tax: rates.taxBps / 100 }
+              : undefined,
+        }
+      : {};
+    set((s) => ({
+      jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, lines: persistable, ...optimisticPricing } : j)),
+    }));
 
     const job = get().jobs.find((j) => j.id === jobId);
     // A pure local draft (never persisted — no lead FK) has no DB row to write
@@ -960,7 +978,7 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
     _recentLineWrites.set(jobId, Date.now());
 
     return trpcVanilla.v1.jobs.setLines
-      .mutate({ jobId, lines: wireLines })
+      .mutate({ jobId, lines: wireLines, ...(rates ?? {}) })
       .then((dto) => {
         // Re-stamp so the window is measured from the reconcile, then reconcile
         // the full job (server line ids replace optimistic; merge-guarded).

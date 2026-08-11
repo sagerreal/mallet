@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { NewJobModalContent } from "./new-job-modal";
 
-// Store actions captured so the test can assert ordering (create lead → then estimate job).
+// Store actions captured so the test can assert ordering (create lead → then job).
 const addLead = vi.fn();
 const updateLead = vi.fn();
 const addJob = vi.fn();
@@ -49,16 +49,27 @@ vi.mock("@/lib/store/app-store", () => ({
     selector({ addLead, updateLead, addJob, addVisit, updateJob, adoptLead, leads: storeLeads, checklists: storeChecklists }),
 }));
 
-describe("NewJobModalContent — createEstimate", () => {
+// ---- the two exits ---------------------------------------------------------
+// There is NO Type chip: which foot button runs IS the kind. "Create job" makes the
+// unpriced record (kind estimate); "Create & price it →" makes booked work (svc service)
+// and lands in the price builder.
+const createPlain = () => fireEvent.click(screen.getByRole("button", { name: "Create job" }));
+const createPriced = () =>
+  fireEvent.click(screen.getByRole("button", { name: "Create & price it →" }));
+
+const titleInput = () => screen.getByPlaceholderText("e.g. water heater repair");
+
+describe("NewJobModalContent — the unpriced exit (Create job)", () => {
   beforeEach(() => {
     addLead.mockReset();
     updateLead.mockReset();
     addJob.mockReset();
     addVisit.mockReset();
     closeMock = vi.fn();
+    storeLeads = [];
   });
 
-  it("awaits the persisted lead, then creates a real estimate JOB on the SERVER id", async () => {
+  it("awaits the persisted lead, then creates a real estimate-kind JOB on the SERVER id", async () => {
     // addLead returns an optimistic id but persists to a different server id.
     addLead.mockReturnValue({
       lead: { id: "optimistic-1", name: "New customer" },
@@ -70,27 +81,23 @@ describe("NewJobModalContent — createEstimate", () => {
     });
 
     render(<NewJobModalContent />);
-    // Fill "What's the job?" and pick the Estimate type.
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater" },
-    });
-    fireEvent.click(screen.getByText("Estimate"));
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "water heater" } });
+    createPlain();
 
     // Submit resolves the typed customer against the server first, so the chain is async now.
     await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
-    // The estimate job must attach to the reconciled server lead id, not the optimistic one.
+    // The job must attach to the reconciled server lead id, not the optimistic one.
     await waitFor(() => {
       expect(addJob).toHaveBeenCalledOnce();
     });
     const [jobDraft] = addJob.mock.calls[0] as [{ leadId: string; kind: string; svc: string }];
     expect(jobDraft.leadId).toBe("srv-1");
-    // kind carries estimate-ness now; svc is purely the trade label (empty for a walkthrough).
+    // The kind DERIVES from the exit: no price yet → estimate. svc stays the trade label.
     expect(jobDraft.kind).toBe("estimate");
     expect(jobDraft.svc).not.toBe("estimate");
-    // The unplaced visit rides the persisted job.
+    // The unplaced visit rides the persisted job, at the unpriced default length.
     await waitFor(() => {
-      expect(addVisit).toHaveBeenCalledWith("job-1", expect.any(Number));
+      expect(addVisit).toHaveBeenCalledWith("job-1", 0.5);
     });
   });
 
@@ -102,11 +109,8 @@ describe("NewJobModalContent — createEstimate", () => {
     });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "boiler install" },
-    });
-    fireEvent.click(screen.getByText("Estimate"));
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "boiler install" } });
+    createPlain();
 
     // The error message must appear in the modal.
     await waitFor(() => {
@@ -116,7 +120,7 @@ describe("NewJobModalContent — createEstimate", () => {
     // The modal must NOT have been closed — data is preserved.
     expect(closeMock).not.toHaveBeenCalled();
 
-    // No estimate job may be created when the lead never persisted.
+    // No job may be created when the lead never persisted.
     expect(addJob).not.toHaveBeenCalled();
   });
 });
@@ -124,7 +128,7 @@ describe("NewJobModalContent — createEstimate", () => {
 /**
  * The Job-notes field must not touch the CUSTOMER's notes.
  *
- * createEstimate used to fold `notes` into the lead patch. That write was doubly wrong:
+ * The create used to fold `notes` into the lead patch. That write was doubly wrong:
  * buildLeadUpdatePayload deliberately skips `notes`, so it never reached the database, while
  * updateLead's optimistic set replaced the customer's real notes in the store for the rest of
  * the session — the gate code on Cole's record, overwritten by an estimate description. With
@@ -149,29 +153,26 @@ describe("NewJobModalContent — the job's notes stay on the job", () => {
     storeLeads = [cole];
   });
 
-  const fillEstimateWithNotes = () => {
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater" },
-    });
-    fireEvent.click(screen.getByText("Estimate"));
+  const fillWithNotes = () => {
+    fireEvent.change(titleInput(), { target: { value: "water heater" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Cole Hayes" } });
     fireEvent.blur(screen.getByPlaceholderText("search or add"));
-    // The notes field lives behind its own row — now named for the record it writes.
+    // The notes field lives behind its own row — named for the record it writes.
     fireEvent.click(screen.getByText("Job notes"));
     fireEvent.change(screen.getByPlaceholderText("gate code, what to bring…"), {
       target: { value: "Attic access is through the closet" },
     });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPlain();
   };
 
-  it("never patches lead.notes when creating an estimate", async () => {
+  it("never patches lead.notes", async () => {
     addJob.mockReturnValue({
       job: { id: "job-est", origin: "manual", visits: [] },
       persisted: Promise.resolve({ id: "job-est", origin: "db", visits: [] }),
     });
 
     render(<NewJobModalContent />);
-    fillEstimateWithNotes();
+    fillWithNotes();
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     // The existing customer is matched, so no new one is minted and the patch is a merge.
@@ -191,7 +192,7 @@ describe("NewJobModalContent — the job's notes stay on the job", () => {
     });
 
     render(<NewJobModalContent />);
-    fillEstimateWithNotes();
+    fillWithNotes();
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     expect(addJob).toHaveBeenCalledWith(
@@ -200,13 +201,14 @@ describe("NewJobModalContent — the job's notes stay on the job", () => {
   });
 });
 
-describe("NewJobModalContent — createJob (Job type)", () => {
+describe("NewJobModalContent — the priced exit (Create & price it)", () => {
   beforeEach(() => {
     addLead.mockReset();
     updateLead.mockReset();
     addJob.mockReset();
     addVisit.mockReset();
     closeMock = vi.fn();
+    storeLeads = [];
   });
 
   it("creates a lead first for a new customer, then addJob receives the server-assigned leadId", async () => {
@@ -225,19 +227,16 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "fix boiler" },
-    });
-    // Default type is "Flat rate" (internally: service), so no type switch needed.
+    fireEvent.change(titleInput(), { target: { value: "fix boiler" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), {
       target: { value: "Maria Garcia" },
     });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     // addLead must be called to create the new customer (after the async server resolution).
     await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
 
-    // Wait for the full async createJob to complete.
+    // Wait for the full async create to complete.
     await waitFor(() => {
       expect(addJob).toHaveBeenCalledOnce();
     });
@@ -245,6 +244,48 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     expect(addJob).toHaveBeenCalledWith(
       expect.objectContaining({ leadId: "srv-lead-10" }),
     );
+    // The priced exit derives booked work: svc "service", never kind "estimate".
+    const [jobDraft] = addJob.mock.calls[0] as [{ svc: string; kind?: string }];
+    expect(jobDraft.svc).toBe("service");
+    expect(jobDraft.kind).not.toBe("estimate");
+  });
+
+  it("retunes a still-untouched default visit to the priced length", async () => {
+    const persistedLead = { id: "lead-len", name: "Len Customer" };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-len", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-len", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "install faucet" } });
+    // The form shows the unpriced default (0.5h); the user never touches it.
+    createPriced();
+
+    await waitFor(() => {
+      expect(addVisit).toHaveBeenCalledWith("job-len", 1.5);
+    });
+  });
+
+  it("keeps an EDITED visit length — the user's number is never retuned", async () => {
+    const persistedLead = { id: "lead-edit", name: "Edit Customer" };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-edit", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-edit", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "install faucet" } });
+    // Open the Visits row and set a custom length.
+    fireEvent.click(screen.getByText("Visits"));
+    fireEvent.change(screen.getByDisplayValue("0.5"), { target: { value: "3" } });
+    createPriced();
+
+    await waitFor(() => {
+      expect(addVisit).toHaveBeenCalledWith("job-edit", 3);
+    });
   });
 
   it("calls addVisit AFTER job persisted resolves (visits persist when origin is db)", async () => {
@@ -261,10 +302,8 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     addJob.mockReturnValue({ job: optimisticJob, persisted: jobPersistedPromise });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "install faucet" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "install faucet" } });
+    createPriced();
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
 
@@ -292,13 +331,11 @@ describe("NewJobModalContent — createJob (Job type)", () => {
     });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "repair sink" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "repair sink" } });
+    createPriced();
 
     await waitFor(() => {
-      expect(screen.getByText(/couldn't save the job/i)).toBeTruthy();
+      expect(screen.getByText(/the customer was saved, but the job wasn't/i)).toBeTruthy();
     });
 
     // Modal must NOT close on failure.
@@ -313,17 +350,16 @@ describe("NewJobModalContent — phone validation", () => {
     addLead.mockReset();
     addJob.mockReset();
     closeMock = vi.fn();
+    storeLeads = [];
   });
 
   it("blocks submit inline on an invalid 8-digit phone — no network call at all", () => {
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater repair" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "water heater repair" } });
     fireEvent.change(screen.getByPlaceholderText("(925) 555-0123"), {
       target: { value: "78138501" },
     });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPlain();
 
     expect(screen.getByText(/that phone number isn't valid/i)).toBeTruthy();
     // Neither addLead nor addJob should ever fire — the server never sees this.
@@ -333,12 +369,10 @@ describe("NewJobModalContent — phone validation", () => {
 
   it("clears the inline phone error as soon as the field is edited", () => {
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater repair" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "water heater repair" } });
     const phoneInput = screen.getByPlaceholderText("(925) 555-0123");
     fireEvent.change(phoneInput, { target: { value: "78138501" } });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPlain();
     expect(screen.getByText(/that phone number isn't valid/i)).toBeTruthy();
 
     fireEvent.change(phoneInput, { target: { value: "9255550123" } });
@@ -355,10 +389,8 @@ describe("NewJobModalContent — phone validation", () => {
       persisted: Promise.resolve({ id: "job-1", origin: "db", visits: [] }),
     });
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater repair" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "water heater repair" } });
+    createPlain();
     await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
     expect(screen.queryByText(/that phone number isn't valid/i)).toBeNull();
   });
@@ -373,10 +405,8 @@ describe("NewJobModalContent — phone validation", () => {
       }),
     });
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater repair" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "water heater repair" } });
+    createPlain();
 
     await waitFor(() => {
       expect(screen.getByText(/invalid US phone number/i)).toBeTruthy();
@@ -391,10 +421,8 @@ describe("NewJobModalContent — phone validation", () => {
       persisted: Promise.reject(new TypeError("Failed to fetch")),
     });
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "water heater repair" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "water heater repair" } });
+    createPlain();
 
     await waitFor(() => {
       expect(screen.getByText(/check your connection/i)).toBeTruthy();
@@ -402,7 +430,7 @@ describe("NewJobModalContent — phone validation", () => {
   });
 });
 
-describe("NewJobModalContent — checklist wiring (Job type)", () => {
+describe("NewJobModalContent — checklist wiring", () => {
   beforeEach(() => {
     addLead.mockReset();
     addJob.mockReset();
@@ -411,6 +439,7 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     // updateJob resolves { ok } (jobs-slice contract) — default to success.
     updateJob.mockResolvedValue({ ok: true });
     storeChecklists = [];
+    storeLeads = [];
     closeMock = vi.fn();
   });
 
@@ -436,13 +465,11 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "swap water heater" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "swap water heater" } });
     // Expand the picker and pick the saved checklist row.
     fireEvent.click(screen.getByText("No checklist"));
     fireEvent.click(screen.getByText("Water heater close-out"));
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     // Not yet — the snapshot only persists once the job is DB-origin.
@@ -467,16 +494,14 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "fix leak" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "fix leak" } });
     fireEvent.click(screen.getByText("No checklist"));
     fireEvent.click(screen.getByText("Build from scratch"));
     fireEvent.change(screen.getByPlaceholderText("e.g. Photo: dry under the sink"), {
       target: { value: "Photo of the repair" },
     });
     fireEvent.click(screen.getByText("Add item"));
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledOnce());
     const [, patch] = updateJob.mock.calls[0] as [
@@ -509,12 +534,10 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     updateJob.mockResolvedValueOnce({ ok: false });
 
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "clear main line" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "clear main line" } });
     fireEvent.click(screen.getByText("No checklist"));
     fireEvent.click(screen.getByText("Drain close-out"));
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     // Failure surfaced, no silent close — the job exists but its checklist doesn't.
     await waitFor(() =>
@@ -522,8 +545,12 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     );
     expect(closeMock).not.toHaveBeenCalled();
 
-    // Retry: re-attaches to job-50 — no duplicate job, no duplicate visits.
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    // Retry: re-attaches to job-50 — no duplicate job, no duplicate visits. (Wait for the
+    // in-flight state to settle first — the button reads "Creating…" until finally runs.)
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create & price it →" })).toBeTruthy(),
+    );
+    createPriced();
     await waitFor(() => expect(closeMock).toHaveBeenCalled());
     expect(addJob).toHaveBeenCalledTimes(1);
     expect(updateJob).toHaveBeenCalledTimes(2);
@@ -532,7 +559,7 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     }));
   });
 
-  it("the Estimate type offers SCOPING checklists — and none attaches without a pick", async () => {
+  it("offers BOTH pools, labeled — scoping and before-you-leave — and none attaches without a pick", async () => {
     storeChecklists = [
       { id: "chk-j", name: "Drain close-out", trade: "Custom", stage: "job", match: [],
         items: [{ id: "j1", text: "Water back on", type: "check", required: true, position: 0 }] },
@@ -547,26 +574,35 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     });
 
     render(<NewJobModalContent />);
-    // The row exists for estimates now (it used to unmount — the "estimates attach to the lead"
-    // gate went stale the day the estimate became a real job), offering SCOPE-stage templates:
-    // how the office makes a walkthrough happen a particular way.
-    fireEvent.click(screen.getByText("Estimate"));
-    expect(screen.getByText("Scoping checklist")).toBeTruthy();
-    fireEvent.click(screen.getByText("Scoping checklist"));
+    // With no Type chip there is no stage to filter by — the ONE row offers both pools,
+    // grouped under their own labels so the office's intent lives in the pick.
+    fireEvent.click(screen.getByText("Checklist"));
+    expect(screen.getByText("Scoping")).toBeTruthy();
+    expect(screen.getByText("Before you leave")).toBeTruthy();
     expect(screen.getByText("Repipe walkthrough")).toBeTruthy();
-    // Job-stage templates stay out of the estimate pool.
-    expect(screen.queryByText("Drain close-out")).toBeNull();
+    expect(screen.getByText("Drain close-out")).toBeTruthy();
 
     // Create WITHOUT picking → no checklist attach.
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "plain estimate" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "plain estimate" } });
+    createPlain();
     await waitFor(() => expect(addVisit).toHaveBeenCalled());
     expect(updateJob).not.toHaveBeenCalled();
   });
 
-  it("an estimate with a picked scoping checklist attaches it to the created job", async () => {
+  it("hides the group labels when only one pool has templates", () => {
+    storeChecklists = [
+      { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "scope", match: [],
+        items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }] },
+    ];
+    render(<NewJobModalContent />);
+    fireEvent.click(screen.getByText("Checklist"));
+    expect(screen.getByText("Repipe walkthrough")).toBeTruthy();
+    // One pool → the group headers would label nothing apart from itself.
+    expect(screen.queryByText("Scoping")).toBeNull();
+    expect(screen.queryByText("Before you leave")).toBeNull();
+  });
+
+  it("an unpriced job with a picked scoping checklist attaches it to the created job", async () => {
     storeChecklists = [
       { id: "chk-j", name: "Drain close-out", trade: "Custom", stage: "job", match: [],
         items: [{ id: "j1", text: "Water back on", type: "check", required: true, position: 0 }] },
@@ -582,13 +618,10 @@ describe("NewJobModalContent — checklist wiring (Job type)", () => {
     updateJob.mockResolvedValue({ ok: true });
 
     render(<NewJobModalContent />);
-    fireEvent.click(screen.getByText("Estimate"));
-    fireEvent.click(screen.getByText("Scoping checklist"));
+    fireEvent.click(screen.getByText("Checklist"));
     fireEvent.click(screen.getByText("Repipe walkthrough"));
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "scoped estimate" },
-    });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    fireEvent.change(titleInput(), { target: { value: "scoped estimate" } });
+    createPlain();
 
     await waitFor(() =>
       expect(updateJob).toHaveBeenCalledWith("job-43", expect.objectContaining({
@@ -614,6 +647,7 @@ describe("NewJobModalContent — one press, one job", () => {
     addJob.mockReset();
     addVisit.mockReset();
     closeMock = vi.fn();
+    storeLeads = [];
   });
 
   const armSlowChain = () => {
@@ -630,9 +664,7 @@ describe("NewJobModalContent — one press, one job", () => {
   };
 
   const fillForm = () => {
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "fix boiler" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "fix boiler" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), {
       target: { value: "Maria Garcia" },
     });
@@ -643,14 +675,15 @@ describe("NewJobModalContent — one press, one job", () => {
     render(<NewJobModalContent />);
     fillForm();
 
-    const form = screen.getByRole("button", { name: /^Create/ }).closest("form")!;
-    fireEvent.submit(form);
-    fireEvent.submit(form);
-    fireEvent.submit(form);
+    // Grab the element once — after the first press its label reads "Creating…".
+    const pri = screen.getByRole("button", { name: "Create & price it →" });
+    fireEvent.click(pri);
+    fireEvent.click(pri);
+    fireEvent.click(pri);
 
     // The customer is the first step of the chain and the one the server cannot de-duplicate.
     // The chain opens with an async server resolution now, so the first call lands a tick later —
-    // the guard's job is that three submits still produce exactly ONE.
+    // the guard's job is that three presses still produce exactly ONE.
     await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
 
     release();
@@ -658,30 +691,27 @@ describe("NewJobModalContent — one press, one job", () => {
     expect(addVisit).toHaveBeenCalledOnce();
   });
 
-  it("says it is working, and refuses the button while it is", async () => {
+  it("says it is working, and refuses every foot button while it is", async () => {
     armSlowChain();
     render(<NewJobModalContent />);
     fillForm();
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
-    // The label is the feedback the missing round-trip time never gave.
+    // The label is the feedback the missing round-trip time never gave — on the pressed
+    // button; its sibling create and Cancel just disable.
     const submit = screen.getByText("Creating…");
     expect(submit.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText("Create job").hasAttribute("disabled")).toBe(true);
     expect(screen.getByText("Cancel").hasAttribute("disabled")).toBe(true);
   });
 
-  /**
-   * The in-body "Build the price" row is gone — for flat rate, the PRIMARY creates and lands in
-   * the builder in one motion ("Create & price it"), because a flat-rate job's price is the point
-   * of the type. The double-submit guard still has to hold across that single entry point.
-   */
-  it("guards a second submit while the create-and-price chain is in flight", async () => {
+  it("guards a press of the OTHER exit while the first is in flight", async () => {
     armSlowChain();
     render(<NewJobModalContent />);
     fillForm();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Create/ }));
-    fireEvent.submit(screen.getByText("Creating…").closest("form")!);
+    createPriced();
+    createPlain();
 
     await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
   });
@@ -760,12 +790,10 @@ describe("NewJobModalContent — customer picker", () => {
       persisted: Promise.resolve({ id: "job-ann", origin: "db", visits: [] }),
     });
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "fix disposal" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "fix disposal" } });
     fireEvent.change(custInput(), { target: { value: "ann" } });
     fireEvent.mouseDown(screen.getByRole("option"));
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
     // Matched by name → no new customer minted, the job rides the existing lead.
@@ -783,13 +811,11 @@ describe("NewJobModalContent — customer picker", () => {
       persisted: Promise.resolve({ id: "job-new", origin: "db", visits: [] }),
     });
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), {
-      target: { value: "new build rough-in" },
-    });
+    fireEvent.change(titleInput(), { target: { value: "new build rough-in" } });
     fireEvent.change(custInput(), { target: { value: "Brand New Person" } });
     // No match → no list, and the typed name is what gets created.
     expect(screen.queryByRole("listbox")).toBeNull();
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     await waitFor(() => expect(addLead).toHaveBeenCalledOnce());
     expect(addLead).toHaveBeenCalledWith(expect.objectContaining({ name: "Brand New Person" }));
@@ -850,13 +876,15 @@ describe("NewJobModalContent — customer picker", () => {
 });
 
 /**
- * The three fixes Owen reported on the booking modal, pinned.
+ * The foot and where each exit lands, pinned. There is no Type chip anywhere in this form:
+ * the fork lives in the foot, and the kind derives from which button ran.
  */
-describe("NewJobModalContent — booking fixes", () => {
+describe("NewJobModalContent — the two exits", () => {
   beforeEach(() => {
     addLead.mockReset(); addJob.mockReset(); addVisit.mockReset();
     openModalMock.mockReset(); pushModalMock.mockReset(); routerPush.mockReset();
     closeMock = vi.fn();
+    storeLeads = [];
     addLead.mockReturnValue({
       lead: { id: "opt-lead-1", name: "Maria Garcia" },
       persisted: Promise.resolve({ id: "srv-lead-1", name: "Maria Garcia" }),
@@ -867,28 +895,30 @@ describe("NewJobModalContent — booking fixes", () => {
     });
   });
 
-  /**
-   * ENTER SAVED THE JOB MID-THOUGHT. Implicit submission needs a default button (HTML spec), so
-   * the guarantee is structural: the form contains NO type="submit" control — the primary is
-   * type="button". jsdom does not implement implicit submission, so asserting a keydown here
-   * would pass vacuously; asserting the mechanism is what actually pins the fix.
-   */
-  it("the form has no submit button, so Enter cannot implicitly create the job", () => {
+  it("the form has no Type chips and no submit control — the foot holds the fork", () => {
     render(<NewJobModalContent />);
-    const form = screen.getByRole("button", { name: /^Create/ }).closest("form")!;
+    // No Estimate/Flat-rate chips anywhere.
+    expect(screen.queryByText("Flat rate")).toBeNull();
+    expect(screen.queryByText("Estimate")).toBeNull();
+    // ENTER SAVED THE JOB MID-THOUGHT once. Implicit submission needs a default button
+    // (HTML spec), so the guarantee is structural: NO type="submit" control exists — every
+    // foot button is type="button".
+    const form = screen.getByRole("button", { name: "Create job" }).closest("form")!;
     expect(form.querySelector('button[type="submit"], input[type="submit"]')).toBeNull();
-    expect((screen.getByRole("button", { name: /^Create/ }) as HTMLButtonElement).type).toBe("button");
+    for (const name of ["Cancel", "Create job", "Create & price it →"]) {
+      expect((screen.getByRole("button", { name }) as HTMLButtonElement).type).toBe("button");
+    }
   });
 
   // Owen, testing: "when I create the flat rate job it brings me to the job modal, it should be
   // bringing me to the scheduling page so I can drag and drop it". This form has no date picker,
   // so every job it makes has UNPLACED visits — the record sheet is a dead end and the board is
   // the actual next step.
-  it("flat rate lands on the schedule board with the new job armed, and asks for the price there", async () => {
+  it("Create & price it lands on the schedule board with the new job armed, and asks for the price there", async () => {
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), { target: { value: "fix boiler" } });
+    fireEvent.change(titleInput(), { target: { value: "fix boiler" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
     await waitFor(() => expect(routerPush).toHaveBeenCalledWith("/jobs?tab=schedule&place=job-opt-1"));
     // A ROOT open, not a drill-in: closing the builder reveals the BOARD, not a job sheet.
@@ -897,15 +927,11 @@ describe("NewJobModalContent — booking fixes", () => {
     expect(openModalMock).not.toHaveBeenCalledWith("job", expect.anything());
   });
 
-  // The estimate branch was worse than the flat-rate one: createEstimate threw the created job
-  // away and returned a bare `true`, and commit hard-coded `job: null` — so submit closed onto
-  // whatever was behind it, with no way back to what had just been made.
-  it("an estimate navigates to the board too, and skips the builder — it has no price by definition", async () => {
+  it("Create job navigates to the board too, and skips the builder — it has no price yet", async () => {
     render(<NewJobModalContent />);
-    fireEvent.click(screen.getByText("Estimate"));
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), { target: { value: "quote a repipe" } });
+    fireEvent.change(titleInput(), { target: { value: "quote a repipe" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPlain();
 
     await waitFor(() => expect(closeMock).toHaveBeenCalled());
     expect(routerPush).toHaveBeenCalledWith("/jobs?tab=schedule&place=job-opt-1");
@@ -919,11 +945,11 @@ describe("NewJobModalContent — booking fixes", () => {
       persisted: Promise.reject(new Error("network error")),
     });
     render(<NewJobModalContent />);
-    fireEvent.change(screen.getByPlaceholderText("e.g. water heater repair"), { target: { value: "fix boiler" } });
+    fireEvent.change(titleInput(), { target: { value: "fix boiler" } });
     fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Maria Garcia" } });
-    fireEvent.submit(screen.getByRole("button", { name: /^Create/ }).closest("form")!);
+    createPriced();
 
-    await waitFor(() => expect(screen.getByText(/Couldn't save the job/i)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/the customer was saved, but the job wasn't/i)).toBeTruthy());
     expect(routerPush).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
   });

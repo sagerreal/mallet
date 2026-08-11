@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { isEstimateJob, isUnpricedEstimateJob, hasPricedLines } from "./job-status-meta";
+import { isEstimateJob, isUnpricedEstimateJob, hasPricedLines, jobPriceCommitted } from "./job-status-meta";
 
 /**
  * ONE predicate for "is this an estimate visit".
@@ -65,5 +65,32 @@ describe("hasPricedLines", () => {
     expect(hasPricedLines({ lines: [{ q: 0, r: 150 }] })).toBe(false);
     expect(hasPricedLines({ lines: [{ q: null, r: 150 }] })).toBe(true); // null qty defaults to 1
     expect(hasPricedLines({})).toBe(false);
+  });
+});
+
+describe("jobPriceCommitted — a price someone stands behind, never a draft", () => {
+  it("a signed job is committed regardless of anything else", () => {
+    expect(jobPriceCommitted({ kind: "estimate", sourceEstimateId: "est-1", lines: [] })).toBe(true);
+  });
+
+  it("lines on a WORK job are the office's booked price — committed", () => {
+    expect(jobPriceCommitted({ kind: "work", lines: [{ d: "Water heater swap" }] })).toBe(true);
+  });
+
+  it("lines on an ESTIMATE job are the tech's own draft — NOT committed, still editable", () => {
+    expect(jobPriceCommitted({ kind: "estimate", lines: [{ d: "Repaint hall" }] })).toBe(false);
+    expect(jobPriceCommitted({ svc: "estimate", lines: [{ d: "Repaint hall" }] })).toBe(false);
+  });
+
+  it("an unpriced job is committed to nothing", () => {
+    expect(jobPriceCommitted({ kind: "work", lines: [] })).toBe(false);
+    expect(jobPriceCommitted({ kind: "work" })).toBe(false);
+  });
+
+  it("reads line TEXT, not rates — a price-redacted device (r: null) still sees booked as booked", () => {
+    // hasPricedLines would say false here (null rates sum to 0); the committed predicate must not.
+    expect(jobPriceCommitted({ kind: "work", lines: [{ d: "Water heater swap" }] })).toBe(true);
+    // …but blank-description debris is not a price.
+    expect(jobPriceCommitted({ kind: "work", lines: [{ d: "  " }] })).toBe(false);
   });
 });

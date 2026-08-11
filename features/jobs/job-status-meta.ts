@@ -44,6 +44,33 @@ export function hasPricedLines(j: { lines?: { q?: number | null; r?: number | nu
 }
 
 /**
+ * Is the job's price COMMITTED — a document someone stands behind, as opposed to a draft?
+ *
+ * Two ways in, matching the two ways a price becomes real:
+ *   - `sourceEstimateId` — the customer signed (field sign or an office quote accepted);
+ *   - lines on a NON-estimate job — the office saved a price ("Create & price it" or the
+ *     job sheet's Build the price), or a field sale flipped the kind at accept.
+ *
+ * Lines on an ESTIMATE-kind job are exactly the remaining case: a technician's in-progress
+ * draft (saveQuoteDraft's unmount stash), which stays editable — nothing was promised yet.
+ * The kind flips estimate → work only when a price is committed (office save / customer
+ * sign), never by the draft stash, which is what makes this derivation sound.
+ *
+ * Substantive lines (text), not priced ones: a tech device with prices redacted reads
+ * `r: null` on every line of a booked job, and a predicate summing rates would hand that
+ * device an editable builder over a price the office already booked.
+ */
+export function jobPriceCommitted(j: {
+  kind?: string;
+  svc?: string | null;
+  sourceEstimateId?: string | null;
+  lines?: { d?: string | null }[];
+}): boolean {
+  if (j.sourceEstimateId) return true;
+  return !isEstimateJob(j) && (j.lines ?? []).some((l) => (l.d ?? "").trim().length > 0);
+}
+
+/**
  * A PURE scoping visit: an estimate job nobody has priced yet. This — not "is an estimate" — is
  * what hides the Price section and keeps the job out of billing. The distinction is the fix for
  * a real bug: a quote signed at the door writes priced lines onto the job, and the old

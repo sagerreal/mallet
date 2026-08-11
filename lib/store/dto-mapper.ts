@@ -388,6 +388,11 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     phone: dto.phone ?? "",
     status,
     archived: false,
+    // basis points → percent (1000 bps = 10%), same convention as Estimate.pricing.
+    // Omitted when both rates are zero — the common job carries no rates at all.
+    ...(dto.discBps > 0 || dto.taxBps > 0
+      ? { pricing: { disc: dto.discBps / 100, tax: dto.taxBps / 100 } }
+      : {}),
     notes: dto.notes ?? "",
     completion: dto.completion ?? undefined,
     invRequested: dto.invRequested,

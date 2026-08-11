@@ -170,9 +170,11 @@ export interface SetJobLinesCommand {
   /** The staff member whose device took it — the in-person witness. */
   readonly signedByUserId?: string | null;
   /**
-   * Discount / tax / deposit set at the door. Absent on the office price builder (pricing a job
-   * in the office does not change what anyone agreed to) and on every caller that predates the
-   * field pricing controls, which is why it is optional rather than defaulted at the call site.
+   * Discount / tax / deposit rates. Set by the pricing surfaces — the field builder's sign
+   * and draft-stash, and the office price builder (whose save BOOKS the price under the
+   * one-job-type model). Absent on callers that say nothing about rates (the close-out's
+   * BillAsk), which must leave the stored pair untouched — optional rather than defaulted
+   * at the call site precisely so absent ≠ zero.
    *
    * When present it does three things in one atomic swap: it feeds the authorisation sentence,
    * it becomes the job's stored total (tax-inclusive, as `jobs.total_cents` is documented), and
