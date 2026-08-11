@@ -7,7 +7,7 @@
  *
  * This file is the COMPOSITION only, in the sheet grammar: a sticky .sheet-head
  * (customer name + job meta), Call/Text as a .sheet-secrow, the in-flow spine
- * (address, visits, pricing, found work, checklist, notes — the section files in
+ * (address, visits, pricing, checklist, notes — the section files in
  * this directory), and ONE sticky .sheet-foot primary. Two states-as-views:
  *   - working view (job not done): the address + the visit row are the hero;
  *     the foot primary is a plain Done (the step buttons are per-visit and
@@ -52,7 +52,6 @@ import { currentVisit, custNameOf, invDue, isUnpricedEstimate, vPlaced } from ".
 import { TechHeader } from "./tech-header";
 import { VisitsSec } from "./visits-sec";
 import { WorkOrderSec } from "./work-order-sec";
-import { FoundWorkSec } from "./found-work-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
 import { DoneBlock, ScopeHandoffBlock } from "./done-block";
@@ -109,9 +108,11 @@ export function TechJobModalContent() {
   // Money in the tech view is gated by this permission toggle (a scalar — safe
   // to select directly; never derive an array in a selector).
   const seesPrice = useAppStore((s) => s.toggles.techSeesPrice);
-  const addAddon = useAppStore((s) => s.addAddon);
+  // Found work's display section is retired (change orders carry extra work), but the addons
+  // MODEL stays: the copilot card and the Quote tab's change order stash proposed add-ons
+  // through addAddonField (v1.field.addAddon), the office OKs them, and the next change
+  // order picks them up.
   const addAddonField = useAppStore((s) => s.addAddonField);
-  const setAddonStatus = useAppStore((s) => s.setAddonStatus);
   const checkVerifyItem = useAppStore((s) => s.checkVerifyItem);
   const overrideVerifyItem = useAppStore((s) => s.overrideVerifyItem);
   const uncheckVerifyItem = useAppStore((s) => s.uncheckVerifyItem);
@@ -550,26 +551,13 @@ export function TechJobModalContent() {
           every role. The old office-only PricingSec entry (a second door to the same
           builder) was removed with the role gate on the tabs. */}
 
-      {/* Copilot (field AI advisor — camera + ask + found-work card). Tech only. */}
+      {/* Copilot (field AI advisor — camera + ask + the extra-work card, whose accept stages a
+          proposed add-on for the change order). Tech only. The FOUND WORK display section that
+          used to follow is retired: change orders carry extra work (see the addAddonField note
+          above for where the model still lives). */}
       {!isOffice && jobId && (
         <CopilotSection job={job} addAddonField={addAddonField} />
       )}
-
-      {/* Found work / add-ons (5b) — read-only for techs (add + status are office writes), and
-          absent entirely on a job with nothing sold. Found work means "extra beyond what was
-          sold"; on an estimate walkthrough nothing has been, so the add form would be a second
-          place to type a price beside the Quote tab's builder — and before a sale only one of
-          them is right. `scoping` is isUnpricedEstimate, which already treats prices WITHHELD
-          from this device as sold rather than unsold. JOB NOTES below is unaffected: a note is
-          always worth having, on either kind of job. */}
-      <FoundWorkSec
-        job={job}
-        seesPrice={seesPrice}
-        readOnly={!isOffice}
-        hasSoldWork={!scoping}
-        addAddon={addAddon}
-        setAddonStatus={setAddonStatus}
-      />
 
       {/* 7. Before you leave — attached checklist, INTERACTIVE (5c). */}
       <ChecklistSec
