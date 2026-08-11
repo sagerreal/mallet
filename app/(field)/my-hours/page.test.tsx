@@ -34,6 +34,7 @@ let listQuery: {
 };
 let updateMutate: ReturnType<typeof vi.fn>;
 let createMutate: ReturnType<typeof vi.fn>;
+let removeMutate: ReturnType<typeof vi.fn>;
 let updateError: { message: string } | null;
 let meUserId: string | undefined;
 let unreportedQuery: { data?: { items: unknown[] }; refetch: () => void };
@@ -63,6 +64,9 @@ vi.mock("@/lib/trpc/client", () => ({
         create: {
           useMutation: () => ({ mutate: createMutate, error: null, isPending: false }),
         },
+        remove: {
+          useMutation: () => ({ mutate: removeMutate, error: null, isPending: false }),
+        },
       },
     },
   },
@@ -84,6 +88,7 @@ const withEntries = (items: MyHoursEntry[]): void => {
 beforeEach(() => {
   updateMutate = vi.fn();
   createMutate = vi.fn();
+  removeMutate = vi.fn();
   updateError = null;
   unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
   meUserId = ME;
@@ -219,7 +224,7 @@ describe("adding a block the clock missed", () => {
     withEntries([entry()]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add hours you already worked" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
     fireEvent.change(screen.getByLabelText("Start"), { target: { value: "06:00" } });
     fireEvent.change(screen.getByLabelText("End"), { target: { value: "07:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Add these hours" }));
@@ -241,16 +246,18 @@ describe("adding a block the clock missed", () => {
     withEntries([entry()]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add hours you already worked" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
 
     // Day is a SelectMenu now, so the choices live in a listbox that opens on click rather than
-    // in <option> children. The assertion is unchanged in substance: seven days, today first,
-    // the window's last day last.
+    // in <option> children. The window runs both ways since Aug 11: today first (the default),
+    // then the week ahead, then the week behind.
     fireEvent.click(screen.getByLabelText("Day"));
     const days = screen.getAllByRole("option");
-    expect(days).toHaveLength(7);
+    expect(days).toHaveLength(14);
     expect(days[0]?.textContent).toContain(dayLabel(TODAY));
-    expect(days[6]?.textContent).toContain(dayLabel("2026-06-25"));
+    expect(days[1]?.textContent).toContain(dayLabel("2026-07-02"));
+    expect(days[7]?.textContent).toContain(dayLabel("2026-07-08"));
+    expect(days[13]?.textContent).toContain(dayLabel("2026-06-25"));
   });
 });
 
@@ -324,5 +331,32 @@ describe("the four list states", () => {
     expect(screen.queryByLabelText("Job")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     expect(screen.getByLabelText("Job")).toBeTruthy();
+  });
+});
+
+// Owen, Aug 11: "I need the ability to delete a timesheet entry." The server's remove endpoint
+// existed all along (ownership-guarded, approved rows refused); the editor just never offered it.
+describe("deleting a row", () => {
+  it("arms on the first tap — deleting payroll hours is never one tap", () => {
+    withEntries([entry({ id: "draft-1", startTime: "08:00", endTime: "16:00" })]);
+    render(<MyHoursPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+
+    expect(removeMutate).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "⚠ Really delete? Tap again" })).toBeTruthy();
+  });
+
+  it("deletes on the second tap", () => {
+    withEntries([entry({ id: "draft-1", startTime: "08:00", endTime: "16:00" })]);
+    render(<MyHoursPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "⚠ Really delete? Tap again" }));
+
+    expect(removeMutate).toHaveBeenCalledTimes(1);
+    expect(removeMutate.mock.calls[0]?.[0]).toEqual({ entryId: "draft-1" });
   });
 });

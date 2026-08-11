@@ -35,6 +35,7 @@ export function useMyHoursWrites() {
 
   const update = api.v1.timesheets.update.useMutation({ onSuccess: reload });
   const create = api.v1.timesheets.create.useMutation({ onSuccess: reload });
+  const remove = api.v1.timesheets.remove.useMutation({ onSuccess: reload });
 
   return {
     /**
@@ -73,9 +74,16 @@ export function useMyHoursWrites() {
     addBlock: (input: AddBlockInput, onDone: () => void): void => {
       create.mutate({ ...input, src: MANUAL_SRC, running: false }, { onSuccess: onDone });
     },
+    /** Soft-delete a draft row. The server refuses approved rows — that refusal surfaces
+     *  through removeError on the still-open editor, never as a silent no-op. */
+    removeEntry: (entryId: string, onDone: () => void): void => {
+      remove.mutate({ entryId }, { onSuccess: onDone });
+    },
     updateError: update.error?.message ?? null,
     createError: create.error?.message ?? null,
+    removeError: remove.error?.message ?? null,
     saving: update.isPending,
     adding: create.isPending,
+    removing: remove.isPending,
   };
 }

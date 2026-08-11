@@ -2,7 +2,8 @@
 
 /**
  * features/field/my-hours-add-block.tsx
- * "Add hours you already worked" — the technician's own repair for a block the clock missed
+ * "Add hours" — the technician's own repair for a block the clock missed, and since Aug 11
+ * also the way planned time lands ahead (the day window runs a week each way)
  * (no signal in a crawlspace, a forgotten morning punch, a supply-house run).
  *
  * Expands in-flow beneath its trigger. Day and both times are pickers, not text boxes: the point

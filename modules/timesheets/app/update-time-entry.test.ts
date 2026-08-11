@@ -86,8 +86,19 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
     return 0;
   }
 
-  async list(): Promise<{ items: TimeEntry[]; nextCursor: null }> {
-    return { items: [], nextCursor: null };
+  // The overlap gate lists the target day through the same store seed() fills, filtered the way
+  // the real repository filters — so the entry being edited is naturally in the result and the
+  // gate's self-exclusion is actually exercised.
+  async list(
+    filter: Parameters<TimeEntryRepository["list"]>[0],
+  ): Promise<{ items: TimeEntry[]; nextCursor: null }> {
+    const items = [...this.store.values()].filter(
+      (e) =>
+        (filter.techUserId === undefined || e.props.techUserId === filter.techUserId) &&
+        (filter.fromDate === undefined || e.props.workDate >= filter.fromDate) &&
+        (filter.toDate === undefined || e.props.workDate <= filter.toDate),
+    );
+    return { items, nextCursor: null };
   }
   async remove(): Promise<number> {
     return 0;
@@ -450,5 +461,49 @@ describe("an approved entry cannot be edited", () => {
     const { res, save } = await runUpdate({ note: "typo fix" });
     expect(res.ok).toBe(false);
     expect(save).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The overlap gate: an edit must not land a row on top of another one.
+// ---------------------------------------------------------------------------
+
+describe("UpdateTimeEntryUseCase — one person cannot be two places at once", () => {
+  const OTHER_ID = asTimeEntryId("99999999-9999-9999-9999-999999999999");
+
+  it("refuses a patch that lands on another row, naming the clash", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.seed(makeEntry()); // 08:00–10:00, ENTRY_ID
+    repo.seed(makeEntry({ id: OTHER_ID, kind: "shop", startTime: "10:00", endTime: "22:00" }));
+    const useCase = new UpdateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T12:00:00Z")));
+
+    const result = await useCase.exec({ entryId: ENTRY_ID, startTime: "10:30", endTime: "11:00" }, ORG);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("Overlaps Shop 10:00–22:00");
+    expect(repo.saveCalls).toHaveLength(0);
+  });
+
+  it("lets a row move within its own old window — it never clashes with itself", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.seed(makeEntry()); // 08:00–10:00
+    const useCase = new UpdateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T12:00:00Z")));
+
+    const result = await useCase.exec({ entryId: ENTRY_ID, startTime: "08:30" }, ORG);
+
+    expect(result.ok).toBe(true);
+    expect(repo.saveCalls).toHaveLength(1);
+  });
+
+  it("checks the day the row is MOVING TO, not the day it came from", async () => {
+    const repo = new FakeTimeEntryRepository();
+    repo.seed(makeEntry()); // 2026-07-07 08:00–10:00
+    repo.seed(makeEntry({ id: OTHER_ID, workDate: "2026-07-08", kind: "travel", startTime: "09:00", endTime: "17:00" }));
+    const useCase = new UpdateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T12:00:00Z")));
+
+    const result = await useCase.exec({ entryId: ENTRY_ID, workDate: "2026-07-08" }, ORG);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain("Overlaps Travel 09:00–17:00");
   });
 });

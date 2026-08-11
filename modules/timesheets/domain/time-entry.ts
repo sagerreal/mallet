@@ -15,7 +15,9 @@ const isSrc = (v: string): v is TimeEntrySrc => SRCS.includes(v as TimeEntrySrc)
 const isStatus = (v: string): v is TimeEntryStatus => STATUSES.includes(v as TimeEntryStatus);
 
 // Parse "HH:MM" → total minutes since midnight. Returns null if unparseable.
-const toMinutes = (t: string): number | null => {
+// Exported for overlap.ts — one parser, so the overlap rule and the entry invariants can never
+// disagree about what a time string means.
+export const toMinutes = (t: string): number | null => {
   const parts = t.split(":");
   const h = parts[0] !== undefined ? parseInt(parts[0], 10) : NaN;
   const m = parts[1] !== undefined ? parseInt(parts[1], 10) : NaN;
