@@ -227,6 +227,9 @@ export const jobSummaryDTO = z.object({
   status: statusEnum,
   assigneeUserId: z.string().uuid().nullable(),
   scheduledStart: z.string().nullable(),
+  // When the JOB finished — the field agenda's "Finished today" bucket sorts its visit-less
+  // job-level cards by this; without it they pinned to the top out of order.
+  completedAt: z.string().nullable(),
   // Nullable: the tech-facing field surface redacts total server-side when the
   // org's techSeesPrice is off. Office/owner responses are never null.
   total: moneyDTO.nullable(),
@@ -479,6 +482,7 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution,
     status: p.status,
     assigneeUserId: p.assigneeUserId,
     scheduledStart: iso(p.scheduledStart),
+    completedAt: iso(p.completedAt),
     total: money(p.total),
     discBps: p.discBps,
     taxBps: p.taxBps,

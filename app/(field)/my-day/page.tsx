@@ -1,14 +1,19 @@
 "use client";
 
 /**
- * My Day page — tech-scoped agenda.
+ * My Day page — tech-scoped agenda. CARDS ARE VISITS.
  *
- * Fetches the caller's assigned jobs via v1.field.myDay (anyRole, assignee-scoped).
- * The agenda renders straight from the query; the Zustand jobs slice is hydrated
- * from the SAME query by FieldJobsHydrator in the (field) layout, which is what
- * the tech-job-modal (checklist check-offs, found work) reads when a card is tapped.
+ * Fetches the caller's assigned jobs via v1.field.myDay (anyRole, assignee-scoped) and renders
+ * one CARD PER VISIT (visit-cards.ts) in two buckets: the route still to drive, and what finished
+ * today. The Zustand jobs slice is hydrated from the SAME query by FieldJobsHydrator in the
+ * (field) layout, which is what the tech-job-modal reads when a card is tapped.
  *
- * Actions: v1.field.start / v1.field.complete — assignee-guarded on the server.
+ * Visit-level actions write v1.field.setVisitEnroute / setVisitStatus — the exact mutations the
+ * job sheet's own buttons use, so the card and the sheet can never disagree about what a tap
+ * does. A job with no visits keeps the job-level pair (v1.field.start / complete). Every write is
+ * optimistic against the myDay cache (the house pattern; the card must move NOW), reconciled by
+ * refetch, rolled back + reported on failure.
+ *
  * The day clock at the top is its own component and its own query — a real time entry, not page
  * state, so it survives a reload (see features/field/day-clock.tsx).
  */
@@ -24,233 +29,13 @@ import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { useMyDayInput } from "@/features/field/my-day-input";
-import { colLabel } from "@/components/modals/tech-job-modal/helpers";
-import { visitProgress, progressPill, progressNote, canOfferStart } from "./visit-progress";
+import { todayISO } from "@/lib/clock";
+import { deriveDayCards, type DayCard } from "./visit-cards";
+import { JobCard } from "./job-card";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
-
-// ---- helpers ---------------------------------------------------------------
-
-/**
- * "08:30" → "8:30a". A WALL-CLOCK string, formatted as text.
- *
- * No Date anywhere in here on purpose. A visit's start time is what the crew reads on the board;
- * parsing it into a Date would stamp it with the device's own zone, so the same job would show a
- * different hour on a phone that crossed a state line.
- */
-function timeLabel(hhmm: string | null): string {
-  if (!hhmm) return "—";
-  const [h, m] = hhmm.split(":");
-  const hr = Number(h);
-  const mn = Number(m);
-  if (!Number.isFinite(hr) || !Number.isFinite(mn)) return "—";
-  const period = hr < 12 ? "a" : "p";
-  const display = hr % 12 === 0 ? 12 : hr % 12;
-  return mn > 0 ? `${display}:${String(mn).padStart(2, "0")}${period}` : `${display}${period}`;
-}
-
-/**
- * When this stop happens: the earliest LIVE visit's DATE and start.
- *
- * It used to read `job.scheduledStart` — the jobs table's own column, which no live path writes
- * (see modules/jobs/infra/job-sorts.ts). Every card in the agenda therefore printed "—". The
- * server orders the day by exactly this key, so the column and the order now agree.
- *
- * It also used to return the time ALONE, throwing the date away — which is what made yesterday's
- * 8:30a and today's 8:30a render identically on a list that deliberately carries both (see the
- * heading note below). The date comes back out with it.
- *
- * LIVE visits outrank COMPLETE ones — the client twin of earliestLiveVisitAt in
- * modules/jobs/api/my-day-order.ts, so the card and its position in the list can never disagree.
- * A half-done multi-visit job reads the visit the tech still has to drive to, not the one already
- * worked; a fully finished job falls back to its completed visits and keeps its slot in the day.
- */
-type VisitWhen = { at: string; day: string; start: string | null };
-
-function agendaWhen(job: JobSummary): { day: string | null; time: string } {
-  let live: VisitWhen | null = null;
-  let done: VisitWhen | null = null;
-  let unplacedLive = false;
-  for (const v of job.visits) {
-    if (v.status === "canceled") continue;
-    // A live visit with no date is the return-trip shape: the next work exists but has no slot
-    // yet, so a done visit's old slot must not answer for it below — the card says "Not scheduled".
-    if (!v.scheduledDate) {
-      if (v.status !== "complete") unplacedLive = true;
-      continue;
-    }
-    const cand: VisitWhen = {
-      at: `${v.scheduledDate}T${v.scheduledStart ?? "00:00"}`,
-      day: v.scheduledDate,
-      start: v.scheduledStart,
-    };
-    if (v.status === "complete") {
-      if (done === null || cand.at < done.at) done = cand;
-    } else if (live === null || cand.at < live.at) {
-      live = cand;
-    }
-  }
-  const pick = live ?? (unplacedLive ? null : done);
-  return pick === null ? { day: null, time: timeLabel(null) } : { day: pick.day, time: timeLabel(pick.start) };
-}
-
-/**
- * The left-hand "when" column.
- *
- * TODAY PRINTS THE TIME ALONE — that is the overwhelming majority of rows and a "Today" label on
- * every one of them is noise. Anything else prints the DAY above it, because this list is not
- * today's list: `v1.field.myDay` returns all of the caller's open work plus what they finished
- * today (deliberately — see modules/jobs/domain/job-repository.ts), and it sorts earliest-first,
- * so a job carried over from yesterday lands at the TOP. Without the day, the first row of the
- * agenda was indistinguishable from this morning's first stop. The same label covers the other
- * direction the predicate allows and nobody had considered: work the office has scheduled AHEAD.
- *
- * `colLabel` is the sheet header's own grammar ("Today" / "Wed 3" / "Not scheduled"), so the row
- * and the job sheet it opens can never disagree about which day this is.
- */
-function AgendaWhen({ job }: { job: JobSummary }) {
-  const { day, time } = agendaWhen(job);
-  const dayLabel = colLabel(day);
-  // No dated visit: there is no time to print either, and "Not scheduled" says the actual thing
-  // where a bare "—" said nothing at all.
-  if (!day) return <div className="md-time">{dayLabel}</div>;
-  return (
-    <div className="md-time">
-      {dayLabel === "Today" ? null : <span className="md-day">{dayLabel}</span>}
-      <span className="md-hh">{time}</span>
-    </div>
-  );
-}
-
-function statusLabel(status: string): { l: string; c: string; bg: string } {
-  const map: Record<string, { l: string; c: string; bg: string }> = {
-    scheduled: { l: "Scheduled", c: "var(--ink-2)", bg: "var(--paper)" },
-    in_progress: { l: "In progress", c: "var(--green-700)", bg: "var(--green-50)" },
-    // "complete", not "completed" — modules/jobs/domain/job.ts. The old key never matched, which
-    // was invisible only because myDay filters completed jobs out; an optimistic complete shows
-    // the status locally, so a wrong key would render the raw string "complete" at the user.
-    complete: { l: "Done", c: "var(--ink-3)", bg: "var(--paper)" },
-    canceled: { l: "Canceled", c: "var(--red-600, #dc2626)", bg: "var(--red-50, #fef2f2)" },
-  };
-  return map[status] ?? { l: status, c: "var(--ink-2)", bg: "var(--paper)" };
-}
-
-// ============================================================================
-// Job card — one assigned job row in the agenda
-// ============================================================================
-
-interface JobCardProps {
-  job: JobSummary;
-  onOpen: (jobId: string) => void;
-  onStart: (jobId: string) => void;
-  onComplete: (jobId: string) => void;
-  isPending: boolean;
-}
-
-function JobCard({ job, onOpen, onStart, onComplete, isPending }: JobCardProps) {
-  const s = statusLabel(job.status);
-  /**
-   * What the VISITS say, which the row used to throw away. A two-stop job whose first stop
-   * finished hours ago still has an open job status — correctly, the return trip is outstanding —
-   * so the row read "SCHEDULED · Start job" as though nobody had been out. See visit-progress.ts.
-   */
-  const progress = visitProgress(job.visits);
-  const pill = progressPill(progress);
-  const note = progressNote(progress);
-
-  // stopPropagation belongs on the CONTROL, never on the .md-acts wrapper around it. The wrapper is
-  // a full-width flex row, so stopping the click there made every pixel BESIDE the button — most of
-  // the bottom of the card, and the part a thumb lands on first — eat the tap and do nothing. The
-  // row still tinted and compressed under the finger (.md-stop:active), so it read as the app
-  // ignoring you rather than as dead space. Only the button itself may keep the row from opening.
-  const acts =
-    job.status === "scheduled" && !canOfferStart(progress) ? (
-      // Part-done: starting is a claim the technician who finished stop one can disprove, so the
-      // row keeps only the thing it can still honestly do.
-      <button
-        type="button"
-        className="btn sm"
-        onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
-        disabled={isPending}
-      >
-        ✓ Complete
-      </button>
-    ) : job.status === "scheduled" ? (
-      // BOTH, on a scheduled job. Start job is the expected next step and stays the primary; ✓
-      // Complete is beside it because the job sheet has always let a technician finish without
-      // starting, and the card refusing the same thing read as the app contradicting itself.
-      // v1.field.complete now starts the job first when it has to (see field-router.ts).
-      <>
-        <button
-          type="button"
-          className="btn sm primary"
-          onClick={(e) => { e.stopPropagation(); onStart(job.id); }}
-          disabled={isPending}
-        >
-          Start job
-        </button>
-        <button
-          type="button"
-          className="btn sm"
-          onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
-          disabled={isPending}
-        >
-          ✓ Complete
-        </button>
-      </>
-    ) : job.status === "in_progress" ? (
-      <button
-        type="button"
-        className="btn sm"
-        onClick={(e) => { e.stopPropagation(); onComplete(job.id); }}
-        disabled={isPending}
-      >
-        ✓ Complete
-      </button>
-    ) : null;
-
-  return (
-    // The WHOLE row opens the tech job view (checklist, found work) — the time, the title, the job
-    // number, the blank space beside the status pill and the blank space beside the action button.
-    // The house .rowopen pattern (app/prototype.css): the container takes the MOUSE handler and no
-    // role/tabIndex, so the action buttons it contains are not nested inside a role=button (WCAG
-    // nested-interactive), while the focusable title button below carries the keyboard path.
-    // cursor:pointer, :hover and :active all live on .md-stop already — don't re-declare them here.
-    <div className="md-stop" onClick={() => onOpen(job.id)}>
-      <AgendaWhen job={job} />
-      <div className="md-body">
-        <div className="md-line1">
-          {/* Focusable open control — keyboard access without the row being a button
-              (it contains the Start/Complete action buttons below). */}
-          <button
-            type="button"
-            className="rowopen"
-            aria-label={`Open ${job.title ?? `Job #${job.num}`}`}
-            onClick={(e) => { e.stopPropagation(); onOpen(job.id); }}
-          >
-            <b>{job.title ?? `Job #${job.num}`}</b>
-          </button>
-          {/* The visit reading wins when it has something truer to say than the job status —
-              and only then; see progressPill for why "Return trip" is not applied to a dated
-              second stop. */}
-          <span className="stpill" style={{ color: s.c, background: s.bg }}>
-            {pill ?? s.l}
-          </span>
-        </div>
-        <div className="md-sub">
-          #{job.num}
-          {note ? ` · ${note}` : ""}
-          {job.notes ? ` · ${job.notes}` : ""}
-        </div>
-        {acts ? <div className="md-acts">{acts}</div> : null}
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// Page
-// ============================================================================
+type FieldCustomer = RouterOutputs["v1"]["field"]["myDay"]["customers"][number];
+type VisitSummary = JobSummary["visits"][number];
 
 export default function MyDayPage() {
   const utils = api.useUtils();
@@ -267,20 +52,9 @@ export default function MyDayPage() {
   });
 
   /**
-   * Move the card NOW.
-   *
-   * This page used to render straight off the query and only change after a second round trip:
-   * ~1.3s for the write, then ~1.2s for the refetch. For those ~2.5 seconds the button sat there
-   * still saying "Start job", so people pressed it again — and again. Every "it does nothing" and
-   * every "I had to hit it six times" was this. The house pattern is optimistic-then-reconcile
-   * (CLAUDE.md); this brings the page in line with it.
-   */
-  /**
    * The clock does things to your hours that the button does not look like it did. Say them.
-   *
-   * A segment under a minute is thrown away rather than rounded up — right, because a timesheet is
-   * kept to the minute and inventing one would be a lie on a payroll record — but until now that
-   * happened in total silence, so the hours simply never appeared and the clock looked broken.
+   * A segment under a minute is thrown away rather than rounded up — right, because a timesheet
+   * is kept to the minute — but silence here is why the clock once looked broken.
    */
   const announceClock = (notice: "segment_too_short" | "close_bounded" | null) => {
     if (notice === "segment_too_short") {
@@ -297,79 +71,128 @@ export default function MyDayPage() {
     }
   };
 
-  const optimisticStatus = (jobId: string, status: JobSummary["status"]) => {
-    // The SAME input the query above was made with. setData matches on it: pass anything else and
-    // this patches a cache entry nobody is reading, the card never moves, and the button sits on
-    // "✓ Complete" for the whole round trip — precisely the failure this path exists to prevent.
+  /** Move the card NOW — patch the exact cache entry this page reads (same input, or it's a miss). */
+  const patchJob = (jobId: string, patch: (j: JobSummary) => JobSummary) => {
     utils.v1.field.myDay.setData(dayInput, (prev) =>
-      prev
-        ? { ...prev, items: prev.items.map((j) => (j.id === jobId ? { ...j, status } : j)) }
-        : prev,
+      prev ? { ...prev, items: prev.items.map((j) => (j.id === jobId ? patch(j) : j)) } : prev,
     );
+  };
+  const patchVisit = (jobId: string, visitId: string, patch: Partial<VisitSummary>) => {
+    patchJob(jobId, (j) => ({
+      ...j,
+      visits: j.visits.map((v) => (v.id === visitId ? { ...v, ...patch } : v)),
+    }));
   };
 
   /**
-   * Start job and ✓ Complete MOVE THE CLOCK server-side — start closes the drive and opens job
-   * time, complete closes it and resumes shop — and neither invalidated a timesheets query. With
-   * `v1.timesheets.open` on a 15s staleTime, no refetch interval and focus-refetch off, the clock
-   * card went on showing the PREVIOUS segment's "since" and its elapsed until something else
-   * remounted it. The day panel reads `list`, which was equally stale. Both, on both mutations.
+   * Start job / complete MOVE THE CLOCK server-side, and so do the visit taps (runVisitClockTap).
+   * The clock card reads `open`/`list` on long staleTimes — without these invalidations it kept
+   * showing the previous segment until something else remounted it.
    */
   const refreshClock = (): void => {
     void utils.v1.timesheets.open.invalidate();
     void utils.v1.timesheets.list.invalidate();
   };
 
+  // ── job-level pair, for the visit-less card ────────────────────────────────
   const startMutation = api.v1.field.start.useMutation({
-    onMutate: ({ jobId }) => optimisticStatus(jobId, "in_progress"),
+    onMutate: ({ jobId }) => patchJob(jobId, (j) => ({ ...j, status: "in_progress" })),
     onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
-    // Roll the guess back and SAY so — a write that failed silently is what made this page
-    // untrustworthy in the first place.
-    onError: (err) => {
-      void refetch();
-      reportWriteError("field.start", err);
-    },
+    onError: (err) => { void refetch(); reportWriteError("field.start", err); },
   });
   const completeMutation = api.v1.field.complete.useMutation({
-    onMutate: ({ jobId }) => optimisticStatus(jobId, "complete"),
+    onMutate: ({ jobId }) => patchJob(jobId, (j) => ({ ...j, status: "complete" })),
     onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
-    onError: (err) => {
-      void refetch();
-      reportWriteError("field.complete", err);
-    },
+    onError: (err) => { void refetch(); reportWriteError("field.complete", err); },
+  });
+
+  // ── visit-level actions — the same writes the job sheet makes ─────────────
+  const enrouteMutation = api.v1.field.setVisitEnroute.useMutation({
+    onMutate: ({ jobId, visitId }) =>
+      patchVisit(jobId, visitId, { enrouteAt: new Date().toISOString() }),
+    onSuccess: () => void refetch(),
+    onError: (err) => { void refetch(); reportWriteError("field.setVisitEnroute", err); },
+  });
+  const visitStatusMutation = api.v1.field.setVisitStatus.useMutation({
+    onMutate: ({ jobId, visitId, status }) =>
+      patchVisit(
+        jobId,
+        visitId,
+        status === "complete"
+          ? { status, completedAt: new Date().toISOString() }
+          : { status, startedAt: new Date().toISOString() },
+      ),
+    onSuccess: () => { refreshClock(); void refetch(); },
+    onError: (err) => { void refetch(); reportWriteError("field.setVisitStatus", err); },
   });
 
   const openModal = useOpenModal();
 
   // Covers the WHOLE round trip, not just the write: the refetch is the slower half, and leaving
-  // the button live during it is what allowed the second press.
-  const isPending = startMutation.isPending || completeMutation.isPending || isFetching;
-
-  function handleOpen(jobId: string): void {
-    // The modal reads store.jobs — hydrated from this same myDay query by
-    // FieldJobsHydrator in the (field) layout.
-    openModal(MODAL.TECH_JOB, { jobId });
-  }
-
-  function handleStart(jobId: string): void {
-    haptics.commit();
-    startMutation.mutate({ jobId });
-  }
-
-  function handleComplete(jobId: string): void {
-    // A finished job is a completed task, not just a state change — success, not commit.
-    haptics.success();
-    completeMutation.mutate({ jobId });
-  }
+  // the buttons live during it is what allowed the double press.
+  const isPending =
+    startMutation.isPending ||
+    completeMutation.isPending ||
+    enrouteMutation.isPending ||
+    visitStatusMutation.isPending ||
+    isFetching;
 
   const items = data?.items ?? [];
+  const customers = data?.customers ?? [];
   const hasClock = useTimesheetClock();
 
-  // A dead fetch is not a free afternoon. Until now ANY myDay error fell through to
-  // `data?.items ?? []` and rendered "No jobs assigned to you today" — indistinguishable from a
-  // genuinely empty day, and the tech's only recourse was to guess. If rows are already in hand
-  // (a refetch failed) they stay: slightly stale beats a wall.
+  const jobsById = new Map(items.map((j) => [j.id, j]));
+  const customersById = new Map(customers.map((c) => [c.id, c]));
+  const { upcoming, finished } = deriveDayCards(items, todayISO());
+
+  // A dead fetch is not a free afternoon: rows already in hand stay (stale beats a wall), and an
+  // error with nothing in hand says so instead of rendering a convincing empty day.
   const loadFailed = shouldShowLoadFailed({ isFetched, isError, count: items.length });
+
+  function renderCard(card: DayCard) {
+    const job = jobsById.get(card.jobId);
+    if (!job) return null;
+    const customer: FieldCustomer | undefined = customersById.get(job.leadId);
+    const openSheet = () => openModal(MODAL.TECH_JOB, { jobId: job.id });
+    // Narrowed ONCE — every closure below branches on it, so no `as string` can ever send a
+    // null visitId to the server from a future call site.
+    const visitId = card.visitId;
+
+    const arrive = () => {
+      haptics.commit();
+      if (visitId === null) startMutation.mutate({ jobId: job.id });
+      else visitStatusMutation.mutate({ jobId: job.id, visitId, status: "in_progress" });
+    };
+    const done = () => {
+      // A finished stop is a completed task, not just a state change — success, not commit.
+      haptics.success();
+      if (visitId === null) completeMutation.mutate({ jobId: job.id });
+      else visitStatusMutation.mutate({ jobId: job.id, visitId, status: "complete" });
+    };
+    const myWay = () => {
+      if (visitId === null) return;
+      haptics.commit();
+      enrouteMutation.mutate({ jobId: job.id, visitId });
+    };
+
+    return (
+      <JobCard
+        key={card.key}
+        card={card}
+        title={job.title ?? `Job #${job.num}`}
+        customerName={job.customerName}
+        addr={job.addr ?? customer?.address ?? null}
+        callback={Boolean(job.callbackOf)}
+        notes={job.notes}
+        isPending={isPending}
+        onOpen={openSheet}
+        onDirections={(addr) => window.open(`https://maps.google.com/?q=${encodeURIComponent(addr)}`, "_blank", "noopener,noreferrer")}
+        onMyWay={visitId !== null && card.step === 0 ? myWay : null}
+        onArrived={card.step < 2 ? arrive : null}
+        onDone={card.step < 3 ? done : null}
+      />
+    );
+  }
 
   return (
     <>
@@ -377,47 +200,52 @@ export default function MyDayPage() {
       <div className="sub">Your open jobs, and what you finished today.</div>
 
       {/* The day clock owns its own queries — it must not wait on the agenda, and the agenda's
-          loading state must not blank the row that says whether he is being paid. Today's jobs go
-          IN so its expanded panel can name a job segment ("#JOB-2541 Delgado") off data this page
-          already holds, instead of asking the server the same question twice. */}
-      {/* A sheet shop has no punch clock — its crew type their week on My hours instead. Hiding
-          the control rather than leaving it inert: a clock nobody is meant to use, sitting at the
-          top of the day, is the surface that teaches people the app does not know their shop. */}
+          loading state must not blank the row that says whether he is being paid. A sheet shop
+          has no punch clock — its crew type their week on My hours instead, so the control hides
+          entirely rather than sitting inert. */}
       {hasClock ? <DayClock jobs={items} /> : null}
 
       {isLoading ? (
-        <div className="card agenda">
-          {[0, 1, 2].map((i) => (
-            <div key={i} className="sk-row">
-              <div className="sk" style={{ width: 64, height: 14, flexShrink: 0 }} />
-              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-2)", justifyContent: "center" }}>
-                <div className="sk" style={{ width: "60%", height: 14 }} />
-                <div className="sk" style={{ width: "40%", height: 12 }} />
+        // The skeleton is the CARD's own shape — title line, address line, the circle row — so
+        // content arrival replaces it without a jump.
+        <>
+          {[0, 1].map((i) => (
+            <div key={i} className="card mdc" style={{ cursor: "default" }}>
+              <div className="sk" style={{ width: "55%", height: 16 }} />
+              <div className="sk" style={{ width: "40%", height: 12, marginTop: "var(--space-3)" }} />
+              <div style={{ display: "flex", gap: "var(--space-4)", marginTop: "var(--space-4)" }}>
+                {[0, 1, 2].map((c) => (
+                  <div key={c} className="sk" style={{ width: 44, height: 44, borderRadius: "var(--radius-pill)" }} />
+                ))}
               </div>
             </div>
           ))}
-        </div>
+        </>
       ) : loadFailed ? (
         <div className="card agenda">
           <LoadFailed noun="jobs" onRetry={() => void refetch()} retrying={isRefetching} />
         </div>
-      ) : (
+      ) : upcoming.length === 0 && finished.length === 0 ? (
         <div className="card agenda">
-          {items.length > 0 ? (
-            items.map((job) => (
-              <JobCard
-                key={job.id}
-                job={job}
-                onOpen={handleOpen}
-                onStart={handleStart}
-                onComplete={handleComplete}
-                isPending={isPending}
-              />
-            ))
-          ) : (
-            <div className="empty-att">No open jobs assigned to you.</div>
-          )}
+          <div className="empty-att">No open jobs assigned to you.</div>
         </div>
+      ) : (
+        <>
+          <h2 className="mdc-sec">Upcoming</h2>
+          {upcoming.length > 0 ? (
+            upcoming.map(renderCard)
+          ) : (
+            <div className="card mdc" style={{ cursor: "default" }}>
+              <div className="empty-att">Nothing left on the route — nice work.</div>
+            </div>
+          )}
+          {finished.length > 0 ? (
+            <>
+              <h2 className="mdc-sec">Finished today</h2>
+              {finished.map(renderCard)}
+            </>
+          ) : null}
+        </>
       )}
     </>
   );

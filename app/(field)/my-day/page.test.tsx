@@ -31,6 +31,10 @@ let completeOpts: typeof startOpts = {};
 let startPending = false;
 const startMutate = vi.fn();
 const completeMutate = vi.fn();
+let enrouteOpts: { onMutate?: (v: { jobId: string; visitId: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
+let visitStatusOpts: { onMutate?: (v: { jobId: string; visitId: string; status: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
+const enrouteMutate = vi.fn();
+const visitStatusMutate = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
@@ -58,6 +62,18 @@ vi.mock("@/lib/trpc/client", () => ({
           useMutation: (opts: typeof completeOpts) => {
             completeOpts = opts;
             return { mutate: completeMutate, isPending: false };
+          },
+        },
+        setVisitEnroute: {
+          useMutation: (opts: typeof enrouteOpts) => {
+            enrouteOpts = opts;
+            return { mutate: enrouteMutate, isPending: false };
+          },
+        },
+        setVisitStatus: {
+          useMutation: (opts: typeof visitStatusOpts) => {
+            visitStatusOpts = opts;
+            return { mutate: visitStatusMutate, isPending: false };
           },
         },
       },
@@ -109,7 +125,7 @@ describe("My day — the screen moves when you press", () => {
 
   it("flips the card on the press, not two round trips later", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Start job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Arrived" }));
 
     expect(startMutate).toHaveBeenCalledWith({ jobId: "job-1" });
     // The optimistic patch is what the user actually sees change.
@@ -123,7 +139,7 @@ describe("My day — the screen moves when you press", () => {
     // exactly the window that turned one press into six.
     queryState = { data: { items: [job()], customers: [] }, isLoading: false, isFetching: true };
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Start job" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Arrived" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("says so when the clock threw the segment away for being under a minute", () => {
@@ -165,16 +181,16 @@ describe("My day — the screen moves when you press", () => {
   // offered only "Start job" and the endpoint behind ✓ Complete refused a scheduled job outright.
   // A technician who finished a call without tapping Start hit a wall on the card and none on the
   // sheet, which reads as the app contradicting itself. v1.field.complete now starts it first.
-  it("lets a SCHEDULED job be completed without pressing Start first", () => {
+  it("lets a SCHEDULED job be completed without pressing Arrived first", () => {
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Start job" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    expect(screen.getByRole("button", { name: "Arrived" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
   });
 
   it("still moves the card straight to done on that press", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     completeOpts.onMutate?.({ jobId: "job-1" });
     const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { status: string }[] };
     expect(patch({ items: [job()] }).items[0]!.status).toBe("complete");
@@ -282,8 +298,10 @@ describe("My day — the time on the card", () => {
   // while the board — correctly — showed today 9a. The visit already worked is history; the card
   // reads the next one to drive to.
   it("shows the NEXT live visit on a half-done job, not the visit already worked", () => {
+    // The worked stop carries its real finish stamp — yesterday — so it belongs to the pager's
+    // view of yesterday, not to today's glass. Only the return trip renders here.
     withVisits([
-      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete" }),
+      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete", completedAt: "2026-06-30T19:30:00.000Z" }),
       visit({ id: "v2", scheduledDate: "2026-07-01", scheduledStart: "09:00", status: "pending" }),
     ]);
     render(<MyDayPage />);
@@ -304,7 +322,7 @@ describe("My day — the time on the card", () => {
   // has no slot yet — not quietly re-adopt the done visit's stale day and time.
   it("says 'Not scheduled' when the only LIVE visit is unplaced, not the done visit's old slot", () => {
     withVisits([
-      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete" }),
+      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete", completedAt: "2026-06-30T19:30:00.000Z" }),
       visit({ id: "v2", status: "pending" }),
     ]);
     render(<MyDayPage />);
@@ -416,16 +434,16 @@ describe("My day — the whole row opens the job, not just the words", () => {
     expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
   });
 
-  it("opens from the job-number line under the title", () => {
-    render(<MyDayPage />);
-    fireEvent.click(screen.getByText(/JOB-1011/));
+  it("opens from the progress strip, which is not a word anyone typed", () => {
+    const { container } = render(<MyDayPage />);
+    fireEvent.click(container.querySelector(".mdc-steps")!);
     expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
   });
 
   // THE REGRESSION. This is the band that swallowed the tap.
-  it("opens from the empty strip beside the action button", () => {
+  it("opens from the empty strip beside the action buttons", () => {
     const { container } = render(<MyDayPage />);
-    const acts = container.querySelector(".md-acts");
+    const acts = container.querySelector(".fca-row");
     expect(acts).not.toBeNull();
     // Clicking the WRAPPER, not the button inside it — the pixels a thumb lands on.
     fireEvent.click(acts!);
@@ -440,18 +458,44 @@ describe("My day — the whole row opens the job, not just the words", () => {
     expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
   });
 
-  it("starts the job without also opening it when Start job is pressed", () => {
+  // The card is a VISIT now, so its buttons write the visit mutations — the same ones the job
+  // sheet uses. Arrived must not also open the sheet.
+  it("marks the visit arrived without also opening the sheet", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Start job" }));
-    expect(startMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Arrived" }));
+    expect(visitStatusMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1", status: "in_progress" });
     expect(openModal).not.toHaveBeenCalled();
   });
 
-  it("completes the job without also opening it when ✓ Complete is pressed", () => {
-    queryState = rowAt({ status: "in_progress" });
+  it("finishes the visit without also opening the sheet", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
-    expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(visitStatusMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1", status: "complete" });
     expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("sends on-my-way from the card and patches the stamp optimistically", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "On my way" }));
+    expect(enrouteMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1" });
+    enrouteOpts.onMutate?.({ jobId: "job-1", visitId: "visit-1" });
+    const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { visits: { enrouteAt: string | null }[] }[] };
+    const patched = patch({ items: [job({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30" })] })] });
+    expect(patched.items[0]!.visits[0]!.enrouteAt).not.toBeNull();
+  });
+
+  it("shows the live On-site-since stamp while the visit is in progress", () => {
+    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30", status: "in_progress", startedAt: "2026-07-01T19:38:00.000Z" })] });
+    render(<MyDayPage />);
+    expect(screen.getByText(/On site · since/)).toBeTruthy();
+  });
+
+  it("hides On my way once the tech is on site — a stamp nobody needs anymore", () => {
+    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30", status: "in_progress" })] });
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: "On my way" })).toBeNull();
+    // On site: Done is the one primary left.
+    expect(screen.queryByRole("button", { name: "Arrived" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
   });
 });
