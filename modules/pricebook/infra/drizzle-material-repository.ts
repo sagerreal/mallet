@@ -88,6 +88,14 @@ export class DrizzleMaterialRepository implements MaterialRepository {
     return row ? rowToMaterial(row) : null;
   }
 
+  async allNames(): Promise<string[]> {
+    const rows = await this.tx
+      .select({ name: pricebookMaterials.name })
+      .from(pricebookMaterials)
+      .where(and(eq(pricebookMaterials.orgId, this.orgId), isNull(pricebookMaterials.deletedAt)));
+    return rows.map((r) => r.name);
+  }
+
   async list(
     page: CursorPage,
     filter: { search?: string; categoryId?: string | null },

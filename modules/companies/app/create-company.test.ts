@@ -76,6 +76,11 @@ class FakeCompanyRepository implements CompanyRepository {
     return this.store.get(id) ?? null;
   }
 
+  async findByNames(names: readonly string[]): Promise<Company[]> {
+    const wanted = new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean));
+    return [...this.store.values()].filter((c) => wanted.has(c.props.name.trim().toLowerCase()));
+  }
+
   async list(): Promise<{ items: Company[]; nextCursor: string | null }> {
     throw new Error("list not used in create tests");
   }

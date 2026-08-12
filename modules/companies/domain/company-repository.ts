@@ -16,6 +16,14 @@ export interface CompanyRepository {
   }): Promise<Company>;
 
   findById(id: CompanyId): Promise<Company | null>;
+  /**
+   * Live companies whose name matches any of `names`, case-insensitively, in ONE read.
+   *
+   * For bulk import, which has to know whether a row is new or overwrites an existing account
+   * BEFORE it writes — and must answer that for a whole chunk without an N+1. Returns every
+   * match, so a caller can see when a name identifies more than one account.
+   */
+  findByNames(names: readonly string[]): Promise<Company[]>;
 
   list(page: CursorPage): Promise<Paginated<Company>>;
 

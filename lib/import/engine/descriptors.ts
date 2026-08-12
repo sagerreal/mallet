@@ -172,6 +172,156 @@ export const JOB_IMPORT: ImportDescriptor = {
 };
 
 /**
+ * Companies — the B2B accounts a shop bills, as distinct from the individual contacts inside
+ * them. A property manager is one company with several site contacts; the contacts are customers.
+ *
+ * Re-import updates rather than duplicating, matched on name: a shop refreshing its account list
+ * should not end up with two of everything.
+ */
+export const COMPANY_IMPORT: ImportDescriptor = {
+  entity: "companies",
+  label: "Companies",
+  chunkSize: 500,
+  fields: [
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      synonyms: ["company name", "account name", "business name", "organisation", "organization", "company", "account", "name"],
+      coerce: "text",
+      maxLength: 255,
+      onInvalid: { kind: "skip-row", message: "No name — row skipped." },
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      synonyms: ["main phone", "office phone", "phone", "telephone"],
+      coerce: "phone",
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "email",
+      label: "Email",
+      synonyms: ["email address", "e-mail", "email"],
+      coerce: "email",
+      maxLength: 320,
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "website",
+      label: "Website",
+      synonyms: ["website", "web", "url", "site"],
+      coerce: "text",
+      maxLength: 500,
+    },
+    {
+      key: "address",
+      label: "Address",
+      synonyms: ["billing address", "office address", "street", "address"],
+      coerce: "text",
+      maxLength: 500,
+    },
+    {
+      key: "notes",
+      label: "Notes",
+      synonyms: ["notes", "note", "description", "memo"],
+      coerce: "text",
+      maxLength: 2000,
+    },
+  ],
+};
+
+/**
+ * Pricebook materials — the sellable parts a shop stocks.
+ *
+ * Mirrors SERVICE_IMPORT, with two differences that come from the material model: COST is the
+ * primary number (a material's sell price is normally derived from cost by the markup rule, so a
+ * sheet of costs is the common case), and a unit of measure comes along with it.
+ *
+ * An explicit price flips the material to manual pricing, which is the same one-gesture override
+ * the pricebook UI offers — so a sheet carrying prices means the shop has decided them.
+ */
+export const MATERIAL_IMPORT: ImportDescriptor = {
+  entity: "materials",
+  label: "Materials",
+  chunkSize: 500,
+  fields: [
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      synonyms: ["material name", "part name", "item name", "part", "item", "material", "name"],
+      coerce: "text",
+      maxLength: 500,
+      onInvalid: { kind: "skip-row", message: "No name — row skipped." },
+    },
+    {
+      key: "category",
+      label: "Category",
+      synonyms: ["category", "material category", "type", "group"],
+      coerce: "text",
+      maxLength: 255,
+    },
+    {
+      key: "code",
+      label: "Code",
+      synonyms: ["code", "sku", "part number", "part no", "item code"],
+      coerce: "text",
+      maxLength: 120,
+    },
+    {
+      key: "unitCostCents",
+      label: "Cost",
+      // Cost first: a material's price is usually DERIVED from it, so this is the number a
+      // supplier sheet actually carries.
+      synonyms: ["unit cost", "our cost", "buy price", "cost"],
+      coerce: "money",
+      whenBlank: 0,
+      onInvalid: { kind: "fallback", value: 0, note: "imported at $0." },
+    },
+    {
+      key: "unitPriceCents",
+      label: "Price",
+      // Optional, and meaningful by its absence: no price means the markup rule decides.
+      synonyms: ["customer price", "sell price", "retail", "price"],
+      coerce: "money",
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "unitOfMeasure",
+      label: "Unit",
+      synonyms: ["unit of measure", "uom", "unit"],
+      coerce: "text",
+      maxLength: 40,
+      // The column is NOT NULL with an "each" default, so a blank cell must send the default
+      // rather than null — there is nothing to clear it to.
+      whenBlank: "each",
+    },
+    {
+      key: "vendor",
+      label: "Vendor",
+      synonyms: ["vendor", "supplier", "manufacturer"],
+      coerce: "text",
+      maxLength: 255,
+    },
+    {
+      key: "description",
+      label: "Description",
+      synonyms: ["description", "details", "notes"],
+      coerce: "text",
+      maxLength: 10_000,
+    },
+    {
+      key: "taxable",
+      label: "Taxable",
+      synonyms: ["taxable", "tax"],
+      coerce: "boolean",
+      whenBlank: true,
+    },
+  ],
+};
+
+/**
  * Pricebook services. `name` is required; an unreadable price or cost warns and falls back to
  * zero rather than dropping the row — a service with a missing price is still worth importing,
  * and the shop can correct it. Clamps mirror pricebook-router.ts.

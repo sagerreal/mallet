@@ -23,6 +23,12 @@ export interface MaterialRepository {
   }): Promise<Material>;
 
   findById(id: MaterialId): Promise<Material | null>;
+  /**
+   * Every live material name, unpaginated. For the import confirm step, which has to tell a shop
+   * how many rows will OVERWRITE an existing material before it writes any of them. Names only —
+   * the question is answered by string comparison. Mirrors ServiceRepository.allNames.
+   */
+  allNames(): Promise<string[]>;
 
   list(
     page: CursorPage,

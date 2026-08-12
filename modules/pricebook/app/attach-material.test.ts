@@ -149,6 +149,10 @@ class FakeMaterialRepository implements MaterialRepository {
     throw new Error("archive not used in attach tests");
   }
 
+  async allNames(): Promise<string[]> {
+    return [...this.store.values()].map((m) => m.props.name);
+  }
+
   async list(
     _page: CursorPage,
     _filter: { search?: string; categoryId?: string | null },
