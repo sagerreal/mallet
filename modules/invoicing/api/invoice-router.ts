@@ -28,6 +28,10 @@ import { VoidInvoiceUseCase } from "../app/void-invoice";
 import { ListInvoicesUseCase } from "../app/list-invoices";
 import { UpdateInvoiceMetadataUseCase } from "../app/update-invoice-metadata";
 import { PatchInvoiceLinesUseCase } from "../app/patch-invoice-lines";
+import { RecordCardPaymentUseCase } from "../app/record-card-payment";
+import { reconcileCheckoutSession } from "../app/reconcile-checkout";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { logger } from "@mallet/shared/observability";
 
 const statusEnum = z.enum(INVOICE_STATUSES as unknown as [InvoiceStatus, ...InvoiceStatus[]]);
 const viewEnum = z.enum(INVOICE_VIEWS);
@@ -566,7 +570,7 @@ export const createInvoiceRouter = () =>
     // customer). Disabled with PRECONDITION_FAILED when Stripe is not configured.
     createPayment: ownerOrOffice
       .input(idInput)
-      .output(z.object({ url: z.string().url() }))
+      .output(z.object({ url: z.string().url(), sessionId: z.string() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.deps.paymentLinkGateway) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
@@ -577,7 +581,56 @@ export const createInvoiceRouter = () =>
         const result = orThrow(
           await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: asInvoiceId(input.invoiceId) }),
         );
-        return { url: result.url };
+        return { url: result.url, sessionId: result.sessionId };
+      }),
+
+    /**
+     * Reconcile a checkout session THIS DEVICE minted — retrieve it from Stripe and, if paid,
+     * record the payment through the same idempotent path as the webhook and the success page.
+     *
+     * WHY A THIRD RECORDER: the webhook needs configuration to exist, and the success page needs
+     * the CUSTOMER's browser to complete the redirect — in the QR flow they pay on their own
+     * phone and close the tab at Stripe's success screen, which is exactly what the platform
+     * sweep did: session `complete/paid` on Stripe, invoice still `sent`, $0 recorded. The open
+     * payment sheet polls this instead of a passive read, so the device showing the QR settles
+     * the books itself. Idempotency keys on the payment_intent id, so whichever recorder lands
+     * second is a no-op.
+     */
+    reconcileCheckout: ownerOrOffice
+      .input(z.object({ invoiceId: z.string().uuid(), sessionId: z.string().min(10).max(200) }))
+      .output(z.object({ recorded: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const config = loadConfig();
+        if (!config.STRIPE_SECRET_KEY) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const client = getSharedStripeClient(config.STRIPE_SECRET_KEY);
+        const orgId = ctx.principal.orgId;
+        const outcome = await reconcileCheckoutSession(input.sessionId, {
+          retrieveSession: (id) => client.retrieveCheckoutSession(id),
+          recordPayment: async (metaOrgId, invoiceId, amountCents, paymentIntentId) => {
+            // The session's own metadata names the org and invoice it was minted for. An authed
+            // caller may only settle THEIR org's session onto the invoice they named — anything
+            // else is a session id fished out of another tenant.
+            if (metaOrgId !== orgId || invoiceId !== input.invoiceId) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
+            }
+            const repo = new DrizzleInvoiceRepository(ctx.tx, orgId);
+            const useCase = new RecordCardPaymentUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+            orThrow(
+              await useCase.exec({
+                orgId,
+                invoiceId: asInvoiceId(invoiceId),
+                amountCents,
+                paymentIntentId,
+              }),
+            );
+          },
+          // Deposit sessions belong to the QUOTE flow — this endpoint settles invoices only.
+          recordDeposit: async () => false,
+          log: (message, logCtx) => logger.warn(logCtx ?? {}, message),
+        });
+        return { recorded: outcome.recorded };
       }),
 
     get: ownerOrOffice

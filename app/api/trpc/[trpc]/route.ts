@@ -28,12 +28,18 @@ const handler = (req: Request): Promise<Response> =>
     // off the error, and those are customer phone numbers, addresses and names.
     onError: ({ error, path, type }) => {
       if (error.code !== "INTERNAL_SERVER_ERROR") return;
+      // The driver's own sentence ("duplicate key value violates …", "column x does not
+      // exist"), WITHOUT the bound parameters (which carry customer PII — see above). For a
+      // DrizzleQueryError the message is the query text and the real reason lives one cause
+      // deeper; without this line the platform sweep had to guess a failed INSERT's constraint.
+      const cause = error.cause as (Error & { cause?: Error }) | undefined;
       logger.error(
         {
           path,
           type,
           code: error.code,
-          cause: error.cause?.constructor?.name ?? null,
+          cause: cause?.constructor?.name ?? null,
+          causeMessage: cause?.cause?.message?.slice(0, DETAIL_MAX) ?? null,
           detail: error.message.slice(0, DETAIL_MAX),
         },
         "trpc.unhandled",

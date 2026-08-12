@@ -18,6 +18,8 @@ export interface CreatePaymentCommand {
 
 export interface CreatedPayment {
   readonly url: string;
+  /** The cs_… session id — the minting device polls reconcileCheckout with it. */
+  readonly sessionId: string;
 }
 
 // Create a Stripe-hosted payment for an invoice's balance and return the URL (delivered to the
@@ -73,6 +75,9 @@ export class CreatePaymentUseCase {
       applicationFeeCents,
     });
     if (!isOk(session)) return err(session.error);
-    return ok({ url: session.value.url });
+    // The session id rides back with the url: the device that minted the checkout polls
+    // reconcileCheckout with it, so a paid session is recorded even when the customer never
+    // completes the success redirect (QR flow: they pay on THEIR phone and close the tab).
+    return ok({ url: session.value.url, sessionId: session.value.externalRef });
   }
 }

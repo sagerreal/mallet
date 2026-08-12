@@ -87,7 +87,13 @@ export async function prepare(page: Page, theme: "light" | "dark"): Promise<void
   await page.addInitScript(
     ({ theme: themeName, frozen }: { theme: string; frozen: number }) => {
       window.localStorage.setItem("mallet-theme", themeName);
-      document.documentElement.setAttribute("data-theme", themeName);
+      // Init scripts can run before the document element exists (about:blank hops,
+      // some navigations) — the bare call threw "null.setAttribute" as a pageerror on
+      // EVERY page, which the platform sweep chased as an app bug for a day. Guard +
+      // re-apply once the DOM is real.
+      const applyTheme = () => document.documentElement?.setAttribute("data-theme", themeName);
+      applyTheme();
+      document.addEventListener("DOMContentLoaded", applyTheme, { once: true });
 
       const OriginalDate = Date;
       class FrozenDate extends OriginalDate {
