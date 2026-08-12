@@ -1,4 +1,4 @@
-# mallet-ios
+# mallet-mobile
 
 Two separate apps. They stay separate until the accuracy question below is answered.
 
