@@ -57,6 +57,10 @@ captures/
 #*.jks
 #*.keystore
 
+# Play upload keystore + credentials — NEVER commit (see keystore/README-SECRETS.md)
+keystore/
+keystore.properties
+
 # External native build folder generated in Android Studio 2.2 and later
 .externalNativeBuild
 .cxx/

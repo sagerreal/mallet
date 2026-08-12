@@ -8,6 +8,25 @@ Play Console login can do.
 
 ---
 
+## Status (2026-08-12)
+
+Everything a machine can do is DONE and in the repo. What remains is exactly the
+human/Console work:
+
+| # | Item | Status |
+|---|---|---|
+| 2 | Upload keystore | ✅ DONE — `shell/android/keystore/mallet-upload.keystore` (RSA 4096, git-ignored). **Owen: back it up** — see `shell/android/keystore/README-SECRETS.md` |
+| 4 | Signed release AAB | ✅ DONE — `signingConfigs.release` reads the git-ignored `shell/android/keystore.properties`; `./gradlew bundleRelease` emits a signed, jarsigner-verified `app/build/outputs/bundle/release/app-release.aab` |
+| 6 | Data safety answers | ✅ DONE — copy-paste table in [play-listing.md](play-listing.md) |
+| 7 | Privacy policy | ✅ Already live at <https://trymallet.com/privacy> — just paste the URL |
+| 8 | Store listing | ✅ DONE — copy in [play-listing.md](play-listing.md); 512 icon, 1024×500 feature graphic, and 1080×1920 screenshots in `shell/store-assets/` |
+| 1 | Play Console account ($25) | ⬜ Owen |
+| 3 | Create the app + accept Play App Signing | ⬜ Owen |
+| — | Upload the AAB, paste listing copy/assets, fill the forms | ⬜ Owen (all inputs prepared) |
+| — | App-access demo credentials for review | ⬜ Owen (use a demo org, never a real shop) |
+| 5 | `assetlinks.json` in the WEB repo | ⬜ Owen/later — needs the app-signing SHA-256 that only exists after first upload |
+| 9 | Add testers | ⬜ Owen |
+
 ## OWEN CHECKLIST — in order
 
 1. **Play Console developer account — $25 one-time.** <https://play.google.com/console/signup>.
@@ -21,25 +40,22 @@ Play Console login can do.
      phones via internal testing" (internal testing has no such gate, 100 testers max) —
      but plan the org account before any public launch.
 
-2. **Create the upload keystore** (one time, on your Mac — do NOT regenerate later; losing
-   it is recoverable only because Play App Signing holds the real key):
-
-   ```bash
-   keytool -genkeypair -v \
-     -keystore ~/mallet-upload.keystore \
-     -alias mallet-upload \
-     -keyalg RSA -keysize 2048 -validity 10000 \
-     -dname "CN=Mallet, O=Mallet, C=US"
-   ```
-
-   It prompts for a keystore password — put the password and the file in your password
-   manager. This key only signs *uploads*; Google re-signs what users download.
+2. **Create the upload keystore** — ✅ DONE 2026-08-12. It lives at
+   `shell/android/keystore/mallet-upload.keystore` (RSA 4096, alias `mallet-upload`,
+   validity 10000 days), password in `shell/android/keystore/keystore-password.txt`,
+   both git-ignored. Upload-cert SHA-256 and backup instructions:
+   `shell/android/keystore/README-SECRETS.md`. **Your one remaining action: put the
+   keystore file + password in your password manager.** Do NOT regenerate it; losing
+   it is recoverable only because Play App Signing holds the real key.
 
 3. **Enroll in Play App Signing** (default for new apps — just accept it when creating the
    app in the Console). Google mints the real app-signing key; the keystore from step 2 is
    registered as the upload key on your first upload.
 
-4. **Build and upload the first release** (internal testing track first):
+4. **Build and upload the first release** (internal testing track first) — build half
+   ✅ DONE: `app/build.gradle` now has a `signingConfigs.release` block that reads the
+   git-ignored `shell/android/keystore.properties` (falls back to an unsigned build when
+   the file is absent, e.g. CI), so one command produces a signed bundle:
 
    ```bash
    cd shell/android
@@ -48,14 +64,9 @@ Play Console login can do.
    ./gradlew bundleRelease
    ```
 
-   then sign the AAB with the upload key — either add a `signingConfigs.release` block to
-   `app/build.gradle` reading the keystore path/password from `~/.gradle/gradle.properties`
-   (never commit credentials), or sign the bundle manually:
-
-   ```bash
-   jarsigner -keystore ~/mallet-upload.keystore \
-     app/build/outputs/bundle/release/app-release.aab mallet-upload
-   ```
+   Output: `app/build/outputs/bundle/release/app-release.aab`, already signed with the
+   upload key (verify anytime with `jarsigner -verify` — expect `jar verified.` and a
+   `CN=Mallet` cert; the self-signed warning is normal for an upload key).
 
    Upload `app-release.aab` at Play Console → Testing → Internal testing → Create release.
 
