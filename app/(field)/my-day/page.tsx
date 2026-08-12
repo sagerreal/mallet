@@ -29,9 +29,14 @@ import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { useMyDayInput } from "@/features/field/my-day-input";
-import { todayISO } from "@/lib/clock";
+import { todayISO, addDaysISO } from "@/lib/clock";
+import { useAppStore } from "@/lib/store/app-store";
 import { deriveDayCards, type DayCard } from "./visit-cards";
+import { deriveDayView } from "./day-view";
 import { JobCard } from "./job-card";
+import { DayPager, DAY_PAGER_REACH } from "./day-pager";
+import { DaySummaryCard } from "./day-summary-card";
+import { useEffect, useRef, useState } from "react";
 
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 type FieldCustomer = RouterOutputs["v1"]["field"]["myDay"]["customers"][number];
@@ -39,6 +44,13 @@ type VisitSummary = JobSummary["visits"][number];
 
 export default function MyDayPage() {
   const utils = api.useUtils();
+  // Which day the agenda is looking at. 0 = today (the live path below, untouched); the pager
+  // moves it within ±DAY_PAGER_REACH. Paging is a VIEW change only — it must never touch the
+  // running clock, which is a server-side time entry the DayClock merely renders.
+  const [dayOffset, setDayOffset] = useState(0);
+  const slideDir = useRef<"fwd" | "back" | null>(null);
+  const viewDate = addDaysISO(todayISO(), dayOffset);
+  const viewingToday = dayOffset === 0;
   // The agenda must stay live once mounted: the dispatcher reassigns a visit at a desk while this
   // page sits open on a phone in the truck, and no store invalidation can reach a different
   // device. Focus refetch covers "picked the phone back up"; the interval covers "screen was on
@@ -50,6 +62,23 @@ export default function MyDayPage() {
     refetchOnWindowFocus: true,
     refetchInterval: 60_000,
   });
+
+  // The paged-to day — v1.field.day, the visit-scoped read built for exactly this. No polling:
+  // yesterday does not change under you the way today does.
+  const pagedDay = api.v1.field.day.useQuery(
+    { date: viewDate },
+    { enabled: !viewingToday, staleTime: 300_000, refetchOnWindowFocus: false },
+  );
+
+  // The job sheet reads the STORE (hydrated from today's myDay). A paged day's jobs may not be
+  // in it, so adopt them — merge-in, never setJobs, which would wipe today's agenda.
+  const adoptJob = useAppStore((s) => s.adoptJob);
+  useEffect(() => {
+    if (viewingToday || !pagedDay.data) return;
+    for (const item of pagedDay.data.items) {
+      adoptJob(item as unknown as Parameters<typeof adoptJob>[0]);
+    }
+  }, [viewingToday, pagedDay.data, adoptJob]);
 
   /**
    * The clock does things to your hours that the button does not look like it did. Say them.
@@ -137,13 +166,16 @@ export default function MyDayPage() {
     visitStatusMutation.isPending ||
     isFetching;
 
-  const items = data?.items ?? [];
-  const customers = data?.customers ?? [];
+  const items = viewingToday ? (data?.items ?? []) : (pagedDay.data?.items ?? []);
+  const customers = viewingToday ? (data?.customers ?? []) : (pagedDay.data?.customers ?? []);
   const hasClock = useTimesheetClock();
 
   const jobsById = new Map(items.map((j) => [j.id, j]));
   const customersById = new Map(customers.map((c) => [c.id, c]));
-  const { upcoming, finished } = deriveDayCards(items, todayISO());
+  const todayCards = deriveDayCards(viewingToday ? items : [], todayISO());
+  const dayView = deriveDayView(viewingToday ? [] : items, viewDate);
+  const upcoming = viewingToday ? todayCards.upcoming : dayView.open;
+  const finished = viewingToday ? todayCards.finished : dayView.finished;
 
   // A dead fetch is not a free afternoon: rows already in hand stay (stale beats a wall), and an
   // error with nothing in hand says so instead of rendering a convincing empty day.
@@ -187,9 +219,9 @@ export default function MyDayPage() {
         isPending={isPending}
         onOpen={openSheet}
         onDirections={(addr) => window.open(`https://maps.google.com/?q=${encodeURIComponent(addr)}`, "_blank", "noopener,noreferrer")}
-        onMyWay={visitId !== null && card.step === 0 ? myWay : null}
-        onArrived={card.step < 2 ? arrive : null}
-        onDone={card.step < 3 ? done : null}
+        onMyWay={viewingToday && visitId !== null && card.step === 0 ? myWay : null}
+        onArrived={viewingToday && card.step < 2 ? arrive : null}
+        onDone={viewingToday && card.step < 3 ? done : null}
       />
     );
   }
@@ -203,9 +235,30 @@ export default function MyDayPage() {
           loading state must not blank the row that says whether he is being paid. A sheet shop
           has no punch clock — its crew type their week on My hours instead, so the control hides
           entirely rather than sitting inert. */}
-      {hasClock ? <DayClock jobs={items} /> : null}
+      {viewingToday && hasClock ? <DayClock jobs={items} /> : null}
+      {!viewingToday ? (
+        <DaySummaryCard
+          dateISO={viewDate}
+          isPast={dayOffset < 0}
+          scheduledMinutes={dayView.scheduledMinutes}
+          jobCount={dayView.jobCount}
+        />
+      ) : null}
 
-      {isLoading ? (
+      <DayPager
+        dateISO={viewDate}
+        offset={dayOffset}
+        onStep={(delta) => {
+          slideDir.current = delta > 0 ? "fwd" : "back";
+          setDayOffset((o) => Math.max(-DAY_PAGER_REACH, Math.min(DAY_PAGER_REACH, o + delta)));
+        }}
+        onToday={() => {
+          slideDir.current = dayOffset > 0 ? "back" : "fwd";
+          setDayOffset(0);
+        }}
+      />
+
+      {(viewingToday ? isLoading : pagedDay.isLoading) ? (
         // The skeleton is the CARD's own shape — title line, address line, the circle row — so
         // content arrival replaces it without a jump.
         <>
@@ -221,31 +274,47 @@ export default function MyDayPage() {
             </div>
           ))}
         </>
-      ) : loadFailed ? (
+      ) : (viewingToday ? loadFailed : shouldShowLoadFailed({ isFetched: pagedDay.isFetched, isError: pagedDay.isError, count: items.length })) ? (
         <div className="card agenda">
-          <LoadFailed noun="jobs" onRetry={() => void refetch()} retrying={isRefetching} />
-        </div>
-      ) : upcoming.length === 0 && finished.length === 0 ? (
-        <div className="card agenda">
-          <div className="empty-att">No open jobs assigned to you.</div>
+          <LoadFailed
+            noun="jobs"
+            onRetry={() => void (viewingToday ? refetch() : pagedDay.refetch())}
+            retrying={viewingToday ? isRefetching : pagedDay.isRefetching}
+          />
         </div>
       ) : (
-        <>
-          <h2 className="mdc-sec">Upcoming</h2>
-          {upcoming.length > 0 ? (
-            upcoming.map(renderCard)
-          ) : (
-            <div className="card mdc" style={{ cursor: "default" }}>
-              <div className="empty-att">Nothing left on the route — nice work.</div>
+        <div key={viewDate} className={`mdp-pane ${slideDir.current === "back" ? "slide-back" : slideDir.current === "fwd" ? "slide-fwd" : ""}`}>
+          {upcoming.length === 0 && finished.length === 0 ? (
+            <div className="card agenda">
+              <div className="empty-att">
+                {viewingToday
+                  ? "No open jobs assigned to you."
+                  : dayOffset < 0
+                    ? "Nothing ran this day."
+                    : "Nothing booked this day yet."}
+              </div>
             </div>
-          )}
-          {finished.length > 0 ? (
+          ) : (
             <>
-              <h2 className="mdc-sec">Finished today</h2>
-              {finished.map(renderCard)}
+              {upcoming.length > 0 || viewingToday ? (
+                <h2 className="mdc-sec">{viewingToday ? "Upcoming" : dayOffset < 0 ? "Not finished" : "Scheduled"}</h2>
+              ) : null}
+              {upcoming.length > 0 ? (
+                upcoming.map(renderCard)
+              ) : viewingToday ? (
+                <div className="card mdc" style={{ cursor: "default" }}>
+                  <div className="empty-att">Nothing left on the route — nice work.</div>
+                </div>
+              ) : null}
+              {finished.length > 0 ? (
+                <>
+                  <h2 className="mdc-sec">{viewingToday ? "Finished today" : "Finished"}</h2>
+                  {finished.map(renderCard)}
+                </>
+              ) : null}
             </>
-          ) : null}
-        </>
+          )}
+        </div>
       )}
     </>
   );

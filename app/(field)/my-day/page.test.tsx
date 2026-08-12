@@ -35,6 +35,12 @@ let enrouteOpts: { onMutate?: (v: { jobId: string; visitId: string }) => void; o
 let visitStatusOpts: { onMutate?: (v: { jobId: string; visitId: string; status: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
 const enrouteMutate = vi.fn();
 const visitStatusMutate = vi.fn();
+const adoptJobSpy = vi.fn();
+let dayQueryState: { data: unknown; isLoading: boolean; isFetched?: boolean; isError?: boolean; isRefetching?: boolean } = {
+  data: undefined,
+  isLoading: false,
+};
+const dayRefetch = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
@@ -50,6 +56,7 @@ vi.mock("@/lib/trpc/client", () => ({
     v1: {
       // The field surface's only settings read — punch clock vs sheet. Defaults on.
       settings: { fieldToggles: { useQuery: () => ({ data: { timesheetClock: true } }) } },
+      timesheets: { list: { useQuery: () => ({ data: { items: [] }, isFetched: true, isError: false }) } },
       field: {
         myDay: { useQuery: () => ({ ...queryState, refetch }) },
         start: {
@@ -76,6 +83,7 @@ vi.mock("@/lib/trpc/client", () => ({
             return { mutate: visitStatusMutate, isPending: false };
           },
         },
+        day: { useQuery: () => ({ ...dayQueryState, refetch: dayRefetch }) },
       },
     },
   },
@@ -90,7 +98,10 @@ vi.mock("@/lib/store/write-error", () => ({
 
 // One stable spy, not a fresh vi.fn() per render — the row-tap tests below assert on it.
 const openModal = vi.fn();
-vi.mock("@/lib/store/app-store", () => ({ useOpenModal: () => openModal }));
+vi.mock("@/lib/store/app-store", () => ({
+  useOpenModal: () => openModal,
+  useAppStore: (sel: (s: { adoptJob: typeof adoptJobSpy }) => unknown) => sel({ adoptJob: adoptJobSpy }),
+}));
 vi.mock("@/features/field/day-clock", () => ({ DayClock: () => <div /> }));
 
 import MyDayPage from "./page";
@@ -366,11 +377,12 @@ describe("My day — which day a row is actually from", () => {
   };
 
   // The pinned clock is 2026-07-01 (vitest.setup.ts).
-  it("prints the time ALONE for today — a 'Today' label on every row is noise", () => {
+  it("prints the time ALONE for today — a 'Today' label on every card is noise", () => {
     withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })]);
-    render(<MyDayPage />);
+    const { container } = render(<MyDayPage />);
     expect(screen.getByText("8:30a")).toBeTruthy();
-    expect(screen.queryByText("Today")).toBeNull();
+    // The PAGER says Today (its job); the card's own when-column must not repeat it.
+    expect(container.querySelector(".mdc-when .md-day")).toBeNull();
   });
 
   // THE DEFECT: this row sorts to the top of the list and used to be indistinguishable from the
@@ -497,5 +509,77 @@ describe("My day — the whole row opens the job, not just the words", () => {
     // On site: Done is the one primary left.
     expect(screen.queryByRole("button", { name: "Arrived" })).toBeNull();
     expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE DAY PAGER. Paging is a VIEW change: today keeps its live path untouched, a paged day reads
+// v1.field.day, and no card on another day offers Arrived/Done — you cannot be en route to
+// Thursday. The running clock must survive paging (it is a server row the DayClock renders).
+// ---------------------------------------------------------------------------
+
+describe("My day — the day pager", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+    queryState = {
+      data: { items: [job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })] })], customers: [] },
+      isLoading: false,
+      isFetching: false,
+    };
+    dayQueryState = { data: undefined, isLoading: false, isFetched: false, isError: false };
+  });
+
+  it("starts on Today with the date beside it", () => {
+    render(<MyDayPage />);
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeTruthy();
+    expect(screen.queryByText("Back to today")).toBeNull();
+  });
+
+  it("pages forward to Tomorrow, reads field.day, and offers the way back", () => {
+    dayQueryState = {
+      data: { items: [job({ visits: [visit({ id: "visit-9", scheduledDate: "2026-07-02", scheduledStart: "10:00" })] })], customers: [] },
+      isLoading: false,
+      isFetched: true,
+      isError: false,
+    };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(screen.getByText("Tomorrow")).toBeTruthy();
+    expect(screen.getByText("Back to today")).toBeTruthy();
+    // Tomorrow's card offers no state buttons — the sheet handles corrections, the card does not.
+    expect(screen.queryByRole("button", { name: "Arrived" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "On my way" })).toBeNull();
+  });
+
+  it("returns to the live today view from Back to today", () => {
+    dayQueryState = { data: { items: [], customers: [] }, isLoading: false, isFetched: true, isError: false };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByText("Back to today"));
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arrived" })).toBeTruthy();
+  });
+
+  it("adopts a paged day's jobs into the store so the sheet can open them", () => {
+    dayQueryState = {
+      data: { items: [job({ id: "job-far", visits: [visit({ scheduledDate: "2026-07-02" })] })], customers: [] },
+      isLoading: false,
+      isFetched: true,
+      isError: false,
+    };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(adoptJobSpy).toHaveBeenCalled();
+  });
+
+  it("names an empty past day honestly", () => {
+    dayQueryState = { data: { items: [], customers: [] }, isLoading: false, isFetched: true, isError: false };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(screen.getByText("Yesterday")).toBeTruthy();
+    expect(screen.getByText("Nothing ran this day.")).toBeTruthy();
   });
 });
