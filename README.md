@@ -1,11 +1,14 @@
 # mallet-ios
 
-Two separate iOS apps. They stay separate until the accuracy question below is answered.
+Two separate apps. They stay separate until the accuracy question below is answered.
 
 | | | |
 |---|---|---|
-| `shell/` | **Mallet on your phone** | Capacitor + WKWebView pointed at the hosted app. `com.trymallet.app` |
+| `shell/` | **Mallet on your phone** | Capacitor webview pointed at the hosted app — iOS (`ios/`) and Android (`android/`), one config, `com.trymallet.app` |
 | `scanner/` | **RoomPlan accuracy instrument** | Standalone SwiftUI, measures a room and prints the numbers. `com.trymallet.scanner` |
+
+(The repo predates the Android platform — the name stuck. Both native shells live in
+`shell/`; Android specifics are in [the Android section below](#shellandroid--the-android-app).)
 
 `mallet-app` is **not modified by any of this**. That is deliberate and worth preserving.
 
@@ -170,6 +173,88 @@ xcrun devicectl device install app --device 350BF3A6-686B-569D-A3D2-663D3670390F
 ```
 
 RoomPlan cannot run in any simulator (no AR, no LiDAR) — the live test is always on-device.
+
+---
+
+## `shell/android` — the Android app
+
+The same shell, regenerated for Android: same `capacitor.config.json`, same
+`https://app.trymallet.com`, same appId, same three npm plugins (Haptics, Keyboard,
+SplashScreen — exactly what iOS registers, no more). **No room scan on Android** — a
+deliberate skip, not a gap: Android hardware has no LiDAR to speak of, and the web app
+gates the scan entry point on `roomScanAvailable()`, which is false when the plugin is
+absent, so the button simply never renders. No dead button, nothing to configure.
+
+### Setup / build
+
+Requires JDK 17+ and an Android SDK (platform 36 + build-tools 36). Headless install on a
+Mac that has neither:
+
+```bash
+brew install openjdk@21
+brew install --cask android-commandlinetools
+export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
+export ANDROID_HOME=/opt/homebrew/share/android-commandlinetools
+yes | sdkmanager --licenses
+sdkmanager "platform-tools" "platforms;android-36" "build-tools;36.0.0"
+```
+
+Then:
+
+```bash
+cd shell
+npm install                    # npm, NOT pnpm — same reason as iOS
+npm run sync:android
+cd android && ./gradlew assembleDebug
+adb install app/build/outputs/apk/debug/app-debug.apk
+```
+
+Release signing, Play Console setup, and the deep-link `assetlinks.json` the WEB repo must
+serve are all in [docs/android-play-submission.md](docs/android-play-submission.md).
+
+### Things that will waste your time if you don't know them
+
+- **The back button is handled natively, in `MainActivity.java` — Capacitor 8 ships NO back
+  handling at all.** Stock `BridgeActivity` lets the system finish the activity on the first
+  back press: the app dies from anywhere. The usual fix is `@capacitor/app`'s JS `backButton`
+  listener, but that needs listener code in the web app (separate repo, also serves
+  iOS/desktop). Instead `MainActivity` registers an `OnBackPressedCallback`: back walks the
+  WebView history (Next.js client navigations are real history entries), and at the history
+  root it `moveTaskToBack()`s — backgrounds the app like every native Android app, keeping
+  the webview warm. `OnBackPressedDispatcher` is the supported path under targetSdk 36's
+  predictive-back regime, where `Activity#onBackPressed` is no longer delivered.
+- **Deep links are also native.** The manifest declares Android App Links for `/i/<token>`
+  and `/q/<token>` (texted invoice/quote links). Capacitor's `Bridge.onNewIntent` only
+  notifies plugins — without `@capacitor/app` + a web-side `appUrlOpen` listener, a tapped
+  link opens the app and goes nowhere. `MainActivity.routeDeepLink` loads the link into the
+  webview instead, gated to https + the configured server host + an allow-listed path prefix
+  (the activity is exported, so any app can throw an arbitrary VIEW intent at it — the gate
+  is a security boundary, not ceremony). The `/f/<token>` public request form is deliberately
+  NOT deep-linked: it's a customer-facing page, not something a Mallet user taps from a text.
+  ⚠️ `autoVerify` does nothing until `app.trymallet.com/.well-known/assetlinks.json` exists —
+  that file lives in the `mallet-app` repo; contents + fingerprints are in the submission doc.
+- **`cap sync android` overwrites** `android/app/src/main/assets/public/` and
+  `android/app/src/main/assets/capacitor.config.json` — never hand-edit those, edit
+  `shell/capacitor.config.json` and re-sync. It does NOT touch `MainActivity.java`, the
+  manifest, or `res/` — the customizations are sync-proof (verified: byte-identical after
+  `npm run sync:android`).
+- **Icons/splash are generated, committed artifacts.** Source of truth is `shell/assets/`
+  (`icon-only.png` is the same 1024 sparkle the iOS asset catalog uses; the solid PNGs are
+  generated). Regenerate with:
+  `npx @capacitor/assets generate --android --assetPath assets --iconBackgroundColor '#15110B' --iconBackgroundColorDark '#15110B' --splashBackgroundColor '#FCFBF7' --splashBackgroundColorDark '#FCFBF7'`.
+  Adaptive icon = white sparkle foreground on ink `#15110B`; splash = plain paper `#FCFBF7`
+  (Android 12+ always centers the launcher icon on it — that's the OS, not a config miss).
+- **Light-only means three explicit paper (`#FCFBF7`) settings**, same lesson the iOS shell
+  learned twice with dark-mode black leaks: `android.backgroundColor` in the config (webview),
+  `android:windowBackground` on the theme (decor/status-bar strip), and
+  `windowSplashScreenBackground` on the launch theme. Plus `SystemBars.style: "LIGHT"` so a
+  dark-mode phone gets dark status-bar icons over paper instead of invisible white ones
+  (iOS reads the same key — dark icons on paper is correct there too, it's a light-only app).
+- **Keyboard `resize: "native"`** maps to `adjustResize` on Android — the webview shrinks and
+  the bottom-fixed Ask-Mallet bar stays visible, same behavior as iOS.
+- Everything in the iOS "Known, accepted" list that is about the WEB app (offline is a
+  cold-start splash only, signup/password-reset emails leave the app) applies identically
+  on Android.
 
 ---
 

@@ -2,12 +2,15 @@
   "name": "mallet-shell",
   "version": "0.1.0",
   "private": true,
-  "description": "Native iOS shell for Mallet. A WKWebView pointed at the hosted app, plus the native plugins the web app cannot provide itself (RoomPlan scanning, later).",
+  "description": "Native shell for Mallet (iOS + Android). A webview pointed at the hosted app, plus the native plugins the web app cannot provide itself (RoomPlan scanning on iOS).",
   "scripts": {
     "sync": "cap sync ios",
-    "open": "cap open ios"
+    "open": "cap open ios",
+    "sync:android": "cap sync android",
+    "open:android": "cap open android"
   },
   "dependencies": {
+    "@capacitor/android": "8.4.2",
     "@capacitor/core": "8.4.2",
     "@capacitor/haptics": "^8.0.2",
     "@capacitor/ios": "8.4.2",
