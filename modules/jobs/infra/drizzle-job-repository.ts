@@ -416,6 +416,7 @@ export class DrizzleJobRepository implements JobRepository {
       );
       if (cond) conds.push(cond);
     }
+    if (filter?.excludeCanceled) conds.push(ne(jobs.status, "canceled"));
     if (filter?.assigneeUserId) conds.push(eq(jobs.assigneeUserId, filter.assigneeUserId));
     if (filter?.leadId) conds.push(eq(jobs.leadId, filter.leadId));
     if (filter?.assignedUserId) {

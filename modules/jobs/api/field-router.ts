@@ -32,7 +32,8 @@ import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
 import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
 import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
-import { byAgenda } from "./my-day-order";
+import { byAgenda, byVisitOn } from "./my-day-order";
+import { withinDayPagerBound, DAY_PAGER_BOUND_DAYS } from "./day-window";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 import { visitToClose } from "./visit-to-close";
 
@@ -308,6 +309,10 @@ const CLOSED_JOB_MESSAGE = "This job is closed — ask the office to change it."
  */
 const MY_DAY_MAX_SPAN_MS = 26 * 60 * 60 * 1000; // 24h + DST slack, generously
 
+// One page IS the agenda: both field reads are a single uncursored fetch, and a route past this
+// size is not a day one person drives. Silent-truncation-by-design, mirrored in both queries.
+const FIELD_AGENDA_PAGE_LIMIT = 100;
+
 const myDayInput = z
   .object({ dayStart: z.date(), dayEnd: z.date() })
   .refine((v) => v.dayEnd.getTime() > v.dayStart.getTime(), {
@@ -318,6 +323,42 @@ const myDayInput = z
     message: "that is more than one day",
     path: ["dayEnd"],
   });
+
+// The day pager's input: a calendar date in the board's own grammar. A wall-clock date, not an
+// instant pair — "Thursday's route" is the same question in every timezone, unlike "today", whose
+// edges only the client knows (see myDayInput). The reach check lives in the procedure body where
+// the injected clock is, so tests can pin "today".
+const dayInput = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected a YYYY-MM-DD date"),
+});
+
+/** The two field agenda reads end identically: execution data in one batched read, tech money
+ *  redaction, and the customers behind the page. One tail, so the reads cannot drift apart. */
+const fieldAgendaPage = async (
+  view: { tx: TenantTx; principal: Principal },
+  repo: DrizzleJobRepository,
+  ordered: readonly Job[],
+): Promise<{
+  items: z.infer<typeof jobSummaryDTO>[];
+  customers: z.infer<typeof fieldCustomerDTO>[];
+}> => {
+  // Load execution data (checklist answers, add-ons, photos) for the whole page in one
+  // batched read (4 IN-clause queries) — toJobSummaryDTO without it returns empty arrays.
+  const executionByJob = await repo.listExecutionForJobs(ordered.map((j) => j.props.id));
+  const isTech = view.principal.role === "tech";
+  const seesPrice = isTech
+    ? await new DrizzleSettingsRepository(view.tx, view.principal.orgId).getTechSeesPrice()
+    : true;
+  const items = ordered.map((j) => {
+    const dto = toJobSummaryDTO(j, executionByJob.get(j.props.id));
+    return isTech ? redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) : dto;
+  });
+  // The customers on THESE jobs, and no others — the technician's reach is their own work.
+  // Without this the field shell has no name or number for anyone, which is why its Call
+  // control could not work: the call bar renders the customer, and had nothing to render.
+  const customers = await loadCustomersFor(view.tx, view.principal.orgId, ordered);
+  return { items, customers };
+};
 
 export const createFieldRouter = () =>
   router({
@@ -332,29 +373,57 @@ export const createFieldRouter = () =>
       // finished inside the caller's own day, in a single round trip on the single connection this
       // tx holds.
       const page = await useCase.exec({
-        page: toPage({ limit: 100, cursor: null }),
+        page: toPage({ limit: FIELD_AGENDA_PAGE_LIMIT, cursor: null }),
         filter: { ...mine, openOrCompletedBetween: { from: input.dayStart, to: input.dayEnd } },
       });
       // Earliest live VISIT first — see my-day-order.ts. This used to sort on
       // jobs.scheduled_start, a dead column, so the day came back in random-UUID order.
       const ordered = [...page.items].sort(byAgenda);
-      // Load execution data (checklist answers, add-ons, photos) for the whole page in one
-      // batched read (4 IN-clause queries) — toJobSummaryDTO without it returns empty arrays.
-      const executionByJob = await repo.listExecutionForJobs(ordered.map((j) => j.props.id));
-      const isTech = ctx.principal.role === "tech";
-      const seesPrice = isTech
-        ? await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice()
-        : true;
-      const items = ordered.map((j) => {
-        const dto = toJobSummaryDTO(j, executionByJob.get(j.props.id));
-        return isTech ? redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) : dto;
-      });
-      // The customers on THESE jobs, and no others — the technician's reach is their own work.
-      // Without this the field shell has no name or number for anyone, which is why its Call
-      // control could not work: the call bar renders the customer, and had nothing to render.
-      const customers = await loadCustomersFor(ctx.tx, ctx.principal.orgId, ordered);
-      return { items, customers };
+      return fieldAgendaPage({ tx: ctx.tx, principal: ctx.principal }, repo, ordered);
     }),
+
+    /**
+     * ONE named day of the caller's route — the day pager's read (My day paging to yesterday or
+     * next Thursday).
+     *
+     * NOT myDay with a different window, deliberately. myDay answers "what is my agenda": all open
+     * work wherever it lands, plus what I finished today. A paged-to day answers "what does this
+     * DAY hold": exactly the stops dated that day — complete ones included (a past day is a record
+     * of what ran), unplaced return trips excluded (they belong to no day yet), canceled JOBS
+     * excluded even when their visit was never cleaned up (a called-off job is not a stop). Same
+     * visit-aware assignment as every field read, same redaction, same customer reach.
+     */
+    day: anyRole
+      .input(dayInput)
+      .output(z.object({ items: z.array(jobSummaryDTO), customers: z.array(fieldCustomerDTO) }))
+      .query(async ({ ctx, input }) => {
+        // The pager's reach, enforced where the injected clock lives. Client input is a date it
+        // could have made up; past the bound the answer is a refusal, not a bigger scan.
+        if (!withinDayPagerBound(input.date, ctx.deps.clock.now())) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `That day is out of reach — the day view covers ${DAY_PAGER_BOUND_DAYS} days either side of today.`,
+          });
+        }
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const page = await new ListJobsUseCase(repo).exec({
+          page: toPage({ limit: FIELD_AGENDA_PAGE_LIMIT, cursor: null }),
+          // visitFrom = visitTo = the day: the board's own EXISTS predicate (non-canceled,
+          // non-deleted visits), narrowed to one date. Composes with the same visit-aware
+          // assignment myDay uses. excludeCanceled closes the visit-outlives-its-job gap —
+          // Job.cancel() leaves visits untouched, and a canceled job is not a stop.
+          filter: {
+            assignedUserId: ctx.principal.userId,
+            visitFrom: input.date,
+            visitTo: input.date,
+            excludeCanceled: true,
+          },
+        });
+        // That day's own clock, earliest first — NOT byAgenda, which would key a half-done job on
+        // its next visit some other day and shuffle it to the wrong slot in this one.
+        const ordered = [...page.items].sort(byVisitOn(input.date));
+        return fieldAgendaPage({ tx: ctx.tx, principal: ctx.principal }, repo, ordered);
+      }),
 
     /**
      * The jobs this person can put time against — theirs, regardless of status.

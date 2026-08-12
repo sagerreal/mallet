@@ -100,6 +100,13 @@ export interface JobFilter {
    * is unaffected.
    */
   readonly openOrCompletedBetween?: { readonly from: Date; readonly to: Date };
+  /**
+   * Drop called-off jobs. The day pager's read needs this because a visit can outlive its job:
+   * Job.cancel() flips the job's status and leaves the visits untouched, so a dated visit under a
+   * canceled job still matches visitFrom/visitTo — and a canceled job is not a stop on anyone's
+   * route. Additive; no existing caller sets it.
+   */
+  readonly excludeCanceled?: boolean;
 }
 
 /** The four execution child collections of one job. */
