@@ -96,3 +96,27 @@ describe("ledgerCounts", () => {
     expect(c.outTheDoorDollars).toBe(3990);
   });
 });
+
+// Owen, Aug 11: "there should be some apparent way to see the change requested for quotes."
+// The pill alone meant scanning the table; "changes" is now a first-class filter with a count.
+describe("the Changes-asked filter", () => {
+  const book = [
+    est({ id: "c1", changeRequestedAt: "2026-08-11T10:00:00Z" }),
+    est({ id: "c2" }),
+    est({ id: "c3", status: "draft" }),
+  ];
+
+  it("counts sent quotes carrying a change request", () => {
+    expect(ledgerCounts(book).changes).toBe(1);
+  });
+
+  it("filters the ledger to exactly those quotes", () => {
+    expect(ledgerRows(book, leads, "changes", "").map((r) => r.id)).toEqual(["c1"]);
+  });
+
+  it("a change request on non-sent paper does not count — the customer answers SENT quotes", () => {
+    const stale = [est({ id: "c4", status: "accepted", changeRequestedAt: "2026-08-11T10:00:00Z" })];
+    expect(ledgerCounts(stale).changes).toBe(0);
+    expect(ledgerRows(stale, leads, "changes", "")).toEqual([]);
+  });
+});

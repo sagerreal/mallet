@@ -16,7 +16,12 @@ import type { Estimate, Lead } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
 
 export type QuoteBucket = "draft" | "sent" | "won" | "lost";
-export type QuoteFilter = "all" | QuoteBucket;
+/** "changes" is a cross-cut of SENT paper — the customer answered with a request, not a yes. */
+export type QuoteFilter = "all" | "changes" | QuoteBucket;
+
+/** A sent quote the customer has asked changes on — the office's move now. */
+export const changesAsked = (e: Estimate): boolean =>
+  bucketOf(e) === "sent" && Boolean(e.changeRequestedAt);
 
 /** Which bucket a quote files under, or null for paper the ledger does not show (trash). */
 export function bucketOf(e: Estimate): QuoteBucket | null {
@@ -71,7 +76,9 @@ export function ledgerRows(
     if (!shows(e)) continue;
     const bucket = bucketOf(e);
     if (!bucket) continue;
-    if (filter !== "all" && bucket !== filter) continue;
+    if (filter === "changes") {
+      if (!changesAsked(e)) continue;
+    } else if (filter !== "all" && bucket !== filter) continue;
     const customer = nameOf(e.leadId);
     if (q && !`${customer} ${e.title}`.toLowerCase().includes(q)) continue;
     rows.push({
@@ -96,12 +103,14 @@ export interface LedgerCounts {
   sent: number;
   won: number;
   lost: number;
+  /** Sent quotes the customer has asked changes on — the count that must be APPARENT. */
+  changes: number;
   /** Sum of SENT paper, in dollars — the money sitting on customers' phones. */
   outTheDoorDollars: number;
 }
 
 export function ledgerCounts(estimates: readonly Estimate[]): LedgerCounts {
-  const c: LedgerCounts = { all: 0, draft: 0, sent: 0, won: 0, lost: 0, outTheDoorDollars: 0 };
+  const c: LedgerCounts = { all: 0, draft: 0, sent: 0, won: 0, lost: 0, changes: 0, outTheDoorDollars: 0 };
   for (const e of estimates) {
     if (!shows(e)) continue;
     const bucket = bucketOf(e);
@@ -109,6 +118,7 @@ export function ledgerCounts(estimates: readonly Estimate[]): LedgerCounts {
     c.all += 1;
     c[bucket] += 1;
     if (bucket === "sent") c.outTheDoorDollars += estTotal(e);
+    if (changesAsked(e)) c.changes += 1;
   }
   return c;
 }
