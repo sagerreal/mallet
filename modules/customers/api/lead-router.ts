@@ -5,9 +5,10 @@ import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
+import { DrizzleLeadGroupReader } from "../infra/drizzle-lead-group-reader";
 import { DrizzleCardOnFileReader } from "../infra/drizzle-card-on-file-reader";
 import { LEAD_SORTS } from "../infra/lead-sorts";
-import { LEAD_VIEWS, LEAD_SCOPES } from "../infra/lead-views";
+import { LEAD_VIEWS, LEAD_SCOPES, LEAD_GROUPS, type LeadGroup } from "../infra/lead-views";
 import { DrizzleEstimateRepository } from "@mallet/quoting";
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
@@ -31,6 +32,12 @@ const leadDTO = z.object({
   email: z.string().nullable(),
   source: z.string().nullable(),
   stage: stageEnum,
+  /**
+   * Where this customer's WORK has got to — derived, never stored, and supplied on the LIST read
+   * only. Null everywhere else: a mutation response has no page of ids to resolve it against, and
+   * a guessed group on a single row would contradict the list a moment later.
+   */
+  group: z.enum(LEAD_GROUPS).nullable(),
   value: moneyDTO,
   unread: z.boolean(),
   companyId: z.string().uuid().nullable(),
@@ -139,6 +146,8 @@ const listInput = z.object({
   view: z.enum(LEAD_VIEWS).optional(),
   /** A saved worklist — owes money, no job in 12 months. Combinable with the filters above. */
   scope: z.enum(LEAD_SCOPES).optional(),
+  /** One work group — where this customer's work has got to. The Customers list's chips. */
+  group: z.enum(LEAD_GROUPS).optional(),
 });
 
 const countInput = z.object({
@@ -149,6 +158,7 @@ const countInput = z.object({
   // The count must take the same narrowing as the list, or the header says "50 of 606" while the
   // list is showing the 12 customers who owe money.
   scope: z.enum(LEAD_SCOPES).optional(),
+  group: z.enum(LEAD_GROUPS).optional(),
 });
 
 const paginatedLeadDTO = z.object({
@@ -158,7 +168,11 @@ const paginatedLeadDTO = z.object({
 
 // `card` rides only where a batched profiles read supplies it (list); every mutation response
 // passes nothing and answers null — see the DTO comment for why that cannot erase a store card.
-const toLeadDTO = (lead: Lead, card: { brand: string; last4: string; via: "payment" | "deposit" } | null = null) => {
+const toLeadDTO = (
+  lead: Lead,
+  card: { brand: string; last4: string; via: "payment" | "deposit" } | null = null,
+  group: LeadGroup | null = null,
+) => {
   const p = lead.props;
   return {
     card,
@@ -168,6 +182,7 @@ const toLeadDTO = (lead: Lead, card: { brand: string; last4: string; via: "payme
     email: p.email,
     source: p.source,
     stage: p.stage,
+    group,
     value: { cents: p.value, currency: "USD" as const },
     unread: p.unread,
     companyId: p.companyId,
@@ -433,15 +448,20 @@ export const createLeadRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope, group: input.group },
         });
-        // One batched card-on-file read for the page — never per-row (same batching rule the
-        // invoice list applies to lead names).
-        const cards = await new DrizzleCardOnFileReader(ctx.tx, ctx.principal.orgId).byLeadIds(
-          page.items.map((l) => l.props.id),
-        );
+        // Two batched reads for the page — never per-row (same batching rule the invoice list
+        // applies to lead names). The group is derived from three other tables, so per-row it
+        // would be fifty EXISTS chains per page.
+        const ids = page.items.map((l) => l.props.id);
+        const [cards, groups] = await Promise.all([
+          new DrizzleCardOnFileReader(ctx.tx, ctx.principal.orgId).byLeadIds(ids),
+          new DrizzleLeadGroupReader(ctx.tx, ctx.principal.orgId).forLeads(ids),
+        ]);
         return {
-          items: page.items.map((l) => toLeadDTO(l, cards.get(l.props.id) ?? null)),
+          items: page.items.map((l) =>
+            toLeadDTO(l, cards.get(l.props.id) ?? null, groups.get(l.props.id) ?? null),
+          ),
           nextCursor: page.nextCursor,
         };
       }),
@@ -456,6 +476,11 @@ export const createLeadRouter = () =>
     viewCounts: ownerOrOffice
       .output(z.record(z.enum(LEAD_VIEWS), z.number().int()))
       .query(async ({ ctx }) => new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).viewCounts()),
+
+    /** Every work group's count — the Customers chips show all seven, so they come back together. */
+    groupCounts: ownerOrOffice
+      .output(z.record(z.enum(LEAD_GROUPS), z.number().int()))
+      .query(async ({ ctx }) => new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).groupCounts()),
 
     /** Filter-dropdown options and their counts, so the dropdown describes the BOOK, not a page. */
     facets: ownerOrOffice
@@ -481,6 +506,7 @@ export const createLeadRouter = () =>
             search: input.search,
             source: input.source,
             scope: input.scope,
+            group: input.group,
           }),
         };
       }),

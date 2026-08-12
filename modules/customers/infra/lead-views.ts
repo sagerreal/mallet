@@ -185,3 +185,200 @@ export const leadScopeCondition = (scope: LeadScope, tx: TenantTx): SQL => {
       )}` as SQL;
   }
 };
+
+/**
+ * GROUPS — where a customer's WORK has got to, for the Customers list.
+ *
+ * The Customers list showed `leads.stage`: a stored enum somebody sets and nobody maintains, so on
+ * a 678-customer book every visible row read "New customer". Two of the four columns carried no
+ * information at all, which is why no amount of filtering helped — there was nothing in them to
+ * filter by.
+ *
+ * The deeper problem is that stage is a SALES idea. A sales lead travels new → qualified → won
+ * once and leaves the funnel. A trade customer never leaves: they go quiet, they need something,
+ * they go quiet again, for years. No single stored word describes that, which is exactly why the
+ * field decays to its default and stops meaning anything.
+ *
+ * So these are derived, never stored — one EXISTS per question, against records that already
+ * exist. Nobody maintains them and they cannot go stale.
+ *
+ * MUTUALLY EXCLUSIVE by construction, like LEAD_VIEWS above and for the same reason: the counts
+ * must sum to the live book or the chips lie. Real customers qualify for several at once, so each
+ * arm excludes the ones ranked above it and the priority chain is the design:
+ *
+ *   Invoice required → Owes money → Quote out → Job booked → Never booked → Lost → Work completed
+ *
+ * Money first, and unbilled work ahead of unpaid bills: work you finished and never invoiced is
+ * money on the floor that ONE person can fix in one click, where an unpaid invoice needs the
+ * customer. Lost outranks Work completed only for customers who never bought — a repeat customer
+ * turning down one upsell is not lost, and ranking it the other way would file good customers as
+ * dead.
+ */
+export const LEAD_GROUPS = [
+  "invoiceRequired",
+  "owesMoney",
+  "quoteOut",
+  "jobBooked",
+  "neverBooked",
+  "lost",
+  "workCompleted",
+] as const;
+export type LeadGroup = (typeof LEAD_GROUPS)[number];
+
+export const LEAD_GROUP_LABELS: Record<LeadGroup, string> = {
+  invoiceRequired: "Invoice required",
+  owesMoney: "Owes money",
+  quoteOut: "Quote out",
+  jobBooked: "Job booked",
+  neverBooked: "Never booked",
+  lost: "Lost",
+  workCompleted: "Work completed",
+};
+
+/** A completed visit for this customer — the fact behind "we have done work here". */
+const hasCompletedVisit = (tx: TenantTx): SQL =>
+  exists(
+    tx
+      .select({ one: sql`1` })
+      .from(jobVisits)
+      .innerJoin(jobs, and(eq(jobs.orgId, jobVisits.orgId), eq(jobs.id, jobVisits.jobId)))
+      .where(
+        and(
+          eq(jobVisits.orgId, leads.orgId),
+          eq(jobs.leadId, leads.id),
+          eq(jobVisits.status, "complete"),
+          isNull(jobVisits.deletedAt),
+          isNull(jobs.deletedAt),
+        ),
+      ),
+  );
+
+/** A trip still to run — booked, not finished, not called off. */
+const hasOpenVisit = (tx: TenantTx): SQL =>
+  exists(
+    tx
+      .select({ one: sql`1` })
+      .from(jobVisits)
+      .innerJoin(jobs, and(eq(jobs.orgId, jobVisits.orgId), eq(jobs.id, jobVisits.jobId)))
+      .where(
+        and(
+          eq(jobVisits.orgId, leads.orgId),
+          eq(jobs.leadId, leads.id),
+          ne(jobVisits.status, "complete"),
+          ne(jobVisits.status, "canceled"),
+          isNull(jobVisits.deletedAt),
+          isNull(jobs.deletedAt),
+        ),
+      ),
+  );
+
+/**
+ * Work finished with no bill raised against it.
+ *
+ * Deliberately NOT "the job has no invoice": a job whose only invoice was voided is unbilled
+ * again, and a draft is a bill nobody has sent. Both are money still on the floor.
+ */
+const hasUnbilledCompletedJob = (tx: TenantTx): SQL =>
+  exists(
+    tx
+      .select({ one: sql`1` })
+      .from(jobs)
+      .where(
+        and(
+          eq(jobs.orgId, leads.orgId),
+          eq(jobs.leadId, leads.id),
+          isNull(jobs.deletedAt),
+          exists(
+            tx
+              .select({ one: sql`1` })
+              .from(jobVisits)
+              .where(
+                and(
+                  eq(jobVisits.orgId, jobs.orgId),
+                  eq(jobVisits.jobId, jobs.id),
+                  eq(jobVisits.status, "complete"),
+                  isNull(jobVisits.deletedAt),
+                ),
+              ),
+          ),
+          sql`NOT ${exists(
+            tx
+              .select({ one: sql`1` })
+              .from(invoices)
+              .where(
+                and(
+                  eq(invoices.orgId, jobs.orgId),
+                  eq(invoices.sourceJobId, jobs.id),
+                  isNull(invoices.deletedAt),
+                  ne(invoices.status, "draft"),
+                  ne(invoices.status, "void"),
+                ),
+              ),
+          )}`,
+        ),
+      ),
+  );
+
+/** A quote that came back no — declined outright, or expired without an answer. */
+const hasDeclinedQuote = (tx: TenantTx): SQL =>
+  hasEstimate(tx, or(eq(estimates.status, "declined"), eq(estimates.status, "expired")) as SQL);
+
+/**
+ * The predicate for one group. Each arm states its own fact, then excludes every arm above it —
+ * which is what makes the seven counts sum to the book rather than double-counting the customers
+ * who are in several situations at once.
+ */
+export const leadGroupCondition = (group: LeadGroup, tx: TenantTx): SQL => {
+  const live = isNull(leads.deletedAt);
+  const unbilled = hasUnbilledCompletedJob(tx);
+  const owes = leadScopeCondition("owesMoney", tx);
+  const sentQuote = hasEstimate(tx, eq(estimates.status, "sent"));
+  const openVisit = hasOpenVisit(tx);
+  const touched = or(hasEstimate(tx), hasVisit(tx)) as SQL;
+
+  switch (group) {
+    case "invoiceRequired":
+      return and(live, unbilled) as SQL;
+    case "owesMoney":
+      return and(live, sql`NOT ${unbilled}`, owes) as SQL;
+    case "quoteOut":
+      return and(live, sql`NOT ${unbilled}`, sql`NOT ${owes}`, sentQuote) as SQL;
+    case "jobBooked":
+      return and(live, sql`NOT ${unbilled}`, sql`NOT ${owes}`, sql`NOT ${sentQuote}`, openVisit) as SQL;
+    case "neverBooked":
+      // Nothing has ever happened to this customer — no quote of any kind, no visit ever booked.
+      return and(
+        live,
+        sql`NOT ${unbilled}`,
+        sql`NOT ${owes}`,
+        sql`NOT ${sentQuote}`,
+        sql`NOT ${openVisit}`,
+        sql`NOT ${touched}`,
+      ) as SQL;
+    case "lost":
+      // We quoted, it came back no, and we have never worked for them. A customer with completed
+      // work who declines a later quote is NOT lost — they are a customer who said no once.
+      return and(
+        live,
+        sql`NOT ${unbilled}`,
+        sql`NOT ${owes}`,
+        sql`NOT ${sentQuote}`,
+        sql`NOT ${openVisit}`,
+        touched,
+        hasDeclinedQuote(tx),
+        sql`NOT ${hasCompletedVisit(tx)}`,
+      ) as SQL;
+    case "workCompleted":
+    default:
+      // Everything settled, or touched-but-not-lost. The resting state, and the biggest group.
+      return and(
+        live,
+        sql`NOT ${unbilled}`,
+        sql`NOT ${owes}`,
+        sql`NOT ${sentQuote}`,
+        sql`NOT ${openVisit}`,
+        touched,
+        sql`NOT ${and(hasDeclinedQuote(tx), sql`NOT ${hasCompletedVisit(tx)}`)}`,
+      ) as SQL;
+  }
+};

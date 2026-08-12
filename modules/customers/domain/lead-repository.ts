@@ -1,5 +1,5 @@
 import type { LeadSort } from "../infra/lead-sorts";
-import type { LeadView, LeadScope } from "../infra/lead-views";
+import type { LeadView, LeadScope, LeadGroup } from "../infra/lead-views";
 import type { LeadId, CompanyId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Lead, LeadStage } from "./lead";
 
@@ -34,6 +34,8 @@ export interface LeadFilter {
    * board's mutually-exclusive columns, these are questions, and a customer can match both.
    */
   readonly scope?: LeadScope;
+  /** One work group — where this customer's WORK has got to. Mutually exclusive; see LEAD_GROUPS. */
+  readonly group?: LeadGroup;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
 }

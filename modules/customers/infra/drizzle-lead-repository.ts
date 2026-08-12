@@ -4,7 +4,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { leadSortSpec, type LeadSort } from "./lead-sorts";
-import { leadViewCondition, leadScopeCondition, type LeadView } from "./lead-views";
+import { leadViewCondition, leadScopeCondition, leadGroupCondition, type LeadView, type LeadGroup } from "./lead-views";
 import {
   buildPage,
   decodeCursor,
@@ -144,6 +144,7 @@ export class DrizzleLeadRepository implements LeadRepository {
     if (filter?.source) conds.push(eq(leads.source, filter.source));
     if (filter?.view) conds.push(leadViewCondition(filter.view, this.tx));
     if (filter?.scope) conds.push(leadScopeCondition(filter.scope, this.tx));
+    if (filter?.group) conds.push(leadGroupCondition(filter.group, this.tx));
     if (filter?.search) {
       // Escape LIKE wildcards first: unescaped, a customer typing "%" matches the entire book and
       // the search silently stops filtering.
@@ -169,6 +170,39 @@ export class DrizzleLeadRepository implements LeadRepository {
       .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)));
     const r = rows[0];
     return { intake: r?.intake ?? 0, quoting: r?.quoting ?? 0, out: r?.out ?? 0, won: r?.won ?? 0 };
+  }
+
+  /**
+   * Every work group's count, in ONE read.
+   *
+   * All seven together rather than a query each: the chips are only trustworthy if their numbers
+   * come from the same instant, and seven round trips against a live book can disagree with each
+   * other while somebody is working. `filter (where ...)` is what makes it one scan.
+   */
+  async groupCounts(): Promise<Record<LeadGroup, number>> {
+    const one = (g: LeadGroup) => sql<number>`count(*) filter (where ${leadGroupCondition(g, this.tx)})::int`;
+    const rows = await this.tx
+      .select({
+        invoiceRequired: one("invoiceRequired"),
+        owesMoney: one("owesMoney"),
+        quoteOut: one("quoteOut"),
+        jobBooked: one("jobBooked"),
+        neverBooked: one("neverBooked"),
+        lost: one("lost"),
+        workCompleted: one("workCompleted"),
+      })
+      .from(leads)
+      .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)));
+    const r = rows[0];
+    return {
+      invoiceRequired: r?.invoiceRequired ?? 0,
+      owesMoney: r?.owesMoney ?? 0,
+      quoteOut: r?.quoteOut ?? 0,
+      jobBooked: r?.jobBooked ?? 0,
+      neverBooked: r?.neverBooked ?? 0,
+      lost: r?.lost ?? 0,
+      workCompleted: r?.workCompleted ?? 0,
+    };
   }
 
   async facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }> {

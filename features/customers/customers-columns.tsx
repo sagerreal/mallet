@@ -3,8 +3,6 @@
  * Collapsible column picker — checkboxes to show/hide columns (§4.3).
  */
 
-"use client";
-
 /**
  * `w` is a relative width WEIGHT, not a pixel size.
  *
@@ -16,7 +14,9 @@
  */
 export const ALL_COL_DEFS: Record<string, { l: string; w: number }> = {
   name:    { l: "Name",    w: 22 },
-  stage:   { l: "Stage",   w: 13 },
+  // Key stays `stage` (the sort map and the row switch both use it); the LABEL changes,
+  // because the cell renders the derived work group and "Stage" is the idea we retired.
+  stage:   { l: "Where they are", w: 15 },
   value:   { l: "Value",   w: 9 },
   latest:  { l: "Latest",  w: 10 },
   phone:   { l: "Phone",   w: 14 },
@@ -38,28 +38,11 @@ export function colWidths(visible: readonly string[]): string[] {
   return weights.map((w) => `${((w / total) * 100).toFixed(4)}%`);
 }
 
-// Default view = "work the list": who · where in the pipeline · $ on the table ·
-// what's latest · how to reach them. Source (marketing analytics) is opt-in.
-export const DEFAULT_COLS = ["name", "stage", "latest", "phone"] as const;
-
-interface ColumnsProps {
-  visible: string[];
-  onToggle: (key: string) => void;
-}
-
-export function CustomersColumns({ visible, onToggle }: ColumnsProps) {
-  return (
-    <div className="fpanel" style={{ gap: "var(--space-2)" }}>
-      {Object.entries(ALL_COL_DEFS).map(([k, def]) => (
-        <label key={k} className="colchk">
-          <input
-            type="checkbox"
-            checked={visible.includes(k)}
-            onChange={() => onToggle(k)}
-          />
-          {def.l}
-        </label>
-      ))}
-    </div>
-  );
-}
+// Default view = "work the list": who · where their work has got to · WHERE THE JOB IS ·
+// how to reach them.
+//
+// `latest` gave way to `address`. On a live book Latest read "Today" for every row the hydrator
+// had touched, so it discriminated nothing; the address is the one fact that differs on every row
+// and, in the trades, the thing people actually recall — "the house on Fort Clatsop" lands where a
+// surname does not.
+export const DEFAULT_COLS = ["name", "stage", "address", "phone"] as const;
