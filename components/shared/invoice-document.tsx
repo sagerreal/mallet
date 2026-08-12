@@ -172,6 +172,13 @@ export interface InvoiceDocumentProps {
    * and the aggregate row still stands.
    */
   readonly payments?: readonly InvoiceDocumentPayment[];
+  /**
+   * The shop's own note at the very bottom of the document — a thank-you or warranty line,
+   * from Settings → Documents (effectiveInvoiceFooter). Absent/blank prints NOTHING, which is
+   * what every bill printed before the slot existed. Part of the document, so it prints on
+   * paper too — callers must not wrap it in .noprint.
+   */
+  readonly footerNote?: string | null;
 }
 
 /** Customer-readable payment methods. An unknown method says "Payment", never the raw enum. */
@@ -381,6 +388,7 @@ export function InvoiceDocument({
   amountPaidCents,
   balanceDueCents,
   payments = [],
+  footerNote,
 }: InvoiceDocumentProps) {
   // Total is tax-INCLUSIVE, so the subtotal is what is left once the recorded tax comes out and
   // the discount goes back on — never a re-sum of the lines (an invoice raised from a quote
@@ -439,6 +447,33 @@ export function InvoiceDocument({
       </div>
 
       <DocumentPayments payments={payments} />
+
+      <DocumentFooterNote note={footerNote} />
     </>
+  );
+}
+
+/**
+ * The shop's closing line. `present()`-gated like every optional value here: a cleared input
+ * can hand over "" from a store-fed surface, and a blank paragraph under the totals is the
+ * "label with no value" failure mode this file exists to prevent. `pre-wrap` because a shop
+ * may write two short lines (thanks + warranty) and collapsing them changes what it says.
+ */
+function DocumentFooterNote({ note }: { note: string | null | undefined }) {
+  const text = present(note);
+  if (!text) return null;
+  return (
+    <p
+      className="muted"
+      style={{
+        fontSize: "var(--type-sm)",
+        lineHeight: 1.55,
+        whiteSpace: "pre-wrap",
+        marginTop: "var(--space-3)",
+        marginBottom: 0,
+      }}
+    >
+      {text}
+    </p>
   );
 }

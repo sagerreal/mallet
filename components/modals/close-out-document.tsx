@@ -26,6 +26,7 @@ import { useState } from "react";
 import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { invoiceDocumentView } from "@/features/invoices/invoice-document-view";
 import { documentIdentity } from "@/features/invoices/document-business";
+import { effectiveInvoiceFooter } from "@/modules/settings/domain/document-wording";
 import { sendInvoiceDocument } from "@/lib/store/invoice-write";
 import { invDue } from "@/lib/store/invoice-balance";
 import { useAppStore } from "@/lib/store/app-store";
@@ -132,6 +133,10 @@ export function CloseOutDocument({ invoice }: CloseOutDocumentProps) {
   // BusinessIdentityHydrator lands — a technician's store never had these facts at all before
   // v1.settings.businessIdentity, and the block is omitted rather than half-printed.
   const business = useAppStore((s) => s.business);
+  // The shop's closing line (Settings → Documents), hydrated by DocumentWordingHydrator from
+  // the same anyRole read on both shells. Null pre-hydration or untouched → no footer, which
+  // is exactly what the customer's own /i/<token> page shows in the same state.
+  const docWording = useAppStore((s) => s.docWording);
 
   if ((invoice.total ?? 0) <= 0) return null;
 
@@ -166,6 +171,7 @@ export function CloseOutDocument({ invoice }: CloseOutDocumentProps) {
             depositPaidCents={doc.depositPaidCents}
             amountPaidCents={doc.amountPaidCents}
             balanceDueCents={doc.balanceDueCents}
+            footerNote={effectiveInvoiceFooter(docWording?.invoiceFooter)}
           />
         </div>
       ) : null}

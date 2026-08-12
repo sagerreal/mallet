@@ -12,11 +12,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { CustInvoiceModalContent } from "./cust-invoice-modal";
-import type { BusinessIdentity, Brand, Invoice } from "@/lib/store/types";
+import type { BusinessIdentity, Brand, DocWording, Invoice } from "@/lib/store/types";
 
 const noop = vi.fn();
 let mockInvoices: Invoice[] = [];
 let mockBusiness: BusinessIdentity | null = null;
+let mockDocWording: DocWording | null = null;
 
 const brand: Brand = {
   site: "riveraplumbing.com",
@@ -35,6 +36,7 @@ vi.mock("@/lib/store/app-store", () => ({
       jobs: [],
       brand,
       business: mockBusiness,
+      docWording: mockDocWording,
       recordPayment: noop,
       adoptInvoice: noop,
       updateLead: noop,
@@ -86,6 +88,7 @@ describe("CustInvoiceModalContent — the preview is the document", () => {
   beforeEach(() => {
     mockInvoices = [];
     mockBusiness = null;
+    mockDocWording = null;
   });
 
   it("prints the shop's contact block, the customer, the address and both dates", () => {
@@ -132,5 +135,18 @@ describe("CustInvoiceModalContent — the preview is the document", () => {
     expect(screen.getByText("Bill to")).toBeTruthy();
     expect(screen.queryByText("Service address")).toBeNull();
     expect(screen.queryByText(/Service Aug/)).toBeNull();
+  });
+
+  it("previews the shop's invoice footer — what the customer's own page will carry", () => {
+    mockDocWording = { invoiceFooter: "1-year warranty on labor.", changeOrderAgreement: null };
+    mockInvoices = [inv()];
+    render(<CustInvoiceModalContent />);
+    expect(screen.getByText("1-year warranty on labor.")).toBeTruthy();
+  });
+
+  it("previews NO footer before hydration or for an untouched shop", () => {
+    mockInvoices = [inv()];
+    render(<CustInvoiceModalContent />);
+    expect(screen.queryByText(/warranty/)).toBeNull();
   });
 });

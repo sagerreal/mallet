@@ -99,11 +99,54 @@ const BARE_CONTEXT: PublicInvoiceContext = {
   customerName: null,
   serviceAddress: null,
   serviceAt: null,
+  wording: { invoiceFooter: null, payInstructions: null, receiptNote: null },
 };
 
 const ctx = (overrides: Partial<PublicInvoiceContext> = {}): PublicInvoiceContext => ({
   ...BARE_CONTEXT,
   ...overrides,
+});
+
+describe("toPublicInvoiceView document wording", () => {
+  it("resolves the standard sentences when the shop never touched the slots", () => {
+    const view = toPublicInvoiceView(invoice(), ctx({ orgName: "Ridgeline Plumbing" }));
+    // No footer existed before the slot did — an untouched org renders exactly nothing there.
+    expect(view.footerNote).toBeNull();
+    expect(view.payInstructions).toBe(
+      "To pay this invoice, contact Ridgeline Plumbing directly.",
+    );
+    expect(view.receiptNote).toBe(
+      "This invoice is settled in full. Keep this link for your records.",
+    );
+  });
+
+  it("carries the shop's overrides verbatim", () => {
+    const view = toPublicInvoiceView(
+      invoice(),
+      ctx({
+        wording: {
+          invoiceFooter: "1-year warranty on labor.",
+          payInstructions: "Zelle to (925) 555-0100.",
+          receiptNote: "Paid in full — thank you!",
+        },
+      }),
+    );
+    expect(view.footerNote).toBe("1-year warranty on labor.");
+    expect(view.payInstructions).toBe("Zelle to (925) 555-0100.");
+    expect(view.receiptNote).toBe("Paid in full — thank you!");
+  });
+
+  it("treats a blank override as standard — a stored space must never blank the line", () => {
+    const view = toPublicInvoiceView(
+      invoice(),
+      ctx({ wording: { invoiceFooter: "  ", payInstructions: "", receiptNote: " " } }),
+    );
+    expect(view.footerNote).toBeNull();
+    expect(view.payInstructions).toBe("To pay this invoice, contact Org directly.");
+    expect(view.receiptNote).toBe(
+      "This invoice is settled in full. Keep this link for your records.",
+    );
+  });
 });
 
 describe("toPublicInvoiceView", () => {

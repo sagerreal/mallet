@@ -200,6 +200,22 @@ export interface OrgSettingsProps {
   readonly bizEmail: string | null;
   /** Contractor/trade license exactly as the shop writes it. Nullable. */
   readonly licenseNumber: string | null;
+  // --- Document wording (the editable sentences customer documents render) ---
+  // Null = the shop never touched the slot and the surface renders its standard sentence
+  // (see domain/document-wording.ts for the standard literals and the effective resolvers).
+  // Free text, trimmed, blank → null — the same rules as business identity, and for the same
+  // reason: a stored blank must never render as an empty line where a sentence belongs.
+  /** Note at the bottom of the invoice document (thank-you / warranty line). No standard —
+   *  null renders nothing, exactly what the document always did. */
+  readonly docInvoiceFooter: string | null;
+  /** How to settle the bill when card payment isn't available, on the public invoice page. */
+  readonly docInvoicePayInstructions: string | null;
+  /** The settled-state line under "Paid — thank you!" on the public invoice page. */
+  readonly docInvoiceReceiptNote: string | null;
+  /** The sentence above the change-order signature pad. Applies verbatim to signed and
+   *  booked jobs alike when set. The QUOTE authorization sentence is NOT this — that one is
+   *  legal, versioned, snapshotted, and deliberately not editable. */
+  readonly docChangeOrderAgreement: string | null;
   // --- Stripe Connect (Express) onboarding state (PR1) ---
   /** The shop's Stripe connected account id (acct_...). Null until onboarding begins. */
   readonly stripeConnectedAccountId: string | null;
@@ -384,6 +400,12 @@ export class OrgSettings {
         bizPhone: blankToNull(props.bizPhone),
         bizEmail: blankToNull(props.bizEmail),
         licenseNumber: blankToNull(props.licenseNumber),
+        // Document wording: same normalisation — blank means "standard wording", and only
+        // null says that unambiguously on every read path.
+        docInvoiceFooter: blankToNull(props.docInvoiceFooter),
+        docInvoicePayInstructions: blankToNull(props.docInvoicePayInstructions),
+        docInvoiceReceiptNote: blankToNull(props.docInvoiceReceiptNote),
+        docChangeOrderAgreement: blankToNull(props.docChangeOrderAgreement),
         // Legacy 'repair' lanes normalise here — the one boundary every read and write passes
         // through, so stored blobs and stale clients both come out as estimate + feeApplies.
         booking: { ...props.booking, services: props.booking.services.map(normalizeBookingService) },
@@ -523,6 +545,41 @@ export class OrgSettings {
       bizPhone: fields.phone !== undefined ? fields.phone : this.p.bizPhone,
       bizEmail: fields.email !== undefined ? fields.email : this.p.bizEmail,
       licenseNumber: fields.license !== undefined ? fields.license : this.p.licenseNumber,
+      updatedAt: now,
+    });
+  }
+
+  /**
+   * Patch the document-wording subset — the editable sentences customer documents render.
+   *
+   * Same contract as patchBusiness: undefined = keep current, explicit null clears the slot
+   * back to its standard wording. Free text with length caps enforced at the boundary (zod),
+   * not here — a sentence's shape is the shop's own business. create() trims and normalises
+   * blank to null; nothing else is enforced.
+   */
+  patchDocuments(
+    fields: {
+      invoiceFooter?: string | null;
+      payInstructions?: string | null;
+      receiptNote?: string | null;
+      changeOrderAgreement?: string | null;
+    },
+    now: Date,
+  ): Result<OrgSettings, ValidationError> {
+    return OrgSettings.create({
+      ...this.p,
+      docInvoiceFooter:
+        fields.invoiceFooter !== undefined ? fields.invoiceFooter : this.p.docInvoiceFooter,
+      docInvoicePayInstructions:
+        fields.payInstructions !== undefined
+          ? fields.payInstructions
+          : this.p.docInvoicePayInstructions,
+      docInvoiceReceiptNote:
+        fields.receiptNote !== undefined ? fields.receiptNote : this.p.docInvoiceReceiptNote,
+      docChangeOrderAgreement:
+        fields.changeOrderAgreement !== undefined
+          ? fields.changeOrderAgreement
+          : this.p.docChangeOrderAgreement,
       updatedAt: now,
     });
   }

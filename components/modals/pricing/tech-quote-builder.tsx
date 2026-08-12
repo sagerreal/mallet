@@ -35,6 +35,7 @@
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { SignaturePad } from "@/components/shared/signature-pad";
 import { authorizationText } from "@/modules/quoting/domain/authorization-text";
+import { effectiveChangeOrderAgreement } from "@/modules/settings/domain/document-wording";
 import { useAppStore } from "@/lib/store/app-store";
 import { jobPriceCommitted } from "@/features/jobs/job-status-meta";
 import type { Service } from "@/lib/store/types";
@@ -271,6 +272,9 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
   const signChangeOrder = useAppStore((s) => s.signChangeOrder);
   const addAddonField = useAppStore((s) => s.addAddonField);
   const brand = useAppStore((s) => s.brand);
+  // The org's change-order agreement override (Settings → Documents), hydrated on both shells
+  // by DocumentWordingHydrator. Null → the standard two-variant sentence renders.
+  const docWording = useAppStore((s) => s.docWording);
   const servicesRaw = useAppStore((s) => s.services);
   const laborRatesRaw = useAppStore((s) => s.laborRates);
 
@@ -701,15 +705,20 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
             )}
           </div>
 
-          {/* Signed jobs name the prior signature; a BOOKED job has none to name — same
-              approval, honest sentence either way. */}
+          {/* The change-order agreement line — the org's own wording when set (Settings →
+              Documents), otherwise the standard sentence: signed jobs name the prior signature,
+              a BOOKED job has none to name. NOT the legal authorization sentence — that one
+              (authorization-text.ts) is versioned, snapshotted and deliberately not editable,
+              and the CO record freezes IT, not this display line. */}
           <div
             className="muted"
             style={{ fontSize: "var(--type-sm)", margin: "var(--space-4) 0 var(--space-3)", lineHeight: 1.55 }}
           >
-            {signedSold
-              ? `The customer approves adding the work listed above, at the price shown, to the job they already signed with ${brand.name}. It bills with the job.`
-              : `The customer approves adding the work listed above, at the price shown, to this job with ${brand.name}. It bills with the job.`}
+            {effectiveChangeOrderAgreement(
+              docWording?.changeOrderAgreement,
+              brand.name,
+              signedSold,
+            )}
           </div>
 
           <SignBlock

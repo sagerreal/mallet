@@ -456,6 +456,107 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     });
   });
 
+  // ── documents (wording slots) ─────────────────────────────────────────────
+  // Requires migration 0148 (org_settings.doc_* columns) applied to the live DB.
+
+  describe("v1.settings.updateDocuments + documentWording", () => {
+    it("owner updates the slots; get returns them raw on `documents`", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      const updated = await caller.v1.settings.updateDocuments({
+        invoiceFooter: "Thanks for your business — 1-year warranty on labor.",
+        payInstructions: "Zelle to (925) 555-0100 or mail a check to 200 Ray St.",
+        receiptNote: "Paid in full — thank you!",
+        changeOrderAgreement: "Approved as extra work on this job, billed with the final invoice.",
+      });
+      expect(updated.documents.invoiceFooter).toBe(
+        "Thanks for your business — 1-year warranty on labor.",
+      );
+
+      const fetched = await caller.v1.settings.get();
+      expect(fetched.documents).toEqual({
+        invoiceFooter: "Thanks for your business — 1-year warranty on labor.",
+        payInstructions: "Zelle to (925) 555-0100 or mail a check to 200 Ray St.",
+        receiptNote: "Paid in full — thank you!",
+        changeOrderAgreement:
+          "Approved as extra work on this job, billed with the final invoice.",
+      });
+    });
+
+    it("a blank override stores null through the whole stack — never a stored space", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await caller.v1.settings.updateDocuments({ receiptNote: "   " });
+      const fetched = await caller.v1.settings.get();
+      expect(fetched.documents.receiptNote).toBeNull();
+    });
+
+    it("explicit null clears one slot and leaves the others standing", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await caller.v1.settings.updateDocuments({
+        invoiceFooter: "Keep me.",
+        payInstructions: "Clear me later.",
+      });
+      await caller.v1.settings.updateDocuments({ payInstructions: null });
+      const fetched = await caller.v1.settings.get();
+      expect(fetched.documents.invoiceFooter).toBe("Keep me.");
+      expect(fetched.documents.payInstructions).toBeNull();
+    });
+
+    it("rejects an over-length agreement line with BAD_REQUEST and stores nothing", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      const before = await caller.v1.settings.get();
+      await expect(
+        caller.v1.settings.updateDocuments({ changeOrderAgreement: "x".repeat(301) }),
+      ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+      const after = await caller.v1.settings.get();
+      expect(after.documents.changeOrderAgreement).toBe(before.documents.changeOrderAgreement);
+    });
+
+    it("a tech is forbidden from updateDocuments", async () => {
+      const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+      await expect(
+        callerTech.v1.settings.updateDocuments({ invoiceFooter: "Nope" }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    /**
+     * The tech-readable wording slice. It exists for the same structural reason
+     * businessIdentity does: the close-out document a technician turns around at the door
+     * renders the invoice footer, and the change-order sign screen renders the agreement
+     * line — both from the FIELD layout, which cannot mount the ownerOrOffice hydrator.
+     */
+    it("a TECH can read documentWording, and it tracks what the office typed", async () => {
+      const owner = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+
+      await owner.v1.settings.updateDocuments({
+        invoiceFooter: "1-year warranty on labor.",
+        changeOrderAgreement: "Extra work approved at the door.",
+      });
+      await expect(tech.v1.settings.documentWording()).resolves.toEqual({
+        invoiceFooter: "1-year warranty on labor.",
+        changeOrderAgreement: "Extra work approved at the door.",
+      });
+    });
+
+    it("documentWording leaks NOTHING else — the payload is exactly two keys", async () => {
+      const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
+      const wording = await tech.v1.settings.documentWording();
+      // The output zod schema strips unknown keys, so this asserts the schema, not the mapper.
+      // Anything added to it becomes readable by every technician in the org. The public-page
+      // slots (payInstructions, receiptNote) are deliberately NOT on this wire.
+      expect(Object.keys(wording).sort()).toEqual(["changeOrderAgreement", "invoiceFooter"]);
+    });
+
+    it("documentWording is org-scoped — org B never sees org A's sentences", async () => {
+      await appRouter.createCaller(ctxFor(orgAId, "owner")).v1.settings.updateDocuments({
+        invoiceFooter: "A-only footer.",
+      });
+      const techB = appRouter.createCaller(ctxFor(orgBId, "tech"));
+      const wording = await techB.v1.settings.documentWording();
+      expect(wording.invoiceFooter).toBeNull();
+    });
+  });
+
   // Stripe Connect payments (PR1). Requires migration 0083 applied to the live DB.
   describe("payments (stripe connect)", () => {
     it("status returns not-connected defaults for a fresh org", async () => {

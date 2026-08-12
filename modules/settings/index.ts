@@ -18,6 +18,24 @@ export type { FieldToggles } from "./app/get-field-toggles";
 // page resolves it through the settings use-case rather than re-querying org_settings itself.
 export { GetBusinessIdentityUseCase } from "./app/get-business-identity";
 export type { BusinessIdentity } from "./app/get-business-identity";
+// The document-wording overrides + the standard sentences and effective resolvers. Exported so
+// invoicing's public (token-gated) page resolves wording through the settings module rather than
+// re-querying org_settings itself, and so every render seam shares ONE fallback definition.
+export { GetDocumentWordingUseCase } from "./app/get-document-wording";
+export type { DocumentWording } from "./app/get-document-wording";
+export {
+  defaultPayInstructions,
+  defaultReceiptNote,
+  defaultChangeOrderAgreement,
+  effectiveInvoiceFooter,
+  effectivePayInstructions,
+  effectiveReceiptNote,
+  effectiveChangeOrderAgreement,
+  INVOICE_FOOTER_MAX,
+  PAY_INSTRUCTIONS_MAX,
+  RECEIPT_NOTE_MAX,
+  CHANGE_ORDER_AGREEMENT_MAX,
+} from "./domain/document-wording";
 export { defaultBooking } from "./app/default-booking";
 export { UpdateConfigUseCase } from "./app/update-config";
 export { DrizzleSettingsRepository } from "./infra/drizzle-settings-repository";

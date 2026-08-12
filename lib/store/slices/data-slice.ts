@@ -11,7 +11,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Company, Tech, Brand, BusinessIdentity } from "../types";
+import type { Company, Tech, Brand, BusinessIdentity, DocWording } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 
 // Placeholder shown ONLY until BrandHydrator seeds the real brand from
@@ -38,6 +38,12 @@ export interface DataSlice {
    * omits the whole identity block while this is null.
    */
   business: BusinessIdentity | null;
+  /**
+   * The org's document-wording overrides (invoice footer + change-order agreement line).
+   * NULL until DocumentWordingHydrator lands; null means every slot renders its standard
+   * sentence — the honest degradation, identical to an untouched shop.
+   */
+  docWording: DocWording | null;
 
   /** Replace the companies slice — called by CompaniesHydrator on hydration. */
   setCompanies: (companies: Company[]) => void;
@@ -64,6 +70,8 @@ export interface DataSlice {
   setBrand: (brand: Brand) => void;
   /** Replace the business identity — called by BusinessIdentityHydrator on hydration. */
   setBusiness: (business: BusinessIdentity) => void;
+  /** Replace the document wording — called by DocumentWordingHydrator on hydration. */
+  setDocWording: (docWording: DocWording) => void;
   /**
    * Optimistically patch the brand, then persist via v1.settings.updateBrand.
    * Reconciles from the returned settingsDTO.brand; rolls back on error.
@@ -76,6 +84,7 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set,
   techs: [],
   brand: { ...DEFAULT_BRAND },
   business: null,
+  docWording: null,
 
   setCompanies: (companies) => set({ companies }),
 
@@ -84,6 +93,8 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set,
   setBrand: (brand) => set({ brand }),
 
   setBusiness: (business) => set({ business }),
+
+  setDocWording: (docWording) => set({ docWording }),
 
   updateBrand: (patch) => {
     const snapshot = get().brand;

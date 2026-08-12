@@ -1,5 +1,13 @@
 import type { OrgId, InvoiceId } from "@mallet/shared/types";
 import { isOk } from "@mallet/shared/types";
+// Deep domain import ON PURPOSE (matches tech-quote-builder's authorization-text import): the
+// settings BARREL includes the API router, which pulls the config validator — and this file is
+// deliberately import-light so its unit tests never touch DB/config wiring.
+import {
+  effectiveInvoiceFooter,
+  effectivePayInstructions,
+  effectiveReceiptNote,
+} from "@/modules/settings/domain/document-wording";
 import type { Invoice, InvoiceStatus } from "../domain/invoice";
 import type { PaymentMethod } from "../domain/payment";
 import type { InvoiceRepository } from "../domain/invoice-repository";
@@ -59,6 +67,19 @@ export interface PublicInvoiceContext {
   readonly serviceAddress: string | null;
   /** The source job's completed visit. Null when there is no job, or no completed visit. */
   readonly serviceAt: Date | null;
+  /**
+   * The org's document-wording OVERRIDES for the three slots this page renders — raw and
+   * nullable, from org_settings via the settings use-case. Null = the standard sentence;
+   * resolution happens in toPublicInvoiceView through the settings domain's resolvers, so this
+   * page and the office's copy can never disagree about the fallback.
+   */
+  readonly wording: PublicInvoiceWording;
+}
+
+export interface PublicInvoiceWording {
+  readonly invoiceFooter: string | null;
+  readonly payInstructions: string | null;
+  readonly receiptNote: string | null;
 }
 
 /**
@@ -108,6 +129,14 @@ export interface PublicInvoiceView {
   readonly invoicedAt: Date;
   /** When the work was done. NEVER a fallback for invoicedAt; null when genuinely unknown. */
   readonly serviceAt: Date | null;
+  // EFFECTIVE document wording — override when the shop set one, otherwise the standard
+  // sentence, resolved once here so the page renders strings and decides nothing.
+  /** Note at the bottom of the document. Null = no footer, exactly what the page always did. */
+  readonly footerNote: string | null;
+  /** How to settle when card payment isn't available. Always a sentence. */
+  readonly payInstructions: string;
+  /** The settled-state line under "Paid — thank you!". Always a sentence. */
+  readonly receiptNote: string;
 }
 
 export const toPublicInvoiceView = (
@@ -115,7 +144,8 @@ export const toPublicInvoiceView = (
   context: PublicInvoiceContext,
 ): PublicInvoiceView => {
   const p = invoice.props;
-  const { orgName, chargesEnabled, business, customerName, serviceAddress, serviceAt } = context;
+  const { orgName, chargesEnabled, business, customerName, serviceAddress, serviceAt, wording } =
+    context;
   return {
     num: p.num,
     title: p.title,
@@ -153,6 +183,9 @@ export const toPublicInvoiceView = (
     // The bill's own creation stamp. Always present — an invoice cannot exist without one.
     invoicedAt: p.createdAt,
     serviceAt,
+    footerNote: effectiveInvoiceFooter(wording.invoiceFooter),
+    payInstructions: effectivePayInstructions(wording.payInstructions, orgName),
+    receiptNote: effectiveReceiptNote(wording.receiptNote),
   };
 };
 

@@ -654,6 +654,21 @@ export interface BusinessIdentity {
   license: string | null;
 }
 
+/**
+ * The org's document-wording OVERRIDES for the slots client surfaces render — the invoice
+ * footer (close-out / office preview) and the change-order agreement line (sign screen).
+ *
+ * `null` in the store until DocumentWordingHydrator lands, and RAW when it does: null fields
+ * mean "the standard sentence renders", resolved at the render site through the settings
+ * domain's effective* helpers so the client and the server public page share ONE fallback.
+ * A failed hydration leaves this null and every surface renders the standard wording — the
+ * degradation is exactly what an untouched shop sees, never a blank line.
+ */
+export interface DocWording {
+  invoiceFooter: string | null;
+  changeOrderAgreement: string | null;
+}
+
 // ---- UI state --------------------------------------------------------------
 
 export interface ActiveModal {

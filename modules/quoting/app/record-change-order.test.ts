@@ -25,6 +25,7 @@ import type { Estimate } from "../domain/estimate";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
 import type { AiDraftSnapshot } from "../domain/edit-delta";
 import { RecordChangeOrderUseCase, type RecordChangeOrderCommand } from "./record-change-order";
+import { authorizationText } from "../domain/authorization-text";
 
 const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 const LEAD: LeadId = asLeadId("33333333-3333-3333-3333-333333333333");
@@ -145,6 +146,25 @@ describe("RecordChangeOrderUseCase", () => {
     const r = await useCase.exec(command());
     if (!isOk(r)) throw new Error("expected ok");
     expect(r.value.props.signedSnapshot?.authorizationText).toContain("E2E Plumbing");
+  });
+
+  it("freezes the FIXED authorization sentence — org document wording can never reach the record", async () => {
+    // The sacred snapshot rule. The change-order agreement line a shop can edit in Settings →
+    // Documents is the DISPLAY sentence on the sign screen; the frozen record stores the
+    // versioned legal authorization text, assembled in the domain from the estimate's own
+    // figures. This use case takes no wording input at all — the property is structural — and
+    // this test pins it so a future "thread the override through" change fails loudly here.
+    const r = await useCase.exec(command());
+    if (!isOk(r)) throw new Error("expected ok");
+    const snap = r.value.props.signedSnapshot;
+    expect(snap?.authorizationText).toBe(
+      authorizationText({
+        totalCents: r.value.total(),
+        depositCents: r.value.depositDue(),
+        orgName: "E2E Plumbing",
+      }),
+    );
+    expect(snap?.authorizationText).not.toContain("approves adding the work");
   });
 
   it("mints a SEPARATE document per approval — three trips back to the van, three addenda", async () => {

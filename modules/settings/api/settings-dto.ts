@@ -3,6 +3,12 @@ import { Phone } from "@mallet/shared/types";
 import type { SettingsSnapshot } from "../app/get-settings";
 import type { PricebookItem, LaborRate, JobTerm, LeadSource } from "../domain/settings-repository";
 import type { OrgSettings } from "../domain/org-settings";
+import {
+  INVOICE_FOOTER_MAX,
+  PAY_INSTRUCTIONS_MAX,
+  RECEIPT_NOTE_MAX,
+  CHANGE_ORDER_AGREEMENT_MAX,
+} from "../domain/document-wording";
 
 // --- Stripe Connect (Express) — PR1 -----------------------------------------
 
@@ -148,6 +154,25 @@ export const businessIdentityDTO = z.object({
   license: z.string().nullable(),
 });
 
+/**
+ * The document-wording overrides the FIELD surface renders — `anyRole`, two nullable strings.
+ *
+ * Same bar as `businessIdentityDTO`: the technician's close-out prints the invoice footer on
+ * the customer's own copy of the bill, and the change-order agreement line is what the
+ * customer reads above the signature pad on the technician's phone — both sentences the
+ * customer is shown, so a technician learning them discloses nothing. Null = the standard
+ * sentence; the render seams resolve through domain/document-wording.ts.
+ *
+ * Payment instructions and the receipt note are NOT here: they render only on the public
+ * invoice page, server-side, and nothing on a technician's phone needs them. Anything added
+ * here becomes readable by every technician in the org — keep it to sentences a customer
+ * document shows.
+ */
+export const documentWordingDTO = z.object({
+  invoiceFooter: z.string().nullable(),
+  changeOrderAgreement: z.string().nullable(),
+});
+
 // --- Org config DTO --------------------------------------------------------
 
 export const orgSettingsDTO = z.object({
@@ -225,6 +250,21 @@ export const businessDTO = z.object({
   license: z.string().nullable(),
 });
 
+// --- Documents DTO -----------------------------------------------------------
+
+/**
+ * The four document-wording overrides, returned on every settingsDTO response — RAW, never
+ * resolved. Null = the shop never touched the slot and the standard sentence renders
+ * (domain/document-wording.ts owns the standard literals). The Settings → Documents card
+ * needs the raw value to tell "override" from "standard"; resolving here would erase that.
+ */
+export const documentsDTO = z.object({
+  invoiceFooter: z.string().nullable(),
+  payInstructions: z.string().nullable(),
+  receiptNote: z.string().nullable(),
+  changeOrderAgreement: z.string().nullable(),
+});
+
 // --- Collection item DTOs --------------------------------------------------
 
 export const pricebookItemDTO = z.object({
@@ -277,6 +317,7 @@ export const settingsSnapshotDTO = z.object({
 export const settingsDTO = settingsSnapshotDTO.extend({
   brand: brandDTO,
   business: businessDTO,
+  documents: documentsDTO,
 });
 
 // --- Input schemas (named exports, mirroring output DTOs above) ------------
@@ -363,6 +404,22 @@ export const updateBusinessInput = z.object({
   phone: z.string().max(64).nullable().optional(),
   email: z.string().max(320).nullable().optional(),
   license: z.string().max(120).nullable().optional(),
+});
+
+/**
+ * updateDocuments input: all slots optional — the caller sends only what changed, and an
+ * explicit null clears a slot back to its standard wording.
+ *
+ * Length caps ONLY (the caps live in domain/document-wording.ts beside the standard
+ * literals). No content rules: these sentences print on documents exactly as the shop writes
+ * them, and any format rule here is a way to reject a valid sentence. The domain trims and
+ * normalises blank to null — that is the whole of the normalisation.
+ */
+export const updateDocumentsInput = z.object({
+  invoiceFooter: z.string().max(INVOICE_FOOTER_MAX).nullable().optional(),
+  payInstructions: z.string().max(PAY_INSTRUCTIONS_MAX).nullable().optional(),
+  receiptNote: z.string().max(RECEIPT_NOTE_MAX).nullable().optional(),
+  changeOrderAgreement: z.string().max(CHANGE_ORDER_AGREEMENT_MAX).nullable().optional(),
 });
 
 // --- Mappers (domain → wire) -----------------------------------------------
@@ -457,6 +514,12 @@ export const toSettingsDTO = (s: SettingsSnapshot): z.infer<typeof settingsDTO> 
       phone: p.bizPhone,
       email: p.bizEmail,
       license: p.licenseNumber,
+    },
+    documents: {
+      invoiceFooter: p.docInvoiceFooter,
+      payInstructions: p.docInvoicePayInstructions,
+      receiptNote: p.docInvoiceReceiptNote,
+      changeOrderAgreement: p.docChangeOrderAgreement,
     },
   };
 };

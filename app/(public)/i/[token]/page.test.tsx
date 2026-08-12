@@ -51,6 +51,11 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
     serviceAddress: null,
     invoicedAt: new Date("2026-08-05T18:00:00.000Z"),
     serviceAt: null,
+    // Effective document wording, exactly as toPublicInvoiceView resolves it for an untouched
+    // shop: no footer, and the standard pay/receipt sentences.
+    footerNote: null,
+    payInstructions: "To pay this invoice, contact Rivera Plumbing directly.",
+    receiptNote: "This invoice is settled in full. Keep this link for your records.",
     ...over,
   };
 }
@@ -230,6 +235,47 @@ describe("PublicInvoicePage — a document of record, not a pay page", () => {
     await renderPage();
     expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
     expect(screen.queryByText(/Service Aug/)).toBeNull();
+  });
+});
+
+describe("PublicInvoicePage — document wording comes from the view, not literals", () => {
+  it("renders the view's payment instructions when the bill is open but not card-payable", async () => {
+    getPublicInvoiceMock.mockResolvedValue(
+      view({ chargesEnabled: false, payInstructions: "Zelle to (925) 555-0100." }),
+    );
+    await renderPage();
+    expect(screen.getByText("Zelle to (925) 555-0100.")).toBeTruthy();
+    // The old hardcoded sentence must not ALSO render.
+    expect(screen.queryByText(/To pay this invoice, contact/)).toBeNull();
+  });
+
+  it("renders the view's receipt note on a paid bill", async () => {
+    getPublicInvoiceMock.mockResolvedValue(
+      view({
+        status: "paid",
+        amountPaidCents: 100_00,
+        balanceDueCents: 0,
+        receiptNote: "Paid in full — 1-year warranty starts today.",
+      }),
+    );
+    await renderPage();
+    expect(screen.getByText("Paid — thank you!")).toBeTruthy();
+    expect(screen.getByText("Paid in full — 1-year warranty starts today.")).toBeTruthy();
+    expect(screen.queryByText(/This invoice is settled in full/)).toBeNull();
+  });
+
+  it("prints the footer note inside the document — on paper too, never .noprint", async () => {
+    // A warranty line is part of the document the customer keeps, so it must survive printing.
+    getPublicInvoiceMock.mockResolvedValue(view({ footerNote: "1-year warranty on labor." }));
+    await renderPage();
+    const note = screen.getByText("1-year warranty on labor.");
+    expect(note.closest(".noprint")).toBeNull();
+  });
+
+  it("renders NO footer at all when the shop never set one", async () => {
+    getPublicInvoiceMock.mockResolvedValue(view());
+    await renderPage();
+    expect(screen.queryByText(/warranty/)).toBeNull();
   });
 });
 

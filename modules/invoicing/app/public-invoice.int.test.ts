@@ -208,4 +208,26 @@ suite("getPublicInvoice — the customer's document of record (live RLS)", () =>
   it("returns null for a token that matches no live invoice", async () => {
     expect(await getPublicInvoice("f".repeat(64))).toBeNull();
   });
+
+  it("carries the shop's document wording, and the standard sentences for an untouched shop", async () => {
+    // Org A sets its wording in Settings → Documents; org B never touches it. The same token
+    // read must resolve A's own sentences and B's standard ones — org-scoped, like everything
+    // else on this page.
+    await appRouter.createCaller(ctxFor(ownerAId, orgAId, "owner")).v1.settings.updateDocuments({
+      invoiceFooter: "1-year warranty on labor.",
+      payInstructions: "Zelle to (925) 555-0100.",
+      receiptNote: "Paid in full — thank you!",
+    });
+
+    const [a, b] = await Promise.all([getPublicInvoice(tokenA), getPublicInvoice(tokenB)]);
+    expect(a?.footerNote).toBe("1-year warranty on labor.");
+    expect(a?.payInstructions).toBe("Zelle to (925) 555-0100.");
+    expect(a?.receiptNote).toBe("Paid in full — thank you!");
+
+    expect(b?.footerNote).toBeNull();
+    expect(b?.payInstructions).toMatch(/^To pay this invoice, contact PubInv B .* directly\.$/);
+    expect(b?.receiptNote).toBe(
+      "This invoice is settled in full. Keep this link for your records.",
+    );
+  });
 });
