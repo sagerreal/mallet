@@ -5,9 +5,9 @@
  * no clock (the caller supplies its own local "today").
  *
  * WHY. One row per JOB cannot draw a two-stop day: the morning stop and the return trip are
- * different drives at different hours, and a single row can only say one thing (visit-progress.ts
- * was the patch over that). One card per VISIT says each thing where it happens. A job with no
- * visits at all still gets a job-level card — hiding it is how work goes missing.
+ * different drives at different hours, and a single row can only say one thing. One card per
+ * VISIT says each thing where it happens. A job with no visits at all still gets a job-level
+ * card — hiding it is how work goes missing.
  *
  * The buckets are the mock's two sections. UPCOMING is the route still to drive (pending,
  * en-route, on-site — any date, because carried-over work must stay visible on today's list).
