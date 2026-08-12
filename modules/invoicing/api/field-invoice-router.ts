@@ -21,7 +21,6 @@ import {
 } from "@mallet/notifications";
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { Invoice } from "../domain/invoice";
-import { RecordCardPaymentUseCase } from "../app/record-card-payment";
 import { reconcileCheckoutSession } from "../app/reconcile-checkout";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { logger } from "@mallet/shared/observability";

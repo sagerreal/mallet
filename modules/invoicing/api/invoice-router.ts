@@ -31,7 +31,6 @@ import { VoidInvoiceUseCase } from "../app/void-invoice";
 import { ListInvoicesUseCase } from "../app/list-invoices";
 import { UpdateInvoiceMetadataUseCase } from "../app/update-invoice-metadata";
 import { PatchInvoiceLinesUseCase } from "../app/patch-invoice-lines";
-import { RecordCardPaymentUseCase } from "../app/record-card-payment";
 import { reconcileCheckoutSession } from "../app/reconcile-checkout";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { logger } from "@mallet/shared/observability";
