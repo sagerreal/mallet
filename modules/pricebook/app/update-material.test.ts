@@ -71,6 +71,10 @@ class FakeMaterialRepository implements MaterialRepository {
     throw new Error("create not used in update tests");
   }
 
+  async allNames(): Promise<string[]> {
+    return [...this.store.values()].map((m) => m.props.name);
+  }
+
   async list(
     _page: CursorPage,
     _filter: { search?: string; categoryId?: string | null },

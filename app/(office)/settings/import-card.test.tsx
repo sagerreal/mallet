@@ -10,13 +10,17 @@ vi.mock("@/lib/store/app-store", () => ({ useOpenModal: () => openModal }));
 let customerCount: { total: number } | undefined;
 let jobCount: { total: number } | undefined;
 let serviceNames: { names: string[] } | undefined;
+let materialNames: { names: string[] } | undefined;
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
       customers: { count: { useQuery: () => ({ data: customerCount }) } },
       jobs: { count: { useQuery: () => ({ data: jobCount }) } },
-      pricebook: { service: { importNames: { useQuery: () => ({ data: serviceNames }) } } },
+      pricebook: {
+        service: { importNames: { useQuery: () => ({ data: serviceNames }) } },
+        material: { importNames: { useQuery: () => ({ data: materialNames }) } },
+      },
     },
   },
 }));
@@ -26,6 +30,7 @@ beforeEach(() => {
   customerCount = { total: 648 };
   jobCount = { total: 686 };
   serviceNames = { names: ["a", "b", "c"] };
+  materialNames = { names: ["p", "q"] };
 });
 
 describe("ImportCard", () => {
@@ -33,6 +38,7 @@ describe("ImportCard", () => {
     render(<ImportCard />);
     expect(screen.getByText("Customers")).toBeTruthy();
     expect(screen.getByText("Price book")).toBeTruthy();
+    expect(screen.getByText("Materials")).toBeTruthy();
     expect(screen.getByText("Jobs")).toBeTruthy();
   });
 
@@ -40,6 +46,7 @@ describe("ImportCard", () => {
     render(<ImportCard />);
     expect(screen.getByText("648 on file")).toBeTruthy();
     expect(screen.getByText("3 services")).toBeTruthy();
+    expect(screen.getByText("2 materials")).toBeTruthy();
     expect(screen.getByText("686 jobs")).toBeTruthy();
   });
 
@@ -63,7 +70,7 @@ describe("ImportCard", () => {
   it("opens the matching modal for each entity", async () => {
     render(<ImportCard />);
     const buttons = screen.getAllByRole("button", { name: "Import" });
-    expect(buttons).toHaveLength(3);
+    expect(buttons).toHaveLength(4);
 
     await userEvent.click(buttons[0]!);
     expect(openModal).toHaveBeenCalledWith("import-customers");
@@ -72,6 +79,9 @@ describe("ImportCard", () => {
     expect(openModal).toHaveBeenCalledWith("import-services");
 
     await userEvent.click(buttons[2]!);
+    expect(openModal).toHaveBeenCalledWith("import-materials");
+
+    await userEvent.click(buttons[3]!);
     expect(openModal).toHaveBeenCalledWith("import-jobs");
   });
 });

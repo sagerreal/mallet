@@ -41,6 +41,12 @@ const ENTITIES: readonly ImportEntity[] = [
     modal: MODAL.IMPORT_SERVICES,
   },
   {
+    key: "materials",
+    label: "Materials",
+    blurb: "The parts you stock. Re-import a supplier's sheet to update costs.",
+    modal: MODAL.IMPORT_MATERIALS,
+  },
+  {
     key: "jobs",
     label: "Jobs",
     blurb: "Scheduled and open work. Rows with a date land on the schedule.",
@@ -66,11 +72,15 @@ export function ImportCard() {
   const services = api.v1.pricebook.service.importNames.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
+  const materials = api.v1.pricebook.material.importNames.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
 
   const counts: Record<string, string> = {
-    customers: countLabel(customers.data?.total,"on file"),
+    customers: countLabel(customers.data?.total, "on file"),
     services: countLabel(services.data?.names.length, "services"),
-    jobs: countLabel(jobs.data?.total,"jobs"),
+    materials: countLabel(materials.data?.names.length, "materials"),
+    jobs: countLabel(jobs.data?.total, "jobs"),
   };
 
   return (

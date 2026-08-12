@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { autoMap } from "./auto-map";
 import { buildRows } from "./build-rows";
-import { CUSTOMER_IMPORT, SERVICE_IMPORT } from "./descriptors";
+import { CUSTOMER_IMPORT, MATERIAL_IMPORT, SERVICE_IMPORT } from "./descriptors";
 import type { ImportDescriptor } from "./descriptor";
 
 // ── customers ────────────────────────────────────────────────────────────────
@@ -153,6 +153,48 @@ describe("services import", () => {
     const built = buildServices();
     expect(built.skipped).toHaveLength(1);
     expect(built.rows).toHaveLength(2);
+  });
+});
+
+// ── materials ────────────────────────────────────────────────────────────────
+
+const MATERIAL_HEADERS = ["Part No", "Part Name", "Category", "Unit Cost", "UOM", "Supplier", "Taxable"];
+
+describe("materials import", () => {
+  const records = [
+    {
+      "Part No": "WH-40G", "Part Name": "40 gal water heater", Category: "Water heaters",
+      "Unit Cost": "$412.50", UOM: "each", Supplier: "Ferguson", Taxable: "yes",
+    },
+  ];
+  const built = () => buildRows(records, autoMap(MATERIAL_HEADERS, MATERIAL_IMPORT), MATERIAL_IMPORT);
+
+  it("claims 'Part No' for code before name's 'part' synonym takes it", () => {
+    const map = autoMap(MATERIAL_HEADERS, MATERIAL_IMPORT);
+    expect(map.code).toBe("Part No");
+    expect(map.name).toBe("Part Name");
+  });
+
+  it("reads a supplier sheet's cost column", () => {
+    expect(built().rows[0]!.unitCostCents).toBe(41_250);
+  });
+
+  it("OMITS price when the sheet has no price column, so the markup rule decides", () => {
+    // Present-but-null would pin the material to manual pricing at $0; absent leaves it on rule
+    // mode, which is the whole point of a cost-only supplier sheet.
+    expect("unitPriceCents" in built().rows[0]!).toBe(false);
+  });
+
+  it("defaults a blank unit to 'each' rather than null, since the column is NOT NULL", () => {
+    const blankUom = [{ ...records[0]!, UOM: "" }];
+    const rows = buildRows(blankUom, autoMap(MATERIAL_HEADERS, MATERIAL_IMPORT), MATERIAL_IMPORT).rows;
+    expect(rows[0]!.unitOfMeasure).toBe("each");
+  });
+
+  it("defaults taxable to true when the column is blank", () => {
+    const blankTax = [{ ...records[0]!, Taxable: "" }];
+    const rows = buildRows(blankTax, autoMap(MATERIAL_HEADERS, MATERIAL_IMPORT), MATERIAL_IMPORT).rows;
+    expect(rows[0]!.taxable).toBe(true);
   });
 });
 
