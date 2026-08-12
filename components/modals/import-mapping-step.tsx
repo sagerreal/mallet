@@ -16,8 +16,6 @@ interface Props {
   readonly mapping: MappingConfig;
   readonly built: BuildResult;
   readonly skipReason: string;
-  readonly importLabel: (count: number) => string;
-  readonly resumeFrom: number;
   readonly busy: boolean;
   readonly error: string | null;
   readonly onSetField: (key: string, value: string) => void;
@@ -40,8 +38,8 @@ const ROW_STYLE = {
 } as const;
 
 export function ImportMappingStep({
-  descriptor, headers, mapping, built, skipReason, importLabel,
-  resumeFrom, busy, error, onSetField, onBack, onImport,
+  descriptor, headers, mapping, built, skipReason,
+  busy, error, onSetField, onBack, onImport,
 }: Props) {
   // Every field, with any combinesWith partner directly after its primary, so "Name" and
   // "Last name" sit together the way a user expects to see them.
@@ -112,9 +110,9 @@ export function ImportMappingStep({
           disabled={built.rows.length === 0 || busy}
           onClick={onImport}
         >
-          {resumeFrom > 0
-            ? `Resume — ${built.rows.length - resumeFrom} left`
-            : importLabel(built.rows.length)}
+          {/* Advances to the preview, not the import — the label has to say so, or the button
+              lies about what the tap does. */}
+          Review {built.rows.length} row{built.rows.length === 1 ? "" : "s"}
         </button>
       </div>
     </>
