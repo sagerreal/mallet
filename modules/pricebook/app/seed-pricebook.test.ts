@@ -102,6 +102,10 @@ class FakeServiceRepository implements ServiceRepository {
     return this.store.get(id) ?? null;
   }
 
+  async allNames(): Promise<string[]> {
+    return [...this.store.values()].map((s) => s.props.name);
+  }
+
   async list(
     page: CursorPage,
     filter: { search?: string; categoryId?: string | null },

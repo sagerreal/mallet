@@ -22,6 +22,11 @@ interface Props {
   readonly resumeFrom: number;
   readonly busy: boolean;
   readonly error: string | null;
+  /**
+   * How many rows will OVERWRITE an existing record, when the entity supports re-import.
+   * Undefined for entities that only ever create.
+   */
+  readonly willUpdate?: number;
   readonly onBack: () => void;
   readonly onConfirm: () => void;
 }
@@ -82,9 +87,13 @@ function IssueList({ title, issues, tone }: { title: string; issues: readonly Ro
 }
 
 export function ImportPreviewStep({
-  built, skipReason, importLabel, resumeFrom, busy, error, onBack, onConfirm,
+  built, skipReason, importLabel, resumeFrom, busy, error, willUpdate, onBack, onConfirm,
 }: Props) {
   const nothingToDo = built.rows.length === 0;
+  // Split the ready rows into new vs. overwriting, so "412 will import" doesn't quietly include
+  // 88 records about to be changed in place.
+  const updating = willUpdate ?? 0;
+  const creating = Math.max(0, built.rows.length - updating);
 
   return (
     <>
@@ -98,7 +107,14 @@ export function ImportPreviewStep({
       </p>
 
       <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginBottom: "var(--space-3)" }}>
-        <ImportPill tone="ready" label={`${built.rows.length} will import`} />
+        {updating > 0 ? (
+          <>
+            <ImportPill tone="ready" label={`${creating} new`} />
+            <ImportPill tone="warn" label={`${updating} will be updated`} />
+          </>
+        ) : (
+          <ImportPill tone="ready" label={`${built.rows.length} will import`} />
+        )}
         {built.skipped.length > 0 && (
           <ImportPill tone="skipped" label={`${built.skipped.length} skipped — ${skipReason}`} />
         )}
@@ -106,6 +122,14 @@ export function ImportPreviewStep({
           <ImportPill tone="warn" label={`${built.warnings.length} missing a field`} />
         )}
       </div>
+
+      {updating > 0 && (
+        <p style={{ fontSize: "var(--type-base)", color: "var(--ink-2)", margin: "0 0 var(--space-2)", lineHeight: 1.45 }}>
+          {updating} row{updating === 1 ? "" : "s"} match a service you already have and will
+          overwrite it. Only the columns in your file change — anything else on those services
+          stays as it is.
+        </p>
+      )}
 
       <IssueList
         title="These rows won't be imported"

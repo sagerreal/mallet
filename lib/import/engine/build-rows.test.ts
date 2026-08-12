@@ -188,13 +188,27 @@ describe("adding a field needs no engine change", () => {
     expect(built.warnings).toHaveLength(1);
   });
 
-  it("leaves the new field null when its column is absent entirely", () => {
+  it("OMITS a field whose column is absent, rather than sending null for it", () => {
     const built = buildRows(
       [serviceRecords[0]!],
       autoMap(SERVICE_HEADERS, withLeadTime),
       withLeadTime,
     );
-    expect(built.rows[0]!.leadTimeDays).toBeNull();
+    // Omitted, not null: on re-import the server must be able to tell "this sheet has no such
+    // column, leave it alone" from "this cell is blank, clear it".
+    expect("leadTimeDays" in built.rows[0]!).toBe(false);
     expect(built.warnings).toHaveLength(0);
+  });
+
+  it("still sends an explicit null for a MAPPED column whose cell is blank", () => {
+    const headers = [...SERVICE_HEADERS, "Lead Time"];
+    const built = buildRows(
+      [{ ...serviceRecords[0]!, "Lead Time": "" }],
+      autoMap(headers, withLeadTime),
+      withLeadTime,
+    );
+    // A blank cell in a column the user mapped is a deliberate clear, not an absence.
+    expect("leadTimeDays" in built.rows[0]!).toBe(true);
+    expect(built.rows[0]!.leadTimeDays).toBeNull();
   });
 });

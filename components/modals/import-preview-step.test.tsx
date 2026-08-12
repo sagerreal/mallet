@@ -118,4 +118,33 @@ describe("ImportPreviewStep", () => {
     setup(build(), { error: "Import stopped partway." });
     expect(screen.getByText("Import stopped partway.")).toBeTruthy();
   });
+
+  describe("re-import", () => {
+    it("splits new from overwriting instead of one lumped count", () => {
+      setup(build({ rows: [{ name: "A" }, { name: "B" }, { name: "C" }] }), { willUpdate: 2 });
+
+      expect(screen.getByText("1 new")).toBeTruthy();
+      expect(screen.getByText("2 will be updated")).toBeTruthy();
+      // The lumped label must NOT also appear, or the numbers read as contradictory.
+      expect(screen.queryByText("3 will import")).toBeNull();
+    });
+
+    it("says what an overwrite actually touches, so it isn't a surprise", () => {
+      setup(build(), { willUpdate: 2 });
+      expect(screen.getByText(/only the columns in your file change/i)).toBeTruthy();
+    });
+
+    it("keeps the single count when nothing will be overwritten", () => {
+      setup(build(), { willUpdate: 0 });
+
+      expect(screen.getByText("2 will import")).toBeTruthy();
+      expect(screen.queryByText(/will be updated/i)).toBeNull();
+    });
+
+    it("stays silent about updates for a create-only entity", () => {
+      setup(build()); // willUpdate omitted
+      expect(screen.getByText("2 will import")).toBeTruthy();
+      expect(screen.queryByText(/will be updated/i)).toBeNull();
+    });
+  });
 });
