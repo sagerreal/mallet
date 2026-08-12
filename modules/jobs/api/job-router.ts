@@ -5,7 +5,8 @@ import { orThrow } from "@/trpc/errors";
 import { asJobId, asLeadId, asEstimateId, asUserId, toPage } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { DrizzleLaborReader } from "../infra/drizzle-labor-reader";
-import { DrizzleLeadRepository } from "@mallet/customers";
+import { DrizzleLeadRepository, EnsureCustomerUseCase, ResolveCustomerRefsUseCase } from "@mallet/customers";
+import { DrizzleSettingsRepository, OrgSettings } from "@mallet/settings";
 import { JOB_SORTS } from "../infra/job-sorts";
 import { JOB_VIEWS } from "../infra/job-views";
 import { DrizzleEstimateReader } from "../infra/drizzle-estimate-reader";
@@ -18,11 +19,15 @@ import { CompleteJobUseCase } from "../app/complete-job";
 import { CancelJobUseCase } from "../app/cancel-job";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { CreateManualJobUseCase } from "../app/create-manual-job";
+import { CreateVisitUseCase } from "../app/create-visit";
+import { ImportJobsUseCase } from "../app/import-jobs";
 import { UpdateJobUseCase } from "../app/update-job";
 import {
   JOB_CHECKLIST_MAX_ITEMS,
   JOB_CHECKLIST_NAME_MAX,
   JOB_CHECKLIST_ITEM_TEXT_MAX,
+  JOB_STATUSES,
+  type JobStatus,
 } from "../domain/job";
 import { ArchiveJobUseCase } from "../app/archive-job";
 import { ListCallbackCandidatesUseCase } from "../app/list-callback-candidates";
@@ -117,6 +122,32 @@ const listByLeadInput = z.object({
 // Named input schemas for the manual-job mutation surface (exported so the store can
 // reuse them for client-side validation without duplicating the bounds).
 const kindInputEnum = z.enum(["work", "estimate"]);
+
+// Bulk CSV import (mirrors `importCustomers` in lead-router.ts and `importServices` in
+// pricebook-router.ts). A row names its CUSTOMER rather than carrying a leadId — the server
+// resolves that per chunk, creating the customer when nothing matches. Client-side parsing has
+// already coerced dates and statuses; this endpoint re-validates and writes.
+const importJobRowInput = z.object({
+  customer: z.string().min(1).max(255),
+  phone: z.string().max(50).nullable(),
+  svc: z.string().max(60).nullable(),
+  scope: z.string().max(4000).nullable(),
+  addr: z.string().max(1000).nullable(),
+  status: z.enum(JOB_STATUSES as unknown as [string, ...string[]]).nullable(),
+  /** "YYYY-MM-DD" — null when the sheet carried no date; the job imports unscheduled. */
+  scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
+  /** "HH:MM" — null falls back to the org's opening hour for that weekday. */
+  scheduledStart: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
+});
+
+const importJobsInput = z.object({ rows: z.array(importJobRowInput).min(1).max(500) });
+
+const importJobsResultDTO = z.object({
+  created: z.number().int(),
+  deduped: z.number().int(),
+  failed: z.number().int(),
+  errors: z.array(z.object({ index: z.number().int(), message: z.string() })),
+});
 
 export const createJobInput = z.object({
   id: z.string().uuid().optional(),
@@ -280,6 +311,78 @@ export const createJobRouter = () =>
             }),
           ),
         );
+      }),
+
+    // Bulk import. Customer references are resolved for the WHOLE chunk in one pass (phone →
+    // name → create) so a 500-row sheet does not become 500 lookups; see
+    // ResolveCustomerRefsUseCase. Per-row failures are counted, never thrown — one bad row must
+    // not roll back the batch.
+    importJobs: ownerOrOffice
+      .input(importJobsInput)
+      .output(importJobsResultDTO)
+      .mutation(async ({ ctx, input }) => {
+        const orgId = ctx.principal.orgId;
+        const leadRepo = new DrizzleLeadRepository(ctx.tx, orgId);
+
+        const resolved = await new ResolveCustomerRefsUseCase({
+          leads: leadRepo,
+          ensureCustomer: new EnsureCustomerUseCase(leadRepo, ctx.deps.bus, ctx.deps.clock),
+        }).exec(
+          input.rows.map((r) => ({ name: r.customer, phone: r.phone })),
+          "Import",
+        );
+
+        // A row whose customer could not be resolved OR created has nowhere to hang a job.
+        const errors: { index: number; message: string }[] = [];
+        const rows = [];
+        for (let i = 0; i < input.rows.length; i++) {
+          const ref = resolved[i];
+          if (!ref) {
+            errors.push({ index: i, message: "Could not read the customer for this row." });
+            continue;
+          }
+          const r = input.rows[i]!;
+          rows.push({
+            leadId: ref.lead.props.id,
+            svc: r.svc,
+            scope: r.scope,
+            addr: r.addr,
+            status: (r.status ?? "scheduled") as JobStatus,
+            scheduledDate: r.scheduledDate,
+            scheduledStart: r.scheduledStart,
+            ...(ref.ambiguousName ? { ambiguousName: ref.ambiguousName } : {}),
+          });
+        }
+
+        const settings = await new DrizzleSettingsRepository(ctx.tx, orgId).getConfig(
+          orgId,
+          OrgSettings.defaultBooking,
+        );
+        const p = settings.props;
+        // Index 0 = Sunday, matching Date#getUTCDay.
+        const openHourByWeekday = [
+          p.hoursSunOpen, p.hoursMonOpen, p.hoursTueOpen, p.hoursWedOpen,
+          p.hoursThuOpen, p.hoursFriOpen, p.hoursSatOpen,
+        ];
+
+        const jobRepo = new DrizzleJobRepository(ctx.tx, orgId);
+        const result = orThrow(
+          await new ImportJobsUseCase(
+            new CreateManualJobUseCase(jobRepo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
+            new CreateVisitUseCase(jobRepo, ctx.deps.clock, ctx.deps.ids),
+            ctx.deps.clock,
+            ctx.deps.ids,
+          ).exec({ orgId, rows, openHourByWeekday }),
+        );
+
+        return {
+          created: result.created,
+          // Jobs have no natural key, so nothing is ever matched to an existing job. Reported for
+          // shape-parity with the other importers rather than because it can be non-zero.
+          deduped: 0,
+          failed: result.failed + errors.length,
+          errors: [...errors, ...result.errors].sort((a, b) => a.index - b.index),
+        };
       }),
 
     get: ownerOrOffice

@@ -81,6 +81,15 @@ class FakeLeadRepository implements LeadRepository {
     return null;
   }
 
+  // Case-insensitive, active rows only, ALL matches — mirrors the real repo, which returns
+  // duplicates on purpose so a caller can see that a name identifies more than one customer.
+  async findByNames(names: readonly string[]): Promise<Lead[]> {
+    const wanted = new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean));
+    return [...this.store.values()].filter(
+      (l) => !this.deletedIds.has(l.props.id) && wanted.has(l.props.name.trim().toLowerCase()),
+    );
+  }
+
   async findByIds(ids: readonly LeadId[]): Promise<Lead[]> {
     const found: Lead[] = [];
     for (const id of ids) {

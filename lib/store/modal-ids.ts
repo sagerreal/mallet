@@ -25,6 +25,7 @@ export const MODAL = {
   COMPANY: "company",
   IMPORT_CUSTOMERS: "import-customers",
   IMPORT_SERVICES: "import-services",
+  IMPORT_JOBS: "import-jobs",
   ROOM_CARD: "room-card",
   SITE_TRACER: "site-tracer",
 } as const;

@@ -71,6 +71,54 @@ describe("boolean", () => {
   });
 });
 
+describe("date", () => {
+  it("accepts ISO unchanged", () => {
+    expect(COERCERS.date("2026-08-12", spec())).toEqual({ ok: true, value: "2026-08-12" });
+    expect(COERCERS.date("2026-8-2", spec())).toEqual({ ok: true, value: "2026-08-02" });
+  });
+
+  it("reads ambiguous slash dates month-first (US), the beachhead market", () => {
+    expect(COERCERS.date("3/4/26", spec())).toEqual({ ok: true, value: "2026-03-04" });
+    expect(COERCERS.date("12/25/2026", spec())).toEqual({ ok: true, value: "2026-12-25" });
+  });
+
+  it("accepts dot and dash separators", () => {
+    expect(COERCERS.date("3.4.2026", spec())).toEqual({ ok: true, value: "2026-03-04" });
+    expect(COERCERS.date("3-4-2026", spec())).toEqual({ ok: true, value: "2026-03-04" });
+  });
+
+  it("rejects a date that does not exist rather than rolling it over", () => {
+    // Date.UTC would silently turn this into 3 March; the round-trip check catches it.
+    expect(COERCERS.date("2/31/2026", spec()).ok).toBe(false);
+    expect(COERCERS.date("13/1/2026", spec()).ok).toBe(false);
+  });
+
+  it("rejects free text", () => {
+    expect(COERCERS.date("next Tuesday", spec()).ok).toBe(false);
+    expect(COERCERS.date("", spec()).ok).toBe(false);
+  });
+});
+
+describe("time", () => {
+  it("accepts 24-hour input", () => {
+    expect(COERCERS.time("14:30", spec())).toEqual({ ok: true, value: "14:30" });
+    expect(COERCERS.time("8:05", spec())).toEqual({ ok: true, value: "08:05" });
+  });
+
+  it("converts 12-hour input", () => {
+    expect(COERCERS.time("2:30 PM", spec())).toEqual({ ok: true, value: "14:30" });
+    expect(COERCERS.time("2pm", spec())).toEqual({ ok: true, value: "14:00" });
+    expect(COERCERS.time("12:15 am", spec())).toEqual({ ok: true, value: "00:15" });
+    expect(COERCERS.time("12:15 pm", spec())).toEqual({ ok: true, value: "12:15" });
+  });
+
+  it("rejects out-of-range and unreadable values", () => {
+    expect(COERCERS.time("25:00", spec()).ok).toBe(false);
+    expect(COERCERS.time("10:75", spec()).ok).toBe(false);
+    expect(COERCERS.time("morning", spec()).ok).toBe(false);
+  });
+});
+
 describe("enum", () => {
   const status = spec({
     coerce: "enum",
