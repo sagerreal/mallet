@@ -11,9 +11,15 @@
     "allowsLinkPreview": false,
     "contentInset": "never"
   },
+  "android": {
+    "backgroundColor": "#FCFBF7"
+  },
   "plugins": {
     "Keyboard": {
       "resize": "native"
+    },
+    "SystemBars": {
+      "style": "LIGHT"
     },
     "SplashScreen": {
       "launchAutoHide": true,

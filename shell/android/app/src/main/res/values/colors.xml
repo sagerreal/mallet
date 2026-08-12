@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Mallet "paper" - the app's light-only background (#FCFBF7). Mirrors the iOS
+      shell, where the same literal replaced systemBackgroundColor because the
+      DayNight default renders BLACK on a phone in dark mode and leaks through as
+      a flash before the WebView paints. Mallet is light-only (color-scheme:light;
+      dark is an explicit [data-theme] opt-in), so hardcoding paper is correct in
+      every case here too.
+    -->
+    <color name="malletPaper">#FCFBF7</color>
+</resources>
