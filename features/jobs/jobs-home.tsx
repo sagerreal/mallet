@@ -33,6 +33,8 @@ import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 import { useJobsQuery, useJobsQueryState } from "./use-jobs-query";
 import { serverPageToRows, SORT_COL_TO_SERVER } from "./server-rows";
+import { useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 
 export interface JobsHomeProps {
   onOpenJob: (id: string) => void;
@@ -58,6 +60,7 @@ const FIRST_RUN = {
 
 export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const router = useRouter();
+  const openModal = useOpenModal();
   const { sort, setSort } = useJobsSort();
 
   const [archiveSet, setArchiveSet] = useState<JobsArchiveSet>("active");
@@ -144,7 +147,12 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
             )}
           </div>
         </div>
-        <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
+        <div style={{ display: "flex", gap: "var(--space-2)" }}>
+          <button className="btn ghost" onClick={() => openModal(MODAL.IMPORT_JOBS)}>
+            Import
+          </button>
+          <button className="btn primary" onClick={onOpenNewJob}>+ New job</button>
+        </div>
       </div>
 
       <div className="mob-new">

@@ -23,7 +23,7 @@ let lastQueryArgs: Record<string, unknown> = {};
 /** The screen's own filter state, so a test can put it on the Archived tab or pick a view. */
 let queryState: Record<string, unknown>;
 
-vi.mock("@/lib/store/app-store", () => ({ useAppStore: () => [] }));
+vi.mock("@/lib/store/app-store", () => ({ useAppStore: () => [], useOpenModal: () => vi.fn() }));
 vi.mock("./use-jobs-query", () => ({
   useJobsQuery: (args: Record<string, unknown>) => ((lastQueryArgs = args), {
     ...listState,

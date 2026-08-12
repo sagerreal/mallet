@@ -43,6 +43,13 @@ export interface ResolveCustomerRefsDeps {
 
 const normalise = (name: string): string => name.trim().toLowerCase();
 
+/** An unreadable phone is dropped, not fatal — the row still resolves by name or creates. */
+const parsePhone = (raw: string | null) => {
+  if (!raw) return null;
+  const parsed = Phone.parse(raw);
+  return isOk(parsed) ? parsed.value : null;
+};
+
 export class ResolveCustomerRefsUseCase {
   constructor(private readonly deps: ResolveCustomerRefsDeps) {}
 
@@ -68,22 +75,13 @@ export class ResolveCustomerRefsUseCase {
     const out: (ResolvedCustomer | null)[] = [];
 
     for (const ref of refs) {
-      const parsedPhone = ref.phone ? Phone.parse(ref.phone) : null;
-      const phone = parsedPhone && isOk(parsedPhone) ? parsedPhone.value : null;
-
-      // 1. Phone — the only real key.
-      if (phone) {
-        const hit = byPhone.get(phone);
-        if (hit) {
-          out.push({ lead: hit, created: false });
-          continue;
-        }
-      }
-
-      // 2. Name — taken only when it identifies exactly one customer.
+      const phone = parsePhone(ref.phone);
       const matches = byName.get(normalise(ref.name)) ?? [];
-      if (matches.length === 1 && !phone) {
-        out.push({ lead: matches[0]!, created: false });
+
+      // 1. Phone — the only real key. 2. Name — only when it identifies exactly one customer.
+      const existing = (phone ? byPhone.get(phone) : undefined) ?? (!phone && matches.length === 1 ? matches[0] : undefined);
+      if (existing) {
+        out.push({ lead: existing, created: false });
         continue;
       }
 

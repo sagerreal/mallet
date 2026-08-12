@@ -74,6 +74,104 @@ export const CUSTOMER_IMPORT: ImportDescriptor = {
 };
 
 /**
+ * Jobs. The customer is a NAME, not an id — the server resolves it per chunk (phone → name →
+ * create), so a job CSV never has to carry Mallet ids.
+ *
+ * `dependsOn` is advisory: importing customers first means jobs match existing records instead of
+ * creating them, but a shop re-importing only jobs later must not be blocked.
+ *
+ * Date/time handling: a row with a date but no time is scheduled at the org's opening hour for
+ * that weekday; a row with no date at all imports as an UNSCHEDULED job rather than being skipped,
+ * because a backlog of unscheduled work is a legitimate thing to migrate.
+ */
+export const JOB_IMPORT: ImportDescriptor = {
+  entity: "jobs",
+  label: "Jobs",
+  chunkSize: 500,
+  dependsOn: ["customers"],
+  fields: [
+    {
+      key: "customer",
+      label: "Customer",
+      required: true,
+      synonyms: ["customer name", "client name", "customer", "client", "contact", "name"],
+      coerce: "text",
+      maxLength: 255,
+      onInvalid: { kind: "skip-row", message: "No customer — row skipped." },
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      // Not stored on the job: it is how the server matches an EXISTING customer before falling
+      // back to the name, so a sheet carrying phones lands jobs on the right records.
+      synonyms: ["mobile", "cell", "phone", "telephone"],
+      coerce: "phone",
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "svc",
+      label: "Service",
+      synonyms: ["service", "job type", "work type", "trade"],
+      coerce: "text",
+      maxLength: 60,
+    },
+    {
+      key: "scope",
+      label: "Description",
+      synonyms: ["description", "details", "scope", "notes", "work performed"],
+      coerce: "text",
+      maxLength: 4000,
+    },
+    {
+      key: "addr",
+      label: "Address",
+      synonyms: ["service address", "job address", "site address", "address"],
+      coerce: "text",
+      maxLength: 1000,
+    },
+    {
+      key: "scheduledDate",
+      label: "Date",
+      synonyms: ["scheduled date", "job date", "start date", "date"],
+      coerce: "date",
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "scheduledStart",
+      label: "Time",
+      synonyms: ["start time", "scheduled time", "time"],
+      coerce: "time",
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "status",
+      label: "Status",
+      synonyms: ["status", "state", "job status"],
+      coerce: "enum",
+      whenBlank: "scheduled",
+      // Spellings seen in Jobber / Housecall Pro / ServiceTitan exports.
+      enumValues: {
+        scheduled: "scheduled",
+        open: "scheduled",
+        new: "scheduled",
+        upcoming: "scheduled",
+        "in progress": "in_progress",
+        in_progress: "in_progress",
+        active: "in_progress",
+        started: "in_progress",
+        complete: "complete",
+        completed: "complete",
+        done: "complete",
+        closed: "complete",
+        canceled: "canceled",
+        cancelled: "canceled",
+      },
+      onInvalid: { kind: "fallback", value: "scheduled", note: "imported as scheduled." },
+    },
+  ],
+};
+
+/**
  * Pricebook services. `name` is required; an unreadable price or cost warns and falls back to
  * zero rather than dropping the row — a service with a missing price is still worth importing,
  * and the shop can correct it. Clamps mirror pricebook-router.ts.
