@@ -161,6 +161,7 @@ class FakeJobRepository implements JobRepository {
 
 const billing = (bill: JobBillSummary | null): JobBillingReader => ({
   readBillForJob: async () => bill,
+  readBillsForJobs: async () => new Map(),
 });
 
 const CMD = { jobId: JOB_ID, reason: "Waiting on the 40-gal tank", durationHours: 1 };

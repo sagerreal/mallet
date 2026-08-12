@@ -314,6 +314,42 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     return Number(rows[0]!.n);
   };
 
+  it("stamps the job's bill onto the field agenda so the card can say Paid without opening the sheet", async () => {
+    const paidJobId = await finishedJobWithBill("paid", 40000);
+    const unbilledJobId = await finishedJobWithBill(null, 0);
+    // The helper leaves jobs.completed_at NULL (its return-trip consumers never list) — myDay's
+    // complete-inside-today window needs the stamp to include finished work at all.
+    await admin`update jobs set completed_at = now() where id in (${paidJobId}, ${unbilledJobId})`;
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    const day = await caller.v1.field.myDay(TODAY);
+    const paidItem = day.items.find((i) => i.id === paidJobId);
+    const unbilledItem = day.items.find((i) => i.id === unbilledJobId);
+    expect(paidItem?.bill).toMatchObject({ status: "paid", amountPaid: { cents: 40000 } });
+    expect(unbilledItem?.bill).toBeNull();
+  });
+
+  it("keeps bill STATUS but nulls the paid AMOUNT for a price-blind tech", async () => {
+    const paidJobId = await finishedJobWithBill("paid", 40000);
+    await admin`update jobs set completed_at = now() where id = ${paidJobId}`;
+    // Upsert — the suite org has no org_settings row until something writes one, and a bare
+    // UPDATE would no-op into a false pass the other way.
+    await admin`
+      insert into org_settings (org_id, tech_sees_price, booking)
+      values (${orgId}, false, '{"services": [], "notServices": "", "serviceFee": 0, "feeCredited": false}'::jsonb)
+      on conflict (org_id) do update set tech_sees_price = false`;
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      const day = await caller.v1.field.myDay(TODAY);
+      const item = day.items.find((i) => i.id === paidJobId);
+      // Paid is a FACT about the job; the figure is a price and follows techSeesPrice.
+      expect(item?.bill?.status).toBe("paid");
+      expect(item?.bill?.amountPaid).toBeNull();
+    } finally {
+      await admin`update org_settings set tech_sees_price = true where org_id = ${orgId}`;
+    }
+  });
+
   it("REFUSES the return trip on a finished job whose bill is PAID, and changes nothing", async () => {
     const jobId = await finishedJobWithBill("paid", 40000);
     const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
