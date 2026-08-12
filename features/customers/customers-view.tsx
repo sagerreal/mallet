@@ -8,7 +8,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { LEAD_SCOPES, LEAD_SCOPE_LABELS } from "@/modules/customers/infra/lead-views";
+import type { LeadGroup } from "@/modules/customers/infra/lead-views";
 import { useAppStore, useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
@@ -21,8 +21,8 @@ import { LEAD_STAGES } from "@/modules/customers/domain/lead";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
 import { ViewToggle } from "@/components/shared/view-toggle";
-import { CustomersFilters } from "./customers-filters";
-import { CustomersColumns, ALL_COL_DEFS, DEFAULT_COLS, colWidths } from "./customers-columns";
+import { CustomersGroupFilter } from "./customers-group-filter";
+import { ALL_COL_DEFS, DEFAULT_COLS, colWidths } from "./customers-columns";
 import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
 import { pressable } from "@/lib/a11y";
@@ -58,9 +58,8 @@ export function CustomersView() {
   // read the load state to tell "still loading" and "load errored" apart from a genuinely empty
   // list, so the first-run screen never flashes mid-fetch or misfires on a failed load.
   const [archiveSet, setArchiveSet] = useState<CustomerArchiveSet>("active");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [colsOpen, setColsOpen] = useState(false);
-  const [visibleCols, setVisibleCols] = useState<string[]>([...DEFAULT_COLS]);
+  // Columns are fixed now — the Columns picker went with the Filters panel.
+  const visibleCols: string[] = [...DEFAULT_COLS];
 
   // The list is served a page at a time by the database now: search, stage, source, sort and the
   // count all run in SQL. It used to filter the store's leads in the browser, which could only see
@@ -72,10 +71,15 @@ export function CustomersView() {
     stage: cq.stage,
     source: cq.source,
     scope: cq.scope,
+    group: cq.group,
     sort: serverSort,
     sortDir: serverSort ? cq.sortDir : null,
   });
   const sorted = useMemo(() => list.rows.map(toStoreLead), [list.rows]);
+
+  // Every group's count, in one read, so each chip states a fact about the BOOK rather than about
+  // whatever page happens to be loaded.
+  const groupCounts = api.v1.customers.groupCounts.useQuery(undefined, { refetchOnWindowFocus: false });
 
   // Stage options come from the ENUM, not from the data: a filter that only offers the stages
   // present on this page is a filter that hides the one you want. Counts come from the facets.
@@ -112,20 +116,6 @@ export function CustomersView() {
     if (CUSTOMER_COL_TO_SORT[col]) cq.toggleSortCol(col);
   }
 
-  function toggleCol(key: string) {
-    setVisibleCols((prev) =>
-      prev.includes(key)
-        ? prev.filter((c) => c !== key)
-        : Object.keys(ALL_COL_DEFS).filter((c) => prev.includes(c) || c === key)
-    );
-  }
-
-  // Companies segment renders its own list; the People segment falls through to
-  // the leads toolbar + table below. (Placed after every hook so the early return
-  // never changes hook order.)
-  if (custSeg === "biz") {
-    return <CompaniesView />;
-  }
 
   return (
     <div>
@@ -186,45 +176,33 @@ export function CustomersView() {
         onArchiveSet={setArchiveSet}
         q={cq.search}
         onQ={cq.setSearch}
-        filtersOpen={filtersOpen}
-        onToggleFilters={() => setFiltersOpen((o) => !o)}
-        colsOpen={colsOpen}
-        onToggleCols={() => setColsOpen((o) => !o)}
-        activeFilterCount={activeFilterCount}
         total={list.total ?? 0}
         filtered={list.shown}
       />
 
-      {colsOpen && <CustomersColumns visible={visible} onToggle={toggleCol} />}
+      {/* The one filter. Chips, not a panel — see customers-group-filter for why the stored
+          `stage` could not be filtered on at all. */}
+      <CustomersGroupFilter
+        group={(cq.group || null) as LeadGroup | null}
+        counts={groupCounts.data}
+        onGroup={(g) => cq.setGroup(g ?? "")}
+        disabled={archiveSet === "archived"}
+      />
 
-      {filtersOpen && (
-        <>
-          <div className="mob-ctrl">
-            <div className="segctl">
-              <button className={custSeg === "people" ? "on" : ""} onClick={() => setCustSeg("people")}>People</button>
-              <button className={custSeg !== "people" ? "on" : ""} onClick={() => setCustSeg("biz")}>Companies</button>
-            </div>
-            <ViewToggle
-              value={archiveSet}
-              options={[{ value: "active" as const, label: "Active" }, { value: "archived" as const, label: "Archived" }]}
-              onChange={setArchiveSet}
-              ariaLabel="Show active or archived customers"
-            />
-          </div>
-          <CustomersFilters
-            stageFilter={cq.stage}
-            sourceFilter={cq.source}
-            stages={[...allStages]}
-            sources={allSources}
-            scopeFilter={cq.scope}
-            scopes={LEAD_SCOPES.map((v) => ({ value: v, label: LEAD_SCOPE_LABELS[v] }))}
-            onStage={cq.setStage}
-            onSource={cq.setSource}
-            onScope={cq.setScope}
-            onClear={cq.clear}
-          />
-        </>
-      )}
+      {/* Mobile keeps its own People/Companies + Active/Archived pair; on desktop those live in
+          the page header and the toolbar. */}
+      <div className="mob-ctrl">
+        <div className="segctl">
+          <button className={custSeg === "people" ? "on" : ""} onClick={() => setCustSeg("people")}>People</button>
+          <button className={custSeg !== "people" ? "on" : ""} onClick={() => setCustSeg("biz")}>Companies</button>
+        </div>
+        <ViewToggle
+          value={archiveSet}
+          options={[{ value: "active" as const, label: "Active" }, { value: "archived" as const, label: "Archived" }]}
+          onChange={setArchiveSet}
+          ariaLabel="Show active or archived customers"
+        />
+      </div>
 
       {/* Table */}
       <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>

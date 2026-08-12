@@ -195,16 +195,10 @@ export function CompaniesView() {
         onArchiveSet={setArchiveSet}
         q={q}
         onQ={setQ}
-        filtersOpen={false}
-        onToggleFilters={() => {}}
-        colsOpen={false}
-        onToggleCols={() => {}}
-        activeFilterCount={0}
         total={setTotal}
         filtered={rows.length}
         countsLoading={listLoading}
         searchPlaceholder="Search businesses…"
-        showControls={false}
       />
 
       {/* Table */}

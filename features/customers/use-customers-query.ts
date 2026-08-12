@@ -4,7 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import type { LeadSort } from "@/modules/customers/infra/lead-sorts";
-import type { LeadScope } from "@/modules/customers/infra/lead-views";
+import type { LeadScope, LeadGroup } from "@/modules/customers/infra/lead-views";
 
 /**
  * The Customers list, fetched a page at a time from the server.
@@ -25,6 +25,8 @@ export interface CustomersQueryState {
   readonly source: string;
   /** A saved worklist — owes money, no job in 12 months. "" is everyone. */
   readonly scope: string;
+  /** One work group — where this customer's work has got to. "" is everyone. */
+  readonly group: string;
   readonly sort: LeadSort | null;
   readonly sortDir: "asc" | "desc" | null;
 }
@@ -37,6 +39,7 @@ export function useCustomersQuery(state: CustomersQueryState) {
   const stage = state.stage || undefined;
   const source = state.source || undefined;
   const scope = state.scope || undefined;
+  const group = state.group || undefined;
 
   // ONE filter object for the page, the count and nothing else — they cannot describe different
   // sets, which is how a header ends up reading "50 of 606" over a twelve-row worklist.
@@ -45,6 +48,7 @@ export function useCustomersQuery(state: CustomersQueryState) {
     ...(stage ? { stage: stage as never } : {}),
     ...(source ? { source } : {}),
     ...(scope ? { scope: scope as LeadScope } : {}),
+    ...(group ? { group: group as LeadGroup } : {}),
   };
 
   const page = api.v1.customers.list.useInfiniteQuery(
@@ -107,6 +111,8 @@ export function useCustomersQueryState() {
   const [stage, setStage] = useState("");
   const [source, setSource] = useState("");
   const [scope, setScope] = useState("");
+  /** One work group — the Customers chips. "" is everyone. */
+  const [group, setGroup] = useState("");
   // The DISPLAY column is tracked, not the server sort: the header arrow belongs to the column the
   // user clicked, and two columns can map to the same server sort.
   const [sortCol, setSortCol] = useState<string | null>(null);
@@ -125,13 +131,14 @@ export function useCustomersQueryState() {
   }, []);
 
   const clear = useCallback(() => {
+    setGroup("");
     setSearch("");
     setStage("");
     setSource("");
     setScope("");
   }, []);
 
-  return { search, setSearch, stage, setStage, source, setSource, scope, setScope, sortCol, sortDir, toggleSortCol, clear };
+  return { search, setSearch, stage, setStage, source, setSource, scope, setScope, group, setGroup, sortCol, sortDir, toggleSortCol, clear };
 }
 
 /** Table column → named server sort. Columns with no server sort map to null and stay inert. */

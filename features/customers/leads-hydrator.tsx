@@ -36,6 +36,7 @@ export function toStoreLead(dto: LeadDTO): Lead {
     phone: dto.phone ?? "",
     source: dto.source ?? "",
     stage: backendStageToStore(dto.stage),
+    ...(dto.group ? { group: dto.group } : {}),
     age: daysAgo(dto.createdAt),
     job: "",
     last: "",
