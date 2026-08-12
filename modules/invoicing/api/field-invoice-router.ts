@@ -4,7 +4,6 @@ import { router, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asInvoiceId, asJobId, money } from "@mallet/shared/types";
 import type { OrgId, InvoiceId } from "@mallet/shared/types";
-import type { TenantTx } from "@mallet/shared/db/tx";
 import type { Principal } from "@mallet/identity";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { DrizzleSettingsRepository } from "@mallet/settings";
@@ -26,7 +25,6 @@ import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
 import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-reader";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
-import { DrizzleFieldScopeReader } from "../infra/drizzle-field-scope-reader";
 import { DrizzleVisitFeeReader } from "../infra/drizzle-visit-fee-reader";
 import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
@@ -37,11 +35,8 @@ import { RecordPaymentUseCase } from "../app/record-payment";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
 import { RaiseVisitFeeUseCase } from "../app/raise-visit-fee";
 import { fieldInvoiceDTO, toFieldInvoiceDTO } from "./field-invoice-dto";
-import {
-  assertFieldInvoiceScope,
-  assertFieldJobScope,
-  fieldInvoiceNotFound,
-} from "./field-invoice-guard";
+import { assertFieldJobScope } from "./field-invoice-guard";
+import { loadInvoiceInScope, scopeReaderFor, type FieldCtx } from "./field-invoice-scope";
 
 const methodEnum = z.enum(PAYMENT_METHODS as unknown as [PaymentMethod, ...PaymentMethod[]]);
 const channelEnum = z.enum(
@@ -364,32 +359,9 @@ export const createFieldInvoiceRouter = () =>
 
 // --- shared procedure plumbing -------------------------------------------------------------
 
-interface FieldCtx {
-  readonly tx: TenantTx;
-  readonly principal: Principal;
-}
-
-const scopeReaderFor = (ctx: FieldCtx) => new DrizzleFieldScopeReader(ctx.tx, ctx.principal.orgId);
-
-/**
- * Load an invoice and prove the caller may transact on it, in that order.
- *
- * A missing invoice and an out-of-scope one raise the SAME NOT_FOUND with the same sentence — see
- * field-invoice-guard.ts. Distinguishing them is what would make this an existence oracle.
- */
-const loadInScope = async (invoiceId: InvoiceId, ctx: FieldCtx): Promise<Invoice> => {
-  const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
-  const invoice = await repo.findById(invoiceId);
-  if (!invoice) {
-    // Owner/office get the ordinary answer; only a technician gets the flattened one.
-    if (ctx.principal.role !== "tech") {
-      throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
-    }
-    throw fieldInvoiceNotFound();
-  }
-  await assertFieldInvoiceScope(invoice, scopeReaderFor(ctx), ctx.principal);
-  return invoice;
-};
+// loadInScope/scopeReaderFor moved to field-invoice-scope.ts (shared with the Terminal router,
+// which authorizes tap payments through the exact same load-then-prove step). Local alias only.
+const loadInScope = loadInvoiceInScope;
 
 /**
  * The invoice as this caller may see it.

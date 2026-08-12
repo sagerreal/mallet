@@ -4,6 +4,12 @@ export { createInvoiceRouter } from "./api/invoice-router";
 // adapter, the guard and the redacted DTO stay module-private, so the redaction cannot be
 // bypassed by reaching around the router.
 export { createFieldInvoiceRouter } from "./api/field-invoice-router";
+// Stripe Terminal (Tap to Pay) server plumbing — connection tokens, the org's location, tap
+// intents and the device-driven reconcile. Same seam discipline as the field router: only the
+// factory and the DI-facing gateway are public.
+export { createTerminalRouter } from "./api/terminal-router";
+export type { TerminalGateway } from "./domain/terminal-gateway";
+export { StripeTerminalGateway } from "./infra/stripe-terminal-gateway";
 // The one sentinel naming a visit-fee invoice — shared so the client's duplicate-collection guard
 // and the server's idempotency check are the SAME string rather than two that agree today.
 export { VISIT_FEE_TITLE } from "./app/raise-visit-fee";

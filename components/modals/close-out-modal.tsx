@@ -32,6 +32,8 @@ import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
+import { TapToPayUnavailable } from "@/components/shared/tap-to-pay-unavailable";
+import { useTapToPayAvailability } from "@/lib/native/tap-to-pay";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
@@ -525,6 +527,12 @@ interface PayBlockProps {
   surface: InvoiceWriteSurface;
   /** The card step's poll saw paid/partial — the parent adopts the fresh record. */
   onCardPaid: (invoice: Invoice) => void;
+  /**
+   * Whether this device's holder is the person collecting AT THE DOOR (tech or owner) — the
+   * audience the Tap to Pay affordance exists for. Office staff work a desk: a phone-as-reader
+   * control there is noise, so they don't get it.
+   */
+  offerTapToPay: boolean;
   onFinish: () => void;
   onCancel: () => void;
 }
@@ -542,11 +550,14 @@ function PayBlock({
   sendInvoice,
   surface,
   onCardPaid,
+  offerTapToPay,
   onFinish,
   onCancel,
 }: PayBlockProps) {
   const due = invDue(invoice);
   const card = custCard(lead);
+  // Unconditional (hooks law); rendered only when this holder gets the affordance at all.
+  const tapAvailability = useTapToPayAvailability();
   const [p, setP] = useState<PayState>({ step: "method", amt: due });
   // A record that could NOT proceed (draft send failed, server refused) — named in
   // place on the step the tech is looking at, never a silent "Approved".
@@ -770,6 +781,11 @@ function PayBlock({
           <b>Card</b>
           <span>scan to pay · charges the full balance</span>
         </button>
+        {/* Tap to Pay — phone-as-reader. The server rails exist (v1.terminal.*); the native
+            reader plugin is the next app-shell PR, so until it ships this renders DISABLED with
+            the honest reason (the ScanUnavailable pattern) — visible so the person at the door
+            knows it is coming, never a dead button pretending to work. */}
+        {offerTapToPay ? <TapToPayUnavailable availability={tapAvailability} /> : null}
         <button
           className="btn"
           onClick={() => setP((s) => ({ ...s, step: "record", method: "cash" }))}
@@ -1453,6 +1469,10 @@ export function CloseOutModalContent() {
             sendInvoice={(id) => sendInvoice(id, surface)}
             surface={surface}
             onCardPaid={adoptPaidInvoice}
+            // Techs and owners collect at the door; office staff are at a desk. Role, not
+            // surface: an owner-operator on My day computes surface "office" and still belongs
+            // in the tap audience.
+            offerTapToPay={me.data?.role === "tech" || me.data?.role === "owner"}
             onFinish={() => {
               setPayOpen(false);
               finish();

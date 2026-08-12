@@ -274,6 +274,40 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
     return Math.round(dollars * 100);
   }
 
+  /**
+   * Focused, side-effect-free read of the org's Terminal Location id (Tap to Pay). No lazy create
+   * (mirrors getConnectTarget): a shop that never ran Terminal setup reads as null. Class-only,
+   * not on the SettingsRepository port — a focused seam for invoicing's adapter, same as
+   * getConnectTarget / getServiceFeeCents.
+   */
+  async getTerminalLocationId(): Promise<string | null> {
+    const rows = await this.tx
+      .select({ locationId: orgSettings.stripeTerminalLocationId })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    return rows[0]?.locationId ?? null;
+  }
+
+  /**
+   * Persist the org's one Terminal Location id. A focused single-column UPDATE (setName
+   * precedent) rather than a domain patch: no settings use-case ever touches this value, and
+   * keeping it OFF OrgSettingsProps means a concurrent full-config saveConfig can never clobber a
+   * location id ensured mid-flight. The row is guaranteed to exist by the caller's own gate — a
+   * location is only ever created for a charges-enabled shop, and charges_enabled lives on this
+   * same row — so zero rows updated is a real invariant break, not a lazily-absent row.
+   */
+  async setTerminalLocationId(locationId: string, now: Date): Promise<void> {
+    const rows = await this.tx
+      .update(orgSettings)
+      .set({ stripeTerminalLocationId: locationId, updatedAt: now })
+      .where(eq(orgSettings.orgId, this.orgId))
+      .returning({ id: orgSettings.id });
+    if (rows.length === 0) {
+      throw new Error("org_settings row missing while saving a Terminal location — Connect state is inconsistent");
+    }
+  }
+
   // ── OrgNameWriter ──────────────────────────────────────────────────────────
 
   /**
