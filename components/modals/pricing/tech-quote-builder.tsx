@@ -62,6 +62,7 @@ import {
   hasFieldPricing,
   type FieldPricing,
 } from "./field-pricing";
+import { SignedRecordRow } from "./signed-record-row";
 
 // ---- tier model (prototype TQ_TIERS / state.tq) ----------------------------
 
@@ -913,6 +914,10 @@ export function TechQuoteBuilder({ jobId, onSigned, embedded = false, onModeChan
               </div>
             ))}
           </div>
+          {/* The evidence behind the words above: the signed record, collapsed to one line so
+              the change order stays on screen (Owen: "i should probably be able to see the
+              signed quote on this page?"). Booked-not-signed jobs have no record and show none. */}
+          {signedSold && <SignedRecordRow job={job} />}
           <div className="fsec" style={{ marginBottom: 0 }}>
             <div className="fsec-h">
               <span>Change order</span>

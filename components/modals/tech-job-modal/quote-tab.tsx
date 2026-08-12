@@ -41,6 +41,7 @@ import { useMeasurementGate } from "@/features/settings/measurement-gate-provide
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
+import { SignedRecordRow } from "@/components/modals/pricing/signed-record-row";
 import { jobPriceCommitted } from "@/features/jobs/job-status-meta";
 import { SheetRow } from "@/components/modals/sheet-row";
 import type { Job, Visit } from "@/lib/store/types";
@@ -478,6 +479,9 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
               </div>
             ))}
           </div>
+          {/* The signed record reads the same on a closed job — the dispute it settles usually
+              starts after the work is done. */}
+          {job.sourceEstimateId && <SignedRecordRow job={job} />}
           <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-3)" }}>
             This job is closed. Reopen it from the Job tab to add a change order.
           </div>
