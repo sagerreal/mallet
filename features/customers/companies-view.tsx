@@ -141,6 +141,11 @@ export function CompaniesView() {
       <div className="pagehead">
         <h1>Customers</h1>
         <div className="pagehead-acts">
+          {/* Companies get their OWN importer — the one on the People segment brings in contacts,
+              which is a different entity. */}
+          <button className="btn ghost" onClick={() => openModal(MODAL.IMPORT_COMPANIES)}>
+            Import
+          </button>
           <button className="btn primary" onClick={newCompany}>
             + New company
           </button>

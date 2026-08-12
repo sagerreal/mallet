@@ -172,6 +172,66 @@ export const JOB_IMPORT: ImportDescriptor = {
 };
 
 /**
+ * Companies — the B2B accounts a shop bills, as distinct from the individual contacts inside
+ * them. A property manager is one company with several site contacts; the contacts are customers.
+ *
+ * Re-import updates rather than duplicating, matched on name: a shop refreshing its account list
+ * should not end up with two of everything.
+ */
+export const COMPANY_IMPORT: ImportDescriptor = {
+  entity: "companies",
+  label: "Companies",
+  chunkSize: 500,
+  fields: [
+    {
+      key: "name",
+      label: "Name",
+      required: true,
+      synonyms: ["company name", "account name", "business name", "organisation", "organization", "company", "account", "name"],
+      coerce: "text",
+      maxLength: 255,
+      onInvalid: { kind: "skip-row", message: "No name — row skipped." },
+    },
+    {
+      key: "phone",
+      label: "Phone",
+      synonyms: ["main phone", "office phone", "phone", "telephone"],
+      coerce: "phone",
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "email",
+      label: "Email",
+      synonyms: ["email address", "e-mail", "email"],
+      coerce: "email",
+      maxLength: 320,
+      onInvalid: { kind: "drop-field" },
+    },
+    {
+      key: "website",
+      label: "Website",
+      synonyms: ["website", "web", "url", "site"],
+      coerce: "text",
+      maxLength: 500,
+    },
+    {
+      key: "address",
+      label: "Address",
+      synonyms: ["billing address", "office address", "street", "address"],
+      coerce: "text",
+      maxLength: 500,
+    },
+    {
+      key: "notes",
+      label: "Notes",
+      synonyms: ["notes", "note", "description", "memo"],
+      coerce: "text",
+      maxLength: 2000,
+    },
+  ],
+};
+
+/**
  * Pricebook materials — the sellable parts a shop stocks.
  *
  * Mirrors SERVICE_IMPORT, with two differences that come from the material model: COST is the

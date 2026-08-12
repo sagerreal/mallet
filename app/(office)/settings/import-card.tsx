@@ -35,6 +35,13 @@ const ENTITIES: readonly ImportEntity[] = [
     modal: MODAL.IMPORT_CUSTOMERS,
   },
   {
+    key: "companies",
+    label: "Companies",
+    // Next to Customers: both are who the shop bills, and a contact can belong to an account.
+    blurb: "The businesses you bill — property managers, GCs, facilities teams.",
+    modal: MODAL.IMPORT_COMPANIES,
+  },
+  {
     key: "services",
     label: "Price book",
     blurb: "Your services and prices. Re-import later to update them.",
@@ -75,9 +82,13 @@ export function ImportCard() {
   const materials = api.v1.pricebook.material.importNames.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
+  const companies = api.v1.companies.importNames.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
 
   const counts: Record<string, string> = {
     customers: countLabel(customers.data?.total, "on file"),
+    companies: countLabel(companies.data?.names.length, "accounts"),
     services: countLabel(services.data?.names.length, "services"),
     materials: countLabel(materials.data?.names.length, "materials"),
     jobs: countLabel(jobs.data?.total, "jobs"),

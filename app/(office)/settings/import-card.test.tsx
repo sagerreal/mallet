@@ -11,12 +11,14 @@ let customerCount: { total: number } | undefined;
 let jobCount: { total: number } | undefined;
 let serviceNames: { names: string[] } | undefined;
 let materialNames: { names: string[] } | undefined;
+let companyNames: { names: string[] } | undefined;
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
       customers: { count: { useQuery: () => ({ data: customerCount }) } },
       jobs: { count: { useQuery: () => ({ data: jobCount }) } },
+      companies: { importNames: { useQuery: () => ({ data: companyNames }) } },
       pricebook: {
         service: { importNames: { useQuery: () => ({ data: serviceNames }) } },
         material: { importNames: { useQuery: () => ({ data: materialNames }) } },
@@ -31,6 +33,7 @@ beforeEach(() => {
   jobCount = { total: 686 };
   serviceNames = { names: ["a", "b", "c"] };
   materialNames = { names: ["p", "q"] };
+  companyNames = { names: ["acme"] };
 });
 
 describe("ImportCard", () => {
@@ -70,18 +73,19 @@ describe("ImportCard", () => {
   it("opens the matching modal for each entity", async () => {
     render(<ImportCard />);
     const buttons = screen.getAllByRole("button", { name: "Import" });
-    expect(buttons).toHaveLength(4);
+    expect(buttons).toHaveLength(5);
 
-    await userEvent.click(buttons[0]!);
-    expect(openModal).toHaveBeenCalledWith("import-customers");
-
-    await userEvent.click(buttons[1]!);
-    expect(openModal).toHaveBeenCalledWith("import-services");
-
-    await userEvent.click(buttons[2]!);
-    expect(openModal).toHaveBeenCalledWith("import-materials");
-
-    await userEvent.click(buttons[3]!);
-    expect(openModal).toHaveBeenCalledWith("import-jobs");
+    // Order matters: it is the order a shop should import in, so the assertions pin it.
+    const expected = [
+      "import-customers",
+      "import-companies",
+      "import-services",
+      "import-materials",
+      "import-jobs",
+    ];
+    for (const [i, modal] of expected.entries()) {
+      await userEvent.click(buttons[i]!);
+      expect(openModal).toHaveBeenCalledWith(modal);
+    }
   });
 });

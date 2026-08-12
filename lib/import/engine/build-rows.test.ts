@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import { autoMap } from "./auto-map";
 import { buildRows } from "./build-rows";
-import { CUSTOMER_IMPORT, MATERIAL_IMPORT, SERVICE_IMPORT } from "./descriptors";
+import { COMPANY_IMPORT, CUSTOMER_IMPORT, MATERIAL_IMPORT, SERVICE_IMPORT } from "./descriptors";
 import type { ImportDescriptor } from "./descriptor";
 
 // ── customers ────────────────────────────────────────────────────────────────
@@ -195,6 +195,45 @@ describe("materials import", () => {
     const blankTax = [{ ...records[0]!, Taxable: "" }];
     const rows = buildRows(blankTax, autoMap(MATERIAL_HEADERS, MATERIAL_IMPORT), MATERIAL_IMPORT).rows;
     expect(rows[0]!.taxable).toBe(true);
+  });
+});
+
+// ── companies ────────────────────────────────────────────────────────────────
+
+describe("companies import", () => {
+  const HEADERS = ["Account Name", "Main Phone", "Email", "Website", "Billing Address", "Notes"];
+  const records = [
+    {
+      "Account Name": "Acme Property", "Main Phone": "(925) 555-0100", Email: "ap@example.com",
+      Website: "acme.example.com", "Billing Address": "1 Pine Rd", Notes: "Net 30",
+    },
+    // No name → skipped, same rule as every other entity.
+    { "Account Name": "", "Main Phone": "", Email: "", Website: "", "Billing Address": "", Notes: "" },
+  ];
+  const built = () => buildRows(records, autoMap(HEADERS, COMPANY_IMPORT), COMPANY_IMPORT);
+
+  it("auto-maps the account-name spelling a CRM export uses", () => {
+    expect(autoMap(HEADERS, COMPANY_IMPORT).name).toBe("Account Name");
+  });
+
+  it("keeps the fields a B2B account actually carries", () => {
+    const row = built().rows[0]!;
+    expect(row.name).toBe("Acme Property");
+    expect(row.phone).toBe("(925) 555-0100");
+    expect(row.website).toBe("acme.example.com");
+    expect(row.notes).toBe("Net 30");
+  });
+
+  it("skips a nameless row rather than failing the batch", () => {
+    expect(built().skipped).toHaveLength(1);
+    expect(built().rows).toHaveLength(1);
+  });
+
+  it("OMITS a column the sheet does not carry, so re-import cannot wipe it", () => {
+    const sparse = [{ "Account Name": "Acme Property", "Main Phone": "(925) 555-0100" }];
+    const rows = buildRows(sparse, autoMap(["Account Name", "Main Phone"], COMPANY_IMPORT), COMPANY_IMPORT).rows;
+    expect("notes" in rows[0]!).toBe(false);
+    expect("website" in rows[0]!).toBe(false);
   });
 });
 
