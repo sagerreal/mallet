@@ -53,6 +53,9 @@ const fieldCustomerDTO = z.object({
   id: z.string().uuid(),
   name: z.string(),
   phone: z.string().nullable(),
+  // Where the customer lives — the card's "where do I drive" line when the job carries no
+  // address of its own. As non-sensitive as the name above it: the tech is driving there.
+  address: z.string().nullable(),
   card: z
     .object({ brand: z.string(), last4: z.string(), via: z.enum(["payment", "deposit"]) })
     .nullable(),
@@ -79,6 +82,7 @@ const loadCustomersFor = async (
     id: lead.props.id,
     name: lead.props.name,
     phone: lead.props.phone,
+    address: lead.props.address,
     card: cards.get(lead.props.id) ?? null,
   }));
 };

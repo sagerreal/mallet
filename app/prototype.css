@@ -2054,6 +2054,36 @@
   .hrs-val{font-variant-numeric:tabular-nums;font-weight:700;min-width:56px;text-align:center}
   .md-ic{width:38px;height:38px;border:1.5px solid var(--manila-line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex:none;transition:border-color .12s,color .12s}
   .md-ic:hover{border-color:var(--ink-3);color:var(--ink)}
+
+  /* ── My day visit cards — the day as driven: one card per stop (visit-cards.ts) ──
+     The action row is the circle-with-label grammar: every control the same round shape, the
+     FILLED circle always the next step. New family, field cards only — not a platform restyle. */
+  .mdc-sec{font-family:var(--font-mono);font-size:var(--type-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:var(--space-5) 0 var(--space-3)}
+  .mdc{padding:var(--space-4);margin-bottom:var(--space-3);cursor:pointer}
+  .mdc:active{background:var(--manila-2);transform:scale(.995)}
+  .mdc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-3)}
+  .mdc-title{font-size:var(--type-md);font-weight:700;margin:0;min-width:0}
+  .mdc-when{flex:0 0 auto;font-family:var(--font-mono);font-size:var(--type-sm);font-weight:700;color:var(--ink);text-align:right;letter-spacing:-.02em}
+  /* Customer stays MEDIUM weight — the title is the only bold thing on a card, so the two
+     names can never read as two titles. */
+  .mdc-cust{display:flex;align-items:center;gap:var(--space-2);font-size:var(--type-sm);font-weight:500;color:var(--ink);margin-top:var(--space-2);flex-wrap:wrap}
+  .mdc-addr{font-size:var(--type-sm);color:var(--ink-2);margin-top:var(--space-2xs)}
+  .mdc-steps{display:flex;gap:var(--space-2xs);margin-top:var(--space-3)}
+  .mdc-steps i{flex:1;height:4px;border-radius:var(--radius-pill);background:var(--line-2)}
+  .mdc-steps i.on{background:var(--ink)}
+  .mdc-since{display:flex;align-items:center;justify-content:flex-end;gap:var(--space-2);margin-top:var(--space-2);font-size:var(--type-xs);font-weight:600;color:var(--ink-2)}
+  .mdc-since i{width:7px;height:7px;border-radius:var(--radius-pill);background:var(--ink);animation:mdcpulse 1.6s ease-in-out infinite}
+  @keyframes mdcpulse{0%,100%{opacity:1}50%{opacity:.35}}
+  @media (prefers-reduced-motion:reduce){.mdc-since i{animation:none}}
+  .fca-row{display:flex;align-items:flex-start;gap:var(--space-4);margin-top:var(--space-4)}
+  .fca{background:none;border:0;padding:0;display:flex;flex-direction:column;align-items:center;gap:var(--space-2);font-family:inherit;cursor:pointer;min-width:52px}
+  .fca-c{width:44px;height:44px;border-radius:var(--radius-pill);border:1.5px solid var(--ink);display:grid;place-items:center;background:var(--card);color:var(--ink);transition:background .12s}
+  .fca:hover .fca-c{background:var(--manila-2)}
+  .fca-t{font-size:var(--type-xs);font-weight:600;color:var(--ink-2);white-space:nowrap}
+  .fca.fill .fca-c{background:var(--ink);border-color:var(--ink);color:var(--card)}
+  .fca.fill .fca-t{color:var(--ink);font-weight:700}
+  .fca:disabled{opacity:.55;cursor:not-allowed}
+  .fca:focus-visible .fca-c{outline:2px solid var(--ink);outline-offset:2px}
   /* job done → getting paid is the biggest thing */
   .tjpaid{width:100%;border:2px solid var(--green-600);background:var(--green-50);border-radius:var(--radius-lg);padding:var(--space-4);margin:var(--space-4) 0 var(--space-2xs);text-align:center}
   .tjpaid.ok{border-color:#DDD7C9}
