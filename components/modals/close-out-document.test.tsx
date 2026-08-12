@@ -229,4 +229,22 @@ describe("CloseOutDocument — the document a customer is handed", () => {
     expect(screen.queryByText(/Service Aug/)).toBeNull();
     expect(screen.getByText(/Invoiced Aug 5, 2026/)).toBeTruthy();
   });
+
+  it("prints the shop's invoice footer when one is set — the same line the customer's page carries", async () => {
+    // Settings → Documents. The field shell hydrates docWording from v1.settings.documentWording
+    // (anyRole); the two copies of one bill must state the same closing line.
+    useAppStore.setState({
+      docWording: { invoiceFooter: "1-year warranty on labor.", changeOrderAgreement: null },
+    });
+    render(<CloseOutDocument invoice={inv()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Show the invoice" }));
+    expect(screen.getByText("1-year warranty on labor.")).toBeTruthy();
+  });
+
+  it("prints NO footer before hydration or for an untouched shop", async () => {
+    useAppStore.setState({ docWording: null });
+    render(<CloseOutDocument invoice={inv()} />);
+    await userEvent.click(screen.getByRole("button", { name: "Show the invoice" }));
+    expect(screen.queryByText(/warranty/)).toBeNull();
+  });
 });

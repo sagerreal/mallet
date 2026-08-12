@@ -72,6 +72,12 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     bizPhone: row.bizPhone ?? null,
     bizEmail: row.bizEmail ?? null,
     licenseNumber: row.licenseNumber ?? null,
+    // Document wording overrides. Nullable columns passed through as-is — null means the
+    // standard sentence renders (no `?? null`: the column type is already string | null).
+    docInvoiceFooter: row.docInvoiceFooter,
+    docInvoicePayInstructions: row.docInvoicePayInstructions,
+    docInvoiceReceiptNote: row.docInvoiceReceiptNote,
+    docChangeOrderAgreement: row.docChangeOrderAgreement,
     // Stripe Connect (Express) onboarding state (PR1).
     stripeConnectedAccountId: row.stripeConnectedAccountId ?? null,
     stripeChargesEnabled: row.stripeChargesEnabled,

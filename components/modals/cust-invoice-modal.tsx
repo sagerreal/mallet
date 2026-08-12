@@ -47,6 +47,7 @@ import { fmt$ } from "@/lib/format";
 import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { invoiceDocumentView } from "@/features/invoices/invoice-document-view";
 import { documentContact } from "@/features/invoices/document-business";
+import { effectiveInvoiceFooter } from "@/modules/settings/domain/document-wording";
 import { ModalLoading } from "./modal-loading";
 
 // ---- money helpers (ported 1:1 from money/page.tsx + invoice-modal.tsx) -----
@@ -224,6 +225,9 @@ export function CustInvoiceModalContent() {
   // and the document omits the whole block while it is — a preview that printed an empty "Lic."
   // would be previewing a bug.
   const business = useAppStore((s) => s.business);
+  // The shop's closing line (Settings → Documents). The preview must carry what the customer's
+  // own /i/<token> page carries — including nothing, when the shop never set one.
+  const docWording = useAppStore((s) => s.docWording);
   const adoptInvoice = useAppStore((s) => s.adoptInvoice);
   const updateLead = useAppStore((s) => s.updateLead);
 
@@ -335,6 +339,7 @@ export function CustInvoiceModalContent() {
           depositPaidCents={doc.depositPaidCents}
           amountPaidCents={doc.amountPaidCents}
           balanceDueCents={doc.balanceDueCents}
+          footerNote={effectiveInvoiceFooter(docWording?.invoiceFooter)}
         />
 
         {/* deferred: photo proof — "Your work, verified" card (needs verify data) */}

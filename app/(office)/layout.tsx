@@ -23,6 +23,7 @@ import { PricebookHydrator } from "@/features/pricebook/pricebook-hydrator";
 import { AssembliesHydrator } from "@/features/pricebook/assemblies-hydrator";
 import { BrandHydrator } from "@/features/settings/brand-hydrator";
 import { BusinessIdentityHydrator } from "@/features/settings/business-identity-hydrator";
+import { DocumentWordingHydrator } from "@/features/settings/document-wording-hydrator";
 import { A2pHydrator } from "@/features/a2p/a2p-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
@@ -75,6 +76,9 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
             brand. Its own hydrator (not BrandHydrator's) because the FIELD shell needs the same
             facts from an anyRole read; one writer, both shells. */}
         <BusinessIdentityHydrator />
+        {/* The org's document wording (invoice footer + change-order agreement line) — same
+            one-writer-both-shells shape as BusinessIdentityHydrator. */}
+        <DocumentWordingHydrator />
         <A2pHydrator />
       </div>
     </FieldTogglesProvider>

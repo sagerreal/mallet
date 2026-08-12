@@ -303,4 +303,50 @@ suite("found work reaches the bill (live RLS)", () => {
     expect(addendum?.change_order_for_job_id).toBe(jobId);
     expect((addendum?.signed_snapshot as { totalCents: number }).totalCents).toBe(FOUND_WORK_CENTS);
   });
+
+  it("the signed snapshot ignores org document wording, before AND after the fact", async () => {
+    // The sacred rule behind Settings → Documents: the change-order agreement line a shop can
+    // edit is the DISPLAY sentence on the sign screen. The frozen record stores the versioned
+    // legal authorization sentence, and an org changing its wording later must not rewrite what
+    // an already-signed document says.
+    const CUSTOM = "Custom agreement wording that must never reach a signed record.";
+    await owner().v1.settings.updateDocuments({ changeOrderAgreement: CUSTOM });
+
+    const jobId = await seedJob();
+    await signOriginal(jobId);
+    const withAddon = await tech().v1.field.addAddon({
+      jobId,
+      description: "Expansion tank",
+      rateCents: FOUND_WORK_CENTS,
+    });
+    await tech().v1.field.approveFoundWork({
+      jobId,
+      addonIds: [withAddon.addons[0]!.id],
+      signerName: "Dave Chen",
+      signatureSvg: "M10,10 L40,30",
+    });
+
+    const [row] = await admin<{ approval_estimate_id: string | null }[]>`
+      select approval_estimate_id from job_addons where id = ${withAddon.addons[0]!.id}`;
+    const readSnapshot = async (): Promise<{ authorizationText: string }> => {
+      const [addendum] = await admin<{ signed_snapshot: unknown }[]>`
+        select signed_snapshot from estimates where id = ${row!.approval_estimate_id}`;
+      return addendum!.signed_snapshot as { authorizationText: string };
+    };
+
+    // Signed WITH the override in force: the record still carries the fixed legal sentence.
+    const signedWith = await readSnapshot();
+    expect(signedWith.authorizationText).toContain("I authorize");
+    expect(signedWith.authorizationText).not.toContain(CUSTOM);
+
+    // The org rewrites its wording AFTER the signature: the frozen record is byte-identical.
+    await owner().v1.settings.updateDocuments({
+      changeOrderAgreement: "Different wording again.",
+    });
+    const after = await readSnapshot();
+    expect(after.authorizationText).toBe(signedWith.authorizationText);
+
+    // Leave the org clean for the suite's other tests.
+    await owner().v1.settings.updateDocuments({ changeOrderAgreement: null });
+  });
 });

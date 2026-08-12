@@ -151,6 +151,12 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         bizPhone: p.bizPhone,
         bizEmail: p.bizEmail,
         licenseNumber: p.licenseNumber,
+        // Document wording overrides — written with the same save as everything else so a
+        // wording edit and a config edit cannot half-apply across transactions.
+        docInvoiceFooter: p.docInvoiceFooter,
+        docInvoicePayInstructions: p.docInvoicePayInstructions,
+        docInvoiceReceiptNote: p.docInvoiceReceiptNote,
+        docChangeOrderAgreement: p.docChangeOrderAgreement,
         // Stripe Connect (Express) onboarding state (PR1).
         stripeConnectedAccountId: p.stripeConnectedAccountId,
         stripeChargesEnabled: p.stripeChargesEnabled,

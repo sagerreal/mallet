@@ -16,6 +16,8 @@ import { GetBusinessIdentityUseCase } from "../app/get-business-identity";
 import { UpdateConfigUseCase } from "../app/update-config";
 import { UpdateBrandUseCase } from "../app/update-brand";
 import { UpdateBusinessUseCase } from "../app/update-business";
+import { UpdateDocumentsUseCase } from "../app/update-documents";
+import { GetDocumentWordingUseCase } from "../app/get-document-wording";
 import { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "../app/connect-onboarding";
 import { CreatePricebookUseCase, UpdatePricebookUseCase, RemovePricebookUseCase } from "../app/pricebook";
 import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase } from "../app/labor-rates";
@@ -33,6 +35,8 @@ import {
   leadSourceDTO,
   bookingCfgDTO,
   bookingCfgInputDTO,
+  documentWordingDTO,
+  updateDocumentsInput,
   toSettingsDTO,
   toOrgSettingsDTO,
   toPricebookDTO,
@@ -261,6 +265,50 @@ export const createSettingsRouter = () =>
         orThrow(result);
         const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
         return toSettingsDTO(orThrow(snapshot));
+      }),
+
+    // Patch the document-wording slots (doc_* → org_settings). Returns the full settingsDTO
+    // for the same reason updateBrand and updateBusiness do: one response the client
+    // reconciles everything from. Org is always ctx.principal.orgId; never client input.
+    updateDocuments: ownerOrOffice
+      .input(updateDocumentsInput)
+      .output(settingsDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new UpdateDocumentsUseCase(repo, ctx.deps.clock).exec(
+          {
+            invoiceFooter: input.invoiceFooter,
+            payInstructions: input.payInstructions,
+            receiptNote: input.receiptNote,
+            changeOrderAgreement: input.changeOrderAgreement,
+          },
+          ctx.principal.orgId,
+        );
+        orThrow(result);
+        const snapshot = await new GetSettingsUseCase(repo).exec(ctx.principal.orgId);
+        return toSettingsDTO(orThrow(snapshot));
+      }),
+
+    /**
+     * The document-wording overrides the FIELD surface renders — `anyRole`, two fields wide.
+     *
+     * The technician's close-out prints the invoice footer on the customer's own copy of the
+     * bill, and the change-order agreement line is what the customer reads above the signature
+     * pad on the technician's phone. `get` above is ownerOrOffice, so without this read a
+     * technician's copy of those sentences would be stuck at the standard wording while the
+     * customer's own /i/<token> page carried the shop's. See documentWordingDTO for what may
+     * and may not go in here.
+     */
+    documentWording: anyRole
+      .output(documentWordingDTO)
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const result = await new GetDocumentWordingUseCase(repo).exec(ctx.principal.orgId);
+        const wording = orThrow(result);
+        return {
+          invoiceFooter: wording.invoiceFooter,
+          changeOrderAgreement: wording.changeOrderAgreement,
+        };
       }),
 
     // --- Pricebook -------------------------------------------------------

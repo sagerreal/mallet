@@ -16,6 +16,7 @@ import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { FieldTogglesHydrator } from "@/features/settings/field-toggles-hydrator";
 import { BusinessIdentityHydrator } from "@/features/settings/business-identity-hydrator";
+import { DocumentWordingHydrator } from "@/features/settings/document-wording-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 /**
@@ -82,6 +83,10 @@ export default async function FieldLayout({ children }: { children: ReactNode })
             at the door is the customer's own copy of the bill, and it printed no address, no phone
             and no licence. v1.settings.businessIdentity is anyRole for exactly this. */}
         <BusinessIdentityHydrator />
+        {/* The org's document wording (invoice footer + change-order agreement line) — the same
+            argument as businessIdentity: the close-out and the CO sign screen show these sentences
+            to a customer, and v1.settings.documentWording is anyRole for exactly this. */}
+        <DocumentWordingHydrator />
         <div className="layout">
           <Sidebar initialMe={initialMe} />
           <div className="appmain">

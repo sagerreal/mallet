@@ -129,6 +129,16 @@ export const orgSettings = pgTable(
     // plumbing invoice; California B&P 7030.5 covers contracts and advertising but NOT invoices.
     // Treated as commercial convention, never as a legal guarantee — free text, no validation.
     licenseNumber: text("license_number"),
+    // ── Document wording (editable sentences on customer documents) ──────────
+    // Null = the shop never touched the slot; the surface renders its standard sentence
+    // (modules/settings/domain/document-wording.ts owns the standard literals). All nullable
+    // so the lazily-created default org_settings row is valid and every existing shop keeps
+    // exactly the wording it had. The QUOTE authorization sentence is deliberately NOT here —
+    // it is legal text, versioned and snapshotted (modules/quoting/domain/authorization-text.ts).
+    docInvoiceFooter: text("doc_invoice_footer"),
+    docInvoicePayInstructions: text("doc_invoice_pay_instructions"),
+    docInvoiceReceiptNote: text("doc_invoice_receipt_note"),
+    docChangeOrderAgreement: text("doc_change_order_agreement"),
     // ── Stripe Connect (Express) — PR1 onboarding foundation ──────────────────
     // The connected account id (acct_...) is null until onboarding begins. Status booleans mirror
     // the Stripe Account object and default false; onboardedAt stamps the first time charges go live.

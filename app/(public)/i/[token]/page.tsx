@@ -170,11 +170,12 @@ export default async function PublicInvoicePage({
               <div className="deltabanner" style={{ textAlign: "center" }}>
                 Paid — thank you!
               </div>
+              {/* The receipt note — Settings → Documents, standard wording when untouched. */}
               <p
                 className="muted"
                 style={{ textAlign: "center", margin: "var(--space-2) 0 var(--space-4)", fontSize: "var(--type-base)" }}
               >
-                This invoice is settled in full. Keep this link for your records.
+                {view.receiptNote}
               </p>
             </>
           )}
@@ -223,6 +224,9 @@ export default async function PublicInvoicePage({
               method: p.method,
               receivedAt: p.receivedAt.toISOString(),
             }))}
+            // The shop's closing line (Settings → Documents). Inside the document — it belongs
+            // on the paper copy too, so it is deliberately NOT .noprint.
+            footerNote={view.footerNote}
           />
 
           {/* THE action — only when it can actually run. `.noprint`: a paper copy of a bill has
@@ -233,13 +237,14 @@ export default async function PublicInvoicePage({
             </div>
           )}
 
-          {/* Open but not card-payable: say how to settle instead of showing nothing. */}
+          {/* Open but not card-payable: say how to settle instead of showing nothing. The
+              sentence is the shop's own (Settings → Documents) or the standard one naming it. */}
           {!payable && !isPaid && !isVoid && view.balanceDueCents > 0 && (
             <p
               className="muted"
               style={{ fontSize: "var(--type-sm)", textAlign: "center", marginTop: "var(--space-3)" }}
             >
-              To pay this invoice, contact {view.orgName} directly.
+              {view.payInstructions}
             </p>
           )}
 

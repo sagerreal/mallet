@@ -7,7 +7,11 @@ import { asInvoiceId, asOrgId, isOk, type OrgId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import { DrizzleLeadRepository } from "@mallet/customers";
-import { DrizzleSettingsRepository, GetBusinessIdentityUseCase } from "@mallet/settings";
+import {
+  DrizzleSettingsRepository,
+  GetBusinessIdentityUseCase,
+  GetDocumentWordingUseCase,
+} from "@mallet/settings";
 import type { Invoice } from "../domain/invoice";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
@@ -93,6 +97,36 @@ async function readBusiness(tx: TenantTx, orgId: OrgId): Promise<PublicInvoiceCo
   }
 }
 
+/** The wording an untouched (or unreadable) shop renders: every slot at its standard sentence. */
+const NO_WORDING: PublicInvoiceContext["wording"] = {
+  invoiceFooter: null,
+  payInstructions: null,
+  receiptNote: null,
+};
+
+/**
+ * The org's document-wording overrides, through the settings use-case — same seam and same
+ * failure posture as readBusiness above: the customer needs their lines, balance and Pay
+ * button, and a settings read that did not answer must degrade to the STANDARD sentences,
+ * never take the bill down. Logged, not silent.
+ */
+async function readWording(tx: TenantTx, orgId: OrgId): Promise<PublicInvoiceContext["wording"]> {
+  try {
+    const result = await new GetDocumentWordingUseCase(
+      new DrizzleSettingsRepository(tx, orgId),
+    ).exec(orgId);
+    if (!isOk(result)) {
+      logger.warn({ orgId, kind: result.error.kind }, "publicInvoice.wording.unavailable");
+      return NO_WORDING;
+    }
+    const { invoiceFooter, payInstructions, receiptNote } = result.value;
+    return { invoiceFooter, payInstructions, receiptNote };
+  } catch (err) {
+    logger.error({ orgId, err: String(err) }, "publicInvoice.wording.failed");
+    return NO_WORDING;
+  }
+}
+
 /**
  * The facts a document of record states, gathered for ONE invoice inside its own org's tx.
  *
@@ -111,11 +145,12 @@ async function loadDocumentContext(
   invoice: Invoice,
 ): Promise<PublicInvoiceContext> {
   const jobId = invoice.props.sourceJobId;
-  const [target, business, leads, serviceAt] = await Promise.all([
+  const [target, business, wording, leads, serviceAt] = await Promise.all([
     // Whether the Pay button can exist at all: the shop finished Stripe Connect onboarding AND
     // can take charges. Read via the same seam the office checkout uses.
     new DrizzleConnectTargetReader(tx, orgId).read(),
     readBusiness(tx, orgId),
+    readWording(tx, orgId),
     new DrizzleLeadRepository(tx, orgId).findByIds([invoice.props.leadId]),
     // No source job means no service date. Omitted, never faked from the invoice date.
     jobId ? new DrizzleServiceDateReader(tx, orgId).forJob(jobId) : Promise.resolve(null),
@@ -131,6 +166,7 @@ async function loadDocumentContext(
     // Nullable by design — most leads are created without one (see the leads.address comment).
     serviceAddress: lead?.props.address ?? null,
     serviceAt,
+    wording,
   };
 }
 

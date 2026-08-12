@@ -6,7 +6,16 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { bookingServiceDTO, bookingCfgDTO } from "./settings-dto";
+import { isOk } from "@mallet/shared/types";
+import {
+  bookingServiceDTO,
+  bookingCfgDTO,
+  updateDocumentsInput,
+  documentWordingDTO,
+  toSettingsDTO,
+} from "./settings-dto";
+import { OrgSettings } from "../domain/org-settings";
+import { baseSettingsProps } from "../domain/org-settings.fixtures";
 
 describe("bookingServiceDTO", () => {
   const baseService = {
@@ -150,5 +159,81 @@ describe("bookingCfgDTO", () => {
       expect(result.data.services[0]?.emergencyTriggers).toBe("no heat, burst pipe");
       expect(result.data.deferKeywords).toBe("adjuster");
     }
+  });
+});
+
+describe("updateDocumentsInput", () => {
+  it("accepts a partial patch and explicit nulls", () => {
+    const result = updateDocumentsInput.safeParse({
+      invoiceFooter: "Thanks for your business.",
+      changeOrderAgreement: null,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.invoiceFooter).toBe("Thanks for your business.");
+      expect(result.data.changeOrderAgreement).toBeNull();
+      expect(result.data.payInstructions).toBeUndefined();
+    }
+  });
+
+  it("caps the three invoice slots at 500 chars", () => {
+    expect(updateDocumentsInput.safeParse({ invoiceFooter: "x".repeat(500) }).success).toBe(true);
+    expect(updateDocumentsInput.safeParse({ invoiceFooter: "x".repeat(501) }).success).toBe(false);
+    expect(updateDocumentsInput.safeParse({ payInstructions: "x".repeat(501) }).success).toBe(false);
+    expect(updateDocumentsInput.safeParse({ receiptNote: "x".repeat(501) }).success).toBe(false);
+  });
+
+  it("caps the change-order agreement line at 300 chars — it sits above a signature pad", () => {
+    expect(
+      updateDocumentsInput.safeParse({ changeOrderAgreement: "x".repeat(300) }).success,
+    ).toBe(true);
+    expect(
+      updateDocumentsInput.safeParse({ changeOrderAgreement: "x".repeat(301) }).success,
+    ).toBe(false);
+  });
+});
+
+describe("documentWordingDTO", () => {
+  it("is exactly the two field-rendered slots — the anyRole disclosure contract", () => {
+    // The tech surface renders the invoice footer (close-out) and the change-order agreement
+    // line (sign screen). Payment instructions and the receipt note render only on the public
+    // page, server-side — a technician's phone has no use for them, so they are not on the wire.
+    const parsed = documentWordingDTO.safeParse({
+      invoiceFooter: "Thanks!",
+      changeOrderAgreement: null,
+    });
+    expect(parsed.success).toBe(true);
+    expect(Object.keys(documentWordingDTO.shape).sort()).toEqual([
+      "changeOrderAgreement",
+      "invoiceFooter",
+    ]);
+  });
+});
+
+describe("toSettingsDTO documents projection", () => {
+  it("carries the four raw overrides on the office settings payload", () => {
+    const config = OrgSettings.create(
+      baseSettingsProps({
+        docInvoiceFooter: "Thanks!",
+        docInvoicePayInstructions: null,
+        docInvoiceReceiptNote: "Paid in full.",
+        docChangeOrderAgreement: null,
+      }),
+    );
+    expect(isOk(config)).toBe(true);
+    if (!isOk(config)) return;
+    const dto = toSettingsDTO({
+      config: config.value,
+      pricebook: [],
+      laborRates: [],
+      terms: [],
+      sources: [],
+    });
+    expect(dto.documents).toEqual({
+      invoiceFooter: "Thanks!",
+      payInstructions: null,
+      receiptNote: "Paid in full.",
+      changeOrderAgreement: null,
+    });
   });
 });
