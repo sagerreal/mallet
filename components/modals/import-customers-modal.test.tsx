@@ -39,6 +39,10 @@ describe("ImportCustomersModalContent", () => {
 
     await waitFor(() => expect(screen.getByText(/1 ready/i)).toBeTruthy());
 
+    // The mapping step now advances to a confirm step; the import commits from there.
+    fireEvent.click(screen.getByRole("button", { name: /review 1 rows?/i }));
+    await waitFor(() => expect(screen.getByText(/1 will import/i)).toBeTruthy());
+
     fireEvent.click(screen.getByRole("button", { name: /import 1 customer/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalled());
     await waitFor(() => expect(screen.getByText(/1 customer added/i)).toBeTruthy());
@@ -53,6 +57,10 @@ describe("ImportCustomersModalContent", () => {
     render(<ImportCustomersModalContent />);
     selectCsv(bigCsv(600));
     await waitFor(() => expect(screen.getByText(/600 ready/i)).toBeTruthy());
+
+    // The mapping step now advances to a confirm step; the import commits from there.
+    fireEvent.click(screen.getByRole("button", { name: /review 600 rows?/i }));
+    await waitFor(() => expect(screen.getByText(/600 will import/i)).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
@@ -70,6 +78,10 @@ describe("ImportCustomersModalContent", () => {
     render(<ImportCustomersModalContent />);
     selectCsv(bigCsv(600));
     await waitFor(() => expect(screen.getByText(/600 ready/i)).toBeTruthy());
+
+    // The mapping step now advances to a confirm step; the import commits from there.
+    fireEvent.click(screen.getByRole("button", { name: /review 600 rows?/i }));
+    await waitFor(() => expect(screen.getByText(/600 will import/i)).toBeTruthy());
 
     fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
@@ -94,14 +106,24 @@ describe("ImportCustomersModalContent", () => {
     selectCsv(bigCsv(600));
     await waitFor(() => expect(screen.getByText(/600 ready/i)).toBeTruthy());
 
+    // The mapping step now advances to a confirm step; the import commits from there.
+    fireEvent.click(screen.getByRole("button", { name: /review 600 rows?/i }));
+    await waitFor(() => expect(screen.getByText(/600 will import/i)).toBeTruthy());
+
     fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.getByRole("button", { name: /resume/i })).toBeTruthy());
 
+    // A failure lands back on the confirm step, where the offset still holds. Editing the mapping
+    // means stepping back to it.
+    fireEvent.click(screen.getByRole("button", { name: /change the mapping/i }));
+
     // Change the source tag — this alters built.rows, so the committed offset is now stale and must reset.
+    await waitFor(() => expect(screen.getByDisplayValue("Import")).toBeTruthy());
     fireEvent.change(screen.getByDisplayValue("Import"), { target: { value: "Migration" } });
 
-    // Button returns to the full-import label (progress cleared), and importing re-sends chunk 0.
+    // Progress cleared, so the confirm step offers a full import again and re-sends chunk 0.
+    fireEvent.click(screen.getByRole("button", { name: /review 600 rows?/i }));
     await waitFor(() => expect(screen.getByRole("button", { name: /import 600 customers/i })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: /import 600 customers/i }));
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(3));

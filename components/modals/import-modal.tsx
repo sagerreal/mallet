@@ -18,6 +18,7 @@ import { buildRows } from "@/lib/import/engine/build-rows";
 import type { BuildResult, BuiltRow, ImportDescriptor, MappingConfig } from "@/lib/import/engine/descriptor";
 import { CsvDropzone, ImportingLine, ImportDoneCard } from "./import-shared";
 import { ImportMappingStep } from "./import-mapping-step";
+import { ImportPreviewStep } from "./import-preview-step";
 
 /** What the server reports back for one chunk. Identical across entities. */
 export interface ChunkResult {
@@ -50,7 +51,7 @@ interface Props {
   readonly isPending: boolean;
 }
 
-type Phase = "upload" | "map" | "importing" | "done";
+type Phase = "upload" | "map" | "preview" | "importing" | "done";
 
 /**
  * Committed-offset progress. `done` counts rows already sent AND acknowledged, so a retry resumes
@@ -126,7 +127,9 @@ export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPendin
           ? err.message
           : "Import stopped partway. Saved rows were kept — click Import to finish the rest.",
       );
-      setPhase("map");
+      // Back to the preview, not the mapping: the offset is still valid, so the primary action
+      // reads "Resume — N left" and picks up where it stopped.
+      setPhase("preview");
     }
   }
 
@@ -169,13 +172,24 @@ export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPendin
           mapping={map}
           built={built}
           skipReason={copy.skipReason}
-          importLabel={copy.importLabel}
-          resumeFrom={progress.done}
           busy={isPending}
           error={error}
           onSetField={setField}
           onBack={reset}
-          onImport={runImport}
+          onImport={() => { setError(null); setPhase("preview"); }}
+        />
+      )}
+
+      {phase === "preview" && built && (
+        <ImportPreviewStep
+          built={built}
+          skipReason={copy.skipReason}
+          importLabel={copy.importLabel}
+          resumeFrom={progress.done}
+          busy={isPending}
+          error={error}
+          onBack={() => { setError(null); setPhase("map"); }}
+          onConfirm={runImport}
         />
       )}
 
