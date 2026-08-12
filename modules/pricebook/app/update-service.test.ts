@@ -72,6 +72,10 @@ class FakeServiceRepository implements ServiceRepository {
     throw new Error("create not used in update tests");
   }
 
+  async allNames(): Promise<string[]> {
+    return [...this.store.values()].map((s) => s.props.name);
+  }
+
   async list(_page: CursorPage, _filter: { search?: string; categoryId?: string | null }): Promise<Paginated<Service>> {
     throw new Error("list not used in update tests");
   }

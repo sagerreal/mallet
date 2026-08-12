@@ -110,6 +110,16 @@ export function buildRows(
     let skip: RowIssue | null = null;
 
     for (const field of descriptor.fields) {
+      // An UNMAPPED field is omitted entirely rather than sent as null. The distinction matters
+      // on re-import: a sheet with no Description column must leave existing descriptions alone,
+      // while a blank CELL in a mapped column is a deliberate clear. Sending null for both would
+      // make "update the prices in my sheet" quietly wipe everything the sheet doesn't carry.
+      // (A combinesWith partner alone is enough — First name with no Name column still maps.)
+      const mapped =
+        mapping[field.key] != null ||
+        (field.combinesWith ? mapping[field.combinesWith.key] != null : false);
+      if (!mapped) continue;
+
       const outcome = readField(record, mapping, field);
 
       if (outcome.kind === "skip-row") {

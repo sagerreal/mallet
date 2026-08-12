@@ -83,6 +83,14 @@ export class DrizzleServiceRepository implements ServiceRepository {
     return row ? rowToService(row) : null;
   }
 
+  async allNames(): Promise<string[]> {
+    const rows = await this.tx
+      .select({ label: pricebookItems.label })
+      .from(pricebookItems)
+      .where(and(eq(pricebookItems.orgId, this.orgId), isNull(pricebookItems.deletedAt)));
+    return rows.map((r) => r.label);
+  }
+
   async list(
     page: CursorPage,
     filter: { search?: string; categoryId?: string | null },
