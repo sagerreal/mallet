@@ -4,7 +4,8 @@ export type ErrorKind =
   | "not_found"
   | "conflict"
   | "external_service"
-  | "unauthorized";
+  | "unauthorized"
+  | "precondition";
 
 interface BaseError {
   readonly kind: ErrorKind;
@@ -32,13 +33,21 @@ export interface ExternalServiceError extends BaseError {
 export interface UnauthorizedError extends BaseError {
   readonly kind: "unauthorized";
 }
+// A request that is well-formed and allowed, but the SHOP's setup isn't there yet (e.g. Stripe
+// Connect onboarding unfinished). Distinct from `conflict` (a state clash on the resource itself)
+// so the boundary can answer PRECONDITION_FAILED — the same code interactive senders already use
+// for unconfigured channels (assertDelivered) — and the message can name the setup step to take.
+export interface PreconditionError extends BaseError {
+  readonly kind: "precondition";
+}
 
 export type AppError =
   | ValidationError
   | NotFoundError
   | ConflictError
   | ExternalServiceError
-  | UnauthorizedError;
+  | UnauthorizedError
+  | PreconditionError;
 
 export const validation = (message: string, field?: string): ValidationError => ({
   kind: "validation",
@@ -58,5 +67,9 @@ export const externalService = (
 ): ExternalServiceError => ({ kind: "external_service", service, message, retryable });
 export const unauthorized = (message = "unauthorized"): UnauthorizedError => ({
   kind: "unauthorized",
+  message,
+});
+export const precondition = (message: string): PreconditionError => ({
+  kind: "precondition",
   message,
 });

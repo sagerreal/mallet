@@ -48,6 +48,7 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
 import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
 import {
+  persistChargeOnFile,
   persistInvoiceFromJob,
   persistRecordPayment,
   persistSendInvoice,
@@ -269,6 +270,21 @@ export interface InvoicesSlice {
   recordPayment: (
     id: string,
     payment: Payment,
+    surface?: InvoiceWriteSurface,
+  ) => Promise<{ ok: boolean; error?: string }>;
+  /**
+   * Charge the customer's card on file — REAL money, via Stripe, server-side, full balance.
+   *
+   * NO optimistic write, unlike recordPayment, and that is the point: recording is bookkeeping
+   * for money already in hand, while this MOVES money, and a store that shows "paid" while the
+   * bank is still deciding is the record-without-money hazard this action replaces. The store
+   * changes only when the server answers with the settled invoice.
+   *
+   * Resolves { ok, error? } and never rejects. A decline resolves ok: false with Stripe's own
+   * sentence ("Your card has insufficient funds.") for the surface to show verbatim.
+   */
+  chargeCardOnFile: (
+    id: string,
     surface?: InvoiceWriteSurface,
   ) => Promise<{ ok: boolean; error?: string }>;
   /**
@@ -559,6 +575,39 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         return {
           ok: false,
           error: userMessage(err, "Couldn't record the payment — check your connection and try again."),
+        };
+      },
+    );
+  },
+
+  // ---------------------------------------------------------------------------
+  // chargeCardOnFile — real Stripe charge of the saved card, full balance, no
+  // optimistic write (see the interface comment). The store adopts the server's
+  // settled invoice on success and is untouched on any refusal.
+  // ---------------------------------------------------------------------------
+  chargeCardOnFile: (id, surface = "office") => {
+    const inv = get().invoices.find((i) => i.id === id);
+    if (!inv) return Promise.resolve({ ok: false, error: INVOICE_GONE });
+    if (inv.origin !== "db") return Promise.resolve({ ok: false, error: NEVER_RAISED_ON_SERVER });
+
+    // Per ATTEMPT, not per invoice: Stripe caches the response (a decline included) under this
+    // key for 24h, so reusing one across attempts would replay the first decline forever. The
+    // caller's single-flight guard is what prevents a double tap becoming two attempts.
+    const idempotencyKey = crypto.randomUUID();
+
+    return persistChargeOnFile(surface, { invoiceId: id, idempotencyKey }, inv).then(
+      (reconciled) => {
+        invalidateLists("invoices", "jobs");
+        set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+        return { ok: true };
+      },
+      (err: unknown) => {
+        reportWriteError("chargeCardOnFile", err);
+        // CONFLICT carries the decline sentence verbatim ("Your card has insufficient funds.")
+        // — exactly what the person at the door needs to read out. Everything else falls back.
+        return {
+          ok: false,
+          error: userMessage(err, "Couldn't charge the card — collect another way and try again later."),
         };
       },
     );

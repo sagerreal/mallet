@@ -30,8 +30,11 @@ import { DrizzleFieldScopeReader } from "../infra/drizzle-field-scope-reader";
 import { DrizzleVisitFeeReader } from "../infra/drizzle-visit-fee-reader";
 import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
+import { DrizzlePaymentProfileStore } from "../infra/drizzle-payment-profile-store";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
 import { CreatePaymentUseCase } from "../app/create-payment";
+import { ChargeCardOnFileUseCase } from "../app/charge-card-on-file";
+import { RecordCardPaymentUseCase } from "../app/record-card-payment";
 import { SendInvoiceUseCase } from "../app/send-invoice";
 import { RecordPaymentUseCase } from "../app/record-payment";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
@@ -329,6 +332,50 @@ export const createFieldInvoiceRouter = () =>
           }),
         );
         return present(invoice, ctx);
+      }),
+
+    /**
+     * Charge the customer's card on file for the FULL balance — the field sibling of
+     * `v1.invoicing.chargeOnFile`, gated by the same job-assignment scope as every other
+     * procedure here (`loadInScope` first, before the gateway answer could become an existence
+     * oracle). The office procedure is untouched; this is never a role-widening of it.
+     *
+     * What the technician CANNOT do here, by construction: choose the amount (the server charges
+     * the balance due), see the Stripe pointers (the response is the same redacted field DTO
+     * every other procedure returns), or turn a refusal into information (declines carry
+     * Stripe's customer-facing sentence and nothing else). Real money moves or this throws —
+     * the record is written only after Stripe settles, keyed on the intent id.
+     */
+    chargeOnFile: anyRole
+      .input(z.object({ invoiceId: z.string().uuid(), idempotencyKey: z.string().min(8).max(200) }))
+      .output(fieldInvoiceDTO)
+      .mutation(async ({ ctx, input }) => {
+        const invoiceId = asInvoiceId(input.invoiceId);
+        // AUTHORIZE BEFORE ANYTHING ELSE — same ordering (and same reason) as createPayment below.
+        await loadInScope(invoiceId, ctx);
+        if (!ctx.deps.cardChargeGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new ChargeCardOnFileUseCase(
+          repo,
+          new DrizzlePaymentProfileStore(ctx.tx, ctx.principal.orgId),
+          ctx.deps.cardChargeGateway,
+          new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId),
+          new RecordCardPaymentUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
+        );
+        const r = orThrow(
+          await useCase.exec({
+            orgId: ctx.principal.orgId,
+            invoiceId,
+            // Namespaced like ledgerKeyFor and for the same reason, but for the STRIPE attempt:
+            // the ledger's own key is the pi_… id the charge comes back with.
+            idempotencyKey: `onfile:field:${invoiceId}:${ctx.principal.userId}:${input.idempotencyKey}`,
+            // From the principal, never from input — same law as recordPayment's attribution.
+            chargedByUserId: ctx.principal.userId,
+          }),
+        );
+        return present(r.invoice, ctx);
       }),
 
     /**

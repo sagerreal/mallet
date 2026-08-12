@@ -19,9 +19,12 @@ import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
+import { DrizzlePaymentProfileStore } from "../infra/drizzle-payment-profile-store";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
 import { CreatePaymentUseCase } from "../app/create-payment";
+import { ChargeCardOnFileUseCase } from "../app/charge-card-on-file";
+import { RecordCardPaymentUseCase } from "../app/record-card-payment";
 import { SendInvoiceUseCase } from "../app/send-invoice";
 import { RecordPaymentUseCase } from "../app/record-payment";
 import { VoidInvoiceUseCase } from "../app/void-invoice";
@@ -560,6 +563,45 @@ export const createInvoiceRouter = () =>
           ctx.tx,
           ctx.principal.orgId,
         );
+      }),
+
+    /**
+     * Charge the customer's card on file for the FULL balance — real money via Stripe, or a loud
+     * refusal; NEVER a ledger row without a charge behind it (the hazard the old client-side
+     * "record a card payment with onFile: true" path used to be).
+     *
+     * The AMOUNT IS NOT AN INPUT — the server charges the balance due, exactly like createPayment
+     * mints for it. The idempotency key namespaces the STRIPE attempt (invoice + acting user +
+     * client key), so a dropped-answer retry replays the same settled intent and the ledger —
+     * keyed on the pi_… id by RecordCardPaymentUseCase — takes the money exactly once. A decline
+     * comes back as CONFLICT carrying Stripe's own sentence, for the caller to surface verbatim.
+     */
+    chargeOnFile: ownerOrOffice
+      .input(z.object({ invoiceId: z.string().uuid(), idempotencyKey: z.string().min(8).max(200) }))
+      .output(invoiceDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.cardChargeGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const invoiceId = asInvoiceId(input.invoiceId);
+        const useCase = new ChargeCardOnFileUseCase(
+          repo,
+          new DrizzlePaymentProfileStore(ctx.tx, ctx.principal.orgId),
+          ctx.deps.cardChargeGateway,
+          new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId),
+          new RecordCardPaymentUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
+        );
+        const r = orThrow(
+          await useCase.exec({
+            orgId: ctx.principal.orgId,
+            invoiceId,
+            idempotencyKey: `onfile:${ctx.principal.orgId}:${invoiceId}:${ctx.principal.userId}:${input.idempotencyKey}`,
+            // From the principal, never from input — same law as recordPayment's attribution.
+            chargedByUserId: ctx.principal.userId,
+          }),
+        );
+        return toInvoiceDTOWithAuth(r.invoice, ctx.tx, ctx.principal.orgId);
       }),
 
     // Create a Stripe-hosted payment link for the invoice balance (returns the URL to send the

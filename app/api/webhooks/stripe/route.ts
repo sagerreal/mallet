@@ -4,7 +4,13 @@ import { OutboxEventBus } from "@mallet/shared/outbox";
 import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
-import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, processStripeEvent } from "@mallet/invoicing";
+import {
+  DrizzleInvoiceRepository,
+  RecordCardPaymentUseCase,
+  processStripeEvent,
+  captureCardOnFile,
+  saveCardOnFile,
+} from "@mallet/invoicing";
 import { recordEstimateDeposit } from "@mallet/quoting";
 import { getAppDeps } from "@/trpc/di";
 
@@ -65,6 +71,16 @@ export async function POST(req: Request): Promise<Response> {
           enrichRequestContext({ orgId });
           return recordEstimateDeposit(orgId, estimateId, amountCents, paymentRef);
         },
+        // Card-on-file capture: store the card this payment saved so "Charge card on file" has
+        // something to charge. Runs AFTER the money is recorded and NEVER throws (its whole
+        // body is caught + logged inside captureCardOnFile) — a card fact must not 500 a
+        // settled payment into days of Stripe redelivery.
+        captureCard: (args) =>
+          captureCardOnFile(args, {
+            retrieveCard: (pi) => client.retrieveSavedCardFromIntent(pi),
+            saveProfile: saveCardOnFile,
+            log: (message, ctx) => logger.warn(ctx ?? {}, message),
+          }),
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });
       return new Response(null, { status: result.status });

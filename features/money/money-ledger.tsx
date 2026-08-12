@@ -19,7 +19,6 @@ import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import {
   deriveMoneyRows,
   deriveArchivedMoneyRows,
-  invDue,
   type MoneyRow,
 } from "./money-derive";
 import { MoneyTable, MONEY_COL_ORDER, type MoneyColKey, type MoneyRowCallbacks } from "./money-table";
@@ -93,7 +92,7 @@ export function MoneyLedger() {
 
   const openModal = useOpenModal();
   const addInvoice = useAppStore((s) => s.addInvoice);
-  const recordPayment = useAppStore((s) => s.recordPayment);
+  const chargeCardOnFile = useAppStore((s) => s.chargeCardOnFile);
   const updateInvoice = useAppStore((s) => s.updateInvoice);
 
   const [moneySet, setMoneySet] = useState<MoneySet>("active");
@@ -105,6 +104,10 @@ export function MoneyLedger() {
 
   // Armed "charge card on file" — first tap arms, second tap charges.
   const [armedCharge, setArmedCharge] = useState<string | null>(null);
+  // The last charge-on-file refusal — Stripe's decline sentence verbatim, or the connection
+  // fallback — shown above the table. Cleared when a new charge is armed.
+  const [chargeError, setChargeError] = useState<string | null>(null);
+  const [charging, setCharging] = useState<string | null>(null);
 
   // The ledger is served by the database now. It is a UNION of two things, so it is fetched as
   // two: the ready-to-bill WORKLIST whole (it is short by nature, and if it ever is not, that is
@@ -209,11 +212,20 @@ export function MoneyLedger() {
     onCharge: (id) => {
       if (armedCharge !== id) {
         setArmedCharge(id);
+        setChargeError(null);
         return;
       }
-      const i = money.invoiceRows.find((x) => x.id === id);
-      if (!i) return;
-      void recordPayment(id, { amt: invDue(i), when: "Just now", method: "card", onFile: true });
+      // REAL money: v1.invoicing.chargeOnFile — a Stripe off-session charge of the full
+      // balance, recorded server-side only after it settles. This used to record a manual
+      // "card" payment with onFile: true, a ledger row for money that never moved.
+      if (charging) return; // single-flight — a second confirm mid-flight must not double-charge
+      setCharging(id);
+      setChargeError(null);
+      void chargeCardOnFile(id, "office")
+        .then((res) => {
+          if (!res.ok) setChargeError(res.error ?? "Couldn't charge the card — try again.");
+        })
+        .finally(() => setCharging(null));
       setArmedCharge(null);
     },
   };
@@ -281,7 +293,17 @@ export function MoneyLedger() {
           {colsOpen && <MoneyColumnsPanel visible={visibleCols} onToggle={toggleCol} />}
           {filtersOpen && <MoneyFiltersPanel statusFilter={statusFilter} onStatus={setStatusFilter} onClear={clearFilters} />}
 
-          <MoneyTable rows={rows} visibleCols={visibleCols} armedCharge={armedCharge} cb={cb} emptyState={emptyState} />
+          <>
+            {chargeError ? (
+              <p
+                role="alert"
+                style={{ color: "var(--red)", fontSize: "var(--type-sm)", fontWeight: 600, margin: "0 0 var(--space-2)" }}
+              >
+                {chargeError}
+              </p>
+            ) : null}
+            <MoneyTable rows={rows} visibleCols={visibleCols} armedCharge={armedCharge} cb={cb} emptyState={emptyState} />
+          </>
         </>
       )}
     </>

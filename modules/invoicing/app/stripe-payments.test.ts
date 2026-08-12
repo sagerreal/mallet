@@ -333,3 +333,40 @@ describe("processStripeEvent", () => {
     void calls;
   });
 });
+
+describe("processStripeEvent → card-on-file capture hook", () => {
+  it("captures after the record, with the payment subject; deposits carry the deposit subject", async () => {
+    const captures: unknown[] = [];
+    const deps = {
+      record: async () => undefined,
+      recordDeposit: async () => true,
+      captureCard: async (args: unknown) => {
+        captures.push(args);
+      },
+      log: () => undefined,
+    };
+    await processStripeEvent(checkoutEvent({}), deps);
+    const est = "55555555-5555-4555-8555-555555555555";
+    await processStripeEvent(
+      checkoutEvent({ metadata: { orgId: ORG, estimateId: est, kind: "deposit" } }),
+      deps,
+    );
+    expect(captures).toEqual([
+      { orgId: ORG, subject: { kind: "payment", invoiceId: INV }, paymentIntentId: "pi_123456789" },
+      { orgId: ORG, subject: { kind: "deposit", estimateId: est }, paymentIntentId: "pi_123456789" },
+    ]);
+  });
+
+  it("never captures on an unpaid session", async () => {
+    const captures: unknown[] = [];
+    await processStripeEvent(checkoutEvent({ paymentStatus: "unpaid" }), {
+      record: async () => undefined,
+      recordDeposit: async () => true,
+      captureCard: async (args: unknown) => {
+        captures.push(args);
+      },
+      log: () => undefined,
+    });
+    expect(captures).toHaveLength(0);
+  });
+});

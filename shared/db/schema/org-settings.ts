@@ -148,6 +148,12 @@ export const orgSettings = pgTable(
     stripePayoutsEnabled: boolean("stripe_payouts_enabled").notNull().default(false),
     stripeDetailsSubmitted: boolean("stripe_details_submitted").notNull().default(false),
     stripeOnboardedAt: timestamp("stripe_onboarded_at", { withTimezone: true }),
+    // ── Stripe Terminal (Tap to Pay) — server foundation ─────────────────────
+    // The org's one Terminal Location (tml_...), created ON the shop's connected account
+    // (direct-charge model: Terminal resources belong to the account that owns the charge).
+    // Null until the first Tap to Pay setup call; created once and reused — readers register
+    // to it when the phone connects. Stored beside the connected account id it belongs to.
+    stripeTerminalLocationId: text("stripe_terminal_location_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },

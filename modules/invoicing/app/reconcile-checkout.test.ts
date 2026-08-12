@@ -268,3 +268,43 @@ describe("reconcileCheckoutSession", () => {
     expect(repo.current.props.amountPaid).toBe(100_000);
   });
 });
+
+describe("reconcileCheckoutSession → card-on-file capture hook", () => {
+  const captures: unknown[] = [];
+  const capturingDeps = (s: Stripe.Checkout.Session): ReconcileCheckoutDeps => ({
+    retrieveSession: async () => s,
+    recordPayment: async () => undefined,
+    recordDeposit: async () => true,
+    captureCard: async (args) => {
+      captures.push(args);
+    },
+    log: () => undefined,
+  });
+
+  it("captures AFTER a recorded invoice payment, with the payment subject", async () => {
+    captures.length = 0;
+    await reconcileCheckoutSession("cs_test_abc123", capturingDeps(session()));
+    expect(captures).toEqual([
+      { orgId: ORG, subject: { kind: "payment", invoiceId: INV }, paymentIntentId: "pi_123456789" },
+    ]);
+  });
+
+  it("captures a deposit session with the deposit subject", async () => {
+    captures.length = 0;
+    const est = "55555555-5555-4555-8555-555555555555";
+    await reconcileCheckoutSession(
+      "cs_test_abc123",
+      capturingDeps(session({ metadata: { orgId: ORG, estimateId: est, kind: "deposit" } })),
+    );
+    expect(captures).toEqual([
+      { orgId: ORG, subject: { kind: "deposit", estimateId: est }, paymentIntentId: "pi_123456789" },
+    ]);
+  });
+
+  it("never captures on an unpaid session or missing payment intent", async () => {
+    captures.length = 0;
+    await reconcileCheckoutSession("cs_test_abc123", capturingDeps(session({ paymentStatus: "unpaid" })));
+    await reconcileCheckoutSession("cs_test_abc123", capturingDeps(session({ paymentIntent: null })));
+    expect(captures).toHaveLength(0);
+  });
+});

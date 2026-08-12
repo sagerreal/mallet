@@ -1,7 +1,7 @@
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import { db } from "@mallet/shared/db/client";
 import { createAuthProvider, createApiKeyAuthenticator, createSupabaseTokenVerifier, SignupStore } from "@mallet/identity";
-import { StripePaymentLinkGateway } from "@mallet/invoicing";
+import { StripePaymentLinkGateway, StripeCardChargeGateway } from "@mallet/invoicing";
 import { StripeConnectGateway } from "@mallet/settings";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
 import {
@@ -27,7 +27,7 @@ import {
 import { systemClock } from "@mallet/shared/types";
 import type { AppDeps } from "./deps";
 import type { Config } from "@mallet/shared/config";
-import type { PaymentLinkGateway } from "@mallet/invoicing";
+import type { PaymentLinkGateway, CardChargeGateway } from "@mallet/invoicing";
 import type { ConnectGateway } from "@mallet/settings";
 import { SupabasePhotoStorageGateway } from "@mallet/jobs";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
@@ -159,6 +159,8 @@ export const getAppDeps = (): AppDeps => {
     paymentLinkGateway = new StripePaymentLinkGateway(stripe, config.PUBLIC_APP_URL);
     connectGateway = new StripeConnectGateway(stripe);
   }
+  // No PUBLIC_APP_URL requirement: charging a saved card involves no hosted redirect.
+  const cardChargeGateway: CardChargeGateway | null = stripe ? new StripeCardChargeGateway(stripe) : null;
 
   // Per-channel comms senders; each self-disables (→ logging fallback) unless fully configured.
   const byChannel: Partial<Record<NotificationChannel, NotificationSender>> = {};
@@ -233,6 +235,7 @@ export const getAppDeps = (): AppDeps => {
     clock: systemClock,
     ids: uuidGenerator,
     paymentLinkGateway,
+    cardChargeGateway,
     connectGateway,
     photoStorageGateway,
     notificationSender,

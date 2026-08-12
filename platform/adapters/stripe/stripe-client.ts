@@ -18,6 +18,20 @@ export const isRetriableStripeError = (error: unknown): boolean =>
   error instanceof Stripe.errors.StripeRateLimitError;
 
 /**
+ * The customer-facing sentence on a CARD refusal ("Your card has insufficient funds."), or null
+ * when the error is anything else. Lives here because this is the only file allowed to touch the
+ * SDK's error classes — the charge gateway needs to tell "the bank said no" (surface verbatim,
+ * never retry) from "Stripe is down" (generic copy, retriable) without importing Stripe itself.
+ * Stripe authors these messages for end users; when one is somehow absent, a plain fallback still
+ * names the actual problem.
+ */
+export const stripeCardDeclineMessage = (error: unknown): string | null => {
+  if (!(error instanceof Stripe.errors.StripeCardError)) return null;
+  const message = error.message?.trim();
+  return message && message !== "" ? message : "The card was declined.";
+};
+
+/**
  * WHAT the money is for. Stamped into the session metadata as `kind`, which is how the webhook and
  * the success-page reconcile decide which recorder a settled session belongs to — an invoice
  * payment goes to the payments ledger, a quote deposit goes to estimates.dep_paid_cents. A single
@@ -112,7 +126,17 @@ export class StripeClient {
               },
             ],
             metadata,
-            payment_intent_data: paymentIntentData,
+            // Card on file, DEFAULT-ON: every settled checkout saves the card for later
+            // off-session charging ("charge card on file" at the door). `customer_creation:
+            // "always"` mints the platform Customer a payment-mode session otherwise skips, and
+            // `setup_future_usage: "off_session"` attaches the paying card to it — with Stripe's
+            // own on-page consent language shown to the customer at pay time. The saved pointers
+            // stay on the PLATFORM account (this is a platform-held destination charge), which
+            // is exactly where the later charge runs. Capture of the resulting facts happens in
+            // the webhook/reconcile paths (captureCardOnFile); sessions minted before this
+            // simply have nothing to capture.
+            customer_creation: "always",
+            payment_intent_data: { ...paymentIntentData, setup_future_usage: "off_session" },
             success_url: params.successUrl,
             cancel_url: params.cancelUrl,
           },
@@ -190,6 +214,97 @@ export class StripeClient {
   // Verifies the webhook signature against the raw body. Throws on any tampering / bad signature.
   constructEvent(rawBody: string, signature: string, webhookSecret: string): Stripe.Event {
     return this.stripe.webhooks.constructEvent(rawBody, signature, webhookSecret);
+  }
+
+  // ── Card on file — capture + off-session charge (platform-held, like Checkout) ─────────────
+
+  /**
+   * The reusable card a settled intent saved, or null when it saved nothing — a session minted
+   * before setup_future_usage was requested, or an instrument with no card behind it. Platform
+   * call, no Stripe-Account header: the Checkout session that saved the card was platform-held,
+   * so the Customer and payment method live on the platform account. GET — safe to retry.
+   */
+  async retrieveSavedCardFromIntent(paymentIntentId: string): Promise<{
+    customerId: string;
+    paymentMethodId: string;
+    brand: string;
+    last4: string;
+  } | null> {
+    const intent = await call(
+      () =>
+        this.stripe.paymentIntents.retrieve(
+          paymentIntentId,
+          { expand: ["payment_method"] },
+          { timeout: 10_000 },
+        ),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    // Only an intent that ASKED to save the card attached it for reuse — anything else holds a
+    // one-off payment method that off_session charging would refuse.
+    if (!intent.setup_future_usage) return null;
+    const customerId = typeof intent.customer === "string" ? intent.customer : (intent.customer?.id ?? null);
+    const pm = intent.payment_method;
+    if (!customerId || !pm || typeof pm === "string" || !pm.card) return null;
+    return {
+      customerId,
+      paymentMethodId: pm.id,
+      brand: pm.card.brand,
+      last4: pm.card.last4,
+    };
+  }
+
+  /**
+   * Charge a saved card off-session — the "card on file" charge. Same destination-charge posture
+   * as createCheckoutSession (platform-held intent, on_behalf_of + transfer_data + application
+   * fee), because that is where the saved Customer lives. confirm: true — the charge happens on
+   * this call or throws; a decline arrives as StripeCardError (see stripeCardDeclineMessage) and
+   * is DETERMINISTIC, so isRetriableStripeError keeps it off the retry path and away from the
+   * shared breaker.
+   */
+  async chargeSavedCard(params: {
+    amountCents: number;
+    currency: string;
+    customerId: string;
+    paymentMethodId: string;
+    description: string;
+    orgId: string;
+    invoiceId: string;
+    connectedAccountId: string;
+    applicationFeeCents: number;
+    idempotencyKey: string;
+  }): Promise<{ paymentIntentId: string; amountReceivedCents: number }> {
+    const intent = await call(
+      () =>
+        this.stripe.paymentIntents.create(
+          {
+            amount: params.amountCents,
+            currency: params.currency,
+            customer: params.customerId,
+            payment_method: params.paymentMethodId,
+            off_session: true,
+            confirm: true,
+            description: params.description,
+            // `kind: "onfile"` keeps this intent out of the Checkout recorders' path the same
+            // way "tap" does for Terminal — the use-case records it directly, keyed on the id.
+            metadata: { orgId: params.orgId, invoiceId: params.invoiceId, kind: "onfile" },
+            on_behalf_of: params.connectedAccountId,
+            transfer_data: { destination: params.connectedAccountId },
+            application_fee_amount: params.applicationFeeCents,
+          },
+          { idempotencyKey: params.idempotencyKey, timeout: 10_000 },
+        ),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    if (intent.status !== "succeeded") {
+      // requires_action (3DS on an off-session charge) or any other non-terminal state: no money
+      // moved and this flow has no customer device to complete it on. Deterministic — not retried.
+      throw new Stripe.errors.StripeCardError({
+        type: "card_error",
+        code: "authentication_required",
+        message: "The card requires the customer's confirmation — send the payment link instead.",
+      });
+    }
+    return { paymentIntentId: intent.id, amountReceivedCents: intent.amount_received };
   }
 }
 
