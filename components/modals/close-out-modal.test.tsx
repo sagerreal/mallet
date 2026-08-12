@@ -647,15 +647,83 @@ describe("CloseOutModalContent — never an empty sheet", () => {
   });
 
   it("renders the server's own reason when the create fails, not a blank sheet", async () => {
+    // A refusal with no self-retry lane (the race message has its own test below).
     mockCreatePersisted = () =>
-      Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" });
+      Promise.resolve({ ok: false, error: "this job's customer was deleted" });
 
     render(<CloseOutModalContent />);
     await act(async () => {});
 
     expect(screen.getByText("Couldn't raise the invoice")).toBeTruthy();
-    expect(screen.getByText("job must be complete before it can be invoiced")).toBeTruthy();
+    expect(screen.getByText("this job's customer was deleted")).toBeTruthy();
     expect(screen.queryByText("Raising the invoice…")).toBeNull();
+  });
+
+  /**
+   * THE COMPLETION RACE. Opened straight off "Finish job →", the raise reaches the server
+   * before the complete write commits — "job must be complete before it can be invoiced", a
+   * refusal that is true for milliseconds. It self-retries on a short fuse and succeeds
+   * without the technician ever seeing an error; a job that genuinely never completes runs
+   * out of retries and surfaces the sentence. (The sweep also caught the OLD failure shape:
+   * without the createError guard the effect looped the refused create forever, wiping its
+   * own error each lap — endless skeletons. That guard is asserted by the surface tests.)
+   */
+  it("self-retries the not-complete race and lands without an error", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      mockCreatePersisted = () => {
+        calls += 1;
+        return calls < 2
+          ? Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" })
+          : Promise.resolve({ ok: true });
+      };
+
+      render(<CloseOutModalContent />);
+      await act(async () => {});
+      expect(calls).toBe(1);
+      // No error surfaced — the retry is armed, the sheet keeps its loading state.
+      expect(screen.queryByText("Couldn't raise the invoice")).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      await act(async () => {});
+      expect(calls).toBe(2);
+      expect(screen.queryByText("Couldn't raise the invoice")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a race that outlives its retries surfaces the sentence instead of looping forever", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      mockCreatePersisted = () => {
+        calls += 1;
+        return Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" });
+      };
+
+      render(<CloseOutModalContent />);
+      await act(async () => {});
+      for (let i = 0; i < 6; i++) {
+        await act(async () => {
+          vi.advanceTimersByTime(1300);
+        });
+        await act(async () => {});
+      }
+      // 1 initial + 5 self-retries, then it STOPS — the createError guard holds the loop.
+      expect(calls).toBe(6);
+      expect(screen.getByText("Couldn't raise the invoice")).toBeTruthy();
+      const before = calls;
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(calls).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("Try again re-fires the create, and the sheet renders once the invoice lands", async () => {

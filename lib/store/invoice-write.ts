@@ -134,10 +134,27 @@ export function sendInvoiceDocument(invoiceId: string): Promise<{ channel: "sms"
 export function mintCheckoutSession(
   surface: InvoiceWriteSurface,
   invoiceId: string,
-): Promise<{ url: string }> {
+): Promise<{ url: string; sessionId: string }> {
   return onField(surface)
     ? trpcVanilla.v1.fieldInvoicing.createPayment.mutate({ invoiceId })
     : trpcVanilla.v1.invoicing.createPayment.mutate({ invoiceId });
+}
+
+/**
+ * Settle the session THIS device minted: the server retrieves it from Stripe and, if paid,
+ * records the payment through the same idempotent path as the webhook and the success page.
+ * The QR flow's poll calls this — the customer pays on THEIR phone and closes Stripe's tab,
+ * so neither the webhook (needs configuration) nor the success redirect (needs their browser)
+ * can be the only recorders.
+ */
+export function reconcileCheckout(
+  surface: InvoiceWriteSurface,
+  invoiceId: string,
+  sessionId: string,
+): Promise<{ recorded: boolean }> {
+  return onField(surface)
+    ? trpcVanilla.v1.fieldInvoicing.reconcileCheckout.mutate({ invoiceId, sessionId })
+    : trpcVanilla.v1.invoicing.reconcileCheckout.mutate({ invoiceId, sessionId });
 }
 
 /**

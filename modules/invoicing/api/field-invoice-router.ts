@@ -21,6 +21,10 @@ import {
 } from "@mallet/notifications";
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { Invoice } from "../domain/invoice";
+import { RecordCardPaymentUseCase } from "../app/record-card-payment";
+import { reconcileCheckoutSession } from "../app/reconcile-checkout";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { logger } from "@mallet/shared/observability";
 import { PAYMENT_METHODS, type PaymentMethod } from "../domain/payment";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleJobReader } from "../infra/drizzle-job-reader";
@@ -340,7 +344,7 @@ export const createFieldInvoiceRouter = () =>
      */
     createPayment: anyRole
       .input(invoiceIdInput)
-      .output(z.object({ url: z.string().url() }))
+      .output(z.object({ url: z.string().url(), sessionId: z.string() }))
       .mutation(async ({ ctx, input }) => {
         const invoiceId = asInvoiceId(input.invoiceId);
         // AUTHORIZE BEFORE ANYTHING ELSE. The office endpoint checks the gateway first, which is
@@ -358,7 +362,44 @@ export const createFieldInvoiceRouter = () =>
           new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId),
         );
         const result = orThrow(await useCase.exec({ orgId: ctx.principal.orgId, invoiceId }));
-        return { url: result.url };
+        return { url: result.url, sessionId: result.sessionId };
+      }),
+
+    /**
+     * The field twin of v1.invoicing.reconcileCheckout — the device holding the QR settles the
+     * books itself when the customer pays and closes Stripe's tab without the success redirect.
+     * Assignment-gated exactly like createPayment: the caller must be on the invoice's job.
+     */
+    reconcileCheckout: anyRole
+      .input(z.object({ invoiceId: z.string().uuid(), sessionId: z.string().min(10).max(200) }))
+      .output(z.object({ recorded: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const invoiceId = asInvoiceId(input.invoiceId);
+        await loadInScope(invoiceId, ctx);
+        const config = loadConfig();
+        if (!config.STRIPE_SECRET_KEY) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const client = getSharedStripeClient(config.STRIPE_SECRET_KEY);
+        const orgId = ctx.principal.orgId;
+        const outcome = await reconcileCheckoutSession(input.sessionId, {
+          retrieveSession: (id) => client.retrieveCheckoutSession(id),
+          recordPayment: async (metaOrgId, metaInvoiceId, amountCents, paymentIntentId) => {
+            // The session's own metadata must name THIS org and THIS invoice — anything else is
+            // a session id fished out of another tenant or another bill.
+            if (metaOrgId !== orgId || metaInvoiceId !== input.invoiceId) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
+            }
+            const repo = new DrizzleInvoiceRepository(ctx.tx, orgId);
+            const useCase = new RecordCardPaymentUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+            orThrow(
+              await useCase.exec({ orgId, invoiceId, amountCents, paymentIntentId }),
+            );
+          },
+          recordDeposit: async () => false,
+          log: (message, logCtx) => logger.warn(logCtx ?? {}, message),
+        });
+        return { recorded: outcome.recorded };
       }),
   });
 

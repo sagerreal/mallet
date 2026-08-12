@@ -1091,9 +1091,40 @@ export function CloseOutModalContent() {
   //      one from the job. Creation runs in an effect (never mutate the store
   //      during render); a ref guards against a duplicate before the new invoice
   //      shows up in `invoices`.
-  const invoice = job
-    ? invoices.find((i) => (invoiceIdParam ? i.id === invoiceIdParam : i.jobId === job.id))
+  /**
+   * The id of the invoice THIS mount created. The job→invoice lookup below rides
+   * `invoice.jobId`, and a mid-flow list refetch can momentarily blank that link — the sweep
+   * caught the effect re-firing off exactly that flap and minting a DUPLICATE invoice, whose
+   * insert then 500s on the number collision and strands the sheet on the generic error. The
+   * id is client-authored (create endpoints preserve it), so it is valid the moment addInvoice
+   * returns; the lookup falls back to it and the effect refuses a second create outright.
+   */
+  const createdInvoiceIdRef = useRef<string | null>(null);
+  /**
+   * The invoice this sheet is ALREADY showing, pinned — id AND object. The lookup can miss
+   * for one render while the collection churns (a list refetch blanks `invoice.jobId`; the
+   * idempotent create path swaps the row's id at adoption), and one missed frame unmounts
+   * the whole pay flow: the sweep watched the card step bounce back to the method picker
+   * mid-mint, and the auto-create effect fire a DUPLICATE into the same gap. A payment
+   * sheet never changes which bill it is collecting, so once a record has resolved, the
+   * last-known record carries any one-frame miss; the store's next render re-resolves it.
+   */
+  const shownInvoiceIdRef = useRef<string | null>(null);
+  const shownInvoiceRef = useRef<Invoice | null>(null);
+  const found = job
+    ? invoices.find((i) =>
+        invoiceIdParam
+          ? i.id === invoiceIdParam
+          : (shownInvoiceIdRef.current != null && i.id === shownInvoiceIdRef.current) ||
+            i.jobId === job.id ||
+            (createdInvoiceIdRef.current != null && i.id === createdInvoiceIdRef.current),
+      )
     : undefined;
+  const invoice = found ?? (job ? (shownInvoiceRef.current ?? undefined) : undefined);
+  if (found) {
+    shownInvoiceIdRef.current = found.id;
+    shownInvoiceRef.current = found;
+  }
   const creatingRef = useRef<string | null>(null);
   // The create's outcome, so this sheet always has something honest to render. It used to
   // return null while `creatingRef` was stamped — and the ref was never cleared, so a create
@@ -1102,16 +1133,27 @@ export function CloseOutModalContent() {
   const [createError, setCreateError] = useState<string | null>(null);
   // Bumped by Retry: clears the guard ref and re-runs the effect below.
   const [createAttempt, setCreateAttempt] = useState(0);
+  // Self-retries burned on the completion race ONLY (see the persisted.then below) — the
+  // user's Retry button resets it, so a genuinely stuck job still gets fresh attempts.
+  const raceRetryRef = useRef(0);
 
   useEffect(() => {
     if (!job || invoice) return;
     // Never raise a bill against a role we have not resolved yet — see roleKnown.
     if (!roleKnown) return;
+    // A FAILED create waits for Retry (which clears this). Without the guard the effect
+    // re-fired the moment the slice rolled the optimistic invoice back, re-running the refused
+    // create forever — `setCreateError(null)` below wiped the error each lap, so the sheet
+    // showed endless skeleton bars and a toast per lap instead of its named error + Retry.
+    // The platform sweep's "stuck skeleton" finding, verbatim.
+    if (createError) return;
     // The visit-fee flow already raised (or is still raising) this job's invoice — never race
     // it with createFromJob, which would CONFLICT outright on a genuinely unpriced estimate
     // and, even when it wouldn't, would mint a SECOND invoice fighting the lead-tied one.
     if (invoiceIdParam) return;
     if (creatingRef.current === job.id) return;
+    // One create per mount, full stop — see createdInvoiceIdRef.
+    if (createdInvoiceIdRef.current) return;
     creatingRef.current = job.id;
     setCreateError(null);
     // The optimistic figure is the BILLED figure. This draw used to carry `jobTotal(job)` — the
@@ -1121,7 +1163,7 @@ export function CloseOutModalContent() {
     // bills with (CreateInvoiceFromJobUseCase), so the number never changes on reconcile.
     // The one client-underivable figure — an estimate's deposit credit — is gated below instead.
     const optimistic = jobPricedTotals(job);
-    const { persisted } = addInvoice(
+    const { invoice: created, persisted } = addInvoice(
       {
         jobId: job.id,
         leadId: job.leadId,
@@ -1146,14 +1188,31 @@ export function CloseOutModalContent() {
     );
     // Never rejects (the slice resolves { ok, error }). Clearing the guard on BOTH outcomes is
     // what makes Retry possible at all.
+    createdInvoiceIdRef.current = created.id;
     void persisted.then(({ ok, error }) => {
       creatingRef.current = null;
-      if (!ok) setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
+      if (ok) return;
+      // The create did NOT stick — release the one-per-mount guard so a retry can run.
+      createdInvoiceIdRef.current = null;
+      // THE TWO RACES THIS SHEET CAN LOSE FOR MILLISECONDS, retried on a short fuse:
+      //  - "job must be complete…": opened straight off "Finish job →", the raise reaches the
+      //    server before the complete write commits. Machine-speed taps hit it every time; a
+      //    fast human on good Wi-Fi eventually will.
+      //  - "an invoice already exists…": a duplicated create loses to its twin, and inside its
+      //    own tx snapshot cannot SEE the winner to return it — the refetch a moment later can.
+      // Anything else (or a race that outlives the retries) surfaces as the named error + Retry.
+      if (/must be complete|already exists/i.test(error ?? "") && raceRetryRef.current < 5) {
+        raceRetryRef.current += 1;
+        setTimeout(() => setCreateAttempt((n) => n + 1), 1_200);
+        return;
+      }
+      setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
     });
-  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface, roleKnown]);
+  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface, roleKnown, createError]);
 
   const retryCreate = useCallback(() => {
     creatingRef.current = null;
+    raceRetryRef.current = 0;
     setCreateError(null);
     setCreateAttempt((n) => n + 1);
   }, []);
