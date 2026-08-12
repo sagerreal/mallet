@@ -2084,6 +2084,20 @@
   .fca.fill .fca-t{color:var(--ink);font-weight:700}
   .fca:disabled{opacity:.55;cursor:not-allowed}
   .fca:focus-visible .fca-c{outline:2px solid var(--ink);outline-offset:2px}
+  /* the day pager — ‹ Today · Wed, Aug 12 › */
+  .mdp{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)}
+  .mdp-label{flex:1;min-width:0;font-size:var(--type-lg);font-weight:700;margin:0;line-height:1.15;white-space:nowrap}
+  .mdp-date{display:block;font-family:var(--font-mono);font-size:var(--type-xs);font-weight:500;color:var(--ink-2);letter-spacing:0}
+  .mdp .btn{white-space:nowrap}
+  .mdp .md-ic:disabled{opacity:.4;cursor:not-allowed}
+  .mdp-kicker{font-family:var(--font-mono);font-size:var(--type-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-bottom:var(--space-2)}
+  .mdp-sub{color:var(--ink-2);font-size:var(--type-sm);margin-top:var(--space-1)}
+  /* the paged pane slides in from the direction of travel */
+  .mdp-pane.slide-fwd{animation:mdpfwd .2s ease-out}
+  .mdp-pane.slide-back{animation:mdpback .2s ease-out}
+  @keyframes mdpfwd{from{opacity:0;transform:translateX(24px)}to{opacity:1;transform:none}}
+  @keyframes mdpback{from{opacity:0;transform:translateX(-24px)}to{opacity:1;transform:none}}
+  @media (prefers-reduced-motion:reduce){.mdp-pane.slide-fwd,.mdp-pane.slide-back{animation:none}}
   /* job done → getting paid is the biggest thing */
   .tjpaid{width:100%;border:2px solid var(--green-600);background:var(--green-50);border-radius:var(--radius-lg);padding:var(--space-4);margin:var(--space-4) 0 var(--space-2xs);text-align:center}
   .tjpaid.ok{border-color:#DDD7C9}
