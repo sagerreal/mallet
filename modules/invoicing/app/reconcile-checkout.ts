@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { parseCheckoutMetadata, isDepositMetadata } from "./checkout-metadata";
+import type { CaptureCardArgs } from "./capture-card-on-file";
 
 // Success-page reconcile: the customer just returned from Stripe Checkout, and the webhook —
 // the PRIMARY recorder — may not have landed yet. This retrieves the session server-side and
@@ -37,6 +38,13 @@ export interface ReconcileCheckoutDeps {
     amountCents: number,
     paymentRef: string,
   ) => Promise<boolean>;
+  /**
+   * Stores the card this payment saved as the customer's card on file (captureCardOnFile) — the
+   * same hook the webhook path runs, so whichever delivery lands first captures it and the
+   * second upserts the same facts. The implementation NEVER throws. Optional so existing
+   * callers/tests are untouched.
+   */
+  captureCard?: (args: CaptureCardArgs) => Promise<unknown>;
   log: (message: string, ctx?: Record<string, unknown>) => void;
 }
 
@@ -82,6 +90,13 @@ export const reconcileCheckoutSession = async (
       amountCents,
       paymentIntentId,
     );
+    // The customer paid with THIS card whatever the ledger said about the estimate, so the
+    // capture runs on both outcomes. Never throws (see the dep contract).
+    await deps.captureCard?.({
+      orgId: metadata.value.orgId,
+      subject: { kind: "deposit", estimateId: metadata.value.estimateId },
+      paymentIntentId,
+    });
     if (!recorded) {
       deps.log("pay reconcile: deposit could not be recorded on the estimate", {
         sessionId,
@@ -99,5 +114,11 @@ export const reconcileCheckoutSession = async (
   }
 
   await deps.recordPayment(metadata.value.orgId, metadata.value.invoiceId, amountCents, paymentIntentId);
+  // AFTER the record: money first, card fact second — identical ordering to the webhook path.
+  await deps.captureCard?.({
+    orgId: metadata.value.orgId,
+    subject: { kind: "payment", invoiceId: metadata.value.invoiceId },
+    paymentIntentId,
+  });
   return { recorded: true };
 };

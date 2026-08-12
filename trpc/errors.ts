@@ -8,6 +8,7 @@ const CODE_BY_KIND: Record<AppError["kind"], TRPCError["code"]> = {
   conflict: "CONFLICT",
   unauthorized: "UNAUTHORIZED",
   external_service: "BAD_GATEWAY",
+  precondition: "PRECONDITION_FAILED",
 };
 
 // The AppError rides along as the `cause` so its machine-readable tag (a validation error's

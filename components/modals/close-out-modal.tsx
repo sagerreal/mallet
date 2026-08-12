@@ -517,8 +517,14 @@ interface PayBlockProps {
   onApprove: (args: {
     amt: number;
     method: PayMethod;
-    onFile: boolean;
   }) => Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }>;
+  /**
+   * Charge the card on file — REAL money via Stripe, server-side, always the FULL balance (the
+   * amount box above the methods applies to RECORDED payments only). Resolves ok: false with
+   * Stripe's own decline sentence for payErr to show verbatim. This used to be a recordPayment
+   * with `onFile: true` — a ledger row claiming a charge that never happened; that path is dead.
+   */
+  onChargeOnFile: () => Promise<{ ok: boolean; error?: string }>;
   /** The store's sendInvoice — the card step must SEND a draft before minting. */
   sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
   /** Which API the card step's mint + poll go to. See CardCheckoutStepProps.surface. */
@@ -539,6 +545,7 @@ function PayBlock({
   invoice,
   lead,
   onApprove,
+  onChargeOnFile,
   sendInvoice,
   surface,
   onCardPaid,
@@ -580,25 +587,21 @@ function PayBlock({
     </>
   );
 
-  // ---- charge card on file → record, jump to done (coPay 'onfile') -----------
+  // ---- charge card on file → REAL Stripe charge, then done (coPay 'onfile') --
+  // The server charges the FULL balance — the amount box applies to recorded methods only, and
+  // the button says so. A decline lands in payErr verbatim (Stripe's own sentence).
   async function chargeOnFile() {
-    if (inFlightRef.current) return; // single-flight — a double tap must not double-record
+    if (inFlightRef.current) return; // single-flight — a double tap must not double-charge
     inFlightRef.current = true;
     setBusy(true);
     setPayErr(null);
     try {
-      const amt = clampAmt(p.amt, due);
-      const res = await onApprove({ amt, method: "card", onFile: true });
+      const res = await onChargeOnFile();
       if (!res.ok) {
-        setPayErr(res.error ?? "Couldn't record the payment — try again.");
+        setPayErr(res.error ?? "Couldn't charge the card — collect another way.");
         return;
       }
-      if (res.alreadyPaid) {
-        // The checkout QR (or an emailed link) already collected the balance.
-        setP({ step: "done", method: "card", amt: due });
-        return;
-      }
-      setP({ step: "done", method: "card", amt, onFile: true });
+      setP({ step: "done", method: "card", amt: due, onFile: true });
     } finally {
       inFlightRef.current = false;
       setBusy(false);
@@ -616,7 +619,7 @@ function PayBlock({
     try {
       const amt = clampAmt(p.amt, due);
       const method = p.method ?? "cash";
-      const res = await onApprove({ amt, method, onFile: false });
+      const res = await onApprove({ amt, method });
       if (!res.ok) {
         setPayErr(res.error ?? "Couldn't record the payment — try again.");
         return;
@@ -757,7 +760,7 @@ function PayBlock({
               {busy ? "Charging…" : <>Charge {card.brand} ···· {card.last4}</>}
             </b>
             <span>
-              {card.via ? "saved from " + card.via + " · " : ""}instant, no tap
+              {card.via ? "saved from " + card.via + " · " : ""}charges the full balance
             </span>
           </button>
         ) : null}
@@ -1047,6 +1050,7 @@ export function CloseOutModalContent() {
   const updateJob = useAppStore((s) => s.updateJob);
   const setJobLines = useAppStore((s) => s.setJobLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
+  const chargeOnFileAction = useAppStore((s) => s.chargeCardOnFile);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
   const setAddonStatus = useAppStore((s) => s.setAddonStatus);
   const setAddonInvSkip = useAppStore((s) => s.setAddonInvSkip);
@@ -1369,11 +1373,9 @@ export function CloseOutModalContent() {
   async function approvePayment({
     amt,
     method,
-    onFile,
   }: {
     amt: number;
     method: PayMethod;
-    onFile: boolean;
   }): Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }> {
     if (!invoice) return { ok: false, error: "invoice not found" };
     // The server's answer outranks the store's for the send decision below: a store row
@@ -1406,17 +1408,45 @@ export function CloseOutModalContent() {
     //    `=> void`, so a server refusal (invoice voided, paid concurrently, offline, amount
     //    race) rolled the store back behind an "Approved · $1,000" screen the tech had already
     //    read out to the customer. The slice now resolves the server's real answer.
-    const recorded = await recordPayment(invoice.id, { amt, when: "Just now", method, onFile }, surface);
+    const recorded = await recordPayment(invoice.id, { amt, when: "Just now", method }, surface);
     if (!recorded.ok) {
       return {
         ok: false,
         error: recorded.error ?? "Couldn't record the payment — check your connection and try again.",
       };
     }
-    // A card on file is NOT recorded here. This used to write a hardcoded
-    // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
-    // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
     return { ok: true };
+  }
+
+  // ---- charge the card on file (real Stripe charge — never a record) ---------
+  // The slice action holds every rule (no optimistic write, per-attempt key); this only re-runs
+  // the same draft-send ordering approvePayment uses, because the server refuses to charge a
+  // draft and the invoice this sheet raised on mount may still be one.
+  async function chargeCardOnFile(): Promise<{ ok: boolean; error?: string }> {
+    if (!invoice) return { ok: false, error: "invoice not found" };
+    let liveStatus = invoice.status;
+    if (invoice.origin === "db") {
+      try {
+        const fresh = await readInvoice(surface, invoice.id, invoice);
+        if (fresh.status === "paid") {
+          adoptPaidInvoice(fresh);
+          return { ok: true };
+        }
+        liveStatus = fresh.status;
+      } catch {
+        // Unreadable (offline blip) — proceed; the server remains the final guard.
+      }
+    }
+    if (liveStatus === "draft") {
+      const sent = await sendInvoice(invoice.id, surface);
+      if (!sent.ok) {
+        return {
+          ok: false,
+          error: sent.error ?? "Couldn't send the invoice — check your connection and try again.",
+        };
+      }
+    }
+    return chargeOnFileAction(invoice.id, surface);
   }
 
   // ---- a checkout payment landed (card-step poll, or the pre-record check) ---
@@ -1509,6 +1539,7 @@ export function CloseOutModalContent() {
             invoice={invoice}
             lead={lead}
             onApprove={approvePayment}
+            onChargeOnFile={chargeCardOnFile}
             sendInvoice={(id) => sendInvoice(id, surface)}
             surface={surface}
             onCardPaid={adoptPaidInvoice}

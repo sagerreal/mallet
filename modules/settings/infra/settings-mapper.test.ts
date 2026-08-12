@@ -71,6 +71,7 @@ const baseRow = (): OrgSettingsRow => ({
   stripePayoutsEnabled: false,
   stripeDetailsSubmitted: false,
   stripeOnboardedAt: null,
+  stripeTerminalLocationId: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
 });

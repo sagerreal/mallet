@@ -30,7 +30,7 @@
 
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import {
@@ -125,7 +125,7 @@ export function TechJobModalContent() {
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
   const addFollowUpVisit = useAppStore((s) => s.addFollowUpVisit);
   const updateJob = useAppStore((s) => s.updateJob);
-  const recordPayment = useAppStore((s) => s.recordPayment);
+  const chargeCardOnFile = useAppStore((s) => s.chargeCardOnFile);
   // Money in the tech view is gated by this permission toggle (a scalar — safe
   // to select directly; never derive an array in a selector).
   const seesPrice = useAppStore((s) => s.toggles.techSeesPrice);
@@ -196,6 +196,10 @@ export function TechJobModalContent() {
   const orgServiceFee = useOrgServiceFee(done && isOffice && scopingCandidate);
   const [feeBusy, setFeeBusy] = useState(false);
   const [feeError, setFeeError] = useState<string | null>(null);
+  // Charge-on-file: the decline (or connection refusal), named beside the done card; the ref is
+  // the synchronous single-flight gate the foot's plain button otherwise lacks.
+  const [chargeError, setChargeError] = useState<string | null>(null);
+  const chargingRef = useRef(false);
 
   // --- useCallback-stabilized handlers for memoized child components ---------
   // These are referentially stable across re-renders when their captured
@@ -236,19 +240,28 @@ export function TechJobModalContent() {
   );
 
   const chargeOnFile = useCallback(() => {
-    // charge the balance to the card on file — the "paid before they left" play. Unreachable on
-    // the field surface by construction (the field customer DTO carries no card), but the write
-    // still names its surface: nothing here may depend on a control happening to be hidden.
+    // Charge the balance to the card on file — the "paid before they left" play, now a REAL
+    // Stripe charge server-side (v1.[field]Invoicing.chargeOnFile: full balance, assignment-
+    // gated for a tech, ledger written only after Stripe settles). This used to be a
+    // recordPayment with onFile: true — a ledger row claiming a charge that never happened.
     if (!invoice) return;
     const card = lead?.card;
     const dueNow = invDue(invoice);
     if (dueNow <= 0 || !card) return;
-    void recordPayment(
-      invoice.id,
-      { amt: dueNow, when: "Just now", method: "card", onFile: true },
-      invoiceSurface,
-    );
-  }, [invoice, lead, recordPayment, invoiceSurface]);
+    if (chargingRef.current) return; // single-flight — a double tap must not double-charge
+    chargingRef.current = true;
+    setChargeError(null);
+    void chargeCardOnFile(invoice.id, invoiceSurface)
+      .then((res) => {
+        // Success needs no local state: the slice reconciled the paid invoice, so the done card
+        // flips to "✓ Paid" on its own. A refusal is named where the button was tapped —
+        // Stripe's decline sentence verbatim, never a silent nothing.
+        if (!res.ok) setChargeError(res.error ?? "Couldn't charge the card — collect another way.");
+      })
+      .finally(() => {
+        chargingRef.current = false;
+      });
+  }, [invoice, lead, chargeCardOnFile, invoiceSurface]);
 
   const openCloseOut = useCallback(() => {
     if (!jobId) return;
@@ -534,6 +547,7 @@ export function TechJobModalContent() {
           // customer's pay-link token). Omitted for the field, so the receipt link isn't drawn.
           onOpenInvoice={isOffice ? openInvoiceModal : undefined}
           onChargeOnFile={chargeOnFile}
+          chargeError={chargeError}
           // No hand-off prop: on a job with money owed the card offers taking the money and
           // nothing else. `sendToOffice` still reaches the foot below, which carries it as the
           // primary on a genuinely unpriced job — the one state with nothing to collect.

@@ -97,6 +97,36 @@ describe("FieldJobsHydrator", () => {
     ]);
   });
 
+  it("carries the card on file to the tech's store — presentational facts only, display-mapped", () => {
+    meQuery.mockReturnValue({ data: { role: "tech", userId: "tech-1" }, isLoading: false });
+    myDayQuery.mockReturnValue({
+      data: {
+        items: [jobItem],
+        customers: [{ ...customerItem, card: { brand: "visa", last4: "4242", via: "deposit" } }],
+      },
+      isError: false,
+      error: null,
+    });
+    render(<FieldJobsHydrator />);
+    // This is the fact the close-out's "Charge Visa ···· 4242" renders from — before it rode
+    // myDay, a tech's store never held a card and the button could never appear.
+    expect(setLeads.mock.calls[0]![0]).toEqual([
+      expect.objectContaining({ card: { brand: "Visa", last4: "4242", via: "the deposit" } }),
+    ]);
+  });
+
+  it("no card on file → no card key at all (the charge button must not render)", () => {
+    meQuery.mockReturnValue({ data: { role: "tech", userId: "tech-1" }, isLoading: false });
+    myDayQuery.mockReturnValue({
+      data: { items: [jobItem], customers: [{ ...customerItem, card: null }] },
+      isError: false,
+      error: null,
+    });
+    render(<FieldJobsHydrator />);
+    const lead = (setLeads.mock.calls[0]![0] as Array<Record<string, unknown>>)[0]!;
+    expect("card" in lead).toBe(false);
+  });
+
   it("does NOT clobber store.leads for an owner (the office list is the full one)", () => {
     meQuery.mockReturnValue({ data: { role: "owner" }, isLoading: false });
     render(<FieldJobsHydrator />);

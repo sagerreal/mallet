@@ -52,6 +52,37 @@ export type EstimateSummaryDTO = RouterOutputs["v1"]["quoting"]["list"]["items"]
 export type TimeEntryDTO = RouterOutputs["v1"]["timesheets"]["list"]["items"][number];
 type VisitDTO = JobDTO["visits"][number];
 
+/** The card-on-file facts as every server DTO carries them (customers.list, field.myDay). */
+export interface CardOnFileDTO {
+  brand: string;
+  last4: string;
+  via: "payment" | "deposit";
+}
+
+// Stripe reports networks lowercase ("visa", "amex"); the button says "Charge Visa ···· 4242".
+const CARD_BRAND_LABEL: Record<string, string> = {
+  visa: "Visa",
+  mastercard: "Mastercard",
+  amex: "Amex",
+  discover: "Discover",
+  diners: "Diners",
+  jcb: "JCB",
+  unionpay: "UnionPay",
+};
+
+/**
+ * The wire card → the store lead's `card`. `via` becomes the display phrase here (the close-out
+ * prints it verbatim inside "saved from … · instant, no tap"), the same convention as every
+ * other display string this file mints — machine values stay on the wire, words live in one place.
+ */
+export function dtoCardToStore(dto: CardOnFileDTO): { brand: string; last4: string; via: string } {
+  return {
+    brand: CARD_BRAND_LABEL[dto.brand] ?? (dto.brand.charAt(0).toUpperCase() + dto.brand.slice(1)),
+    last4: dto.last4,
+    via: dto.via === "deposit" ? "the deposit" : "an earlier payment",
+  };
+}
+
 export type LeadNoteDTO = RouterOutputs["v1"]["customers"]["listNotes"]["items"][number];
 
 /**

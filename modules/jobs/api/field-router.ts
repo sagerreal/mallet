@@ -15,6 +15,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId, PricingRates } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
 import { DrizzleCostRateReader } from "../infra/drizzle-cost-rate-reader";
+import { DrizzleCardOnFileReader } from "../infra/drizzle-card-on-file-reader";
 import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
@@ -39,11 +40,21 @@ import { visitToClose } from "./visit-to-close";
  * Just enough of a customer for the field surface to name and reach them: who this job is for and
  * the number to call. Deliberately NOT the lead DTO — a technician has no business holding a
  * customer's value, stage, notes or owner, and this list is scoped to their own jobs anyway.
+ *
+ * `card` is the ONE addition beyond that, and it is presentational by construction: brand, last
+ * four digits and which payment saved it — what the close-out needs to render "Charge Visa ····
+ * 4242" and nothing that could charge it (the Stripe pointers never cross any wire; the charge
+ * itself is `v1.fieldInvoicing.chargeOnFile`, assignment-gated server-side). This is not money
+ * and not subject to techSeesPrice: the customer at the door already knows their own card, and
+ * the balance it would charge is the same figure the field invoice DTO already carries.
  */
 const fieldCustomerDTO = z.object({
   id: z.string().uuid(),
   name: z.string(),
   phone: z.string().nullable(),
+  card: z
+    .object({ brand: z.string(), last4: z.string(), via: z.enum(["payment", "deposit"]) })
+    .nullable(),
 });
 
 /** The distinct customers behind a page of jobs, in ONE read.
@@ -57,8 +68,18 @@ const loadCustomersFor = async (
   jobsOnPage: readonly Job[],
 ): Promise<z.infer<typeof fieldCustomerDTO>[]> => {
   const leadIds = [...new Set(jobsOnPage.map((j) => j.props.leadId))];
-  const found = await new DrizzleLeadRepository(tx, orgId).findByIds(leadIds);
-  return found.map((lead) => ({ id: lead.props.id, name: lead.props.name, phone: lead.props.phone }));
+  const [found, cards] = await Promise.all([
+    new DrizzleLeadRepository(tx, orgId).findByIds(leadIds),
+    // One batched read, same as the leads themselves — myDay is the most-reloaded screen a
+    // technician has, and a per-lead card query would be the N+1 this loader exists to avoid.
+    new DrizzleCardOnFileReader(tx, orgId).byLeadIds(leadIds),
+  ]);
+  return found.map((lead) => ({
+    id: lead.props.id,
+    name: lead.props.name,
+    phone: lead.props.phone,
+    card: cards.get(lead.props.id) ?? null,
+  }));
 };
 
 /**

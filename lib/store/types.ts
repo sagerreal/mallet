@@ -463,7 +463,6 @@ export interface Payment {
   amt: number;
   when: string;
   method: string;
-  onFile?: boolean;
 }
 
 export interface Invoice {

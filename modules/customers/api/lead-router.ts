@@ -5,6 +5,7 @@ import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, asLeadId, asCompanyId, money } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleLeadRepository } from "../infra/drizzle-lead-repository";
+import { DrizzleCardOnFileReader } from "../infra/drizzle-card-on-file-reader";
 import { LEAD_SORTS } from "../infra/lead-sorts";
 import { LEAD_VIEWS, LEAD_SCOPES } from "../infra/lead-views";
 import { DrizzleEstimateRepository } from "@mallet/quoting";
@@ -44,6 +45,17 @@ const leadDTO = z.object({
   // The list's DEFAULT ordering is `lastActivity` → updated_at, and until this shipped the
   // Latest column had no way to show the value the rows were already sorted by.
   updatedAt: z.string(),
+  /**
+   * The customer's card on file — PRESENTATIONAL facts only (brand, last four, which payment
+   * saved it), joined from payment_profiles on the LIST read and null everywhere else. The
+   * Stripe pointers that could actually charge it never leave the invoicing module; this field
+   * exists so Money's "Charge ···· 4242" and the close-out's charge button can render from the
+   * store. Mutation responses answer null and the store's reconcile deliberately does not adopt
+   * it (reconcileLeadFromDTO starts from `current`), so an edit never erases a known card.
+   */
+  card: z
+    .object({ brand: z.string(), last4: z.string(), via: z.enum(["payment", "deposit"]) })
+    .nullable(),
 });
 
 // create extends the base DTO with a `created` flag so callers can distinguish a genuine
@@ -144,9 +156,12 @@ const paginatedLeadDTO = z.object({
   nextCursor: z.string().nullable(),
 });
 
-const toLeadDTO = (lead: Lead) => {
+// `card` rides only where a batched profiles read supplies it (list); every mutation response
+// passes nothing and answers null — see the DTO comment for why that cannot erase a store card.
+const toLeadDTO = (lead: Lead, card: { brand: string; last4: string; via: "payment" | "deposit" } | null = null) => {
   const p = lead.props;
   return {
+    card,
     id: p.id,
     name: p.name,
     phone: p.phone,
@@ -420,7 +435,15 @@ export const createLeadRouter = () =>
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
           filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope },
         });
-        return { items: page.items.map(toLeadDTO), nextCursor: page.nextCursor };
+        // One batched card-on-file read for the page — never per-row (same batching rule the
+        // invoice list applies to lead names).
+        const cards = await new DrizzleCardOnFileReader(ctx.tx, ctx.principal.orgId).byLeadIds(
+          page.items.map((l) => l.props.id),
+        );
+        return {
+          items: page.items.map((l) => toLeadDTO(l, cards.get(l.props.id) ?? null)),
+          nextCursor: page.nextCursor,
+        };
       }),
 
     /**

@@ -1,4 +1,4 @@
-import type { OrgId, InvoiceId, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, InvoiceId, UserId, Result, AppError, Clock } from "@mallet/shared/types";
 import { money, notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Payment } from "../domain/payment";
@@ -10,6 +10,14 @@ export interface RecordCardPaymentCommand {
   readonly invoiceId: InvoiceId;
   readonly amountCents: number; // the amount Stripe actually settled
   readonly paymentIntentId: string; // pi_… — the ledger idempotency key + external id
+  /**
+   * The authenticated user whose ACTION moved this money, when one exists. Absent/null on the
+   * webhook and reconcile paths — the customer paid online and Stripe told us; attributing that
+   * to whoever sent the invoice would be a lie on an audit column. Present on charge-on-file:
+   * a named human tapped Charge, and "which technician charged this card" must be answerable
+   * for the same reason recordPayment stamps who took the cash.
+   */
+  readonly recordedByUserId?: UserId | null;
 }
 
 // Records a card payment confirmed by a Stripe webhook, reusing the exact idempotent + atomic path
@@ -31,9 +39,8 @@ export class RecordCardPaymentUseCase {
       method: "card",
       idempotencyKey: cmd.paymentIntentId,
       externalId: cmd.paymentIntentId,
-      // No in-app actor: the CUSTOMER paid online and Stripe told us. Attributing this to whoever
-      // sent the invoice would be a lie on an audit column, so it stays null.
-      recordedByUserId: null,
+      // Null unless a named human's own tap moved the money — see the command field's contract.
+      recordedByUserId: cmd.recordedByUserId ?? null,
       receivedAt: this.clock.now(),
     });
     if (!isOk(payment)) return payment;

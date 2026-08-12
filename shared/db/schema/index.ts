@@ -10,6 +10,7 @@ export * from "./estimate-deposits";
 export * from "./number-sequences";
 export * from "./jobs";
 export * from "./invoices";
+export * from "./payment-profiles";
 export * from "./notifications";
 export * from "./outbox";
 export * from "./api-keys";

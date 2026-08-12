@@ -26,6 +26,14 @@ export { DrizzleJobReader } from "./infra/drizzle-job-reader";
 export { DrizzleEstimateDepositReader } from "./infra/drizzle-estimate-deposit-reader";
 export { RecordCardPaymentUseCase } from "./app/record-card-payment";
 export { processStripeEvent } from "./app/stripe-webhook";
+// Card on file — the charge port + Stripe adapter (composition root), the capture hook the two
+// Stripe delivery routes wire (never throws), and its persistence half (withTenant inside).
+export type { CardChargeGateway } from "./domain/card-charge-gateway";
+export { StripeCardChargeGateway } from "./infra/stripe-card-charge-gateway";
+export { captureCardOnFile } from "./app/capture-card-on-file";
+export type { CaptureCardArgs } from "./app/capture-card-on-file";
+export { saveCardOnFile } from "./app/save-card-on-file";
+export { ChargeCardOnFileUseCase } from "./app/charge-card-on-file";
 // Success-page reconcile — same recorder wiring as the webhook, exposed for its public route.
 export { reconcileCheckoutSession } from "./app/reconcile-checkout";
 export type { ReconcileCheckoutDeps, ReconcileOutcome } from "./app/reconcile-checkout";

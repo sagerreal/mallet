@@ -57,6 +57,11 @@ const mockRecordPayment = vi.fn<
 const mockSendInvoice = vi.fn<(id: string) => Promise<{ ok: boolean; error?: string }>>(() =>
   Promise.resolve({ ok: true }),
 );
+// The REAL charge of the saved card (slice action). Default: Stripe settled it. The refusal
+// path carries Stripe's own decline sentence, which the sheet must show verbatim.
+const mockChargeCardOnFile = vi.fn<
+  (id: string, surface?: InvoiceWriteSurface) => Promise<{ ok: boolean; error?: string }>
+>(() => Promise.resolve({ ok: true }));
 
 const mockClose = vi.fn();
 const mockDismissModals = vi.fn();
@@ -77,6 +82,7 @@ vi.mock("@/lib/store/app-store", () => ({
       updateJob: noop,
       setJobLines: noop,
       recordPayment: mockRecordPayment,
+      chargeCardOnFile: mockChargeCardOnFile,
       sendInvoice: mockSendInvoice,
       updateLead: noop,
       setAddonStatus: noop,
@@ -589,10 +595,10 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     expect(screen.getByText(/Couldn't record the payment/)).toBeTruthy();
   });
 
-  it("charge-on-file takes the same refusal path — no Approved on a rejected card record", async () => {
+  it("charge-on-file is a REAL charge: a decline is named verbatim, nothing is recorded", async () => {
     mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
-    mockRecordPayment.mockImplementationOnce(() =>
-      Promise.resolve({ ok: false, error: "this invoice is already paid in full" }),
+    mockChargeCardOnFile.mockImplementationOnce(() =>
+      Promise.resolve({ ok: false, error: "Your card has insufficient funds." }),
     );
 
     mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
@@ -602,8 +608,40 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     fireEvent.click(screen.getByText(/Charge Visa/));
     await act(async () => {});
 
-    expect(screen.getByText("this invoice is already paid in full")).toBeTruthy();
+    // Stripe's own sentence, on the step where the button was tapped — and NO ledger write:
+    // the decline came from the charge action, and recordPayment must never be its fallback.
+    expect(screen.getByText("Your card has insufficient funds.")).toBeTruthy();
     expect(screen.queryByText(/Approved/)).toBeNull();
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+  });
+
+  it("charge-on-file success comes from the charge action — never from recordPayment", async () => {
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
+    mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText(/Charge Visa/));
+    await act(async () => {});
+
+    expect(mockChargeCardOnFile).toHaveBeenCalledWith("inv-1", "office");
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
+    expect(screen.getByText(/Visa ···· 4242 on file/)).toBeTruthy();
+  });
+
+  it("charge-on-file SENDS a draft first — the server refuses to charge a draft", async () => {
+    mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice);
+    mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText(/Charge Visa/));
+    await act(async () => {});
+
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1", "office");
+    expect(mockChargeCardOnFile).toHaveBeenCalledWith("inv-1", "office");
   });
 });
 
