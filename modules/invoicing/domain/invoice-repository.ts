@@ -24,6 +24,15 @@ export interface InvoiceFilter {
    * two of them (overdue, paid) are computed from the balance and the due date rather than stored.
    */
   readonly view?: InvoiceView;
+  /**
+   * The ARCHIVED set instead of the live one — voided invoices.
+   *
+   * The Money screen derived this in the browser (`invoices.filter(i => i.archived)` over whichever
+   * page happened to be loaded), so the Archived tab could only ever find a void invoice inside the
+   * first fifty rows of a list that was not fetched for that purpose. Absent or false means the
+   * live set, which now EXCLUDES void — a cancelled bill is not money anyone owes.
+   */
+  readonly archived?: boolean;
 }
 
 // Outcome of an atomic applyPayment. `applied` is true iff the guarded UPDATE matched a payable

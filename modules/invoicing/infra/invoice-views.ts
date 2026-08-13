@@ -31,6 +31,16 @@ const owing: SQL = gt(balanceOwed, sql`0`) as SQL;
 const notDraft: SQL = ne(invoices.status, "draft") as SQL;
 
 /**
+ * VOIDED invoices are not a band — they are the archive.
+ *
+ * A void invoice keeps its total and its due date, so `owing` and `pastDue` both read true on one
+ * and it landed in `over`: a cancelled bill counted as money a customer owes you, and chased as
+ * overdue. One such row exists in the shared database today, so nothing live is wrong yet, but the
+ * rule was. Every band now excludes it and the Money screen's Archived tab is where it shows.
+ */
+const notVoid: SQL = ne(invoices.status, "void") as SQL;
+
+/**
  * The bands as raw predicates, for the ledger SORT to rank by.
  *
  * Exported so that the order rows appear in and the filter that selects them are built from ONE
@@ -38,26 +48,27 @@ const notDraft: SQL = ne(invoices.status, "draft") as SQL;
  * overdue only when its status was literally 'sent', so an overdue part-payment sorted as though
  * it were merely part-paid while the screen showed it with an Overdue pill.
  */
-export const INVOICE_BANDS = { pastDue, owing, notDraft } as const;
+export const INVOICE_BANDS = { pastDue, owing, notDraft, notVoid } as const;
 
 export const invoiceViewCondition = (view: InvoiceView): SQL => {
   switch (view) {
     case "draft":
+      // A status cannot be both, so this needs no void guard.
       return eq(invoices.status, "draft") as SQL;
     case "over":
       // Sent (or part-paid), past due, still owed. Checked BEFORE partial and sent, exactly as the
       // client checks it — an overdue part-payment is chased as overdue, not filed under partial.
-      return and(notDraft, owing, pastDue) as SQL;
+      return and(notDraft, notVoid, owing, pastDue) as SQL;
     case "paid":
       // Nothing left owing. Not `status = 'paid'`: an invoice settled by a payment that closed the
       // balance reads as paid to the shop whatever its status column says.
-      return and(notDraft, sql`NOT ${owing}`) as SQL;
+      return and(notDraft, notVoid, sql`NOT ${owing}`) as SQL;
     case "partial":
-      return and(notDraft, owing, sql`NOT ${pastDue}`, gt(invoices.amountPaidCents, 0)) as SQL;
+      return and(notDraft, notVoid, owing, sql`NOT ${pastDue}`, gt(invoices.amountPaidCents, 0)) as SQL;
     case "sent":
     default:
       // What is left: sent, not yet due, nothing paid against it.
       // amount_paid_cents is NOT NULL DEFAULT 0, so zero is the whole "nothing paid" case.
-      return and(notDraft, owing, sql`NOT ${pastDue}`, eq(invoices.amountPaidCents, 0)) as SQL;
+      return and(notDraft, notVoid, owing, sql`NOT ${pastDue}`, eq(invoices.amountPaidCents, 0)) as SQL;
   }
 };

@@ -238,6 +238,10 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
   /** Predicates shared by list() and count(), so the two can never answer different questions. */
   private listConds(filter?: InvoiceFilter): SQL[] {
     const conds: SQL[] = [eq(invoices.orgId, this.orgId), isNull(invoices.deletedAt)];
+    // VOID IS THE ARCHIVE, not a band. A void invoice keeps its total and its due date, so it read
+    // as owing and past due and was counted under "Overdue" — a cancelled bill chased as money a
+    // customer owes. The live set excludes it; the Archived tab is where it shows.
+    conds.push(filter?.archived ? eq(invoices.status, "void") : ne(invoices.status, "void"));
     if (filter?.status) conds.push(eq(invoices.status, filter.status));
     // The LEDGER's status, which is not the same thing as the status column: "overdue" and "paid"
     // are facts about the balance and the due date. See invoice-views.ts.
@@ -278,7 +282,15 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
    */
   async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
     const owed = sql<number>`greatest(0, ${invoices.totalCents} - ${invoices.depositPaidCents} - ${invoices.amountPaidCents})`;
-    const isOpen = and(isNull(invoices.deletedAt), ne(invoices.status, "draft"), gt(owed, 0));
+    // NOT VOID. A voided invoice keeps its total and its due date, so it satisfied "owed > 0" and
+    // was added to both the money owed and the overdue figure — a cancelled bill inflating the
+    // headline numbers on the Money page and the dashboard. Same rule as the bands.
+    const isOpen = and(
+      isNull(invoices.deletedAt),
+      ne(invoices.status, "draft"),
+      ne(invoices.status, "void"),
+      gt(owed, 0),
+    );
     const rows = await this.tx
       .select({
         openCents: sql<number>`coalesce(sum(${owed}) filter (where ${isOpen}), 0)::int`,
