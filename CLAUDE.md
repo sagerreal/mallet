@@ -80,6 +80,12 @@ Tailwind-free hand-rolled CSS (prototype-faithful).
 
 - `NEXT_PUBLIC_*` env vars are baked into the client bundle at BUILD time — adding/changing one
   in Vercel requires a redeploy to take effect.
+- **Functions run in `pdx1` (`vercel.json` → `regions`) because Supabase is in `aws-1-us-west-2`.**
+  Keep them together. They were split (functions in `iad1`, DB in Oregon) and every DB round trip
+  paid ~68ms crossing the country — measured as `/api/ready` (one `select 1`) minus `/api/health`
+  (no DB). Round trips multiply: `withTenant` alone is 4 of them (BEGIN, `set_config`, the work,
+  COMMIT), and `prepare: false` (required by the `:6543` transaction pooler) makes every
+  parameterised statement 2 instead of 1. Move the DB and you must move this.
 - Notification sends degrade to a logging stub when a channel is unconfigured; INTERACTIVE send
   endpoints must surface that (PRECONDITION_FAILED) — see `assertDelivered` in the notification
   router. Background reminder paths keep graceful degradation.
