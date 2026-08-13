@@ -711,17 +711,16 @@ function TeamRolesBlock() {
             <b>Overtime after (week)</b>
             <div className="muted" style={{ fontSize: "var(--type-sm)" }}>Hours past this in a week count as overtime.</div>
           </div>
-          <select
-            className="sel"
-            style={{ width: "auto" }}
-            value={settingsQ.data?.config.otWeeklyThresholdMinutes ?? OT_WEEKLY_DEFAULT_MINUTES}
+          <div style={{ flex: "0 0 auto", width: 150 }}>
+          <SelectMenu
+            aria-label="Overtime after, per week"
+            value={String(settingsQ.data?.config.otWeeklyThresholdMinutes ?? OT_WEEKLY_DEFAULT_MINUTES)}
             disabled={settingsLoading || saveOt.isPending}
-            onChange={(e) => saveOt.mutate({ otWeeklyThresholdMinutes: Number(e.target.value) })}
-          >
-            {OT_WEEKLY_CHOICES.map((h) => (
-              <option key={h} value={h * 60}>{h} hours</option>
-            ))}
-          </select>
+            onChange={(v) => saveOt.mutate({ otWeeklyThresholdMinutes: Number(v) })}
+            options={OT_WEEKLY_CHOICES.map((h) => ({ value: String(h * 60), label: `${h} hours` }))}
+            compact
+          />
+          </div>
         </div>
 
         <div className="stage-row">
@@ -732,20 +731,23 @@ function TeamRolesBlock() {
               rule applies.
             </div>
           </div>
-          <select
-            className="sel"
-            style={{ width: "auto" }}
-            value={settingsQ.data?.config.otDailyThresholdMinutes ?? ""}
-            disabled={settingsLoading || saveOt.isPending}
-            onChange={(e) =>
-              saveOt.mutate({ otDailyThresholdMinutes: e.target.value === "" ? null : Number(e.target.value) })
+          <div style={{ flex: "0 0 auto", width: 150 }}>
+          <SelectMenu
+            aria-label="Daily overtime after"
+            value={
+              settingsQ.data?.config.otDailyThresholdMinutes == null
+                ? ""
+                : String(settingsQ.data.config.otDailyThresholdMinutes)
             }
-          >
-            <option value="">Off</option>
-            {OT_DAILY_CHOICES.map((h) => (
-              <option key={h} value={h * 60}>{h} hours</option>
-            ))}
-          </select>
+            disabled={settingsLoading || saveOt.isPending}
+            onChange={(v) => saveOt.mutate({ otDailyThresholdMinutes: v === "" ? null : Number(v) })}
+            options={[
+              { value: "", label: "Off" },
+              ...OT_DAILY_CHOICES.map((h) => ({ value: String(h * 60), label: `${h} hours` })),
+            ]}
+            compact
+          />
+          </div>
         </div>
       </FoldCard>
     </>
