@@ -30,10 +30,11 @@ const renderList = (
   onOpenJob: (id: string) => void = vi.fn(),
 ) => {
   render(<JobsListView items={items} sort={sort} onSort={vi.fn()} onOpenJob={onOpenJob} />);
-  // The first cell of every row is the "Open <customer> · <job>" button.
+  // The first cell of every row is the "Open <job> · <customer>" button — job first, matching the
+  // order the cell renders. Returned with the verb stripped, so [0] is the job and [1] the customer.
   return screen
     .getAllByRole("button", { name: /^Open / })
-    .map((b) => b.getAttribute("aria-label") ?? "");
+    .map((b) => (b.getAttribute("aria-label") ?? "").replace(/^Open /, ""));
 };
 
 describe("JobsListView — the server owns the WHEN order", () => {
@@ -46,7 +47,7 @@ describe("JobsListView — the server owns the WHEN order", () => {
 
   it("renders the page in the order it was handed, ascending", () => {
     const order = renderList(mixed, { col: "when", dir: "asc" });
-    expect(order.map((l) => l.split(" · ")[1])).toEqual([
+    expect(order.map((l) => l.split(" · ")[0])).toEqual([
       "Unscheduled drain",
       "Finished heater",
       "Next week valve",
@@ -59,7 +60,7 @@ describe("JobsListView — the server owns the WHEN order", () => {
     // descending page from the server was rendered ascending. The server pages in the direction
     // the header asks for; the client must render what arrived.
     const order = renderList(mixed, { col: "when", dir: "desc" });
-    expect(order.map((l) => l.split(" · ")[1])).toEqual([
+    expect(order.map((l) => l.split(" · ")[0])).toEqual([
       "Unscheduled drain",
       "Finished heater",
       "Next week valve",
@@ -94,7 +95,7 @@ describe("JobsListView — the columns the server does not order", () => {
     // The Amount column prints jobTotal() — the sum of the job's LINES — while the server pages on
     // jobs.total_cents. Re-sorting keeps the visible order agreeing with the visible figures.
     const rows = [priced("a", "l1", "Cheap", 100), priced("b", "l2", "Dear", 900), priced("c", "l1", "Middling", 500)];
-    expect(renderList(rows, { col: "amount", dir: "desc" }).map((l) => l.split(" · ")[1])).toEqual([
+    expect(renderList(rows, { col: "amount", dir: "desc" }).map((l) => l.split(" · ")[0])).toEqual([
       "Dear",
       "Middling",
       "Cheap",
@@ -103,9 +104,9 @@ describe("JobsListView — the columns the server does not order", () => {
 
   it("still sorts Customer on the client, because the server has no sort for it", () => {
     const rows = [priced("a", "l2", "Zed's job", 100), priced("b", "l1", "Ann's job", 100)];
-    expect(renderList(rows, { col: "customer", dir: "asc" }).map((l) => l.split(" · ")[0])).toEqual([
-      "Open Ann Alpha",
-      "Open Zed Zulu",
+    expect(renderList(rows, { col: "customer", dir: "asc" }).map((l) => l.split(" · ")[1])).toEqual([
+      "Ann Alpha",
+      "Zed Zulu",
     ]);
   });
 });
