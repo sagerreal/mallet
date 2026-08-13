@@ -151,15 +151,20 @@ function JobsListRow({ row, onOpenJob }: { row: ListRow; onOpenJob: (id: string)
       <td className="jl-cust">
         {/* Focusable open control — keyboard access without the <tr> being a button
             (the status cell can be a Link, which would nest inside a button-row). */}
+        {/* THE JOB LEADS, the customer follows. The work is what distinguishes one row from the
+            next on a screen you scan to find a job — several rows can carry the same customer, and
+            a customer with no resolved name renders "—", which is the last thing that should be
+            holding the row's primary line. The accessible name follows the same order, so what a
+            screen reader announces is what the row shows. */}
         <button
           type="button"
           className="rowopen"
           style={{ display: "block", width: "100%" }}
-          aria-label={`Open ${row.cust} · ${row.title}`}
+          aria-label={`Open ${row.title} · ${row.cust}`}
           onClick={(e) => { e.stopPropagation(); onOpenJob(row.id); }}
         >
-          <b>{row.cust}</b>
-          <span className="job">{row.title}</span>
+          <b>{row.title}</b>
+          <span className="cust">{row.cust}</span>
         </button>
       </td>
       <td data-label="When"><WhenCell when={row.when} /></td>
@@ -217,7 +222,9 @@ export function JobsListView({ items, sort, onSort, onOpenJob }: JobsListViewPro
         </colgroup>
         <thead>
           <tr>
-            <SortTh label="Customer / Job" col="customer" sort={sort} onActivate={clickCol} />
+            {/* Named in the order the cell renders. The sort behind it still orders by CUSTOMER
+                name — the one field here with a stable alphabet worth walking. */}
+            <SortTh label="Job / Customer" col="customer" sort={sort} onActivate={clickCol} />
             <SortTh label="When" col="when" sort={sort} onActivate={clickCol} />
             {/* No server sort for Address, and a header that does nothing is a dead control. */}
             <th>Address</th>
