@@ -9,6 +9,7 @@ import { logger } from "@mallet/shared/observability";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleTimeEntryRepository } from "../infra/drizzle-time-entry-repository";
 import { DrizzleWeekSubmissionRepository } from "../infra/drizzle-week-submission-repository";
+import { DrizzleVisitStampsReader } from "../infra/drizzle-visit-stamps-reader";
 import { DrizzleUnreportedDaysReader } from "../infra/drizzle-unreported-days-reader";
 import { CreateTimeEntryUseCase } from "../app/create-time-entry";
 import { ListTimeEntriesUseCase } from "../app/list-time-entries";
@@ -189,8 +190,9 @@ export const createTimesheetRouter = () =>
               userId: z.string().uuid(),
               date: z.string(),
               visits: z.number().int(),
-              firstAt: z.string().nullable(),
-              lastAt: z.string().nullable(),
+              // ISO instants — the device renders the wall clock. See the reader.
+              firstStampAt: z.string().nullable(),
+              lastStampAt: z.string().nullable(),
             }),
           ),
         }),
@@ -205,6 +207,53 @@ export const createTimesheetRouter = () =>
               ? asUserId(input.techUserId)
               : undefined;
         const reader = new DrizzleUnreportedDaysReader(ctx.tx, ctx.principal.orgId);
+        return { items: await reader.find(input.fromDate, input.toDate, scoped) };
+      }),
+
+    /**
+     * What this person's hours were SPENT ON — their visit taps for a date range, job by job.
+     *
+     * A different question from `list`, and deliberately a different read: `list` returns the CLOCK
+     * (what he is paid for) and this returns ATTRIBUTION (which jobs the time went to). They do not
+     * have to agree — drive time between calls is paid and belongs to no job — so joining them into
+     * one endpoint would invite exactly the reconciliation this model rejects.
+     */
+    visitStamps: anyRole
+      .input(
+        z.object({
+          fromDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          toDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          techUserId: z.string().uuid().optional(),
+        }),
+      )
+      .output(
+        z.object({
+          items: z.array(
+            z.object({
+              visitId: z.string().uuid(),
+              jobId: z.string().uuid(),
+              jobNum: z.string(),
+              jobTitle: z.string().nullable(),
+              customerName: z.string().nullable(),
+              workDate: z.string(),
+              // INSTANTS, not wall clocks: the device renders them in the technician's own
+              // timezone. Rendering them in SQL puts them in the database's, which is nobody's.
+              startedAt: z.string().nullable(),
+              completedAt: z.string().nullable(),
+            }),
+          ),
+        }),
+      )
+      .query(async ({ ctx, input }) => {
+        // Same guard as `list` and `unreportedDays`: a tech asking which jobs a COLLEAGUE was on is
+        // asking about a colleague's day, so the answer is always their own.
+        const scoped =
+          ctx.principal.role === "tech"
+            ? asUserId(ctx.principal.userId)
+            : input.techUserId
+              ? asUserId(input.techUserId)
+              : asUserId(ctx.principal.userId);
+        const reader = new DrizzleVisitStampsReader(ctx.tx, ctx.principal.orgId);
         return { items: await reader.find(input.fromDate, input.toDate, scoped) };
       }),
 

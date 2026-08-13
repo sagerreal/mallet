@@ -28,6 +28,8 @@ import { shiftRows, type ShiftRow } from "./hours-sheet-derive";
 import { editabilityOf, dayLockNotes } from "./my-hours-edit";
 import { EntryRow, type MyHoursWeekProps } from "./my-hours-entries";
 import { MyHoursTimeEditor, type EntryKind } from "./my-hours-time-editor";
+import { HoursJobRows } from "./hours-job-rows";
+import type { VisitStamp } from "./job-time-derive";
 
 type RowActions = Omit<MyHoursWeekProps, "entries" | "weekStartISO">;
 
@@ -163,9 +165,11 @@ interface SheetRowProps extends RowActions {
   readonly row: ShiftRow;
   readonly open: boolean;
   readonly onToggle: () => void;
+  /** The week's visit taps. Filtered per row by date — one read for the week, not one per row. */
+  readonly stamps: readonly VisitStamp[];
 }
 
-function SheetRow({ row, open, onToggle, ...actions }: SheetRowProps) {
+function SheetRow({ row, open, onToggle, stamps, ...actions }: SheetRowProps) {
   const { today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave, onDelete } = actions;
   const editableId = rowEditable(row, today, myUserId);
   const single = row.entries.length === 1 ? (row.entries[0] ?? null) : null;
@@ -215,12 +219,26 @@ function SheetRow({ row, open, onToggle, ...actions }: SheetRowProps) {
 
       {open ? (
         <div className="sh-detail">
-          {/* The parts, in the grammar the week already used before the register existed. PR 4
-              replaces this body with the shift's JOB ATTRIBUTION — which is what the man actually
-              wants here — and moves part-editing into the row itself. */}
-          {row.entries.map((entry) => (
-            <EntryRow key={entry.id} entry={entry} {...actions} />
-          ))}
+          {/* WHAT THE SHIFT WAS SPENT ON. Not a breakdown of it: job time does not sum to the shift
+              and is not meant to (drive time is paid and belongs to no job), so this panel explains
+              the difference in a sentence rather than balancing it into a row. */}
+          <HoursJobRows
+            stamps={stamps}
+            workDate={row.workDate}
+            shiftHours={row.hours}
+            shiftRunning={row.running}
+          />
+          {/* THE PARTS, but only for a shift the row itself cannot edit. A merged shift's minutes
+              have to stay reachable — that is the rule the office grid learned the hard way — while
+              an ordinary one-entry day is edited by its own pencil and needs no second list. */}
+          {editableId === null && row.entries.length > 1 ? (
+            <div className="shd-parts">
+              <p className="shd-partshead">This shift was recorded in {row.entries.length} pieces</p>
+              {row.entries.map((entry) => (
+                <EntryRow key={entry.id} entry={entry} showKind={false} {...actions} />
+              ))}
+            </div>
+          ) : null}
         </div>
       ) : null}
     </div>
@@ -229,9 +247,11 @@ function SheetRow({ row, open, onToggle, ...actions }: SheetRowProps) {
 
 export interface HoursSheetProps extends RowActions {
   readonly entries: readonly MyHoursEntry[];
+  /** The week's visit taps, for the attribution panel under each shift. */
+  readonly stamps: readonly VisitStamp[];
 }
 
-export function HoursSheet({ entries, ...actions }: HoursSheetProps) {
+export function HoursSheet({ entries, stamps, ...actions }: HoursSheetProps) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const rows = shiftRows(entries);
 
@@ -255,6 +275,7 @@ export function HoursSheet({ entries, ...actions }: HoursSheetProps) {
             row={row}
             open={openKey === row.key}
             onToggle={() => setOpenKey((k) => (k === row.key ? null : row.key))}
+            stamps={stamps}
             {...actions}
           />
         ))

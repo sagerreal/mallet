@@ -15,12 +15,14 @@
 
 import { Button } from "@/components/ui/button";
 import { clockLabel, dayLabel } from "./my-hours-derive";
+import { stampHHMM } from "./job-time-derive";
 
 export interface UnreportedDayCardProps {
   readonly date: string;
   readonly visits: number;
-  readonly firstAt: string | null;
-  readonly lastAt: string | null;
+  /** Earliest activity that day, as an ISO INSTANT — rendered and stored in the DEVICE's zone. */
+  readonly firstStampAt: string | null;
+  readonly lastStampAt: string | null;
   readonly busy: boolean;
   /** Writes the suggested range as one worked entry. Only offered when both stamps exist. */
   readonly onAccept: (startTime: string, endTime: string) => void;
@@ -31,8 +33,8 @@ export interface UnreportedDayCardProps {
 export function UnreportedDayCard({
   date,
   visits,
-  firstAt,
-  lastAt,
+  firstStampAt,
+  lastStampAt,
   busy,
   onAccept,
   onEnterOwn,
@@ -40,7 +42,15 @@ export function UnreportedDayCard({
   // Both ends, and in the right order. A single stamp cannot describe a shift, and a reversed pair
   // is a bad device clock — either way there is nothing honest to offer, so only the second button
   // shows and he types what he worked.
-  const canSuggest = Boolean(firstAt && lastAt && firstAt < lastAt);
+  const canSuggest = Boolean(firstStampAt && lastStampAt && firstStampAt < lastStampAt);
+  /**
+   * The wall clock HE was looking at. These arrive as instants because rendering them in SQL put
+   * them in the database's timezone: this card offered a California technician "Add 4:05a–4:56a" for
+   * a day he worked nine to five, and that button WRITES hours. A wrong label is confusing; a wrong
+   * stored time is a wrong paycheck.
+   */
+  const first = canSuggest ? stampHHMM(firstStampAt!) : "";
+  const last = canSuggest ? stampHHMM(lastStampAt!) : "";
 
   return (
     <div className="mh-unreported">
@@ -49,12 +59,12 @@ export function UnreportedDayCard({
       </b>
       <span className="muted">
         {visits} {visits === 1 ? "visit is" : "visits are"} stamped to you that day
-        {canSuggest ? ` · first ${clockLabel(firstAt!)}, last ${clockLabel(lastAt!)}` : ""}.
+        {canSuggest ? ` · first ${clockLabel(first)}, last ${clockLabel(last)}` : ""}.
       </span>
       <div className="mh-unreported-acts">
         {canSuggest ? (
-          <Button size="sm" disabled={busy} onClick={() => onAccept(firstAt!, lastAt!)}>
-            {busy ? "Adding…" : `Add ${clockLabel(firstAt!)}–${clockLabel(lastAt!)}`}
+          <Button size="sm" disabled={busy} onClick={() => onAccept(first, last)}>
+            {busy ? "Adding…" : `Add ${clockLabel(first)}–${clockLabel(last)}`}
           </Button>
         ) : null}
         <Button variant="quiet" size="sm" disabled={busy} onClick={() => onEnterOwn(date)}>

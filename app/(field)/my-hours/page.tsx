@@ -95,7 +95,7 @@ interface WeekViewProps {
    *  which is a single flex row. */
   readonly addForm: ReactNode;
   /** Days with visits stamped and no hours submitted — see UnreportedDayCard. */
-  readonly unreported: readonly { userId: string; date: string; visits: number; firstAt: string | null; lastAt: string | null }[];
+  readonly unreported: readonly { userId: string; date: string; visits: number; firstStampAt: string | null; lastStampAt: string | null }[];
   readonly onAcceptDay: (date: string, startTime: string, endTime: string) => void;
   readonly onEnterOwn: (date: string) => void;
   readonly overtimePolicy: OvertimePolicy;
@@ -132,6 +132,21 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
    */
   const weekMissing = unreported.filter((d) => weekDates(weekStartISO).includes(d.date));
 
+  /**
+   * What the week's hours were SPENT ON — the visit taps, for the attribution panel under each
+   * shift. ONE read for the whole week, keyed by the week on show, rather than one per expanded row:
+   * the taps are already in memory by the time he opens a shift, so the panel does not flash.
+   *
+   * A separate read from the clock on purpose. `list` answers "what am I paid for" and this answers
+   * "which jobs did that go to", and the two do not have to agree — drive time is paid and belongs
+   * to no job. Fusing them into one endpoint would invite exactly that reconciliation.
+   */
+  const stampsQ = api.v1.timesheets.visitStamps.useQuery(
+    { fromDate: weekStartISO, toDate: addDaysISO(weekStartISO, DAYS_PER_WEEK - 1) },
+    { enabled: Boolean(myUserId), refetchOnWindowFocus: false },
+  );
+  const stamps = stampsQ.data?.items ?? [];
+
   return (
     <>
       {openEntry !== null ? (
@@ -165,8 +180,8 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
           key={d.date}
           date={d.date}
           visits={d.visits}
-          firstAt={d.firstAt}
-          lastAt={d.lastAt}
+          firstStampAt={d.firstStampAt}
+          lastStampAt={d.lastStampAt}
           busy={writes.adding}
           onAccept={(start, end) => onAcceptDay(d.date, start, end)}
           onEnterOwn={onEnterOwn}
@@ -174,6 +189,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
       ))}
       <HoursSheet
         entries={weekEntries(entries, weekStartISO)}
+        stamps={stamps}
         today={today}
         myUserId={myUserId}
         editingId={editingId}

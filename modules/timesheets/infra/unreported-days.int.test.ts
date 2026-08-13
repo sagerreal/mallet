@@ -123,8 +123,12 @@ suite("unreported days (live DB)", () => {
   it("suggests first-to-last activity, so the offer is his own stamps and not an invention", async () => {
     const monday = (await read()).find((d) => d.date === MON);
     // Recorded 15:04→18:32 and 19:00→20:00; the day spans the outermost pair.
-    expect(monday?.firstAt).toBe("15:04");
-    expect(monday?.lastAt).toBe("20:00");
+    //
+    // INSTANTS, not "15:04". Rendering these in SQL put them in the database's timezone, so the card
+    // offered a California technician "Add 4:05a–4:56a" for a day he worked nine to five — and that
+    // button WRITES hours. The device converts now, because it is the only one that knows his clock.
+    expect(monday?.firstStampAt).toBe(`${MON}T15:04:00.000Z`);
+    expect(monday?.lastStampAt).toBe(`${MON}T20:00:00.000Z`);
   });
 
   it("says nothing about a day he already reported — ANY entry clears it", async () => {

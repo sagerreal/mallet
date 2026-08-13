@@ -14,6 +14,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { HoursSheet } from "./hours-sheet";
 import type { MyHoursEntry } from "./my-hours-derive";
+import type { VisitStamp } from "./job-time-derive";
 
 // @/lib/clock is mocked globally to 2026-07-01 — see vitest.setup.ts.
 const TODAY = "2026-07-01";
@@ -47,10 +48,14 @@ const onSave = vi.fn();
 const onDelete = vi.fn();
 const onEdit = vi.fn();
 
-const sheet = (entries: MyHoursEntry[], over: { editingId?: string | null } = {}) =>
+const sheet = (
+  entries: MyHoursEntry[],
+  over: { editingId?: string | null; stamps?: VisitStamp[] } = {},
+) =>
   render(
     <HoursSheet
       entries={entries}
+      stamps={over.stamps ?? []}
       today={TODAY}
       myUserId={ME}
       editingId={over.editingId ?? null}
@@ -185,5 +190,108 @@ describe("what a row will and will not let him touch", () => {
     const detail = rows()[0]!.querySelector(".sh-detail");
     expect(detail, "the editor is not inside its own row").toBeTruthy();
     expect(detail?.textContent).toContain("Save");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// WHAT THE SHIFT WAS SPENT ON. The expander's body is job attribution now — the jobs he tapped
+// Arrived and Done on. It is NOT a breakdown of the shift and must never read as one.
+// ---------------------------------------------------------------------------
+
+/** A local wall clock on the mocked day, as an instant — assertions hold in any timezone. */
+const at = (hhmm: string): string => new Date(`${TODAY}T${hhmm}:00`).toISOString();
+
+const visitStamp = (over: Partial<VisitStamp> = {}): VisitStamp => ({
+  visitId: "v1",
+  jobId: "j1",
+  jobNum: "JOB-1001",
+  jobTitle: "Water heater swap",
+  customerName: "Alvarez",
+  workDate: TODAY,
+  startedAt: at("09:00"),
+  completedAt: at("11:30"),
+  ...over,
+});
+
+const expand = () => fireEvent.click(screen.getByRole("button", { name: /^Show what the/ }));
+
+describe("the shift's job attribution", () => {
+  it("names the job, the customer and the taps", () => {
+    sheet([entry({ id: "shift" })], { stamps: [visitStamp()] });
+    expand();
+    expect(screen.getByText("Water heater swap")).toBeTruthy();
+    expect(screen.getByText(/Alvarez/)).toBeTruthy();
+    expect(screen.getByText("9a")).toBeTruthy();
+    expect(screen.getByText("11:30a")).toBeTruthy();
+  });
+
+  it("EXPLAINS the difference between the shift and its jobs instead of balancing it", () => {
+    // A 9-hour shift with 2.5h on jobs. The honest answer to "where did the rest go" is a sentence
+    // about driving and the shop — never an invented row that makes the columns agree.
+    sheet([entry({ id: "shift", startTime: "07:00", endTime: "16:00" })], { stamps: [visitStamp()] });
+    expand();
+    expect(screen.getByText(/2\.50 h on jobs/)).toBeTruthy();
+    expect(screen.getByText(/6\.50 h of this shift is not on a job/)).toBeTruthy();
+  });
+
+  it("says a visit was never stamped rather than showing it as zero hours", () => {
+    sheet([entry({ id: "shift" })], {
+      stamps: [visitStamp({ startedAt: null, completedAt: null })],
+    });
+    expand();
+    expect(screen.getByText("not stamped")).toBeTruthy();
+    // A MISSING TAP, which is what the office can fix — not "never stamped", which would be false of
+    // a visit he did tap Done on.
+    expect(screen.getByText(/1 visit missing a tap/)).toBeTruthy();
+  });
+
+  it("names the ARRIVAL as the missing tap when only Done was pressed", () => {
+    sheet([entry({ id: "shift" })], { stamps: [visitStamp({ startedAt: null })] });
+    expand();
+    expect(screen.getByText("no arrival")).toBeTruthy();
+    expect(screen.queryByText("not stamped")).toBeNull();
+  });
+
+  it("shows only the jobs from THIS shift's day", () => {
+    sheet([entry({ id: "shift" })], {
+      stamps: [visitStamp(), visitStamp({ visitId: "v2", jobTitle: "Other day", workDate: "2026-06-30" })],
+    });
+    expand();
+    expect(screen.queryByText("Other day")).toBeNull();
+  });
+
+  it("states no job time plainly, and says where it would come from", () => {
+    sheet([entry({ id: "shift" })], { stamps: [] });
+    expand();
+    expect(screen.getByText(/No job time recorded against this shift/)).toBeTruthy();
+  });
+
+  it("claims no gap while the shift is still running — its length is not final yet", () => {
+    sheet([entry({ id: "open", startTime: "07:00", endTime: null, running: true })], {
+      stamps: [visitStamp()],
+    });
+    expand();
+    expect(screen.queryByText(/not on a job/)).toBeNull();
+  });
+
+  it("still reaches the parts of a MERGED shift, under the jobs", () => {
+    // The register's own rule: a merged row the man cannot edit is a wrong hour he cannot fix.
+    sheet(
+      [
+        entry({ id: "am", startTime: "07:00", endTime: "12:00" }),
+        entry({ id: "lunch", kind: "break", startTime: "12:00", endTime: "12:30" }),
+        entry({ id: "pm", startTime: "12:30", endTime: "16:00" }),
+      ],
+      { stamps: [visitStamp()] },
+    );
+    expand();
+    expect(screen.getByText(/recorded in 3 pieces/)).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(3);
+  });
+
+  it("does NOT show a parts list for an ordinary one-entry shift — its own pencil edits it", () => {
+    sheet([entry({ id: "shift" })], { stamps: [visitStamp()] });
+    expand();
+    expect(screen.queryByText(/recorded in/)).toBeNull();
   });
 });
