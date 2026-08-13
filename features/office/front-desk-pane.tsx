@@ -16,6 +16,7 @@ import { useState } from "react";
 import { AddressInput } from "@/components/ui/address-input";
 import { DraftNumberInput } from "@/components/shared/draft-number-input";
 import { useAppStore } from "@/lib/store/app-store";
+import type { BookingCfg } from "@/lib/store/slices/settings-slice";
 import type { BookingHours } from "@/lib/store/slices/settings-slice";
 import { useMe } from "@/features/identity/hooks";
 import { ServiceRow } from "@/app/(office)/settings/booking-service-card";
@@ -172,16 +173,39 @@ function gapWords(missing: readonly string[]): string {
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
 }
 
+/**
+ * What the front desk still needs before it can answer — computed from the LIVE store.
+ *
+ * The server's frontDeskReadiness is the authority and refuses an unready switch-on. This mirrors
+ * it over the store's shape so the SCREEN can stay honest while the shop is typing, instead of
+ * quoting a verdict from the last settings fetch. Any drift makes the affordance stricter or looser
+ * for one render; it cannot let an unready desk actually switch on.
+ */
+function frontDeskGaps(bk: BookingCfg): string[] {
+  const gaps: string[] = [];
+  const h = bk.hours;
+  const anyDay =
+    h.monClose > h.monOpen || h.tueClose > h.tueOpen || h.wedClose > h.wedOpen ||
+    h.thuClose > h.thuOpen || h.friClose > h.friOpen || h.satClose > h.satOpen ||
+    h.sunClose > h.sunOpen;
+  if (!anyDay) gaps.push("hours");
+  if ((bk.area.originAddress ?? "").trim().length === 0) gaps.push("serviceArea");
+  if (bk.services.length === 0) gaps.push("services");
+  return gaps;
+}
+
 export function FrontDeskPane() {
   const setToggle = useAppStore((s) => s.setToggle);
   const frontDesk = useAppStore((s) => s.toggles.frontDesk);
-  // Server-derived (frontDeskReadiness), carried on the settings DTO. The switch used to be a
-  // plain checkbox, so a shop could turn the desk on with no service area and its AI would answer
-  // real customers on the shop's own number knowing nothing about where it works — one live org
-  // is in exactly that state. Turning OFF is never blocked.
-  const fdReady = useAppStore((s) => s.frontDeskReady);
-  const fdMissing = useAppStore((s) => s.frontDeskMissing);
   const bk = useAppStore((s) => s.booking);
+  // Readiness read from the LIVE store, not the server's last snapshot.
+  //
+  // The server verdict (settings DTO → frontDeskReady) only refreshes when the settings query
+  // refetches, so a shop that had just typed its service area still saw "not ready" — the screen
+  // contradicted what was on it. The server remains the AUTHORITY (UpdateConfigUseCase refuses an
+  // unready switch-on); this is the affordance, and it has to track what the user is looking at.
+  const fdMissing = frontDeskGaps(bk);
+  const fdReady = fdMissing.length === 0;
   const updateBookingService = useAppStore((s) => s.updateBookingService);
   const addBookingService = useAppStore((s) => s.addBookingService);
   const removeBookingService = useAppStore((s) => s.removeBookingService);
@@ -192,9 +216,31 @@ export function FrontDeskPane() {
   const setBookingDayHours = useAppStore((s) => s.setBookingDayHours);
   const setBookingArea = useAppStore((s) => s.setBookingArea);
 
-  // The address box is typed into, so it holds a draft and commits on select or blur — the store
-  // write geocodes server-side, and firing it per keystroke would geocode every partial address.
-  const [originDraft, setOriginDraft] = useState(bk.area.originAddress);
+  // The address box is typed into, so it holds a draft and commits on select, Enter, or blur — the
+  // store write geocodes server-side, and firing it per keystroke would geocode every partial
+  // address. The radius beside it has no draft and commits on change; that asymmetry is the whole
+  // reason this field needs the care below.
+  const savedOrigin = bk.area.originAddress;
+  const [originDraft, setOriginDraft] = useState(savedOrigin);
+
+  // Adopt the stored address whenever it changes underneath the draft.
+  //
+  // THE BUG THIS FIXES. `useState` runs once, at mount — and this pane mounts BEFORE settings
+  // hydrate (the shimmer below is an early return placed after every hook). So on a cold reload the
+  // draft was seeded from `EMPTY_BOOKING`, the store then filled in with the real address, and this
+  // field went on rendering "". The radius, which reads the store directly, showed its saved value.
+  // A shop saw its address blank next to a radius that had survived and concluded the address had
+  // not saved — when the DB held it the whole time.
+  //
+  // Render-phase sync rather than an effect: an effect would paint the empty box for one frame
+  // first, which is the very thing that misled. Typing is safe — `savedOrigin` does not move while
+  // a draft is uncommitted, so this only fires on a real store change (hydration, a commit, or a
+  // rollback after a failed write, where showing the truth is right).
+  const [originSeen, setOriginSeen] = useState(savedOrigin);
+  if (savedOrigin !== originSeen) {
+    setOriginSeen(savedOrigin);
+    setOriginDraft(savedOrigin);
+  }
 
   // Single-expanded service accordion — null = all collapsed
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -329,9 +375,17 @@ export function FrontDeskPane() {
           <input
             type="checkbox"
             checked={frontDesk}
-            // Off is always allowed; on only once the server says the desk can answer.
-            disabled={!frontDesk && !fdReady}
-            onChange={(e) => setToggle("frontDesk", e.target.checked)}
+            // NOT `disabled`. A disabled control takes no focus, so clicking it never blurred the
+            // address field above — the typed address stayed an uncommitted draft, readiness never
+            // became true, and the switch could never enable. Typing the missing detail and
+            // reaching for the switch, which is the whole point of the screen, deadlocked it.
+            // Enabled with aria-disabled: the click lands, the address commits on blur, and the
+            // reason is stated. The server refuses an unready switch-on regardless.
+            aria-disabled={!frontDesk && !fdReady}
+            onChange={(e) => {
+              if (!frontDesk && !fdReady) return; // the blur has just committed; the gap stands
+              setToggle("frontDesk", e.target.checked);
+            }}
             aria-label="Front Desk on/off"
           />
           <i />
@@ -522,6 +576,7 @@ export function FrontDeskPane() {
                 value={originDraft}
                 onChange={setOriginDraft}
                 onSelect={(v) => { setOriginDraft(v); setBookingArea("originAddress", v); }}
+                onCommit={() => setBookingArea("originAddress", originDraft)}
                 onBlur={() => setBookingArea("originAddress", originDraft)}
                 placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
                 aria-label="Office address"

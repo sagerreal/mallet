@@ -19,6 +19,9 @@ import type { VoiceRegistrar } from "../domain/voice-registrar";
 /** The transport seam — swapped in tests so the import path runs without a Vapi account. */
 export interface VapiHttpTransport {
   post(path: string, body: unknown): Promise<{ status: number; body: unknown }>;
+  /** Reading numbers back, so a duplicate can be repaired rather than assumed correct. */
+  get(path: string): Promise<{ status: number; body: unknown }>;
+  patch(path: string, body: unknown): Promise<{ status: number; body: unknown }>;
 }
 
 export class VapiVoiceRegistrar implements VoiceRegistrar {
@@ -34,12 +37,12 @@ export class VapiVoiceRegistrar implements VoiceRegistrar {
   ) {
     this.transport =
       transport ??
-      {
-        async post(path, body) {
+      (() => {
+        const call = async (method: string, path: string, body?: unknown) => {
           const res = await fetch(`https://api.vapi.ai${path}`, {
-            method: "POST",
+            method,
             headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-            body: JSON.stringify(body),
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
           });
           let parsed: unknown = null;
           try {
@@ -48,8 +51,50 @@ export class VapiVoiceRegistrar implements VoiceRegistrar {
             parsed = null;
           }
           return { status: res.status, body: parsed };
-        },
-      };
+        };
+        return {
+          post: (path: string, body: unknown) => call("POST", path, body),
+          get: (path: string) => call("GET", path),
+          patch: (path: string, body: unknown) => call("PATCH", path, body),
+        };
+      })();
+  }
+
+  /**
+   * Point an ALREADY-IMPORTED number at this deployment's webhook, with this deployment's secret.
+   *
+   * Two ways a number Vapi already holds can still be wrong, and neither is visible from outside:
+   * its `server.url` may name an older deployment, and its `server.secret` may be absent or stale —
+   * the webhook rejects a mismatched `x-vapi-secret` with 401 before any parse (fail-closed, and
+   * correct), so the line rings and dies silently.
+   *
+   * Note Vapi REDACTS `server.secret` when reading a number back, so neither this code nor an
+   * operator can confirm the secret is right by inspection — only overwrite it. Repairing on the
+   * duplicate path means the fix rides the same call provisioning and the settings switch already
+   * make, rather than needing anyone to notice.
+   */
+  private async repair(phoneNumber: string): Promise<Result<void, ExternalServiceError>> {
+    const listed = await this.transport.get("/phone-number");
+    const rows = Array.isArray(listed.body) ? (listed.body as { id?: string; number?: string }[]) : [];
+    const found = rows.find((r) => r.number === phoneNumber);
+    if (!found?.id) {
+      // Vapi says duplicate but will not show it to us. Nothing safe to do; the line may work.
+      logger.warn({ phoneNumber }, "a2p.voice.duplicate_not_found");
+      return ok(undefined);
+    }
+
+    const patched = await this.transport.patch(`/phone-number/${found.id}`, {
+      server: {
+        url: this.serverUrl,
+        ...(this.serverSecret ? { secret: this.serverSecret } : {}),
+      },
+    });
+    if (patched.status >= 200 && patched.status < 300) {
+      logger.info({ phoneNumber }, "a2p.voice.repaired");
+      return ok(undefined);
+    }
+    logger.error({ phoneNumber, status: patched.status }, "a2p.voice.repair_failed");
+    return err(externalService("vapi", "could not connect the number to the front desk"));
   }
 
   async register(cmd: { phoneNumber: string }): Promise<Result<void, ExternalServiceError>> {
@@ -71,11 +116,21 @@ export class VapiVoiceRegistrar implements VoiceRegistrar {
         return ok(undefined);
       }
 
-      // Already imported — a retried provision, not a failure. Treated as success so a retry does
-      // not report a broken line that is in fact working.
+      // ALREADY IMPORTED IS NOT ALREADY CORRECT.
+      //
+      // This used to return ok() here, on the reasoning that a retried provision should not report
+      // a broken line. But "Vapi holds this number" says nothing about whether it points at the
+      // right place with the right secret — and a number imported by hand in the dashboard, or
+      // registered against a previous deployment URL, holds neither. Every such call fails before
+      // Mallet ever sees it: silent, and indistinguishable from the AI simply not answering.
+      //
+      // Overwriting is the only way to KNOW: Vapi redacts server.secret on read, so a number that
+      // reads back as `secret: (none)` may well have one. Correctness here cannot be inspected.
+      //
+      // So a duplicate is repaired rather than assumed: read the number back and PATCH its server
+      // config to what this deployment actually expects.
       if (res.status === 409 || describes(res.body, /already exists|already in use|duplicate/i)) {
-        logger.info({ phoneNumber: cmd.phoneNumber }, "a2p.voice.already_registered");
-        return ok(undefined);
+        return this.repair(cmd.phoneNumber);
       }
 
       logger.error({ phoneNumber: cmd.phoneNumber, status: res.status }, "a2p.voice.register_failed");
