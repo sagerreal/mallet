@@ -151,6 +151,11 @@ const listInput = z.object({
   scope: z.enum(LEAD_SCOPES).optional(),
   /** One work group — where this customer's work has got to. The Customers list's chips. */
   group: z.enum(LEAD_GROUPS).optional(),
+  /**
+   * Show the ARCHIVED set instead of the live one. Archiving is a soft delete, so this is the
+   * deleted rows — the only way the Customers screen's Archived tab can show an archived customer.
+   */
+  archived: z.boolean().optional(),
 });
 
 const countInput = z.object({
@@ -162,6 +167,11 @@ const countInput = z.object({
   // list is showing the 12 customers who owe money.
   scope: z.enum(LEAD_SCOPES).optional(),
   group: z.enum(LEAD_GROUPS).optional(),
+  /**
+   * Show the ARCHIVED set instead of the live one. Archiving is a soft delete, so this is the
+   * deleted rows — the only way the Customers screen's Archived tab can show an archived customer.
+   */
+  archived: z.boolean().optional(),
 });
 
 const paginatedLeadDTO = z.object({
@@ -453,7 +463,7 @@ export const createLeadRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope, group: input.group },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope, group: input.group, archived: input.archived },
         });
         // Two batched reads for the page — never per-row (same batching rule the invoice list
         // applies to lead names). The group is derived from three other tables, so per-row it
@@ -483,9 +493,29 @@ export const createLeadRouter = () =>
       .query(async ({ ctx }) => new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).viewCounts()),
 
     /** Every work group's count — the Customers chips show all seven, so they come back together. */
+    /**
+     * Every group's count in one round trip — the Customers chip row's numbers.
+     *
+     * Takes the SEARCH, because a count that ignores it describes a different list than the rows
+     * beneath it: a no-match search used to leave the chips reading 90 customers over an empty
+     * list. Same contract as jobs.viewCounts and invoicing.viewCounts.
+     */
     groupCounts: ownerOrOffice
+      .input(
+        z
+          .object({
+            search: z.string().trim().min(1).max(200).optional(),
+            archived: z.boolean().optional(),
+          })
+          .optional(),
+      )
       .output(z.record(z.enum(LEAD_GROUPS), z.number().int()))
-      .query(async ({ ctx }) => new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).groupCounts()),
+      .query(async ({ ctx, input }) =>
+        new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).groupCounts({
+          search: input?.search,
+          archived: input?.archived,
+        }),
+      ),
 
     /** Filter-dropdown options and their counts, so the dropdown describes the BOOK, not a page. */
     facets: ownerOrOffice
@@ -512,6 +542,7 @@ export const createLeadRouter = () =>
             source: input.source,
             scope: input.scope,
             group: input.group,
+            archived: input.archived,
           }),
         };
       }),

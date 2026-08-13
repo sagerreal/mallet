@@ -13,7 +13,7 @@ import type { LeadScope, LeadGroup } from "@/modules/customers/infra/lead-views"
  * ever see the hydrator's first 500 rows, so on a 606-customer shop the list, its search, its
  * filter options and its count all silently described a subset — and reported "500 of 500".
  *
- * Mirrors useJobsQuery: the page, the true total, and the filter facets, each its own query so the
+ * Mirrors useJobsQuery: the page, the true total, and the chip row's counts, each its own query so the
  * "of N" survives paging and the dropdown describes the book rather than the page.
  */
 
@@ -27,6 +27,8 @@ export interface CustomersQueryState {
   readonly scope: string;
   /** One work group — where this customer's work has got to. "" is everyone. */
   readonly group: string;
+  /** The ARCHIVED set instead of the live one. Archiving is a soft delete; see LeadFilter. */
+  readonly archived: boolean;
   readonly sort: LeadSort | null;
   readonly sortDir: "asc" | "desc" | null;
 }
@@ -49,6 +51,9 @@ export function useCustomersQuery(state: CustomersQueryState) {
     ...(source ? { source } : {}),
     ...(scope ? { scope: scope as LeadScope } : {}),
     ...(group ? { group: group as LeadGroup } : {}),
+    // The Archived tab used to change nothing but the UI: this never reached the query, so the tab
+    // returned the live list and the screen added a Restore column to it.
+    ...(state.archived ? { archived: true } : {}),
   };
 
   const page = api.v1.customers.list.useInfiniteQuery(
@@ -70,6 +75,20 @@ export function useCustomersQuery(state: CustomersQueryState) {
   );
 
   const total = api.v1.customers.count.useQuery(filters, { refetchOnWindowFocus: true, placeholderData: (prev) => prev });
+
+  /**
+   * THE CHIP ROW'S NUMBERS, fetched HERE so they share this hook's debounced search.
+   *
+   * The screen used to run this query itself as `groupCounts.useQuery(undefined)` — no arguments,
+   * so it could not narrow. A no-match search left the chips reading "Invoice required (19), Owes
+   * money (14), Job booked (35)" over a list showing "0 of 0": the chips claiming 90 customers that
+   * were not there. The group is NOT passed — the groups are the breakdown, and the row must keep
+   * showing every group's size while you stand inside one of them.
+   */
+  const groupCounts = api.v1.customers.groupCounts.useQuery(
+    { ...(search ? { search } : {}), ...(state.archived ? { archived: true } : {}) },
+    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
+  );
   // The UNFILTERED book size — the only honest input to "does this shop have customers at
   // all?". Gating first-run on the filtered count showed "No customers yet" to a shop of
   // 600 whenever a search matched nothing.
@@ -77,7 +96,6 @@ export function useCustomersQuery(state: CustomersQueryState) {
 
   // Facets are NOT filtered by the current selection: a dropdown that hides the option you would
   // switch to is a dead end. It describes the whole book, always.
-  const facets = api.v1.customers.facets.useQuery(undefined, { refetchOnWindowFocus: true });
 
   const rows = useMemo(() => page.data?.pages.flatMap((p) => p.items) ?? [], [page.data]);
 
@@ -92,8 +110,8 @@ export function useCustomersQuery(state: CustomersQueryState) {
     bookTotal: bookTotal.data?.total,
     /** True while showing held-over rows for a superseded filter — callers dim, never swap. */
     isStale: page.isPlaceholderData || debouncedSearch !== state.search,
-    stageCounts: facets.data?.stages,
-    sources: facets.data?.sources,
+    /** Per-group counts for the chip row. Absent while in flight — the chip then shows no number. */
+    groupCounts: groupCounts.data,
     hasMore: Boolean(page.hasNextPage),
     loadMore,
     isLoadingMore: page.isFetchingNextPage,

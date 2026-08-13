@@ -88,6 +88,9 @@ suite("invoice ledger views", () => {
     await addInvoice("LV-SENT2", "sent", 20000, 0, null); // no due date is not overdue
     await addInvoice("LV-PAID1", "paid", 25000, 25000, "2020-01-01"); // settled, so not overdue
     await addInvoice("LV-PAID2", "sent", 25000, 25000, "2020-01-01"); // paid off, status not updated
+    // A VOIDED invoice that keeps its total and a past due date — the shape that used to be counted
+    // under "Overdue". A cancelled bill is not money a customer owes.
+    await addInvoice("LV-VOID", "void", 90000, 0, "2020-01-01");
   });
 
   afterAll(async () => {
@@ -106,8 +109,10 @@ suite("invoice ledger views", () => {
         seen.set(i.id, view);
       }
     }
+    // The bands partition the LIVE, NON-VOID ledger — void is the archive, not a band.
     const [total] = await admin<{ n: number }[]>`
-      select count(*)::int n from invoices where org_id = ${orgId} and deleted_at is null`;
+      select count(*)::int n from invoices
+      where org_id = ${orgId} and deleted_at is null and status <> 'void'`;
     expect(seen.size).toBe(total!.n);
   });
 
@@ -127,11 +132,42 @@ suite("invoice ledger views", () => {
     expect(counts.partial).toBe(1);
     expect(counts.sent).toBe(2);      // future due date, and no due date at all
     expect(counts.paid).toBe(2);      // settled, whatever the status column says
+    // LV-VOID is in NO band. It kept its total and a 2020 due date, so before this it satisfied
+    // `owing` and `pastDue` and was chased as overdue.
+    expect(counts.over).not.toBe(3);
 
-    const [total] = await admin<{ n: number }[]>`
-      select count(*)::int n from invoices where org_id = ${orgId} and deleted_at is null`;
+    // The bands partition the LIVE, NON-VOID ledger. Void is the archive, not a band.
+    const [live] = await admin<{ n: number }[]>`
+      select count(*)::int n from invoices
+      where org_id = ${orgId} and deleted_at is null and status <> 'void'`;
     const summed = Object.values(counts).reduce((a, b) => a + b, 0);
-    expect(summed).toBe(total!.n);
+    expect(summed).toBe(live!.n);
+  });
+
+  /**
+   * VOID IS THE ARCHIVE.
+   *
+   * The Money screen derived its archived rows in the browser — `invoices.filter(i => i.archived)`
+   * over whichever page happened to be loaded — so the Archived tab could only ever find a void
+   * invoice inside the first fifty rows of a list fetched for something else entirely.
+   */
+  it("keeps void out of the live ledger and returns it under archived", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+
+    const live = await caller.v1.invoicing.list({ limit: 100 });
+    expect(live.items.map((i) => i.num)).not.toContain("LV-VOID");
+
+    const archived = await caller.v1.invoicing.list({ limit: 100, archived: true });
+    expect(archived.items.map((i) => i.num)).toEqual(["LV-VOID"]);
+
+    const archivedTotal = await caller.v1.invoicing.count({ archived: true });
+    expect(archivedTotal.total).toBe(1);
+
+    // And no band claims it, on either side of the switch.
+    for (const view of INVOICE_VIEWS) {
+      const page = await caller.v1.invoicing.list({ view, limit: 100 });
+      expect(page.items.map((i) => i.num), `${view} claims the void invoice`).not.toContain("LV-VOID");
+    }
   });
 
   it("agrees with count() band for band — one predicate, not two", async () => {

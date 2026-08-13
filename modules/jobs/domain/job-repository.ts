@@ -60,6 +60,18 @@ export interface JobFilter {
    * was capped at the hydrator's page size.
    */
   readonly activeOnly?: boolean;
+  /**
+   * Everything except the AUTO-ARCHIVED band — what the Jobs list's "All" chip means.
+   *
+   * Distinct from activeOnly, which excludes all finished work. The Jobs list used activeOnly for
+   * All, so "All" showed 39 of 65 jobs: Done and Done-not-billed were hidden, and the chips did not
+   * sum to the chip above them. The Active/Archived toggle already separates the archive, so All
+   * within Active means "not archived" and nothing more. activeOnly stays as it was — the nav badge
+   * and the work board both count open work with it.
+   *
+   * Needs `today`: the archived predicate is relative to the client's local date.
+   */
+  readonly excludeArchived?: boolean;
   /** One of the scoped views (Needs a slot / Today / …). See infra/job-views.ts. */
   readonly view?: JobView;
   /** The client's local date, YYYY-MM-DD. Required alongside a date-relative view. */

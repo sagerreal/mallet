@@ -82,7 +82,18 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   // Done not billed) are finished work by definition — ANDing "not finished" on top would return
   // nothing while the filter's own count pill promised rows, which is a dead control. When a view
   // is chosen the view IS the filter; Archived is a view too, so it is covered by the same rule.
-  const activeOnly = archiveSet === "active" && !view;
+  // "ALL" MEANS ALL — everything the archive does not already hold.
+  //
+  // This used to send `activeOnly`, which excludes complete and canceled, so All read 39 while the
+  // seven bands summed to 65: Done (14) and Done-not-billed (12) were absent from the chip that
+  // claimed to contain them. The Active/Archived toggle already separates the archive, so All
+  // within Active narrows to "not archived" and nothing further. `activeOnly` is untouched — the
+  // nav badge and the work board still count open work with it.
+  //
+  // NOT stacked on a chosen view. Each view is already a precise slice, and two of them are
+  // finished work by definition — narrowing them further would return nothing while the chip's own
+  // count promised rows, which is a dead control. Archived is a view too, so it is covered.
+  const excludeArchived = archiveSet === "active" && !view;
 
   // The table's headers speak in display columns; the server in named sorts. A column with no
   // server sort (Customer — it needs a joined ORDER BY the cursor would have to carry too) maps
@@ -90,7 +101,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const serverSort = SORT_COL_TO_SERVER[sort.col];
   const list = useJobsQuery({
     view,
-    activeOnly,
+    excludeArchived,
     search: q.search,
     sort: serverSort,
     sortDir: serverSort ? sort.dir : null,

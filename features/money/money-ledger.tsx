@@ -136,6 +136,9 @@ export function MoneyLedger() {
   function switchSet(v: MoneySet) {
     setMoneySet(v);
     setArmedCharge(null);
+    // The archived set owns the list, so a band chosen before the switch is no longer applied — and
+    // must not keep looking applied. It used to stay highlighted over a set its chips cannot filter.
+    if (v === "archived") setStatusFilter("");
   }
 
   function openInvoice(id: string) {
@@ -219,10 +222,15 @@ export function MoneyLedger() {
     },
   };
 
+  // `rows` IS `source`, so `source.length` is always 0 by the time the table asks for this — which
+  // made the "Nothing matches" branch unreachable and printed "Nothing owed — every finished job is
+  // billed and paid." over a Part-paid filter on a ledger with 24 invoices owing. The question is
+  // whether a FILTER is narrowing, not whether the result is empty.
+  const filtering = Boolean(q) || Boolean(statusFilter);
   const emptyState =
     moneySet === "archived" ? (
       "No archived invoices."
-    ) : source.length ? (
+    ) : filtering ? (
       <>
         Nothing matches —{" "}
         <span className="linklike" onClick={clearFilters}>

@@ -52,8 +52,12 @@ export function useMoneyQuery(state: MoneyQueryState) {
   const debouncedSearch = useDebouncedValue(state.search, 250);
   const search = debouncedSearch.trim() || undefined;
   const onlyReady = state.statusFilter === "ready";
-  // Anything other than "ready" (or nothing) is an invoice band the database can answer.
-  const view = !state.statusFilter || onlyReady ? undefined : (state.statusFilter as InvoiceView);
+  // THE ARCHIVED SET OWNS THE LIST. A band chosen before the switch used to stay applied to a set
+  // whose chips are disabled, so Archived could open on "0 of 7" — filtered by something the screen
+  // gave you no way to clear. Archived wins, exactly as it does on the Jobs list.
+  const view = state.archived || !state.statusFilter || onlyReady
+    ? undefined
+    : (state.statusFilter as InvoiceView);
   // Filtering to an invoice band means the ready-to-bill worklist is not part of the answer.
   const wantReady = !state.archived && (!state.statusFilter || onlyReady);
 
@@ -65,7 +69,7 @@ export function useMoneyQuery(state: MoneyQueryState) {
   );
 
   const invoices = api.v1.invoicing.list.useInfiniteQuery(
-    { limit: PAGE_SIZE, sort: "ledger", ...(search ? { search } : {}), ...(view ? { view } : {}) },
+    { limit: PAGE_SIZE, sort: "ledger", ...(search ? { search } : {}), ...(view ? { view } : {}), ...(state.archived ? { archived: true } : {}) },
     {
       getNextPageParam: (last) => last.nextCursor ?? undefined,
       refetchOnWindowFocus: true,
@@ -75,7 +79,7 @@ export function useMoneyQuery(state: MoneyQueryState) {
   );
 
   const total = api.v1.invoicing.count.useQuery(
-    { ...(search ? { search } : {}), ...(view ? { view } : {}) },
+    { ...(search ? { search } : {}), ...(view ? { view } : {}), ...(state.archived ? { archived: true } : {}) },
     { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
   );
   // Unfiltered book size — the honest first-run input.
@@ -86,7 +90,7 @@ export function useMoneyQuery(state: MoneyQueryState) {
   // than the rows on screen. NOT narrowed by the selected band — the chips must keep showing every
   // band's size while you stand inside one of them.
   const bands = api.v1.invoicing.viewCounts.useQuery(
-    { ...(search ? { search } : {}) },
+    { ...(search ? { search } : {}), ...(state.archived ? { archived: true } : {}) },
     { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
   );
 

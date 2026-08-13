@@ -201,8 +201,16 @@ export function deriveMoneyRows(
 }
 
 /** The archived ledger — archived invoices only (a job can't archive unbilled). */
+/**
+ * The archived ledger — voided invoices, as the SERVER selected them.
+ *
+ * This used to be `invoices.filter(i => i.archived)` over whichever page happened to be loaded, so
+ * the Archived tab could only ever find a void invoice inside the first fifty rows of a list that
+ * was not fetched for that purpose. The query asks for them now (InvoiceFilter.archived), so
+ * re-filtering here would only be able to lose rows.
+ */
 export function deriveArchivedMoneyRows(invoices: Invoice[], leads: Lead[]): MoneyRow[] {
-  return invoices.filter((i) => i.archived).map((i) => invoiceRow(i, leads));
+  return invoices.map((i) => invoiceRow(i, leads));
 }
 
 // Filtering used to live here, over the rows the browser happened to hold. It moved to SQL —

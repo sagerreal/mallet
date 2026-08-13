@@ -13,11 +13,9 @@ import { useAppStore, useLeads, useEstimates, useOpenModal, useCustSeg, useSetCu
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Estimate } from "@/lib/store/types";
 import { isStaleLead } from "@/features/pipeline/pipeline-constants";
-import { api } from "@/lib/trpc/client";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { useCustomersQuery, useCustomersQueryState, CUSTOMER_COL_TO_SORT } from "./use-customers-query";
 import { toStoreLead } from "./leads-hydrator";
-import { LEAD_STAGES } from "@/modules/customers/domain/lead";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { CustomersToolbar, type CustomerArchiveSet } from "./customers-toolbar";
 import { ViewToggle } from "@/components/shared/view-toggle";
@@ -72,21 +70,19 @@ export function CustomersView() {
     source: cq.source,
     scope: cq.scope,
     group: cq.group,
+    // The Archived tab used to change nothing but the UI — it never reached the query, so it
+    // returned the LIVE list with a Restore column added and Restore was a no-op.
+    archived: archiveSet === "archived",
     sort: serverSort,
     sortDir: serverSort ? cq.sortDir : null,
   });
   const sorted = useMemo(() => list.rows.map(toStoreLead), [list.rows]);
 
-  // Every group's count, in one read, so each chip states a fact about the BOOK rather than about
-  // whatever page happens to be loaded.
-  const groupCounts = api.v1.customers.groupCounts.useQuery(undefined, { refetchOnWindowFocus: false });
-
-  // Stage options come from the ENUM, not from the data: a filter that only offers the stages
-  // present on this page is a filter that hides the one you want. Counts come from the facets.
-  const allStages = LEAD_STAGES as readonly string[];
-  const allSources = (list.sources ?? []).map((x: { source: string }) => x.source);
-  const activeFilterCount =
-    (cq.stage ? 1 : 0) + (cq.source ? 1 : 0) + (cq.scope ? 1 : 0) + (custSeg !== "people" ? 1 : 0) + (archiveSet !== "active" ? 1 : 0);
+  // The chip row's counts come from useCustomersQuery now, so they share its DEBOUNCED search.
+  // Fetched here with no arguments, they could not narrow at all — see the hook.
+  //
+  // The Stage/Source option lists and the activeFilterCount pill went with the Filters panel that
+  // used to hold them; `facets` is no longer fetched either.
   const visible = visibleCols.filter((c) => ALL_COL_DEFS[c]);
 
   // First-run gates on the UNFILTERED book size — the filtered total reads 0 for any
@@ -183,7 +179,7 @@ export function CustomersView() {
           `stage` could not be filtered on at all. */}
       <CustomersGroupFilter
         group={(cq.group || null) as LeadGroup | null}
-        counts={groupCounts.data}
+        counts={list.groupCounts}
         onGroup={(g) => cq.setGroup(g ?? "")}
         disabled={archiveSet === "archived"}
       />

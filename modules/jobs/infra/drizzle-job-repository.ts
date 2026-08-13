@@ -376,6 +376,17 @@ export class DrizzleJobRepository implements JobRepository {
     // The nav badge's "open jobs". Terminal statuses are excluded rather than a status matched,
     // because the badge means "still to do", not "in one particular state".
     if (filter?.activeOnly) conds.push(notInArray(jobs.status, ["complete", "canceled"]));
+    // "All" on the Active tab = everything the archive does not already hold. Not activeOnly, which
+    // hid the 26 finished jobs and left the chips failing to sum to the All above them.
+    if (filter?.excludeArchived && filter.today) {
+      // `IS NOT TRUE`, never `NOT (...)`. The archived predicate is
+      // `complete AND completed_at < cutoff AND settled`, and `completed_at` is nullable — so for a
+      // complete job with no stamp the comparison is NULL, the whole AND is NULL, and `NOT NULL` is
+      // NULL, which a WHERE clause DROPS. That silently lost two rows out of nineteen and made
+      // "All" understate itself again in a new way. `IS NOT TRUE` folds NULL to true, which is what
+      // "not in the archive" means. The `done` band handles the same null explicitly.
+      conds.push(sql`(${viewCondition("archived", this.tx, { today: filter.today })}) IS NOT TRUE`);
+    }
     if (filter?.view && filter.today) {
       conds.push(viewCondition(filter.view, this.tx, { today: filter.today }));
     }

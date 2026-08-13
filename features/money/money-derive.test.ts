@@ -166,10 +166,21 @@ describe("deriveMoneyRows — one ledger, needs-you first", () => {
     expect(deriveMoneyRows(serverOrder, [], leads).map((r) => r.key)).toEqual(["inv-old", "inv-new"]);
   });
 
-  it("excludes archived invoices from active and includes them in archived", () => {
+  it("keeps archived invoices out of the active ledger", () => {
+    // Belt and braces: the SERVER now excludes void from the live set too (InvoiceFilter.archived),
+    // so this filter should never have anything to remove. It stays because a void invoice reaching
+    // the active ledger would be counted as money owed.
     const invoices = [inv({ id: "inv-1", leadId: "2", total: 100 }), inv({ id: "inv-2", leadId: "2", total: 200, archived: true })];
     expect(deriveMoneyRows(invoices, [], leads).map((r) => r.key)).toEqual(["inv-1"]);
-    expect(deriveArchivedMoneyRows(invoices, leads).map((r) => r.key)).toEqual(["inv-2"]);
+  });
+
+  it("renders the archived page the SERVER sent, without re-filtering it", () => {
+    // This used to be `invoices.filter(i => i.archived)` over whichever page happened to be loaded,
+    // so the Archived tab could only find a void invoice inside the first fifty rows of a list that
+    // was not fetched for that purpose. The query asks for them now; re-filtering could only lose
+    // rows the server deliberately returned.
+    const page = [inv({ id: "void-1", leadId: "2", total: 200 }), inv({ id: "void-2", leadId: "2", total: 300 })];
+    expect(deriveArchivedMoneyRows(page, leads).map((r) => r.key)).toEqual(["void-1", "void-2"]);
   });
 });
 

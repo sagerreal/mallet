@@ -2,12 +2,29 @@ import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
-import { asOrgId } from "@mallet/shared/types";
+import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
+import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
 import { leads } from "@mallet/shared/db/schema";
 import { and, count, eq, isNull } from "drizzle-orm";
+import type { AuthProvider, Role } from "@mallet/identity";
+import { appRouter } from "@/trpc/root";
+import type { Context } from "@/trpc/init";
 import { LEAD_GROUPS, leadGroupCondition, type LeadGroup } from "../infra/lead-views";
+
+const stubAuth: AuthProvider = { authenticate: async () => { throw new Error("unused"); } };
+const ctxFor = (orgId: string, role: Role): Context => ({
+  principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role },
+  unmapped: null, tx: null,
+  deps: {
+    authProvider: stubAuth, bus: new InMemoryEventBus(), clock: systemClock, ids: uuidGenerator,
+    paymentLinkGateway: null, connectGateway: null, photoStorageGateway: null, llmClient: null,
+    apiKeyAuthenticator: { authenticate: async () => null },
+    tokenVerifier: { verify: async () => null },
+    signupStore: { createOrgForUser: async () => { throw new Error("unused"); } },
+  },
+});
 
 /**
  * The Customers list's work groups, in SQL.
@@ -139,6 +156,66 @@ suite("customers list — work groups (live DB)", () => {
 
   it("unbilled work outranks everything — the one the shop can fix alone", async () => {
     expect(await groupsFor("All At Once")).toEqual(["invoiceRequired"]);
+  });
+
+  /**
+   * THE CHIPS MUST DESCRIBE THE LIST ON SCREEN.
+   *
+   * groupCounts took no arguments at all, so it could not narrow by search. Typing a no-match term
+   * left the chips reading "Invoice required (19), Owes money (14), Job booked (35)" over a list
+   * showing "0 of 0" — ninety customers claimed that were not there. Same contract the Jobs and
+   * Money chip rows already hold.
+   */
+  it("recounts the groups under a search, so the chips match the rows", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const wide = await caller.v1.customers.groupCounts({});
+    const wideTotal = Object.values(wide).reduce((a, b) => a + b, 0);
+    expect(wideTotal).toBeGreaterThan(0);
+
+    const none = await caller.v1.customers.groupCounts({ search: "zzz-no-such-customer" });
+    expect(Object.values(none).reduce((a, b) => a + b, 0)).toBe(0);
+
+    // And it narrows rather than merely zeroing: a term matching ONE seeded customer counts one.
+    const one = await caller.v1.customers.groupCounts({ search: "All At Once" });
+    expect(Object.values(one).reduce((a, b) => a + b, 0)).toBe(1);
+  });
+
+  it("agrees with the list's own total, band for band", async () => {
+    // The count and the rows must come from ONE definition of the base set. groupCounts used to
+    // carry its own hard-coded `where`, a second definition free to drift from listConds.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const counts = await caller.v1.customers.groupCounts({});
+    for (const g of LEAD_GROUPS) {
+      const listed = await caller.v1.customers.count({ group: g });
+      expect(listed.total, `${g} disagrees`).toBe(counts[g]);
+    }
+  });
+
+  /**
+   * ARCHIVING IS A SOFT DELETE, so the archived SET is the deleted rows.
+   *
+   * Every read filtered `deleted_at IS NULL` unconditionally, so the Customers screen's Archived tab
+   * could not show an archived customer even in principle — it returned the live list and the screen
+   * added a Restore column to it. Restore on a live customer is a no-op.
+   */
+  it("the archived set returns archived customers, and the live set never does", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const victim = named.get("All At Once")!;
+    await admin`update leads set deleted_at = now() where org_id = ${orgId} and id = ${victim}`;
+
+    const live = await caller.v1.customers.list({ limit: 200 });
+    expect(live.items.map((l) => l.id)).not.toContain(victim);
+
+    const archived = await caller.v1.customers.list({ limit: 200, archived: true });
+    expect(archived.items.map((l) => l.id)).toContain(victim);
+    // And the archived set is ONLY archived rows — not the live list with extras.
+    const liveIds = new Set(live.items.map((l) => l.id));
+    expect(archived.items.every((a) => !liveIds.has(a.id))).toBe(true);
+
+    const archivedTotal = await caller.v1.customers.count({ archived: true });
+    expect(archivedTotal.total).toBe(archived.items.length);
+
+    await admin`update leads set deleted_at = null where org_id = ${orgId} and id = ${victim}`;
   });
 
   /**

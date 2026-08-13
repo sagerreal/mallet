@@ -138,7 +138,10 @@ export class DrizzleLeadRepository implements LeadRepository {
 
   /** Predicates shared by list() and count(), so the two can never answer different questions. */
   private listConds(filter?: LeadFilter): SQL[] {
-    const conds: SQL[] = [isNull(leads.deletedAt)];
+    // Archiving is a soft delete, so the archived SET is the deleted rows — not a separate column.
+    // This was an unconditional isNull, which is why the Archived tab could never show an archived
+    // customer: it returned the live list and the screen just added a Restore column to it.
+    const conds: SQL[] = [filter?.archived ? isNotNull(leads.deletedAt) : isNull(leads.deletedAt)];
     if (filter?.stage) conds.push(eq(leads.stage, filter.stage));
     if (filter?.unreadOnly) conds.push(eq(leads.unread, true));
     if (filter?.source) conds.push(eq(leads.source, filter.source));
@@ -179,7 +182,20 @@ export class DrizzleLeadRepository implements LeadRepository {
    * come from the same instant, and seven round trips against a live book can disagree with each
    * other while somebody is working. `filter (where ...)` is what makes it one scan.
    */
-  async groupCounts(): Promise<Record<LeadGroup, number>> {
+  /**
+   * Every group's count in one round trip — the Customers chip row's numbers.
+   *
+   * Takes the LIST's filter and builds from `listConds`, minus the group itself. It used to carry
+   * its own hard-coded `where org AND not deleted`, which meant two things went wrong: the counts
+   * were a SECOND definition of the base set, and they could not narrow by search. Typing a
+   * no-match search left the chips reading "Invoice required (19), Owes money (14), Job booked
+   * (35)" over a list showing "0 of 0" — the chips claiming 90 customers that were not there.
+   *
+   * `group` is stripped deliberately: the groups ARE the breakdown, so a base that already selected
+   * one would return that group's count in its own column and zero everywhere else.
+   */
+  async groupCounts(base?: LeadFilter): Promise<Record<LeadGroup, number>> {
+    const baseConds = this.listConds({ ...base, group: undefined });
     const one = (g: LeadGroup) => sql<number>`count(*) filter (where ${leadGroupCondition(g, this.tx)})::int`;
     const rows = await this.tx
       .select({
@@ -192,7 +208,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         workCompleted: one("workCompleted"),
       })
       .from(leads)
-      .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)));
+      .where(and(eq(leads.orgId, this.orgId), ...baseConds));
     const r = rows[0];
     return {
       invoiceRequired: r?.invoiceRequired ?? 0,

@@ -238,6 +238,8 @@ const listInput = z.object({
   search: z.string().trim().min(1).max(200).optional(),
   /** The ledger band shown on the Money screen — see invoice-views.ts. Not the status column. */
   view: viewEnum.optional(),
+  /** The ARCHIVED set — voided invoices. Absent means the live set, which excludes void. */
+  archived: z.boolean().optional(),
 });
 const listByLeadInput = z.object({
   leadId: z.string().uuid(),
@@ -693,7 +695,7 @@ export const createInvoiceRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { status: input.status, unpaidOnly: input.unpaidOnly, search: input.search, view: input.view },
+          filter: { status: input.status, unpaidOnly: input.unpaidOnly, search: input.search, view: input.view, archived: input.archived },
         });
         // One batched lead read for the page — never a per-row query. Same pattern the jobs list
         // uses, and for the same reason: the store cannot be relied on to hold these leads.
@@ -747,12 +749,13 @@ export const createInvoiceRouter = () =>
       .input(
         z.object({
           search: z.string().trim().min(1).max(200).optional(),
+          archived: z.boolean().optional(),
         }),
       )
       .output(z.object({ counts: z.record(z.enum(INVOICE_VIEWS), z.number().int()) }))
       .query(async ({ ctx, input }) => {
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
-        return repo.viewCounts({ search: input.search });
+        return repo.viewCounts({ search: input.search, archived: input.archived });
       }),
 
     /** The TRUE number of invoices matching a filter — shares list()'s predicates. */
@@ -763,6 +766,7 @@ export const createInvoiceRouter = () =>
           unpaidOnly: z.boolean().optional(),
           search: z.string().trim().min(1).max(200).optional(),
           view: viewEnum.optional(),
+          archived: z.boolean().optional(),
         }),
       )
       .output(z.object({ total: z.number().int() }))
@@ -774,6 +778,7 @@ export const createInvoiceRouter = () =>
             unpaidOnly: input.unpaidOnly,
             search: input.search,
             view: input.view,
+            archived: input.archived,
           }),
         };
       }),

@@ -350,6 +350,38 @@ suite("jobs scoped views", () => {
     expect(c.needsSlot).toBe(0);
   });
 
+  /**
+   * "ALL" MUST MEAN ALL.
+   *
+   * The Jobs list sent `activeOnly` for its All chip, which excludes complete and canceled — so All
+   * reported 39 while the seven bands summed to 65, hiding Done and Done-not-billed from the chip
+   * that claimed to contain them. The Active/Archived toggle already separates the archive, so All
+   * within Active is "not archived" and nothing more.
+   */
+  it("excludeArchived counts every band except the archived one", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const { counts } = await caller.v1.jobs.viewCounts({ today: TODAY });
+    const bands = (["needsSlot", "late", "today", "week", "upcoming", "needsInvoice", "done"] as const)
+      .reduce((a, k) => a + counts[k], 0);
+
+    const all = await caller.v1.jobs.count({ excludeArchived: true, today: TODAY });
+    expect(all.total).toBe(bands);
+
+    // And it is strictly larger than activeOnly, which is what made All understate itself.
+    const openOnly = await caller.v1.jobs.count({ activeOnly: true });
+    expect(all.total).toBeGreaterThanOrEqual(openOnly.total);
+    expect(all.total).toBe(openOnly.total + counts.done + counts.needsInvoice);
+
+    // The archived band is genuinely excluded.
+    const everything = await caller.v1.jobs.count({});
+    expect(everything.total).toBe(all.total + counts.archived);
+  });
+
+  it("rejects excludeArchived without today — the predicate is date-relative", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    await expect(caller.v1.jobs.count({ excludeArchived: true })).rejects.toThrow();
+  });
+
   it("pins the archive cutoff — moving it silently shifts jobs between Done and Archived", () => {
     expect(ARCHIVE_AFTER_DAYS).toBe(7);
   });
