@@ -120,14 +120,15 @@ function MoneyCell({ row, col }: { row: MoneyRow; col: MoneyColKey }) {
 
 export interface MoneyTableProps {
   rows: MoneyRow[];
-  visibleCols: MoneyColKey[];
   armedCharge: string | null;
   cb: MoneyRowCallbacks;
   emptyState: React.ReactNode;
 }
 
-export function MoneyTable({ rows, visibleCols, armedCharge, cb, emptyState }: MoneyTableProps) {
-  const cols = MONEY_COL_ORDER.filter((c) => visibleCols.includes(c));
+export function MoneyTable({ rows, armedCharge, cb, emptyState }: MoneyTableProps) {
+  // Fixed. The column picker went with the Filters dropdown: five load-bearing columns is not a
+  // set worth hiding, and Status in particular is what the row's ACTION follows.
+  const cols = MONEY_COL_ORDER;
   return (
     <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
       <table className="list-tbl">

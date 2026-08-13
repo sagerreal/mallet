@@ -2,29 +2,24 @@
 
 /**
  * features/money/money-toolbar.tsx
- * The Money toolbar (Active/Archived toggle + search + Filters + Columns +
- * count) and its two panels. Presentational — the ledger owns the state.
+ * The Money toolbar — the Active/Archived set toggle, the search, and the "N of M" readout.
+ *
+ * Filters and Columns are gone, with both of their panels. Filters held a Status DROPDOWN carrying
+ * no numbers and answering one band per selection, so the fact that 240 invoices are overdue was
+ * two clicks away; MoneyBandFilter renders that as a chip row on the page instead. Columns picked
+ * from a set that is now fixed at five load-bearing columns — the same call Jobs and Customers made.
+ * Presentational — the ledger owns the state.
  */
 
 import { ViewToggle } from "@/components/shared/view-toggle";
-import { IST, type MoneyStatusKey } from "./money-derive";
-import { MONEY_COLS, MONEY_COL_ORDER, type MoneyColKey } from "./money-table";
-import { SelectMenu } from "@/components/ui/select-menu";
 
 export type MoneySet = "active" | "archived";
-
-const STATUS_FILTERS: readonly MoneyStatusKey[] = ["ready", "draft", "sent", "partial", "over", "paid"];
 
 export interface MoneyToolbarProps {
   moneySet: MoneySet;
   onMoneySet: (v: MoneySet) => void;
   q: string;
   onQ: (v: string) => void;
-  filtersOpen: boolean;
-  onToggleFilters: () => void;
-  colsOpen: boolean;
-  onToggleCols: () => void;
-  activeFilterCount: number;
   shown: number;
   total: number;
 }
@@ -34,11 +29,6 @@ export function MoneyToolbar({
   onMoneySet,
   q,
   onQ,
-  filtersOpen,
-  onToggleFilters,
-  colsOpen,
-  onToggleCols,
-  activeFilterCount,
   shown,
   total,
 }: MoneyToolbarProps) {
@@ -64,67 +54,9 @@ export function MoneyToolbar({
           onChange={(e) => onQ(e.target.value)}
         />
       </div>
-      <button
-        className={`btn${filtersOpen || activeFilterCount > 0 ? "" : " ghost"}`}
-        aria-expanded={filtersOpen}
-        onClick={onToggleFilters}
-      >
-        Filters
-        {activeFilterCount > 0 && (
-          <span className="pill amber" style={{ marginLeft: "var(--space-2xs)" }}>
-            {activeFilterCount}
-          </span>
-        )}
-      </button>
-      <button className="btn ghost cols-btn" aria-expanded={colsOpen} onClick={onToggleCols}>
-        Columns ▾
-      </button>
       <span className="muted" style={{ marginLeft: "auto" }}>
         {shown} of {total}
       </span>
-    </div>
-  );
-}
-
-export function MoneyColumnsPanel({ visible, onToggle }: { visible: MoneyColKey[]; onToggle: (k: MoneyColKey) => void }) {
-  return (
-    <div className="fpanel" style={{ gap: "var(--space-2)" }}>
-      {MONEY_COL_ORDER.map((c) => (
-        <label key={c} className="colchk">
-          <input type="checkbox" checked={visible.includes(c)} onChange={() => onToggle(c)} />
-          {MONEY_COLS[c].l}
-        </label>
-      ))}
-    </div>
-  );
-}
-
-export function MoneyFiltersPanel({
-  statusFilter,
-  onStatus,
-  onClear,
-}: {
-  statusFilter: string;
-  onStatus: (v: string) => void;
-  onClear: () => void;
-}) {
-  return (
-    <div className="fpanel">
-      <div className="field">
-        <label htmlFor="money-filter-status">Status</label>
-        <SelectMenu
-          value={statusFilter}
-          onChange={onStatus}
-          options={[{ value: "", label: "Any" }, ...STATUS_FILTERS.map((k) => ({ value: k, label: IST[k]?.l ?? k }))]}
-          aria-label="Status"
-          compact
-        />
-      </div>
-      <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center" }}>
-        <span className="linklike" onClick={onClear}>
-          Clear all
-        </span>
-      </div>
     </div>
   );
 }
