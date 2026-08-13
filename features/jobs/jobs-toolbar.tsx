@@ -2,9 +2,13 @@
 
 /**
  * features/jobs/jobs-toolbar.tsx
- * The Jobs list toolbar — the Active/Archived set toggle + search + Filters +
- * Columns. The toggle picks which SET you're looking at (kept separate from the
- * Status filter, which narrows the active set). Pure presentational.
+ * The Jobs list toolbar — the Active/Archived set toggle, the search, and the "N of M" readout.
+ *
+ * Filters and Columns are gone. Filters opened the chip row, which now renders in the page
+ * unconditionally — a count pill on a button that opens the row it counts is a second, worse copy
+ * of the same fact. Columns picked from a set that is now fixed at four load-bearing columns.
+ * The toggle picks which SET you are looking at, kept separate from the chips, which narrow within
+ * the active set. Pure presentational.
  */
 
 import { ViewToggle } from "@/components/shared/view-toggle";
@@ -15,11 +19,6 @@ interface JobsToolbarProps {
   onArchiveSet: (v: JobsArchiveSet) => void;
   q: string;
   onQ: (v: string) => void;
-  filtersOpen: boolean;
-  onToggleFilters: () => void;
-  colsOpen: boolean;
-  onToggleCols: () => void;
-  activeFilterCount: number;
   total: number;
   shown: number;
 }
@@ -29,11 +28,6 @@ export function JobsToolbar({
   onArchiveSet,
   q,
   onQ,
-  filtersOpen,
-  onToggleFilters,
-  colsOpen,
-  onToggleCols,
-  activeFilterCount,
   total,
   shown,
 }: JobsToolbarProps) {
@@ -59,21 +53,6 @@ export function JobsToolbar({
           onChange={(e) => onQ(e.target.value)}
         />
       </div>
-      <button
-        className={`btn${filtersOpen || activeFilterCount > 0 ? "" : " ghost"}`}
-        aria-expanded={filtersOpen}
-        onClick={onToggleFilters}
-      >
-        Filters
-        {activeFilterCount > 0 && (
-          <span className="pill amber" style={{ marginLeft: "var(--space-1)" }}>
-            {activeFilterCount}
-          </span>
-        )}
-      </button>
-      <button className="btn ghost cols-btn" aria-expanded={colsOpen} onClick={onToggleCols}>
-        Columns ▾
-      </button>
       <span className="muted" style={{ marginLeft: "auto" }}>
         {shown} of {total}
       </span>

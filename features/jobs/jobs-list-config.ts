@@ -1,41 +1,12 @@
 /**
  * features/jobs/jobs-list-config.ts
- * Static config for the Jobs list toolbar: which columns can be toggled, and the
- * Status filter options mapped to lifecycle band keys. Customer/Job is a fixed
- * column (always shown); the rest are optional. "Archived" is a special status
- * that swaps the list over to the archived jobs.
+ * Which SET of jobs the list shows — the active work, or the archive.
+ *
+ * This file used to also carry the column picker's config and a JOB_STATUS_FILTERS table. The
+ * picker went when the Status column did (four load-bearing columns is not a set worth hiding),
+ * and JOB_STATUS_FILTERS was already dead — declared, never imported. The chips read JOB_VIEWS
+ * from modules/jobs/infra/job-views.ts, which is where the bands are actually defined.
  */
 
-import type { BandKey } from "./today-derive";
-
-export type JobColKey = "status" | "when" | "crew" | "amount";
-
-export const JOB_COLS: Record<JobColKey, { label: string; right?: boolean }> = {
-  status: { label: "Status" },
-  when: { label: "When" },
-  crew: { label: "Crew" },
-  amount: { label: "Amount", right: true },
-};
-
-export const JOB_COL_ORDER: readonly JobColKey[] = ["status", "when", "crew", "amount"];
-export const DEFAULT_JOB_COLS: readonly JobColKey[] = ["status", "when", "crew", "amount"];
-
-/** Which set of jobs the list shows — the active work, or the archive. Chosen by
- *  the toolbar toggle, kept separate from the Status filter (which narrows active). */
+/** Chosen by the toolbar toggle, kept separate from the chips, which narrow the active set. */
 export type JobsArchiveSet = "active" | "archived";
-
-export interface JobStatusFilter {
-  value: string;
-  label: string;
-  /** Active-band keys this status maps to. */
-  keys: BandKey[];
-}
-
-/** Status filter options — narrow the ACTIVE list only (Archived is the toggle). */
-export const JOB_STATUS_FILTERS: readonly JobStatusFilter[] = [
-  { value: "needsSlot", label: "Needs a slot", keys: ["needsSlot"] },
-  { value: "today", label: "Today", keys: ["today"] },
-  { value: "scheduled", label: "Scheduled", keys: ["thisWeek", "later"] },
-  { value: "doneUnbilled", label: "Done, not billed", keys: ["doneUnbilled"] },
-  { value: "done", label: "Done", keys: ["done"] },
-];
