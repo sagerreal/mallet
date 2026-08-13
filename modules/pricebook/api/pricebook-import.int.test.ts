@@ -150,6 +150,35 @@ suite("pricebook tRPC router — CSV import (full stack, live RLS)", () => {
     expect(services.items.filter((s) => s.name === heaterName)).toHaveLength(1);
   });
 
+  it("imports a material whose price cell is blank instead of rejecting the whole batch", async () => {
+    // A blank Sell Price is legitimate: absent means "let the markup rule derive it". The engine
+    // renders that as unitPriceCents: null, but the input declared .optional() (not nullable), so
+    // ONE blank price cell 400'd the entire 500-row chunk — valid rows included — and the modal
+    // printed the raw Zod issue array at the user.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const suffix = randomUUID().slice(0, 8);
+    const pricedName = `Copper Elbow ${suffix}`;
+    const blankName = `Copper Tee ${suffix}`;
+
+    const result = await caller.v1.pricebook.importMaterials({
+      rows: [
+        { name: pricedName, category: null, description: null, code: null, vendor: null,
+          unitCostCents: 435, unitPriceCents: 900, unitOfMeasure: "each", taxable: true },
+        // The blank cell — engine output, verbatim.
+        { name: blankName, category: null, description: null, code: null, vendor: null,
+          unitCostCents: 512, unitPriceCents: null, unitOfMeasure: "each", taxable: true },
+      ],
+    });
+
+    expect(result.created).toBe(2); // the priced row is NOT collateral damage
+
+    const materials = await caller.v1.pricebook.material.list({ search: blankName });
+    const blank = materials.items.find((m) => m.name === blankName);
+    expect(blank).toBeDefined();
+    // Absent price means the markup rule decides — the row must not be pinned to $0.
+    expect(blank?.unitPriceCents ?? null).not.toBe(0);
+  });
+
   it("tenant isolation: importing into org A creates nothing visible to org B", async () => {
     const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));

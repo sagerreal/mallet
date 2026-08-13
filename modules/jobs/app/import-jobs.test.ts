@@ -51,6 +51,30 @@ describe("ImportJobsUseCase", () => {
     expect(createJob.exec.mock.calls[0]![0]).toMatchObject({ kind: "work" });
   });
 
+  it("titles the job from the Service column instead of leaving every import called 'Job'", async () => {
+    // title was hard-coded null, and both mappers render `dto.title ?? "Job"` — so a 200-row
+    // import produced 200 rows all reading "Job", with the service text sitting unused in svc.
+    await run([row({ svc: "Water heater swap" })]);
+    expect(createJob.exec.mock.calls[0]![0]).toMatchObject({ title: "Water heater swap" });
+  });
+
+  it("falls back to the scope text when the sheet has no Service column", async () => {
+    await run([row({ svc: null, scope: "Replace pressure valve, garage" })]);
+    expect(createJob.exec.mock.calls[0]![0]).toMatchObject({ title: "Replace pressure valve, garage" });
+  });
+
+  it("leaves the title unset when the row says nothing either way", async () => {
+    await run([row({ svc: "   ", scope: null })]);
+    expect(createJob.exec.mock.calls[0]![0]).toMatchObject({ title: null });
+  });
+
+  it("titles an estimate row before normalizeSvcKind nulls its svc", async () => {
+    // create-manual-job nulls svc when it reads "estimate", so a title derived downstream would
+    // be lost for exactly those rows.
+    await run([row({ svc: "Estimate", scope: "Roof drain survey" })]);
+    expect(createJob.exec.mock.calls[0]![0]).toMatchObject({ title: "Estimate" });
+  });
+
   it("leaves an undated row unscheduled rather than dropping it", async () => {
     const result = await run([row({ scheduledDate: null })]);
     expect(result.ok && result.value.created).toBe(1);

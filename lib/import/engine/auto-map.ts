@@ -61,7 +61,27 @@ export function autoMap(headers: readonly string[], descriptor: ImportDescriptor
 
   const targets = claimablesOf(descriptor.fields).sort((a, b) => specificity(b) - specificity(a));
 
+  // TWO PASSES. findHeader matches by substring, which is what lets "Customer First Name" find
+  // `name` — but it also let `unitOfMeasure`, whose synonyms include a bare "unit", swallow a
+  // supplier's "Unit Cost" column before `unitCostCents` was ever offered it. The cost then
+  // mapped to nothing and every material imported at $0, reported as a success.
+  //
+  // So: pass 1 hands out only headers that ARE a synonym, exactly. A header that names a field
+  // outright belongs to that field, whatever some other field's substring would also match.
+  // Pass 2 is the original substring sweep over whatever is still unclaimed, so "Material Unit"
+  // and friends still land.
   for (const target of targets) {
+    const exact = headers.find(
+      (h) => !claimed.has(h) && target.synonyms.includes(h.toLowerCase()),
+    );
+    if (exact) {
+      claimed.add(exact);
+      mapping[target.key] = exact;
+    }
+  }
+
+  for (const target of targets) {
+    if (mapping[target.key]) continue;
     const header = findHeader(headers, target.synonyms, claimed);
     if (header) claimed.add(header);
     mapping[target.key] = header;
