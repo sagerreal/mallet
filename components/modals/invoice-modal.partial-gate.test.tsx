@@ -23,9 +23,9 @@ let queryState: { data: unknown; isError: boolean } = { data: undefined, isError
 let lastQueryOpts: { enabled?: boolean } | undefined;
 
 vi.mock("@/lib/store/app-store", () => ({
-  // The record trail navigates with these. Stubs: these tests assert the sheet's own body.
+  // The record trail navigates with this. A stub: these tests assert the sheet's own body.
+  // (useCloseModal is already mocked below — a second key here is a duplicate tsc rejects.)
   useOpenModal: () => vi.fn(),
-  useCloseModal: () => vi.fn(),
   useActiveModal: () => ({ id: "invoice", params: { invoiceId: "inv-1" } }),
   useCloseModal: () => noop,
   usePushModal: () => noop,
