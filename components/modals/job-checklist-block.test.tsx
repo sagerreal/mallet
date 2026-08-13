@@ -326,3 +326,40 @@ describe("JobChecklistBlock — attached view", () => {
     );
   });
 });
+
+describe("JobChecklistBlock — the two ways \"Couldn't save the checklist\" happened", () => {
+  it("names the over-long line instead of sending it and reporting 'try again'", async () => {
+    // The server caps an item at 500 characters. With no client guard the whole checklist was
+    // rejected with a raw 400 and the office was told only to try again — the one thing that
+    // could never work.
+    openPanel();
+    paste(`ok line\n${"x".repeat(520)}`);
+    fireEvent.click(screen.getByText("Add to job"));
+
+    await waitFor(() => expect(screen.getByText(/Line 2 is 20 characters too long/)).toBeTruthy());
+    expect(h.state.addChecklist).not.toHaveBeenCalled();
+    expect(h.state.updateJob).not.toHaveBeenCalled();
+  });
+
+  it("offers no way in on a finished job, instead of a control that can only fail", () => {
+    // Every checklist write 400s on a completed job ("cannot edit a completed or canceled job").
+    // The opener used to be offered anyway: it saved a template, failed the attach, wiped the
+    // typed text, and left one orphan template behind per retry.
+    render(<JobChecklistBlock job={makeJob({ status: "complete" })} />);
+
+    expect(screen.queryByText("+ Add a checklist")).toBeNull();
+    expect(screen.getByText(/reopen it to add one/)).toBeTruthy();
+  });
+
+  it("hides Remove on a finished job that already has a checklist", () => {
+    const job = makeJob({
+      status: "complete",
+      checklist: { name: "Close out", items: [{ id: "i1", text: "Photo of the panel", type: "photo", required: true, position: 0 }] },
+    });
+    render(<JobChecklistBlock job={job} />);
+
+    // The list still READS — it just can't be written to any more.
+    expect(screen.getByText("Photo of the panel")).toBeTruthy();
+    expect(screen.queryByText("Remove")).toBeNull();
+  });
+});
