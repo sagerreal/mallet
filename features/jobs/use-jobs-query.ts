@@ -33,13 +33,13 @@ export interface JobsQueryState {
   readonly sort: JobSort | null;
   readonly sortDir: "asc" | "desc" | null;
   /**
-   * Open work only — everything except complete and canceled. What the Active tab MEANS.
+   * Everything bar the auto-archived band — what "All" means.
    *
-   * It had no predicate behind it at all: "Active" left the view null and the repository filtered
-   * nothing but deleted_at, so Active and Archived returned the same 1,528 rows and the header
-   * counted the whole book on both.
+   * "All" used to send activeOnly, which excludes ALL finished work: the chip read 39 while the
+   * bands summed to 65, hiding Done (14) and Done-not-billed (12). The Active/Archived toggle
+   * already separates the archive, so All within Active means "not archived" and nothing more.
    */
-  readonly activeOnly: boolean;
+  readonly excludeArchived: boolean;
 }
 
 /** Today in the browser's own timezone — never toISOString(), which is UTC and shifts the day. */
@@ -60,7 +60,7 @@ export function useJobsQuery(state: JobsQueryState) {
     limit: PAGE_SIZE,
     today,
     ...(state.view ? { view: state.view } : {}),
-    ...(state.activeOnly ? { activeOnly: true } : {}),
+    ...(state.excludeArchived ? { excludeArchived: true, today } : {}),
     ...(search ? { search } : {}),
     ...(state.sort ? { sort: state.sort } : {}),
     ...(state.sortDir ? { sortDir: state.sortDir } : {}),
@@ -76,7 +76,7 @@ export function useJobsQuery(state: JobsQueryState) {
    */
   const countArgs = {
     ...(search ? { search } : {}),
-    ...(state.activeOnly ? { activeOnly: true } : {}),
+    ...(state.excludeArchived ? { excludeArchived: true, today } : {}),
     ...(state.view ? { view: state.view, today } : {}),
   };
 

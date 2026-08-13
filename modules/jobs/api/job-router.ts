@@ -78,8 +78,9 @@ const fromEstimateInput = z.object({ estimateId: z.string().uuid() });
  * the filter — which is what the repository does when `today` is missing — returns the whole book
  * wearing a filtered label, so the boundary rejects it instead.
  */
-const requiresTodayWithView = <T extends { view?: string; today?: string }>(i: T): boolean =>
-  !i.view || Boolean(i.today);
+const requiresTodayWithView = <T extends { view?: string; today?: string; excludeArchived?: boolean }>(
+  i: T,
+): boolean => (!i.view && !i.excludeArchived) || Boolean(i.today);
 // A fresh object per call: zod stores the `path` array it is handed, and sharing one mutable array
 // between two schemas is how a later zod version quietly reports the error on the wrong field.
 const todayRequired = () => ({
@@ -97,6 +98,8 @@ const listInput = z.object({
    * what the nav badge counts. Not expressible as `status`, which is a single value.
    */
   activeOnly: z.boolean().optional(),
+  /** Everything bar the auto-archived band — the Jobs list's "All". Needs `today`. */
+  excludeArchived: z.boolean().optional(),
   /**
    * Named sort — never a column name. A client-supplied column is an injection surface and it
    * welds the public API to the table layout. Absent keeps the historical newest-first order, so
@@ -393,6 +396,7 @@ export const createJobRouter = () =>
           filter: {
             status: input.status,
             activeOnly: input.activeOnly,
+            excludeArchived: input.excludeArchived,
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
             search: input.search,
             view: input.view,
@@ -527,6 +531,8 @@ export const createJobRouter = () =>
             search: z.string().trim().min(1).max(200).optional(),
             /** Open jobs only — excludes complete and canceled. What the nav badge means. */
             activeOnly: z.boolean().optional(),
+            /** Everything bar the auto-archived band — the Jobs list's "All". Needs `today`. */
+            excludeArchived: z.boolean().optional(),
             /**
              * The same scoped view the list is showing.
              *
@@ -548,6 +554,7 @@ export const createJobRouter = () =>
             assigneeUserId: input.assigneeUserId ? asUserId(input.assigneeUserId) : undefined,
             search: input.search,
             activeOnly: input.activeOnly,
+            excludeArchived: input.excludeArchived,
             view: input.view,
             today: input.today,
           }),

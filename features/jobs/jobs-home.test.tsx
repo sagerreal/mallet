@@ -139,29 +139,30 @@ describe("JobsHome — first-run empty state", () => {
 describe("JobsHome — the Active/Archived toggle actually filters", () => {
   beforeEach(() => { listState = list([{ id: "j1" }]); queryState = freshQueryState(); vi.clearAllMocks(); });
 
-  it("asks for OPEN work only on the Active tab", () => {
-    // The bug: "Active" set no filter at all, so the tab was a label with nothing behind it —
-    // done, canceled and archived jobs all sat in the "active" list and the header counted the
-    // whole book on both tabs.
+  it("asks for everything-but-archived on the Active tab", () => {
+    // "All" used to send activeOnly, which excludes ALL finished work — so the chip read 39 while
+    // the seven bands summed to 65, hiding Done (14) and Done-not-billed (12) from the chip that
+    // claimed to contain them. The Active/Archived toggle already separates the archive.
     setup();
-    expect(lastQueryArgs.activeOnly).toBe(true);
+    expect(lastQueryArgs.excludeArchived).toBe(true);
     expect(lastQueryArgs.view).toBeNull();
   });
 
-  it("drops activeOnly on the Archived tab and asks for the archived view", () => {
+  it("drops it on the Archived tab and asks for the archived view", () => {
     setup();
     fireEvent.click(screen.getByText("toggle-set"));
     expect(lastQueryArgs.view).toBe("archived");
-    expect(lastQueryArgs.activeOnly).toBe(false);
+    expect(lastQueryArgs.excludeArchived).toBe(false);
   });
 
-  it("does not stack activeOnly on a chosen view", () => {
-    // Done and Done-not-billed are finished work by definition. ANDing "not finished" on top would
-    // return zero rows while the filter's count pill promised some — a dead control.
+  it("does not stack it on a chosen view", () => {
+    // Each view is already a precise slice, and two of them are finished work by definition. ANDing
+    // "not archived" on top would return zero rows while the chip's count promised some — a dead
+    // control. Archived is a view too, so it is covered by the same rule.
     queryState = freshQueryState({ view: "done" });
     setup();
     expect(lastQueryArgs.view).toBe("done");
-    expect(lastQueryArgs.activeOnly).toBe(false);
+    expect(lastQueryArgs.excludeArchived).toBe(false);
   });
 });
 

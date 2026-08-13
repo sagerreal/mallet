@@ -33,7 +33,7 @@ const state = (over: Partial<JobsQueryState> = {}): JobsQueryState => ({
   search: "",
   sort: null,
   sortDir: null,
-  activeOnly: false,
+  excludeArchived: false,
   ...over,
 });
 
@@ -49,24 +49,29 @@ const run = (s: JobsQueryState) => {
   };
 };
 
-describe("useJobsQuery — the Active filter reaches the server", () => {
+describe("useJobsQuery — the All filter reaches the server", () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it("sends activeOnly on BOTH the page and the total", () => {
-    const { list, count } = run(state({ activeOnly: true }));
-    expect(list.activeOnly).toBe(true);
-    expect(count.activeOnly).toBe(true);
+  it("sends excludeArchived on BOTH the page and the total, with today", () => {
+    // "All" means everything the archive does not already hold. It used to send activeOnly, which
+    // excludes ALL finished work — so All read 39 while the seven bands summed to 65.
+    const { list, count } = run(state({ excludeArchived: true }));
+    expect(list.excludeArchived).toBe(true);
+    expect(count.excludeArchived).toBe(true);
+    // The archived predicate is date-relative, so it cannot be evaluated without the client's day.
+    expect(list.today).toBe(localToday());
+    expect(count.today).toBe(localToday());
   });
 
-  it("omits activeOnly entirely when the tab is not Active", () => {
+  it("omits excludeArchived entirely when a band is chosen", () => {
     // Absent, not `false`: an explicitly false flag is a different cache key for the same question.
-    const { list, count } = run(state({ activeOnly: false }));
-    expect("activeOnly" in list).toBe(false);
-    expect("activeOnly" in count).toBe(false);
+    const { list, count } = run(state({ excludeArchived: false }));
+    expect("excludeArchived" in list).toBe(false);
+    expect("excludeArchived" in count).toBe(false);
   });
 
   it("counts the same SET the page shows when a view is selected", () => {
-    const { list, count } = run(state({ view: "done", activeOnly: false }));
+    const { list, count } = run(state({ view: "done", excludeArchived: false }));
     expect(list.view).toBe("done");
     expect(count.view).toBe("done");
     // The date-relative views cannot be evaluated without the client's local date, and the server
@@ -75,16 +80,16 @@ describe("useJobsQuery — the Active filter reaches the server", () => {
   });
 
   it("carries the search into both, as it always did", () => {
-    const { list, count } = run(state({ search: "  heater  ", activeOnly: true }));
+    const { list, count } = run(state({ search: "  heater  ", excludeArchived: true }));
     expect(list.search).toBe("heater");
     expect(count.search).toBe("heater");
-    expect(count.activeOnly).toBe(true);
+    expect(count.excludeArchived).toBe(true);
   });
 
   it("leaves the unfiltered BOOK count unfiltered — it is the first-run gate", () => {
     // Gating first-run on the filtered total told a shop with hundreds of jobs "No jobs yet" the
     // moment a search matched nothing.
-    const { bookCount } = run(state({ activeOnly: true, search: "heater", view: "done" }));
+    const { bookCount } = run(state({ excludeArchived: true, search: "heater", view: "done" }));
     expect(bookCount).toEqual({});
   });
 });
