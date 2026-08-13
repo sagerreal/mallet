@@ -415,7 +415,10 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     kind: dto.kind,
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
-    cust: dto.customerName ?? "",
+    // `cust` is DELIBERATELY absent here. The full jobDTO carries no customerName — only
+    // jobSummaryDTO (the list read) does, and giving 19 toJobDTO call sites a lead lookup to
+    // populate a field only the list renders is the wrong trade. mergeIncomingJob carries the
+    // hydrated name forward instead, the same way withExecution carries lines forward.
     addr: dto.addr ?? "",
     phone: dto.phone ?? "",
     status,

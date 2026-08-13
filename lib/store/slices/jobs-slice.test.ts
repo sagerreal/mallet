@@ -2023,6 +2023,85 @@ describe("execution merge guard (a lines-less record cannot un-price a job)", ()
 });
 
 /**
+ * THE CUSTOMER COLUMN MUST SURVIVE A WRITE.
+ *
+ * Only the LIST read resolves the customer's name (jobSummaryDTO.customerName). The full jobDTO
+ * every mutation returns has no such field, and mergeIncomingJob starts from `incoming` — so
+ * without a guard, rescheduling a job or marking it done would blank `cust` and the Jobs list would
+ * revert that row's customer to "—" for every lead sitting past the leads hydrator's page. Exactly
+ * the bug the name was added to fix, reintroduced one write later.
+ */
+describe("customer-name merge guard (a mutation response cannot blank the customer column)", () => {
+  /** A v1.jobs.list row as the wire sends it, through the hydrator's own mapper. */
+  const row = (id: string, customerName: string | null) =>
+    ({
+      ...toStoreJob({
+        id,
+        num: "JOB-9",
+        leadId: "lead-past-the-page",
+        customerName,
+        sourceEstimateId: null,
+        title: "Water heater",
+        svc: "service",
+        kind: "work",
+        status: "scheduled",
+        assigneeUserId: null,
+        scheduledStart: null,
+        total: { cents: 0, currency: "USD" },
+        notes: "",
+        addr: "",
+        phone: "",
+        completion: null,
+        invRequested: false,
+        scope: null,
+        callbackOf: null,
+        callbackReason: null,
+        checklist: null,
+        requiredCerts: null,
+        visits: [],
+        createdAt: "2026-08-04T22:35:40.743Z",
+        lines: [],
+        addons: [],
+        verifyAnswers: [],
+        photos: [],
+      } as never),
+      origin: "db" as const,
+    });
+
+  it("keeps the resolved name when a mutation response carries none", async () => {
+    const visitId = "aaaaaaaa-0000-0000-0000-00000000e777";
+    mockSetVisitStatus.mockResolvedValue(
+      makeJobDTO("j-name", { status: "complete", visits: [makeVisitDTO(visitId, { status: "complete" })] }),
+    );
+    const { get } = makeStore();
+    get().setJobs([
+      { ...row("j-name", "Ruth Whitaker"), visits: [{ id: visitId, date: null, techId: null, start: null, dur: 2, status: "scheduled" }] },
+    ]);
+
+    get().setVisitStatus("j-name", visitId, "done", "office");
+    await flush();
+
+    expect(mockSetVisitStatus).toHaveBeenCalled();
+    expect(get().jobs[0]!.cust).toBe("Ruth Whitaker");
+  });
+
+  it("keeps it across a list refetch whose row resolved to nothing", () => {
+    // The join can miss. An empty name must not overwrite a good one.
+    const { get } = makeStore();
+    get().setJobs([row("j-name", "Ruth Whitaker")]);
+    get().setJobs([row("j-name", null)]);
+    expect(get().jobs[0]!.cust).toBe("Ruth Whitaker");
+  });
+
+  it("lets a real RENAME through — the guard is not a ratchet", () => {
+    const { get } = makeStore();
+    get().setJobs([row("j-name", "Ruth Whitaker")]);
+    get().setJobs([row("j-name", "Ruth Whitaker-Doyle")]);
+    expect(get().jobs[0]!.cust).toBe("Ruth Whitaker-Doyle");
+  });
+});
+
+/**
  * THE OPTIMISTIC STATUS MUST AGREE WITH THE SERVER'S.
  *
  * set-visit-status.ts derives the job from EVERY ACTIVE visit: "every active (non-canceled) visit
