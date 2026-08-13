@@ -35,6 +35,8 @@ export interface HoursSummaryProps {
   readonly rulePhrase: string;
   /** ISO dates with evidence of work and no hours recorded. */
   readonly missingDays: readonly string[];
+  /** False when the shop keeps changes with the office — then "add the hours" is not on offer. */
+  readonly canEditOwnTimes: boolean;
 }
 
 /** One cell. Kept local: three cells with one shape is the whole point of the strip. */
@@ -74,6 +76,7 @@ export function HoursSummary({
   weeklyThresholdHours,
   rulePhrase,
   missingDays,
+  canEditOwnTimes,
 }: HoursSummaryProps) {
   // Capped at 100 so a 48-hour regular week (a full week plus a paid holiday) does not draw a bar
   // past its own track. The FIGURE stays uncapped — the bar is the only thing that has an end.
@@ -95,7 +98,9 @@ export function HoursSummary({
         sub={
           missingDays.length === 0
             ? "Every day you worked is reported."
-            : `${missingDays.map(shortDayLabel).join(", ")} — add the hours or tell the office.`
+            : `${missingDays.map(shortDayLabel).join(", ")} — ${
+                canEditOwnTimes ? "add the hours or tell the office." : "tell the office."
+              }`
         }
       />
     </div>

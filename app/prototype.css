@@ -1796,6 +1796,12 @@
   /* In the register the reason is a quiet LINE, not a tinted band: `.mh-lock`'s --paper fill made a
      full-width block inside the card, and on a running row (every crew, every afternoon) that block
      shouted louder than the shift it belongs to. */
+  /* the day-off row: its kind spans the four clock columns it has no use for */
+  .sh-span{grid-column:2/6;display:flex;align-items:center;gap:var(--space-3)}
+  .sh-off{font-size:var(--type-base);font-weight:700;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3)}
+  .sh-off-note{font-size:var(--type-sm);color:var(--ink-3)}
+  /* stated once, where the write controls would have been */
+  .mh-officeonly{margin:0 0 var(--space-3);font-size:var(--type-base);color:var(--ink-2);background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3)}
   .sh-lock{background:none;padding:0;margin:0 var(--space-6) var(--space-3);font-size:var(--type-sm);color:var(--ink-3)}
   /* the row's parts, IN FLOW under it (the DAY TOTAL expander's grammar, never a popover) */
   .sh-detail{border-top:1px solid var(--line);background:var(--card);padding:0 var(--space-6) var(--space-3)}

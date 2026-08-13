@@ -24,6 +24,9 @@ export interface UnreportedDayCardProps {
   readonly firstStampAt: string | null;
   readonly lastStampAt: string | null;
   readonly busy: boolean;
+  /** False when the shop keeps timesheet changes with the office — then this is a NOTICE, not an
+   *  offer, because both buttons write hours the server would refuse. */
+  readonly canRecord: boolean;
   /** Writes the suggested range as one worked entry. Only offered when both stamps exist. */
   readonly onAccept: (startTime: string, endTime: string) => void;
   /** Opens the ordinary add-hours form for this day, prefilled with nothing. */
@@ -36,6 +39,7 @@ export function UnreportedDayCard({
   firstStampAt,
   lastStampAt,
   busy,
+  canRecord,
   onAccept,
   onEnterOwn,
 }: UnreportedDayCardProps) {
@@ -61,6 +65,7 @@ export function UnreportedDayCard({
         {visits} {visits === 1 ? "visit is" : "visits are"} stamped to you that day
         {canSuggest ? ` · first ${clockLabel(first)}, last ${clockLabel(last)}` : ""}.
       </span>
+      {canRecord ? (
       <div className="mh-unreported-acts">
         {canSuggest ? (
           <Button size="sm" disabled={busy} onClick={() => onAccept(first, last)}>
@@ -71,6 +76,9 @@ export function UnreportedDayCard({
           Enter my own hours
         </Button>
       </div>
+      ) : (
+        <span className="muted">Ask the office to add this day.</span>
+      )}
     </div>
   );
 }

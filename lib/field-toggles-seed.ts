@@ -26,8 +26,18 @@ export interface OvertimePolicySeed {
   readonly dailyThresholdMinutes: number | null;
 }
 
+/**
+ * May a technician hand-edit his own hours on this account, or could the server not find out?
+ *
+ * "unknown" fails CLOSED, like `canText`, and for a sharper reason: the server refuses the write
+ * either way (`assertTechMayEditTimes`), so a pencil drawn on a shop that keeps hand edits off is a
+ * button whose only possible outcome is an error message.
+ */
+export type TechEditsSeed = "yes" | "no" | "unknown";
+
 export interface FieldTogglesSeed {
   readonly measurement: MeasurementGate;
   readonly canText: CanTextSeed;
   readonly overtime: OvertimePolicySeed | null;
+  readonly techEdits: TechEditsSeed;
 }

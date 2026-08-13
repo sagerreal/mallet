@@ -41,6 +41,12 @@ let meUserId: string | undefined;
 let unreportedQuery: { data?: { items: unknown[] }; refetch: () => void };
 let visitStampsQuery: { data?: { items: unknown[] } };
 /** The shop's overtime rule, as the field surface reads it. Federal unless a test says otherwise. */
+/**
+ * Does the ORG let technicians correct their own hours? Defaults OFF in production (#457, the
+ * Housecall Pro model), but most of this file exercises the correction paths, so it is ON here and
+ * the off case has its own describe block at the foot.
+ */
+let techEditsTimes = true;
 let overtimePolicy: { weeklyThresholdMinutes: number; dailyThresholdMinutes: number | null } = {
   weeklyThresholdMinutes: 2400,
   dailyThresholdMinutes: null,
@@ -57,7 +63,9 @@ vi.mock("@/lib/trpc/client", () => ({
       // The field surface's only settings read — punch clock vs sheet. Defaults on.
       settings: {
         fieldToggles: {
-          useQuery: () => ({ data: { timesheetClock: true, overtime: overtimePolicy } }),
+          useQuery: () => ({
+            data: { timesheetClock: true, overtime: overtimePolicy, techEditsTimes },
+          }),
         },
       },
       field: {
@@ -107,6 +115,7 @@ beforeEach(() => {
   updateError = null;
   unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
   visitStampsQuery = { data: { items: [] } };
+  techEditsTimes = true;
   meUserId = ME;
   withEntries([]);
 });
@@ -396,6 +405,7 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     updateError = null;
     unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
     visitStampsQuery = { data: { items: [] } };
+    techEditsTimes = true;
     listQuery = {
       data: { items: tenHourWeek(), nextCursor: null },
       isFetched: true,
@@ -477,5 +487,64 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     expect(regularCell().textContent).toContain("44h");
     expect(regularCell().textContent).toContain("of a 44h week");
     expect(overtimeCell().textContent).toContain("6h");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ORG RULE, on the whole page. "Techs can edit their own times" defaults OFF (#457). The server
+// has always refused these writes; this page went on offering them, so every control here could
+// only ever produce an error message.
+// ---------------------------------------------------------------------------
+
+describe("a shop that keeps timesheet changes with the office", () => {
+  beforeEach(() => {
+    techEditsTimes = false;
+    withEntries([entry({ id: "mine", startTime: "08:00", endTime: "16:00" })]);
+  });
+
+  it("offers no way to add hours", () => {
+    render(<MyHoursPage />);
+    expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
+  });
+
+  it("says WHO to ask instead of just removing the buttons", () => {
+    // A control that vanishes without explanation reads as a broken app, on the screen where he is
+    // already worried about his pay.
+    render(<MyHoursPage />);
+    expect(screen.getByText(/office/i)).toBeTruthy();
+  });
+
+  it("still shows him his hours — reading his own timesheet is never gated", () => {
+    render(<MyHoursPage />);
+    expect(screen.getByText(/8\.00/)).toBeTruthy();
+  });
+
+  it("turns the unreported-day card into a notice rather than two write buttons", () => {
+    unreportedQuery = {
+      data: {
+        items: [
+          {
+            userId: ME,
+            date: TODAY,
+            visits: 2,
+            firstStampAt: new Date(`${TODAY}T08:05:00`).toISOString(),
+            lastStampAt: new Date(`${TODAY}T16:20:00`).toISOString(),
+          },
+        ],
+      },
+      refetch: vi.fn(),
+    };
+    render(<MyHoursPage />);
+
+    expect(screen.queryByRole("button", { name: /^Add 8:05a/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Enter my own hours" })).toBeNull();
+    expect(screen.getByText("Ask the office to add this day.")).toBeTruthy();
+  });
+
+  it("shows the first-run screen without a dead action", () => {
+    withEntries([]);
+    render(<MyHoursPage />);
+    expect(screen.getByText("No hours yet")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
   });
 });

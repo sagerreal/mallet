@@ -42,6 +42,7 @@ import { HoursSheet } from "@/features/field/hours-sheet";
 import { UnreportedDayCard } from "@/features/field/unreported-day-card";
 import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
+import { useTechEditsTimes } from "@/features/settings/use-tech-edits-times";
 import { weekSummary, type OvertimePolicy } from "@/features/field/hours-sheet-derive";
 import { StillOpenBanner } from "@/features/field/my-hours-still-open";
 import { AddBlockForm } from "@/features/field/my-hours-add-block";
@@ -63,7 +64,18 @@ function Screen({ children }: { children: ReactNode }) {
 const EMPTY_STANDARD: ReadonlyMap<string, number | null> = new Map();
 
 /** Nothing has ever been recorded for this technician — an invitation to act, not a dead end. */
-function NoHoursYet({ onAdd }: { onAdd: () => void }) {
+function NoHoursYet({ onAdd }: { onAdd: (() => void) | null }) {
+  // With hand edits off there is nothing to offer, so the screen explains where hours come from and
+  // who to ask instead of showing a button whose only outcome is a refusal.
+  if (onAdd === null) {
+    return (
+      <FirstRunEmptyState
+        heading="No hours yet"
+        subtext="Hours are recorded as you start your day and tap through your jobs. On this account the office keeps timesheet changes — ask them about anything missing."
+        paths={[]}
+      />
+    );
+  }
   return (
     <FirstRunEmptyState
       heading="No hours yet"
@@ -99,10 +111,12 @@ interface WeekViewProps {
   readonly onAcceptDay: (date: string, startTime: string, endTime: string) => void;
   readonly onEnterOwn: (date: string) => void;
   readonly overtimePolicy: OvertimePolicy;
+  /** Does the org let technicians correct their own hours? Default OFF (#457). */
+  readonly canEditOwnTimes: boolean;
 }
 
 /** The populated surface. Owns which week is shown and which row is open — nothing else needs it. */
-function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addButton, addForm, unreported, onAcceptDay, onEnterOwn, overtimePolicy }: WeekViewProps) {
+function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addButton, addForm, unreported, onAcceptDay, onEnterOwn, overtimePolicy, canEditOwnTimes }: WeekViewProps) {
   const [weekStartISO, setWeekStartISO] = useState(() => weekStart(today));
   const [editingId, setEditingId] = useState<string | null>(null);
   /**
@@ -164,6 +178,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         weeklyThresholdHours={overtimePolicy.weeklyThresholdMinutes / MINUTES_PER_HOUR}
         rulePhrase={summary.rulePhrase}
         missingDays={weekMissing.map((d) => d.date)}
+        canEditOwnTimes={canEditOwnTimes}
       />
       <HoursWeekNav
         weekStartISO={weekStartISO}
@@ -172,6 +187,12 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         onThisWeek={() => setWeekStartISO(weekStart(today))}
         actions={addButton}
       />
+      {canEditOwnTimes ? null : (
+        <p className="mh-officeonly">
+          Your shop keeps timesheet changes with the office. Anything that looks wrong here — tell
+          them and they will correct it.
+        </p>
+      )}
       {addForm}
       {/* Above the register, not inside it: a day with NO rows has no row to sit under, and this is
           the one thing on the screen that costs money to ignore. */}
@@ -183,6 +204,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
           firstStampAt={d.firstStampAt}
           lastStampAt={d.lastStampAt}
           busy={writes.adding}
+          canRecord={canEditOwnTimes}
           onAccept={(start, end) => onAcceptDay(d.date, start, end)}
           onEnterOwn={onEnterOwn}
         />
@@ -190,6 +212,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
       <HoursSheet
         entries={weekEntries(entries, weekStartISO)}
         stamps={stamps}
+        canEditOwnTimes={canEditOwnTimes}
         today={today}
         myUserId={myUserId}
         editingId={editingId}
@@ -211,6 +234,11 @@ export default function MyHoursPage() {
   // loads — the same value the column defaults to, so the figure never jumps for a shop that has
   // not set a daily rule.
   const overtimePolicy = useOvertimePolicy();
+  /**
+   * Most shops keep hand edits OFF (#457, the Housecall Pro model). The server has always refused
+   * the write; this is the surface finally asking, so the controls match what is possible.
+   */
+  const canEditOwnTimes = useTechEditsTimes();
 
   // Same builder — and therefore the same query key — as the field hydrator's idle prefetch.
   // Scoped to ME: without it an owner-operator is served every technician's rows (the list
@@ -280,8 +308,8 @@ export default function MyHoursPage() {
   if (shouldShowFirstRun(listState)) {
     return (
       <Screen>
-        <NoHoursYet onAdd={() => setAddOpen(true)} />
-        {addOpen ? addBlock : null}
+        <NoHoursYet onAdd={canEditOwnTimes ? () => setAddOpen(true) : null} />
+        {addOpen && canEditOwnTimes ? addBlock : null}
       </Screen>
     );
   }
@@ -299,18 +327,20 @@ export default function MyHoursPage() {
         onAcceptDay={acceptDay}
         onEnterOwn={() => setAddOpen(true)}
         overtimePolicy={overtimePolicy}
+        canEditOwnTimes={canEditOwnTimes}
         addButton={
           /* In the week pager, not at the foot of the page: in a SHEET shop this is not a
              correction path, it is the only way hours ever get recorded, so it belongs beside the
              week it writes into. It says what it does rather than apologising for being after the
-             fact. Hidden while the form is open — the form IS the control then. */
-          addOpen ? null : (
+             fact. Hidden while the form is open — the form IS the control then, and hidden entirely
+             when the shop keeps changes with the office, because the server would refuse the write. */
+          addOpen || !canEditOwnTimes ? null : (
             <Button variant={hasClock ? "quiet" : "primary"} onClick={() => setAddOpen(true)}>
               {hasClock ? "Add hours" : "Add a day"}
             </Button>
           )
         }
-        addForm={addOpen ? addBlock : null}
+        addForm={addOpen && canEditOwnTimes ? addBlock : null}
       />
     </Screen>
   );

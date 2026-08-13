@@ -50,12 +50,13 @@ const onEdit = vi.fn();
 
 const sheet = (
   entries: MyHoursEntry[],
-  over: { editingId?: string | null; stamps?: VisitStamp[] } = {},
+  over: { editingId?: string | null; stamps?: VisitStamp[]; canEditOwnTimes?: boolean } = {},
 ) =>
   render(
     <HoursSheet
       entries={entries}
       stamps={over.stamps ?? []}
+      canEditOwnTimes={over.canEditOwnTimes ?? true}
       today={TODAY}
       myUserId={ME}
       editingId={over.editingId ?? null}
@@ -144,8 +145,10 @@ describe("one row per shift", () => {
   });
 
   it("states the register is empty rather than rendering a bare head", () => {
+    // "hours", not "shifts": the register holds days off too now, and a week with a holiday in it is
+    // not a week with no hours.
     sheet([]);
-    expect(screen.getByText("No shifts recorded this week.")).toBeTruthy();
+    expect(screen.getByText("No hours recorded this week.")).toBeTruthy();
   });
 });
 
@@ -293,5 +296,75 @@ describe("the shift's job attribution", () => {
     sheet([entry({ id: "shift" })], { stamps: [visitStamp()] });
     expand();
     expect(screen.queryByText(/recorded in/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DAYS OFF IN THE REGISTER. `offRows` was derived in PR 2 and then never drawn, so the summary
+// counted eight hours the register could not explain — a man reading "48h regular" saw forty.
+// ---------------------------------------------------------------------------
+
+const offEntry = (over: Partial<MyHoursEntry> = {}): MyHoursEntry =>
+  entry({ id: "off", kind: "holiday", startTime: null, endTime: null, minutes: 480, ...over });
+
+describe("a day off in the register", () => {
+  it("appears at all, with its kind and its length", () => {
+    sheet([offEntry()]);
+    expect(screen.getByText("Holiday")).toBeTruthy();
+    expect(screen.getByText(/8\.00/)).toBeTruthy();
+  });
+
+  it("says it has no clock instead of filling the columns with dashes", () => {
+    // Four em-dashes read as a shift somebody failed to record, not as a day nobody worked.
+    sheet([offEntry()]);
+    expect(screen.getByText("paid time off — no clock")).toBeTruthy();
+  });
+
+  it("sorts with the day it belongs to, ahead of that day's shifts", () => {
+    sheet([
+      entry({ id: "shift", workDate: "2026-07-02", startTime: "08:00", endTime: "16:00" }),
+      offEntry({ workDate: "2026-07-02" }),
+      entry({ id: "earlier", workDate: "2026-07-01", startTime: "08:00", endTime: "16:00" }),
+    ]);
+    const dates = rows().map((r) => r.querySelector(".sh-cell.day")?.textContent);
+    // Wed 7/1 first; then Thursday's day off ahead of Thursday's shift — a day off is the whole day.
+    expect(dates).toHaveLength(3);
+    expect(rows()[1]?.textContent).toContain("Holiday");
+  });
+
+  it("is editable when the shop allows it", () => {
+    sheet([offEntry()]);
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the time off on/ }));
+    expect(onEdit).toHaveBeenCalledWith("off");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE ORG RULE. "Techs can edit their own times" defaults OFF, and the server has refused the write
+// since #457 — the register drew the pencil anyway, so the only thing a tap could produce was an
+// error message.
+// ---------------------------------------------------------------------------
+
+describe("a shop that keeps timesheet changes with the office", () => {
+  it("draws no pencil on a shift", () => {
+    sheet([entry({ id: "mine" })], { canEditOwnTimes: false });
+    expect(screen.queryByRole("button", { name: /^Edit the shift on/ })).toBeNull();
+  });
+
+  it("draws no pencil on a day off either", () => {
+    sheet([offEntry()], { canEditOwnTimes: false });
+    expect(screen.queryByRole("button", { name: /^Edit the time off on/ })).toBeNull();
+  });
+
+  it("still lets him SEE what a shift was made of — looking is not editing", () => {
+    sheet([entry({ id: "mine" })], { canEditOwnTimes: false });
+    expect(screen.getByRole("button", { name: /^Show what the/ })).toBeTruthy();
+  });
+
+  it("does not blame the 7-day window for a lock the shop's own policy caused", () => {
+    // "Older than 7 days — ask the office" would send him to fix the wrong thing: the row's age is
+    // not why he cannot touch it.
+    sheet([entry({ id: "old", workDate: "2026-06-01" })], { canEditOwnTimes: false });
+    expect(screen.queryByText(/Older than 7 days/)).toBeNull();
   });
 });

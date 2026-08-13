@@ -24,14 +24,21 @@
 
 import { useState } from "react";
 import { clockLabel, sheetDayLabel, HOURS_PRECISION, type MyHoursEntry } from "./my-hours-derive";
-import { shiftRows, type ShiftRow } from "./hours-sheet-derive";
+import { shiftRows, offRows, type ShiftRow, type OffRow } from "./hours-sheet-derive";
 import { editabilityOf, dayLockNotes } from "./my-hours-edit";
 import { EntryRow, type MyHoursWeekProps } from "./my-hours-entries";
 import { MyHoursTimeEditor, type EntryKind } from "./my-hours-time-editor";
 import { HoursJobRows } from "./hours-job-rows";
 import type { VisitStamp } from "./job-time-derive";
 
-type RowActions = Omit<MyHoursWeekProps, "entries" | "weekStartISO">;
+type RowActions = Omit<MyHoursWeekProps, "entries" | "weekStartISO"> & {
+  /**
+   * Does this ORG let technicians correct their own hours? Default OFF (the Housecall Pro model,
+   * #457). The server has always refused the write when it is off; the register drew the pencil
+   * anyway, so the only thing a tap could produce was an error message.
+   */
+  readonly canEditOwnTimes: boolean;
+};
 
 /* The register's three glyphs, lifted from the mock. Inline and stroked with currentColor, the
    house idiom — `aria-hidden` because the button's own aria-label already says what it does, and a
@@ -53,6 +60,55 @@ const Close = () => (
     <path d="M6 6l12 12M18 6L6 18" />
   </svg>
 );
+
+const OFF_LABELS: Record<OffRow["kind"], string> = {
+  pto: "PTO",
+  vacation: "Vacation",
+  sick: "Sick",
+  holiday: "Holiday",
+};
+
+/**
+ * A day off, in the register.
+ *
+ * Its kind pill SPANS the four clock columns rather than filling them with dashes, because a day off
+ * has no start, no break and no end — four em-dashes would read as a shift somebody failed to record
+ * instead of a day nobody worked. Without this row the week's summary counted eight hours the
+ * register could not explain: `offRows` was derived and then never drawn.
+ */
+function OffSheetRow({ row, editable, onEdit }: {
+  row: OffRow;
+  editable: boolean;
+  onEdit: (entryId: string | null) => void;
+}) {
+  return (
+    <div className="sh-entry">
+      <div className="sh-row">
+        <span className="sh-cell day">{sheetDayLabel(row.workDate)}</span>
+        <span className="sh-span">
+          <span className="sh-off">{OFF_LABELS[row.kind]}</span>
+          <span className="sh-off-note">paid time off — no clock</span>
+        </span>
+        <span className="sh-total">
+          {row.hours.toFixed(HOURS_PRECISION)}
+          <span className="u">h</span>
+        </span>
+        <span className="sh-acts">
+          {editable ? (
+            <button
+              type="button"
+              className="sh-ico"
+              aria-label={`Edit the time off on ${sheetDayLabel(row.workDate)}`}
+              onClick={() => onEdit(row.entry.id)}
+            >
+              <Pencil />
+            </button>
+          ) : null}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 /** A clock column that holds nothing — present, and visibly empty. */
 function Clock({ at }: { at: string | null }) {
@@ -145,7 +201,13 @@ function ShiftActions({
  * Null for a MERGED shift — the row will not guess which part he meant, and the chevron reaches all
  * of them — and null when any part is locked, because half an editable shift is a trap.
  */
-function rowEditable(row: ShiftRow, today: string, myUserId: string | undefined): string | null {
+function rowEditable(
+  row: ShiftRow,
+  today: string,
+  myUserId: string | undefined,
+  canEditOwnTimes: boolean,
+): string | null {
+  if (!canEditOwnTimes) return null;
   if (row.running || row.entries.length !== 1) return null;
   const [only] = row.entries;
   if (!only) return null;
@@ -156,8 +218,16 @@ function rowEditable(row: ShiftRow, today: string, myUserId: string | undefined)
  * Every distinct reason this shift is not editable, stated once. A running shift gets its own
  * sentence: it is not locked, it is simply not finished, and the fix is a tap he already knows.
  */
-function lockNotesFor(row: ShiftRow, today: string, myUserId: string | undefined): string[] {
+function lockNotesFor(
+  row: ShiftRow,
+  today: string,
+  myUserId: string | undefined,
+  canEditOwnTimes: boolean,
+): string[] {
   if (row.running) return ["Still on the clock — end the day and this becomes correctable."];
+  // The ORG rule comes first and replaces the rest: when the shop keeps hand edits off, "older than
+  // 7 days" is not why he cannot touch this row, and saying so would send him to fix the wrong thing.
+  if (!canEditOwnTimes) return [];
   return dayLockNotes(row.entries, today, myUserId);
 }
 
@@ -171,11 +241,11 @@ interface SheetRowProps extends RowActions {
 
 function SheetRow({ row, open, onToggle, stamps, ...actions }: SheetRowProps) {
   const { today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave, onDelete } = actions;
-  const editableId = rowEditable(row, today, myUserId);
+  const editableId = rowEditable(row, today, myUserId, actions.canEditOwnTimes);
   const single = row.entries.length === 1 ? (row.entries[0] ?? null) : null;
   const editing = editableId !== null && editingId === editableId;
   const suggested = single?.running ? suggestEndFor(single) : null;
-  const rowLocks = lockNotesFor(row, today, myUserId);
+  const rowLocks = lockNotesFor(row, today, myUserId, actions.canEditOwnTimes);
 
   return (
     <div className={`sh-entry${open || editing ? " open" : ""}`}>
@@ -253,7 +323,20 @@ export interface HoursSheetProps extends RowActions {
 
 export function HoursSheet({ entries, stamps, ...actions }: HoursSheetProps) {
   const [openKey, setOpenKey] = useState<string | null>(null);
-  const rows = shiftRows(entries);
+  /**
+   * Shifts and days off in ONE date-ordered register, not two lists.
+   *
+   * A week reads down the days; splitting it into "shifts" and "time off" makes the man reassemble
+   * his own week to answer "what happened Thursday". Days off carry no start, so they sort to the
+   * head of their date — a day off is the whole day.
+   */
+  const rows: ({ off: false; row: ShiftRow } | { off: true; row: OffRow })[] = [
+    ...offRows(entries).map((row) => ({ off: true as const, row })),
+    ...shiftRows(entries).map((row) => ({ off: false as const, row })),
+  ].sort((a, b) => {
+    if (a.row.workDate !== b.row.workDate) return a.row.workDate < b.row.workDate ? -1 : 1;
+    return a.off === b.off ? 0 : a.off ? -1 : 1;
+  });
 
   return (
     <div className="sheet">
@@ -267,18 +350,30 @@ export function HoursSheet({ entries, stamps, ...actions }: HoursSheetProps) {
         <span />
       </div>
       {rows.length === 0 ? (
-        <div className="sh-empty">No shifts recorded this week.</div>
+        <div className="sh-empty">No hours recorded this week.</div>
       ) : (
-        rows.map((row) => (
-          <SheetRow
-            key={row.key}
-            row={row}
-            open={openKey === row.key}
-            onToggle={() => setOpenKey((k) => (k === row.key ? null : row.key))}
-            stamps={stamps}
-            {...actions}
-          />
-        ))
+        rows.map((entry) =>
+          entry.off ? (
+            <OffSheetRow
+              key={entry.row.key}
+              row={entry.row}
+              editable={
+                actions.canEditOwnTimes &&
+                editabilityOf(entry.row.entry, actions.today, actions.myUserId).editable
+              }
+              onEdit={actions.onEdit}
+            />
+          ) : (
+            <SheetRow
+              key={entry.row.key}
+              row={entry.row}
+              open={openKey === entry.row.key}
+              onToggle={() => setOpenKey((k) => (k === entry.row.key ? null : entry.row.key))}
+              stamps={stamps}
+              {...actions}
+            />
+          ),
+        )
       )}
     </div>
   );

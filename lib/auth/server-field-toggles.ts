@@ -46,7 +46,7 @@ import type { FieldTogglesSeed } from "@/lib/field-toggles-seed";
  * tenant transaction the layout's guard already established.
  */
 
-const UNRESOLVED: FieldTogglesSeed = { measurement: "unknown", canText: "unknown", overtime: null };
+const UNRESOLVED: FieldTogglesSeed = { measurement: "unknown", canText: "unknown", overtime: null, techEdits: "unknown" };
 
 export async function resolveFieldToggles(principal: Principal): Promise<FieldTogglesSeed> {
   try {
@@ -56,6 +56,7 @@ export async function resolveFieldToggles(principal: Principal): Promise<FieldTo
       measurement: measurementGateFrom(toggles.measurementEstimating),
       canText: toggles.canText ? "yes" : "no",
       overtime: toggles.overtime,
+      techEdits: toggles.techEditsTimes ? "yes" : "no",
     };
   } catch (error: unknown) {
     logger.warn({ err: error }, "shell.resolveFieldToggles.failed");

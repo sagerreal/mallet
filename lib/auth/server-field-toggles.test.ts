@@ -92,6 +92,18 @@ describe("resolveFieldToggles — the overtime rule", () => {
   });
 });
 
+describe("resolveFieldToggles — hand edits", () => {
+  it("seeds yes for a shop that lets technicians correct their own hours", async () => {
+    fieldToggles.mockResolvedValue({ measurementEstimating: false, canText: false, techEditsTimes: true });
+    await expect(resolveFieldToggles(principal)).resolves.toMatchObject({ techEdits: "yes" });
+  });
+
+  it("seeds no for the DEFAULT — most shops keep timesheet changes with the office", async () => {
+    fieldToggles.mockResolvedValue({ measurementEstimating: false, canText: false, techEditsTimes: false });
+    await expect(resolveFieldToggles(principal)).resolves.toMatchObject({ techEdits: "no" });
+  });
+});
+
 describe("resolveFieldToggles — failure", () => {
   it("fails soft to unknown on EVERY field when the read throws — it must never 500 the shell", async () => {
     fieldToggles.mockRejectedValue(new Error("settings read exploded"));
@@ -107,6 +119,9 @@ describe("resolveFieldToggles — failure", () => {
       measurement: "unknown",
       canText: "unknown",
       overtime: null,
+      // Hand edits fail CLOSED for the sharpest reason of the four: the server refuses the write
+      // either way, so a pencil drawn on an unknown answer is a button that can only produce an error.
+      techEdits: "unknown",
     });
   });
 });
