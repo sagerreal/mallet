@@ -256,6 +256,20 @@ export const jobSummaryDTO = z.object({
   addons: z.array(jobAddonDTO),
   verifyAnswers: z.array(jobVerifyAnswerDTO),
   photos: z.array(jobPhotoDTO),
+  /**
+   * The bill raised from this job, when the FIELD agenda loaded it — the finished card's money
+   * slot reads this to say Paid / Take payment without opening the sheet. OPTIONAL: only
+   * fieldAgendaPage stamps it (one batched read); office list responses omit it entirely.
+   * paid amount is money and rides techSeesPrice redaction; status does not (paid is a fact,
+   * not a price).
+   */
+  bill: z
+    .object({
+      status: z.enum(["draft", "sent", "partial", "paid", "void"]),
+      amountPaid: moneyDTO.nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const money = (cents: number) => ({ cents, currency: "USD" as const });

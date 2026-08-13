@@ -33,6 +33,9 @@ export interface JobBillSummary {
 /** Reads the bill raised FROM a job (`invoices.source_job_id`), or null when there is none. */
 export interface JobBillingReader {
   readBillForJob(jobId: JobId): Promise<JobBillSummary | null>;
+  /** The same read for a whole page of jobs in ONE query — the field agenda's card slot.
+   *  Jobs with no bill are simply absent from the map. */
+  readBillsForJobs(jobIds: readonly JobId[]): Promise<Map<JobId, JobBillSummary>>;
 }
 
 /**

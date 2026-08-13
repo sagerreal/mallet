@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { invoices } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId, JobId } from "@mallet/shared/types";
@@ -64,5 +64,36 @@ export class DrizzleJobBillingReader implements JobBillingReader {
       status: asBillStatus(row.status),
       amountPaidCents: row.amountPaidCents,
     };
+  }
+
+  async readBillsForJobs(jobIds: readonly JobId[]): Promise<Map<JobId, JobBillSummary>> {
+    if (jobIds.length === 0) return new Map();
+    const rows = await this.tx
+      .select({
+        sourceJobId: invoices.sourceJobId,
+        num: invoices.num,
+        status: invoices.status,
+        amountPaidCents: invoices.amountPaidCents,
+      })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.orgId, this.orgId),
+          inArray(invoices.sourceJobId, [...jobIds]),
+          isNull(invoices.deletedAt),
+        ),
+      );
+    const out = new Map<JobId, JobBillSummary>();
+    for (const row of rows) {
+      if (row.sourceJobId === null) continue;
+      // One bill per job (invoices_org_source_job_uidx) — a duplicate here would be corruption,
+      // and the single-read twin above takes the first row too.
+      out.set(row.sourceJobId as JobId, {
+        num: row.num,
+        status: asBillStatus(row.status),
+        amountPaidCents: row.amountPaidCents,
+      });
+    }
+    return out;
   }
 }

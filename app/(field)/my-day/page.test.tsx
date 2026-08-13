@@ -36,6 +36,7 @@ let visitStatusOpts: { onMutate?: (v: { jobId: string; visitId: string; status: 
 const enrouteMutate = vi.fn();
 const visitStatusMutate = vi.fn();
 const adoptJobSpy = vi.fn();
+const pushModal = vi.fn();
 let dayQueryState: { data: unknown; isLoading: boolean; isFetched?: boolean; isError?: boolean; isRefetching?: boolean } = {
   data: undefined,
   isLoading: false,
@@ -100,6 +101,7 @@ vi.mock("@/lib/store/write-error", () => ({
 const openModal = vi.fn();
 vi.mock("@/lib/store/app-store", () => ({
   useOpenModal: () => openModal,
+  usePushModal: () => pushModal,
   useAppStore: (sel: (s: { adoptJob: typeof adoptJobSpy }) => unknown) => sel({ adoptJob: adoptJobSpy }),
 }));
 vi.mock("@/features/field/day-clock", () => ({ DayClock: () => <div /> }));
@@ -581,5 +583,109 @@ describe("My day — the day pager", () => {
     fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
     expect(screen.getByText("Yesterday")).toBeTruthy();
     expect(screen.getByText("Nothing ran this day.")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE MONEY SLOT. A finished card must say where the money stands without opening the sheet:
+// Take payment (filled $ circle → the close-out sheet, which finds or mints the job's invoice
+// from the jobId), Paid ✓ with the ledger's figure, or Sent to the office. A voided bill keeps
+// the job's one invoice slot, so the card offers nothing.
+// ---------------------------------------------------------------------------
+
+describe("My day — the finished card's money slot", () => {
+  const doneVisit = () =>
+    visit({ status: "complete", completedAt: "2026-07-01T20:00:00.000Z", scheduledDate: "2026-07-01", scheduledStart: "08:30" });
+  const finishedJob = (over: Record<string, unknown> = {}) =>
+    job({ status: "complete", visits: [doneVisit()], ...over });
+  const withJob = (j: unknown) => {
+    queryState = { data: { items: [j], customers: [] }, isLoading: false, isFetching: false };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+  });
+
+  it("offers Take payment with the job's figure when nothing is billed yet", () => {
+    withJob(finishedJob({ total: { cents: 184500, currency: "USD" }, bill: null }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $1,845" })).toBeTruthy();
+  });
+
+  it("pushes the close-out sheet from the jobId alone — it finds or mints the invoice itself", () => {
+    withJob(finishedJob({ bill: null }));
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Take payment" }));
+    // "field-job" is the close-out's return-to-My-day contract (where Done lands) — the card
+    // rides the same sentinel the job sheet declares, never a lookalike the modal ignores.
+    expect(pushModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", from: "field-job" });
+    // A money tap is not a card tap — the sheet opens INSTEAD of the job modal, not behind it.
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("shows Paid with the ledger's own figure once the bill is paid", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: { cents: 41200, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Paid ✓ · $412")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+  });
+
+  it("shows Paid without a figure for a redacted tech — paid is a fact, the amount is a price", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: null } }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Paid ✓")).toBeTruthy();
+  });
+
+  it("says Sent to the office ONLY when the office was actually asked to bill", () => {
+    withJob(finishedJob({ bill: null, invRequested: true }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Sent to the office")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+  });
+
+  it("keeps a SENT bill collectible — the close-out sends as a step of taking payment", () => {
+    // Interrupted close-out: invoice auto-sent, card declined, tech pulled away. The card must
+    // still offer the door money, exactly as the sheet's own foot would.
+    withJob(finishedJob({ total: { cents: 90000, currency: "USD" }, bill: { status: "sent", amountPaid: { cents: 0, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $900" })).toBeTruthy();
+    expect(screen.queryByText("Sent to the office")).toBeNull();
+  });
+
+  it("offers the REMAINING balance on a partial payment", () => {
+    withJob(finishedJob({ total: { cents: 90000, currency: "USD" }, bill: { status: "partial", amountPaid: { cents: 40000, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $500" })).toBeTruthy();
+  });
+
+  it("offers nothing on a voided bill — the invoice slot is spent", () => {
+    withJob(finishedJob({ bill: { status: "void", amountPaid: null } }));
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+    expect(screen.queryByText(/Paid/)).toBeNull();
+    expect(screen.queryByText("Sent to the office")).toBeNull();
+  });
+
+  it("offers no money on a finished STOP whose JOB still has a trip to run", () => {
+    // Visit done, job open (the return-trip shape): the close-out would refuse an open job,
+    // so the card must not offer what the sheet will bounce.
+    withJob(job({
+      status: "in_progress",
+      total: { cents: 184500, currency: "USD" },
+      visits: [
+        doneVisit(),
+        visit({ status: "pending", scheduledDate: null, scheduledStart: null }),
+      ],
+    }));
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+    expect(screen.queryByText(/Paid/)).toBeNull();
+  });
+
+  it("puts no money slot on a live card — collecting happens after Done", () => {
+    withJob(job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })], total: { cents: 184500, currency: "USD" } }));
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
   });
 });

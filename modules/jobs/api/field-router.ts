@@ -27,6 +27,7 @@ import { CreateVisitUseCase } from "../app/create-visit";
 import { AddReturnTripUseCase } from "../app/add-return-trip";
 import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
 import { DrizzleJobBillingReader } from "../infra/drizzle-job-billing-reader";
+import type { JobBillSummary } from "../domain/return-trip";
 import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
@@ -348,13 +349,34 @@ const fieldAgendaPage = async (
 }> => {
   // Load execution data (checklist answers, add-ons, photos) for the whole page in one
   // batched read (4 IN-clause queries) — toJobSummaryDTO without it returns empty arrays.
-  const executionByJob = await repo.listExecutionForJobs(ordered.map((j) => j.props.id));
+  const jobIds = ordered.map((j) => j.props.id);
+  const [executionByJob, billByJob] = await Promise.all([
+    repo.listExecutionForJobs(jobIds),
+    // The finished card's money slot: Paid / Sent / Take payment, answered on the LIST read
+    // instead of a per-card fetch. One IN-clause query, same as the execution batch.
+    new DrizzleJobBillingReader(view.tx, view.principal.orgId).readBillsForJobs(jobIds),
+  ]);
   const isTech = view.principal.role === "tech";
   const seesPrice = isTech
     ? await new DrizzleSettingsRepository(view.tx, view.principal.orgId).getTechSeesPrice()
     : true;
+  const billDTO = (bill: JobBillSummary | undefined) =>
+    bill
+      ? {
+          status: bill.status,
+          // The paid AMOUNT is money and follows techSeesPrice exactly as the job total does;
+          // the STATUS stays — "paid" is a fact about the job, not a price.
+          amountPaid:
+            isTech && !seesPrice
+              ? null
+              : { cents: bill.amountPaidCents, currency: "USD" as const },
+        }
+      : null;
   const items = ordered.map((j) => {
-    const dto = toJobSummaryDTO(j, executionByJob.get(j.props.id));
+    const dto = {
+      ...toJobSummaryDTO(j, executionByJob.get(j.props.id)),
+      bill: billDTO(billByJob.get(j.props.id)),
+    };
     return isTech ? redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) : dto;
   });
   // The customers on THESE jobs, and no others — the technician's reach is their own work.

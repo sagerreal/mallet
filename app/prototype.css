@@ -2075,7 +2075,7 @@
   .mdc-since i{width:7px;height:7px;border-radius:var(--radius-pill);background:var(--ink);animation:mdcpulse 1.6s ease-in-out infinite}
   @keyframes mdcpulse{0%,100%{opacity:1}50%{opacity:.35}}
   @media (prefers-reduced-motion:reduce){.mdc-since i{animation:none}}
-  .fca-row{display:flex;align-items:flex-start;gap:var(--space-4);margin-top:var(--space-4)}
+  .fca-row{display:flex;align-items:flex-start;gap:var(--space-4);margin-top:var(--space-4);flex-wrap:wrap}
   .fca{background:none;border:0;padding:0;display:flex;flex-direction:column;align-items:center;gap:var(--space-2);font-family:inherit;cursor:pointer;min-width:52px}
   .fca-c{width:44px;height:44px;border-radius:var(--radius-pill);border:1.5px solid var(--ink);display:grid;place-items:center;background:var(--card);color:var(--ink);transition:background .12s}
   .fca:hover .fca-c{background:var(--manila-2)}
@@ -2084,6 +2084,7 @@
   .fca.fill .fca-t{color:var(--ink);font-weight:700}
   .fca:disabled{opacity:.55;cursor:not-allowed}
   .fca:focus-visible .fca-c{outline:2px solid var(--ink);outline-offset:2px}
+  .mdc-money{display:flex;align-items:center;min-height:44px;margin-left:auto}
   /* the day pager — ‹ Today · Wed, Aug 12 › */
   .mdp{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)}
   .mdp-label{flex:1;min-width:0;font-size:var(--type-lg);font-weight:700;margin:0;line-height:1.15;white-space:nowrap}

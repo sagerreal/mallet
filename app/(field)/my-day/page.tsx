@@ -21,7 +21,7 @@
 import { haptics } from "@/lib/haptics";
 import { api } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/client";
-import { useOpenModal } from "@/lib/store/app-store";
+import { useOpenModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DayClock } from "@/features/field/day-clock";
 import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
@@ -30,8 +30,10 @@ import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { useMyDayInput } from "@/features/field/my-day-input";
 import { todayISO, addDaysISO } from "@/lib/clock";
+import { fmt$ } from "@/lib/format";
 import { useAppStore } from "@/lib/store/app-store";
 import { deriveDayCards, type DayCard } from "./visit-cards";
+import type { CardMoney } from "./job-card";
 import { deriveDayView } from "./day-view";
 import { JobCard } from "./job-card";
 import { DayPager, DAY_PAGER_REACH } from "./day-pager";
@@ -41,6 +43,8 @@ import { useEffect, useRef, useState } from "react";
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 type FieldCustomer = RouterOutputs["v1"]["field"]["myDay"]["customers"][number];
 type VisitSummary = JobSummary["visits"][number];
+
+
 
 export default function MyDayPage() {
   const utils = api.useUtils();
@@ -156,6 +160,7 @@ export default function MyDayPage() {
   });
 
   const openModal = useOpenModal();
+  const pushModal = usePushModal();
 
   // Covers the WHOLE round trip, not just the write: the refetch is the slower half, and leaving
   // the buttons live during it is what allowed the double press.
@@ -186,6 +191,38 @@ export default function MyDayPage() {
     if (!job) return null;
     const customer: FieldCustomer | undefined = customersById.get(job.leadId);
     const openSheet = () => openModal(MODAL.TECH_JOB, { jobId: job.id });
+    /**
+     * The finished card's money slot — the SAME rule as the sheet's doneFootAction: collect
+     * while money is still due, office only when the office was actually asked. A "sent" bill
+     * is NOT an office signal — the tech's own close-out sends the invoice as a prerequisite
+     * of taking payment, so an interrupted close-out must leave the card collectible, and a
+     * partial payment still has a balance to take at the door. A voided bill keeps the job's
+     * one invoice slot so the card offers nothing.
+     */
+    const cardMoney = (): CardMoney | null => {
+      if (card.step !== 3) return null;
+      // THE JOB, not the visit. A finished stop on a job with a trip still to run (the
+      // return-trip shape) must not offer the door money — the close-out refuses an open job,
+      // and the office bills after the LAST trip. The cascade flips the job on the server, so
+      // the circle appears on the refetch after the finishing tap, never optimistically wrong.
+      if (job.status !== "complete") return null;
+      const bill = job.bill ?? null;
+      if (bill?.status === "paid")
+        return {
+          kind: "paid",
+          label: bill.amountPaid ? `Paid ✓ · ${fmt$(bill.amountPaid.cents / 100)}` : "Paid ✓",
+        };
+      if (bill?.status === "void") return null;
+      if (job.invRequested) return { kind: "office" };
+      // Due = the job's figure less what the ledger already took — both redaction-aligned
+      // (a price-blind tech gets both as null and a plain label).
+      const dueCents = job.total ? Math.max(0, job.total.cents - (bill?.amountPaid?.cents ?? 0)) : null;
+      return {
+        kind: "collect",
+        label: dueCents !== null && dueCents > 0 ? `Take payment · ${fmt$(dueCents / 100)}` : "Take payment",
+      };
+    };
+    const money = cardMoney();
     // Narrowed ONCE — every closure below branches on it, so no `as string` can ever send a
     // null visitId to the server from a future call site.
     const visitId = card.visitId;
@@ -222,6 +259,8 @@ export default function MyDayPage() {
         onMyWay={viewingToday && visitId !== null && card.step === 0 ? myWay : null}
         onArrived={viewingToday && card.step < 2 ? arrive : null}
         onDone={viewingToday && card.step < 3 ? done : null}
+        money={money}
+        onCollect={money?.kind === "collect" ? () => pushModal(MODAL.CLOSE_OUT, { jobId: job.id, from: "field-job" }) : null}
       />
     );
   }

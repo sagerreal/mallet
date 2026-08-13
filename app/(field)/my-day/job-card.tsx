@@ -73,7 +73,19 @@ const ic = {
       <path d="M4.5 12.6l4.8 4.8L19.5 7.2" />
     </svg>
   ),
+  dollar: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 2.8v18.4" />
+      <path d="M16.6 6.4c0-1.7-2-3-4.6-3s-4.6 1.3-4.6 3 1.6 2.8 4.6 3.2 4.9 1.5 4.9 3.4-2.2 3.2-4.9 3.2-4.9-1.4-4.9-3.1" />
+    </svg>
+  ),
 };
+
+/** The finished card's money slot — what the card can say without opening the sheet. */
+export type CardMoney =
+  | { kind: "collect"; label: string }
+  | { kind: "paid"; label: string }
+  | { kind: "office" };
 
 interface CircleActProps {
   label: string;
@@ -81,6 +93,30 @@ interface CircleActProps {
   fill?: boolean;
   disabled?: boolean;
   onPress: () => void;
+}
+
+interface MoneySlotProps {
+  money: CardMoney | null;
+  isPending: boolean;
+  onCollect: (() => void) | null;
+}
+
+/** The finished card's money state, on the same foot row as the circles. */
+function MoneySlot({ money, isPending, onCollect }: MoneySlotProps) {
+  if (!money) return null;
+  if (money.kind === "collect") {
+    if (!onCollect) return null;
+    return <CircleAct label={money.label} icon={ic.dollar} fill disabled={isPending} onPress={onCollect} />;
+  }
+  const chip =
+    money.kind === "paid"
+      ? { label: money.label, color: "var(--ink)", bg: "var(--manila-2)" }
+      : { label: "Sent to the office", color: "var(--ink-2)", bg: "var(--paper)" };
+  return (
+    <span className="mdc-money">
+      <span className="stpill" style={{ color: chip.color, background: chip.bg }}>{chip.label}</span>
+    </span>
+  );
 }
 
 function CircleAct({ label, icon, fill, disabled, onPress }: CircleActProps) {
@@ -115,6 +151,9 @@ export interface JobCardProps {
   onMyWay: (() => void) | null;
   onArrived: (() => void) | null;
   onDone: (() => void) | null;
+  /** The finished card's money slot; null renders nothing (live cards, redacted states). */
+  money: CardMoney | null;
+  onCollect: (() => void) | null;
 }
 
 export function JobCard({
@@ -130,6 +169,8 @@ export function JobCard({
   onMyWay,
   onArrived,
   onDone,
+  money,
+  onCollect,
 }: JobCardProps) {
   // TODAY PRINTS THE TIME ALONE; any other day prints its day above the hour (carried-over work
   // lands at the top of the route, and without the day it reads as this morning's first stop).
@@ -208,6 +249,7 @@ export function JobCard({
             onPress={onDone}
           />
         ) : null}
+        <MoneySlot money={money} isPending={isPending} onCollect={onCollect} />
       </div>
     </div>
   );
