@@ -2048,14 +2048,19 @@
      The action row is the circle-with-label grammar: every control the same round shape, the
      FILLED circle always the next step. New family, field cards only — not a platform restyle. */
   .mdc-sec{font-family:var(--font-mono);font-size:var(--type-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin:var(--space-5) 0 var(--space-3)}
-  .mdc{padding:var(--space-4);margin-bottom:var(--space-3);cursor:pointer}
+  /* The mock's rail: FIXED-width cards side by side, never one card stretched across a desktop.
+     Rows equalize height (grid stretch); single column on a phone. */
+  .mdc-rail{display:grid;grid-template-columns:repeat(auto-fill,348px);gap:var(--space-4);align-items:stretch}
+  .mdc{padding:var(--space-4);cursor:pointer;display:flex;flex-direction:column}
+  .mdc .fca-row{margin-top:auto;padding-top:var(--space-4)}
   .mdc:active{background:var(--manila-2);transform:scale(.995)}
   .mdc-top{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-3)}
-  .mdc-title{font-size:var(--type-md);font-weight:700;margin:0;min-width:0}
-  .mdc-when{flex:0 0 auto;font-family:var(--font-mono);font-size:var(--type-sm);font-weight:700;color:var(--ink);text-align:right;letter-spacing:-.02em}
+  .mdc-title{font-size:var(--type-md);font-weight:700;margin:0;min-width:0;min-height:2lh}
+  .mdc-when{flex:0 0 auto;font-family:var(--font-mono);font-size:var(--type-sm);font-weight:700;color:var(--ink);text-align:center;letter-spacing:-.02em;
+    background:var(--paper);border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3)}
   /* Customer stays MEDIUM weight — the title is the only bold thing on a card, so the two
      names can never read as two titles. */
-  .mdc-cust{display:flex;align-items:center;gap:var(--space-2);font-size:var(--type-sm);font-weight:500;color:var(--ink);margin-top:var(--space-2);flex-wrap:wrap}
+  .mdc-cust{display:flex;align-items:center;gap:var(--space-2);font-size:var(--type-sm);font-weight:500;color:var(--ink);margin-top:var(--space-2);flex-wrap:wrap;min-height:24px}
   .mdc-addr{font-size:var(--type-sm);color:var(--ink-2);margin-top:var(--space-2xs)}
   .mdc-steps{display:flex;gap:var(--space-2xs);margin-top:var(--space-3)}
   .mdc-steps i{flex:1;height:4px;border-radius:var(--radius-pill);background:var(--line-2)}
@@ -2074,9 +2079,10 @@
   .fca:disabled{opacity:.55;cursor:not-allowed}
   .fca:focus-visible .fca-c{outline:2px solid var(--ink);outline-offset:2px}
   .mdc-money{display:flex;align-items:center;min-height:44px;margin-left:auto}
-  /* the day pager — ‹ Today · Wed, Aug 12 › */
+  @media (max-width:430px){.mdc-rail{grid-template-columns:1fr}}
+  /* the day pager — ‹ Today · Wed, Aug 12 › (arrows HUG the label, mock-style) */
   .mdp{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)}
-  .mdp-label{flex:1;min-width:0;font-size:var(--type-lg);font-weight:700;margin:0;line-height:1.15;white-space:nowrap}
+  .mdp-label{flex:0 0 auto;min-width:0;font-size:var(--type-lg);font-weight:700;margin:0;line-height:1.15;white-space:nowrap}
   .mdp-date{display:block;font-family:var(--font-mono);font-size:var(--type-xs);font-weight:500;color:var(--ink-2);letter-spacing:0}
   .mdp .btn{white-space:nowrap}
   .mdp .md-ic:disabled{opacity:.4;cursor:not-allowed}

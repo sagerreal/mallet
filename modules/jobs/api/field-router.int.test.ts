@@ -327,6 +327,9 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     const unbilledItem = day.items.find((i) => i.id === unbilledJobId);
     expect(paidItem?.bill).toMatchObject({ status: "paid", amountPaid: { cents: 40000 } });
     expect(unbilledItem?.bill).toBeNull();
+    // The card's who-is-this-for line — resolved from the same customers read the call bar uses.
+    // It was left null on the field path, so the line never rendered.
+    expect(paidItem?.customerName).toBe("Field Test Customer");
   });
 
   it("keeps bill STATUS but nulls the paid AMOUNT for a price-blind tech", async () => {
