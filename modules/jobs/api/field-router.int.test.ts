@@ -600,6 +600,40 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     }
   });
 
+  it("standardDay answers the caller's own crew row, the org default, and a day off", async () => {
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    // Next Monday and next Sunday, from the DB's own clock so the pager bound never bites.
+    const [mon] = await admin<{ d: string }[]>`
+      select to_char(current_date + (case when (8 - extract(dow from current_date)::int) % 7 = 0
+                                          then 7
+                                          else ((8 - extract(dow from current_date)::int) % 7 + 7) % 7 end),
+                     'YYYY-MM-DD') as d`;
+    const [sun] = await admin<{ d: string }[]>`
+      select to_char(current_date + ((7 - extract(dow from current_date)::int) % 7), 'YYYY-MM-DD') as d`;
+    const monday = mon!.d;
+    const sunday = sun!.d;
+
+    // Org defaults exist lazily (getConfig inserts 8..17 weekdays, closed Sunday) — the fallback.
+    const orgDefault = await caller.v1.field.standardDay({ date: monday });
+    expect(orgDefault.minutes).toBe(9 * 60);
+
+    // A personal row wins: Monday 7..15 → 8h.
+    await admin`
+      insert into crew_schedules (org_id, user_id, weekday, open_hour, close_hour)
+      values (${orgId}, ${techAId}, 1, 7, 15)
+      on conflict (org_id, user_id, weekday) do update set open_hour = 7, close_hour = 15`;
+    try {
+      const personal = await caller.v1.field.standardDay({ date: monday });
+      expect(personal.minutes).toBe(8 * 60);
+
+      // Sunday: org closed (0..0) and no personal row → no standard.
+      const dayOff = await caller.v1.field.standardDay({ date: sunday });
+      expect(dayOff.minutes).toBeNull();
+    } finally {
+      await admin`delete from crew_schedules where org_id = ${orgId} and user_id = ${techAId}`;
+    }
+  });
+
   it("day refuses a date past the pager bound instead of scanning history", async () => {
     const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
     await expect(caller.v1.field.day({ date: "2020-01-01" })).rejects.toMatchObject({
