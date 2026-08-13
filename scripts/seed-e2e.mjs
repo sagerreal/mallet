@@ -20,6 +20,7 @@
 // reads like a broken app. `--empty-org` remains as the standalone for re-making just that one.
 import postgres from "postgres";
 import { createClient } from "@supabase/supabase-js";
+import { OWNER, TECH } from "./e2e-credentials.mjs";
 
 const ARGS = process.argv.slice(2);
 /** Only the empty org. The default is both. */
@@ -31,7 +32,7 @@ const EMPTY_ONLY = ARGS.includes("--empty-org");
 const RESET_PASSWORDS = ARGS.includes("--reset-passwords");
 
 /** The documented fixture password. Only ever written to an account this script CREATES. */
-const PASSWORD = "e2e-password-1";
+const PASSWORD = OWNER.password;
 
 /**
  * The two fixtures. `env` names the override the e2e helpers read for that account
@@ -43,8 +44,8 @@ const FIXTURES = [
     org: "E2E Plumbing",
     seedLead: true,
     users: [
-      { email: "owner@e2e.mallet.test", role: "owner", env: "E2E_OWNER_PASSWORD" },
-      { email: "tech@e2e.mallet.test", role: "tech", env: "E2E_TECH_PASSWORD" },
+      { email: OWNER.email, role: "owner", env: "E2E_OWNER_PASSWORD" },
+      { email: TECH.email, role: "tech", env: "E2E_TECH_PASSWORD" },
     ],
   },
   {
