@@ -262,8 +262,12 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
           ) : null}
         </button>
         {canVisit && (
-          <button className="sheet-sec" onClick={() => pushModal(MODAL.VISIT, { leadId: lead.id })}>
-            Site visit
+          // The New job modal, carrying this customer. It used to open a thin "Site visit" form
+          // that made the same thing — a job with an unplaced visit — from fewer fields, so the
+          // two disagreed about what a job needs and only one of them knew about checklists,
+          // pricing and multiple visits.
+          <button className="sheet-sec" onClick={() => pushModal(MODAL.NEW_JOB, { leadId: lead.id })}>
+            Create a job
           </button>
         )}
         {primaryKind !== "quote" && (

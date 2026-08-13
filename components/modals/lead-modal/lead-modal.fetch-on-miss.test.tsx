@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 /**
  * Opening a customer the store never hydrated.
@@ -16,7 +16,7 @@ import { render, screen } from "@testing-library/react";
  */
 
 interface StoreShape {
-  leads: { id: string; name: string; stage: string; phone: string }[];
+  leads: Record<string, unknown>[];
   adoptLead: (lead: unknown) => void;
   updateLead: (id: string, patch: unknown) => void;
   estimates: unknown[];
@@ -28,18 +28,21 @@ interface StoreShape {
 let store: StoreShape;
 let leadQuery: { data: unknown; isLoading: boolean; isError: boolean };
 const adoptLead = vi.fn();
+const pushModal = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: StoreShape) => unknown) => sel(store),
   useActiveModal: () => ({ id: "LEAD", params: { leadId: "lead-off-page" } }),
   useCloseModal: () => vi.fn(),
-  usePushModal: () => vi.fn(),
+  usePushModal: () => pushModal,
   useOpenModal: () => vi.fn(),
 }));
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
+      // The sheet header's record trail — settled/empty for these tests.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       customers: {
         get: { useQuery: () => leadQuery },
         // The activity trail is fetched per customer; settled/empty for these routing tests.
@@ -99,5 +102,37 @@ describe("opening a customer outside the loaded page", () => {
     leadQuery = { data: undefined, isLoading: false, isError: false };
     render(<LeadModal open />);
     expect(screen.getByText(NOT_AVAILABLE)).toBeTruthy();
+  });
+});
+
+describe("Lead sheet — the create-a-job action", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    // Already in the book — this sheet is reached by tapping a row on the Customers list.
+    store = {
+      leads: [{
+        id: "lead-off-page", name: "ZZ Bob Tester", phone: "7818328282", stage: "New customer",
+        archived: false, value: 0, unread: false, age: 1, source: "", job: "", address: "",
+      }],
+      adoptLead, updateLead: vi.fn(), estimates: [], tasks: [], jobs: [], techs: [],
+    };
+    leadQuery = { data: undefined, isLoading: false, isError: false };
+  });
+
+  it("offers Create a job, not Site visit", async () => {
+    // The thin Site-visit form made a job with an unplaced visit — the New job modal's job, with
+    // fewer fields. One way to make a job beats two that disagree about what a job needs.
+    render(<LeadModal open />);
+
+    expect(await screen.findByRole("button", { name: "Create a job" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Site visit" })).toBeNull();
+  });
+
+  it("opens the New job modal carrying the customer it was opened from", async () => {
+    render(<LeadModal open />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Create a job" }));
+
+    expect(pushModal).toHaveBeenCalledWith("new-job", { leadId: "lead-off-page" });
   });
 });

@@ -1,7 +1,7 @@
 /**
  * components/modals/placeholder-modals.tsx
  * The Clean-up (mark Lost / Archive) modal. (New quote → the /composer route;
- * the Visit booking modal is real — see visit-modal.tsx.)
+ *)
  *
  * Sheet grammar (PR #253): sticky .sheet-head with the h2, and the terminal
  * confirm — "Mark lost & archive" — docked as the one .sheet-pri in a sticky
