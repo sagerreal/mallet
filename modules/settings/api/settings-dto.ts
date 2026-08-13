@@ -98,8 +98,14 @@ export const bookingCfgDTO = z.object({
  *     `v1.a2p.getStatus` (the office's source for the same fact) is ownerOrOffice, so a
  *     technician had no way to learn it. One boolean, no registration detail, no failure reason.
  *
- * Anything added here becomes readable by every technician in the org. Keep it to capability
- * flags that describe what the SHOP can do — never prices, credentials, or office configuration.
+ * Anything added here becomes readable by every technician in the org. The bar is the FACT, not
+ * its shape: it must describe what the SHOP can do or the rule the shop works under — never
+ * prices, credentials, customer data, or office configuration.
+ *
+ * It started as booleans and is no longer only booleans. The OVERTIME RULE is a structured value,
+ * and it belongs here for the same reason the booleans do: a technician learns his own overtime
+ * rule from his first paycheck, and My hours cannot compute his overtime without it. Widening the
+ * shape was deliberate; widening the BAR would not be.
  */
 export const fieldTogglesDTO = z.object({
   measurementEstimating: z.boolean(),

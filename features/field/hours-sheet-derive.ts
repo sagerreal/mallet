@@ -93,14 +93,16 @@ const sameSession = (prev: MyHoursEntry, next: MyHoursEntry): boolean =>
 
 const sourceOf = (entries: readonly MyHoursEntry[]): RowSource => {
   const [first, ...rest] = entries;
-  const src = (first?.src ?? "manual") as RowSource;
+  const src = first?.src ?? "manual";
   return rest.every((e) => e.src === src) ? src : "mixed";
 };
 
-const breaksIn = (entries: readonly MyHoursEntry[]): SheetBreak[] =>
+// Takes PunchedEntry, not MyHoursEntry: a break has punch times by definition, and typing the
+// parameter is what makes that true instead of asserting it with a cast on `startTime`.
+const breaksIn = (entries: readonly PunchedEntry[]): SheetBreak[] =>
   entries
     .filter((e) => !isPaidKind(e.kind))
-    .map((e) => ({ startTime: e.startTime as string, endTime: e.endTime, hours: entryHours(e) }));
+    .map((e) => ({ startTime: e.startTime, endTime: e.endTime, hours: entryHours(e) }));
 
 const toShiftRow = (group: readonly PunchedEntry[]): ShiftRow => {
   const first = group[0]!;
@@ -123,6 +125,11 @@ const toShiftRow = (group: readonly PunchedEntry[]): ShiftRow => {
 /**
  * A week's punched entries as sheet rows — one per clock session, in the order they happened.
  * Input order is irrelevant: the server returns a day in (work_date, id) order, i.e. UUID order.
+ *
+ * ONE PERSON'S ENTRIES. Sessions merge on touching times, and two technicians who both clocked out
+ * at noon would fuse into one impossible shift. `v1.timesheets.list` scopes to the caller on the
+ * field surface, so the precondition holds where this is used; an office view over a crew has to
+ * group by technician before calling in.
  */
 export function shiftRows(entries: readonly MyHoursEntry[]): ShiftRow[] {
   const sorted = [...sortByStart(entries.filter(isPunched))].sort((a, b) =>
@@ -245,7 +252,8 @@ export interface WeekSummaryArgs {
 }
 
 /**
- * The three cells of the summary strip.
+ * The three cells of the summary strip. ONE PERSON'S ENTRIES, for the reason `shiftRows` gives —
+ * and here it also decides overtime, which is per-person by law and cannot be summed across a crew.
  *
  * REGULAR IS UNCAPPED on purpose. A technician who works a full forty and is paid for a holiday is
  * owed forty-eight regular hours; showing forty because that is the overtime threshold would state

@@ -29,9 +29,12 @@ import type { FieldTogglesSeed } from "@/lib/field-toggles-seed";
  * cache holds at module load is what the user sees first. The values therefore have to travel from
  * the server INTO the render, and the layout is where the principal already is.
  *
- * ONE READ, BOTH FLAGS. `v1.settings.fieldToggles` is a single `anyRole` query returning exactly
- * these two booleans, and this resolver was already calling it and dropping `canText` on the
- * floor. Seeding it adds no request.
+ * ONE READ, EVERY FACT. `v1.settings.fieldToggles` is a single `anyRole` query, and this resolver
+ * was already calling it and dropping fields on the floor — `canText` first, then the OVERTIME
+ * RULE, which arrived on the same payload and had the same problem in a worse place: My hours
+ * computes a technician's overtime from it, so an unseeded read painted the FEDERAL figure and
+ * then corrected itself. On a California week that is "no overtime" flashing into "8.00 OT" —
+ * the exact number the policy exists to get right, wrong for a beat. Seeding adds no request.
  *
  * FAILS SOFT TO `"unknown"`, like `resolveMe` fails soft to `undefined`: a settings read that
  * errors must degrade to "we do not know" and never 500 the page or fabricate an answer. Each
@@ -43,7 +46,7 @@ import type { FieldTogglesSeed } from "@/lib/field-toggles-seed";
  * tenant transaction the layout's guard already established.
  */
 
-const UNRESOLVED: FieldTogglesSeed = { measurement: "unknown", canText: "unknown" };
+const UNRESOLVED: FieldTogglesSeed = { measurement: "unknown", canText: "unknown", overtime: null };
 
 export async function resolveFieldToggles(principal: Principal): Promise<FieldTogglesSeed> {
   try {
@@ -52,6 +55,7 @@ export async function resolveFieldToggles(principal: Principal): Promise<FieldTo
     return {
       measurement: measurementGateFrom(toggles.measurementEstimating),
       canText: toggles.canText ? "yes" : "no",
+      overtime: toggles.overtime,
     };
   } catch (error: unknown) {
     logger.warn({ err: error }, "shell.resolveFieldToggles.failed");

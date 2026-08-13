@@ -266,6 +266,40 @@ const isValidDayHours = (open: number, close: number): boolean => {
   return (o === 0 && c === 0) || o < c;
 };
 
+/**
+ * The overtime rule's own validation, named — this is the one setting on the record that changes
+ * what a person is PAID, so a typo here has to be refused rather than stored and quietly turned
+ * into a figure on a technician's screen. Three ways it can be wrong:
+ *
+ *   - a week holds 10,080 minutes and a day 1,440; anything outside is a fat finger, not a policy.
+ *   - zero is refused as well: "overtime after 0h" means every hour is overtime.
+ *   - the two thresholds have to agree, and only one ordering is coherent — the week cannot be
+ *     exhausted before a single day is. "Past 12h a day or 8h a week" makes the daily rule
+ *     unreachable, so the shop would be shown a rule it can never hit. No jurisdiction writes one
+ *     that way.
+ */
+const firstInvalidOvertime = (p: OrgSettingsProps): ValidationError | null => {
+  const MINUTES_PER_WEEK = 7 * 24 * 60;
+  const MINUTES_PER_DAY = 24 * 60;
+  const weekly = p.otWeeklyThresholdMinutes;
+  const daily = p.otDailyThresholdMinutes;
+
+  if (!Number.isInteger(weekly) || weekly < 1 || weekly > MINUTES_PER_WEEK) {
+    return validation("weekly overtime threshold must be within one week", "otWeeklyThresholdMinutes");
+  }
+  if (daily === null) return null;
+  if (!Number.isInteger(daily) || daily < 1 || daily > MINUTES_PER_DAY) {
+    return validation("daily overtime threshold must be within one day", "otDailyThresholdMinutes");
+  }
+  if (weekly < daily) {
+    return validation(
+      "weekly overtime threshold cannot be shorter than the daily one",
+      "otWeeklyThresholdMinutes",
+    );
+  }
+  return null;
+};
+
 // The first day whose hours violate the invariant, anchored to that day's CLOSE field (the field the
 // hours editor drives against a fixed open), or null when weekday/Saturday/Sunday are all valid.
 const firstInvalidDayHours = (p: OrgSettingsProps): ValidationError | null => {
@@ -378,27 +412,12 @@ export class OrgSettings {
     if (props.stripeConnectedAccountId !== null && !props.stripeConnectedAccountId.startsWith("acct_")) {
       return err(validation("stripe connected account id must be an acct_ id", "stripeConnectedAccountId"));
     }
+    const overtimeError = firstInvalidOvertime(props);
+    if (overtimeError) return err(overtimeError);
     // Business-hours invariant: each day is either CLOSED (open===0 && close===0, the schema sentinel)
     // or a valid forward range (open < close). A half-open (open=8, close=0), zero-width, or inverted
     // range reads as "closed" to the voice availability math and would silently route every caller to
     // voicemail — reject it at the boundary so no write path persists a silently-broken schedule.
-    // Overtime policy bounds: a week holds 10,080 minutes, a day 1,440 — thresholds outside
-    // them are typos, not policies. Zero is refused too: "overtime after 0h" means every hour.
-    if (
-      !Number.isInteger(props.otWeeklyThresholdMinutes) ||
-      props.otWeeklyThresholdMinutes < 1 ||
-      props.otWeeklyThresholdMinutes > 10080
-    ) {
-      return err(validation("weekly overtime threshold must be within one week", "otWeeklyThresholdMinutes"));
-    }
-    if (
-      props.otDailyThresholdMinutes !== null &&
-      (!Number.isInteger(props.otDailyThresholdMinutes) ||
-        props.otDailyThresholdMinutes < 1 ||
-        props.otDailyThresholdMinutes > 1440)
-    ) {
-      return err(validation("daily overtime threshold must be within one day", "otDailyThresholdMinutes"));
-    }
     const hoursError = firstInvalidDayHours(props);
     if (hoursError) return err(hoursError);
 

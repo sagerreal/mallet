@@ -14,9 +14,12 @@ import { defaultBooking } from "./default-booking";
  * and the tech Quote tab's "Scan a room" row, the one surface the field scanner is actually FOR,
  * could never render for the role it was built for.
  *
- * So: one narrow read, `anyRole`, returning capability booleans. They are facts about the SHOP —
- * the same facts a tech learns by looking at the van — and they carry no prices, no customer
- * data, no credentials and no office configuration.
+ * So: one narrow read, `anyRole`, returning the handful of facts the field surface needs. They are
+ * facts about the SHOP — the same facts a tech learns by looking at the van or reading his own
+ * paycheck — and they carry no prices, no customer data, no credentials and no office
+ * configuration. Mostly booleans; the OVERTIME RULE is a structured value, because My hours
+ * computes the technician's own overtime and cannot do it from a boolean. The shape widened on
+ * purpose. The bar for what may ride here did not.
  *
  * `canText` is NOT read here: it lives in the a2p module (`isSmsA2pActive`), and the router
  * composes the two so "may this org send SMS" keeps exactly ONE definition. See the

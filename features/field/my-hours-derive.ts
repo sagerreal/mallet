@@ -17,14 +17,6 @@ export type MyHoursEntry = RouterOutputs["v1"]["timesheets"]["list"]["items"][nu
 /** A calendar week. Week navigation moves by exactly this — never "about seven days". */
 export const DAYS_PER_WEEK = 7;
 
-/**
- * The hours after which this page LABELS the rest of the week overtime. Display only: FLSA
- * workweeks are employer-defined and this page hard-codes a Monday start, so the figure is a
- * hint for the technician, not a payroll calculation — Mallet deliberately sends no overtime
- * split to QuickBooks and lets payroll compute it.
- */
-export const FULL_TIME_HOURS_PER_WEEK = 40;
-
 /** Decimal places hours are shown at. Two, because that is what a payroll line item carries. */
 export const HOURS_PRECISION = 2;
 
@@ -112,16 +104,6 @@ export function weekEntries(
  *  Time-off rows have no start; they read first, before the day's punches. */
 export function sortByStart(entries: readonly MyHoursEntry[]): MyHoursEntry[] {
   return [...entries].sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""));
-}
-
-export interface WeekRollup {
-  readonly paid: number;
-  readonly overtime: number;
-}
-
-export function rollup(entries: readonly MyHoursEntry[], weekStartISO: string): WeekRollup {
-  const paid = weekEntries(entries, weekStartISO).reduce((sum, e) => sum + paidHours(e), 0);
-  return { paid, overtime: Math.max(0, paid - FULL_TIME_HOURS_PER_WEEK) };
 }
 
 /** Group a week's entries by work date, each day's rows in the order they happened. */
