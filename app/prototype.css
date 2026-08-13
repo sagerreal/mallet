@@ -419,6 +419,27 @@
   .att-item.clickable{cursor:pointer}
   .att-item.clickable:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
   .empty-att{color:var(--ink-2);font-size:var(--type-base);padding:var(--space-5) var(--space-2);text-align:center}
+
+  /* ---- texting not switched on yet (features/a2p) ------------------------------------------
+     ONE banner explains and links; every blocked control gets ONE clause. Manila because this is
+     a standing condition of the shop's paperwork, not an error it just made — the red variant is
+     reserved for the state where a carrier actually refused. Flush and in flow (house rule): it
+     pushes the page down rather than floating over it. */
+  .sms-banner{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;
+    padding:var(--space-3) var(--space-5);background:var(--manila);color:var(--manila-ink);
+    border-bottom:1px solid var(--manila-line);font-size:var(--type-base)}
+  .sms-banner .txt{flex:1;min-width:200px}
+  .sms-banner .dot{width:7px;height:7px;border-radius:var(--radius-pill);flex:none;
+    background:currentColor;opacity:.65}
+  .sms-banner a{color:inherit;font-weight:600;text-decoration:underline;text-underline-offset:3px;
+    text-decoration-color:color-mix(in srgb,currentColor 40%,transparent);white-space:nowrap}
+  .sms-banner a:hover{text-decoration-color:currentColor}
+  .sms-banner.failed{background:var(--red-bg);color:var(--red);
+    border-bottom-color:color-mix(in srgb,var(--red) 28%,transparent)}
+  /* The clause under a blocked control. Quiet on purpose — the banner already did the explaining. */
+  .sms-note{font-size:var(--type-base);color:var(--ink-2);margin:var(--space-2) 0 0}
+  /* A blocked control keeps its place and its focus ring; only its availability changes. */
+  [aria-disabled="true"]{opacity:.5;cursor:not-allowed}
   /* First-run empty state (reusable — components/shared/first-run-empty-state.tsx): a centered
      heading + subtext over "path" cards. Anchored + in-flow (no floating UI). */
   .frs{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--space-6);padding:var(--space-10) var(--space-5) var(--space-10)}

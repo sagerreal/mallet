@@ -62,6 +62,7 @@ import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-deriv
 // Single source for the Net-terms/due-date/PO face line (features/invoices).
 import { termsLine } from "@/features/invoices/terms-line";
 import { ModalLoading } from "./modal-loading";
+import { useSmsGate } from "@/features/a2p/use-sms-ready";
 
 function StatusPill({ invoice }: { invoice: Invoice }) {
   const s = IST[invStatusKey(invoice)] ?? IST.draft!;
@@ -674,6 +675,8 @@ export function InvoiceModalContent() {
   const sendInvoice = useAppStore((s) => s.sendInvoice);
 
   const [busy, setBusy] = useState(false);
+  // Whether the customer's copy can go by text. Not a gate on sending the invoice — see send().
+  const smsGate = useSmsGate();
   const [payErr, setPayErr] = useState<string | null>(null);
   const [recOpen, setRecOpen] = useState(false);
   const [recMethod, setRecMethod] = useState<RecordMethod>("cash");
@@ -780,10 +783,17 @@ export function InvoiceModalContent() {
       }
       // "—" is this codebase's no-phone sentinel (see pickCust) — treat it as absent.
       const hasPhone = Boolean(phone && phone !== "—");
+      /**
+       * FALL BACK TO EMAIL RATHER THAN FAIL. The invoice itself is already sent by this point;
+       * only the customer's copy is in question. A shop without an active 10DLC campaign used to
+       * pick "sms" whenever a phone was on file, and the server refused the whole notification —
+       * so the bill went out and the customer was told nothing. Same rule the technician's
+       * fieldInvoicing.sendDocument already follows: `smsAllowed` is a preference, not a gate.
+       */
       try {
         await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
           invoiceId: invoice.id,
-          channel: hasPhone ? "sms" : "email",
+          channel: hasPhone && smsGate.ready ? "sms" : "email",
         });
       } catch (e) {
         // Includes the no-phone-no-email precondition — the server names the actual problem.

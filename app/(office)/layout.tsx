@@ -25,6 +25,7 @@ import { BrandHydrator } from "@/features/settings/brand-hydrator";
 import { BusinessIdentityHydrator } from "@/features/settings/business-identity-hydrator";
 import { DocumentWordingHydrator } from "@/features/settings/document-wording-hydrator";
 import { A2pHydrator } from "@/features/a2p/a2p-hydrator";
+import { SmsSetupBanner } from "@/features/a2p/sms-setup-banner";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
 
 export const dynamic = "force-dynamic";
@@ -49,6 +50,12 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
           <div className="appmain">
             <Topbar />
             <SectionTabs />
+            {/* App-wide, not Home-only: nine send paths need the shop's 10DLC registration and
+                they are spread across Money, Pipeline, Jobs and Messages. A notice that only
+                appears on Home is one the owner has already scrolled past by the time they hit a
+                blocked Send. Renders nothing at all once texting is active — and nothing while
+                the status is still loading, so it never flashes at a shop that IS registered. */}
+            <SmsSetupBanner />
             <div id="flashbar" />
             <main id="main">
               {children}

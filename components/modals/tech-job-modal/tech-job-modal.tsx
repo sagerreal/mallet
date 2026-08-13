@@ -41,6 +41,7 @@ import {
 } from "@/lib/store/app-store";
 import { useMe } from "@/features/identity/hooks";
 import { useCanText } from "@/features/messaging/use-can-text";
+import { SMS_FIELD_NOTE } from "@/features/a2p/sms-copy";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { VISIT_FEE_TITLE } from "@/features/invoices/visit-fee";
 import type { Visit } from "@/lib/store/types";
@@ -486,9 +487,13 @@ export function TechJobModalContent() {
           `isOffice`, which answered a different question: a shop that has not finished carrier
           registration cannot text whoever is holding the phone, and a shop that HAS finished it
           has no reason to withhold the thread from the man standing at the door. When the org
-          cannot text, no button is drawn at all — a control that is certain to be refused is a
-          dead control. Both stay TAPPABLE: the call sheet / thread each prompt in-flow when no
-          number is on file. They disable only with NO linked customer (nobody to call). */}
+          cannot text, the button STAYS and is blocked with a reason beneath it. Hiding it read as
+          a missing feature — a crew that never sees Text never learns the shop could have it, and
+          the row silently changed shape the day approval landed. `aria-disabled`, not `disabled`,
+          so it keeps its place in the tab order and is announced as unavailable rather than
+          vanishing from the accessibility tree. Both stay TAPPABLE otherwise: the call sheet /
+          thread each prompt in-flow when no number is on file. They disable only with NO linked
+          customer (nobody to call). */}
       <div className="sheet-secrow">
         <button
           type="button"
@@ -501,24 +506,35 @@ export function TechJobModalContent() {
         >
           Call
         </button>
-        {canText && (
-          <button
-            type="button"
-            className="sheet-sec"
-            disabled={!job?.leadId}
-            title={!job?.leadId ? "No linked customer" : undefined}
-            onClick={() => {
-              // The job itself carries the customer's name and phone, so this works on the
-              // tech shell where the leads store is empty (customers hydrator is office-only).
-              if (job?.leadId) {
-                pushModal(MODAL.THREAD, { leadId: job.leadId, leadName: custName, phone: job.phone });
-              }
-            }}
-          >
-            Text
-          </button>
-        )}
+        <button
+          type="button"
+          className="sheet-sec"
+          disabled={!job?.leadId}
+          title={!job?.leadId ? "No linked customer" : undefined}
+          aria-disabled={canText ? undefined : true}
+          onClick={(e) => {
+            // Blocked, not disabled — so the click has to be stopped by hand. It must not bubble
+            // either: this row sits inside a sheet that reacts to clicks.
+            if (!canText) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            // The job itself carries the customer's name and phone, so this works on the
+            // tech shell where the leads store is empty (customers hydrator is office-only).
+            if (job?.leadId) {
+              pushModal(MODAL.THREAD, { leadId: job.leadId, leadName: custName, phone: job.phone });
+            }
+          }}
+        >
+          Text
+        </button>
       </div>
+      {/* The FIELD sentence, and it is deliberately state-free: `a2p.getStatus` is ownerOrOffice,
+          so a technician's only source is the `canText` boolean and this line has to be true
+          whether the shop never registered, is mid-approval, or was rejected. No link — a tech
+          cannot file a 10DLC registration, and a dead end is worse than no door. */}
+      {!canText && <p role="status" className="sms-note">{SMS_FIELD_NOTE}</p>}
 
       {/* 4. The close-out HERO. A done, UNPRICED ESTIMATE gets the scope handoff for every
           role — there is no bill on a scoping visit, so no billing branch may render. The

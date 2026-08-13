@@ -16,7 +16,7 @@ import { Badge, type BadgeTone } from "@/components/ui/badge";
 import { firstName } from "@/features/home/derive";
 import { draftFor, type DraftContext } from "@/features/home/drafts";
 import { SendBlock, SentRow } from "@/features/home/send-block";
-import { SMS_NOT_READY_REASON } from "@/features/a2p/use-sms-ready";
+import { SMS_NOT_SET_UP_NOTE } from "@/features/a2p/sms-copy";
 import type { CardSend } from "./use-board-sends";
 import type { BoardItem, BoardTone } from "./types";
 
@@ -40,7 +40,7 @@ export function BoardCard({
   smsReady,
   onOpen,
   ctx = {},
-  smsBlockedReason = SMS_NOT_READY_REASON,
+  smsBlockedReason = SMS_NOT_SET_UP_NOTE,
   send,
 }: {
   item: BoardItem;

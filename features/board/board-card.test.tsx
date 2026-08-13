@@ -116,11 +116,22 @@ describe("BoardCard — the prepared text", () => {
     expect(onOpen).not.toHaveBeenCalled();
   });
 
-  it("disables Send when texting is not set up", () => {
+  /**
+   * BLOCKED, NOT DISABLED, and the reason is a visible line rather than a `title`. A tooltip does
+   * not exist on a phone, and `disabled` takes the control out of the tab order — so the owner who
+   * most needs the explanation (a screen-reader user) was the one who got none.
+   */
+  it("blocks Send when texting is not set up, without dropping it from the tab order", () => {
     render(<BoardCard item={reminderItem} smsReady={false} onOpen={vi.fn()} />);
     const send = screen.getByRole("button", { name: /^send$/i }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    expect(send.title).toMatch(/A2P|texting/i);
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(send.disabled).toBe(false);
+  });
+
+  it("prints the reason on the card instead of hiding it in a tooltip", () => {
+    render(<BoardCard item={reminderItem} smsReady={false} onOpen={vi.fn()} />);
+    expect(screen.getByRole("status").textContent).toMatch(/texting/i);
+    expect(screen.getByRole("button", { name: /^send$/i }).title).toBe("");
   });
 
   it("states the caller's own reason — 'still checking' is not 'not set up'", () => {
@@ -133,8 +144,8 @@ describe("BoardCard — the prepared text", () => {
       />,
     );
     const send = screen.getByRole("button", { name: /^send$/i }) as HTMLButtonElement;
-    expect(send.disabled).toBe(true);
-    expect(send.title).toBe("Checking texting setup…");
+    expect(send.getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe("Checking texting setup…");
   });
 
   it("shows the board's ✓ line instead of Send while the undo window is open", async () => {

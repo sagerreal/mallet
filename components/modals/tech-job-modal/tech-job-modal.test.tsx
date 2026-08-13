@@ -16,6 +16,7 @@ import { render, screen, fireEvent, act } from "@testing-library/react";
 import { TechJobModalContent } from "./tech-job-modal";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Invoice } from "@/lib/store/types";
+import { SMS_FIELD_NOTE } from "@/features/a2p/sms-copy";
 
 // ---------------------------------------------------------------------------
 // Mocks: store + identity (role comes from v1.identity.me via useMe)
@@ -331,18 +332,44 @@ describe("TechJobModalContent — tech", () => {
     expect(screen.queryByText("Text")).not.toBeNull();
   });
 
-  it("draws NO Text button when the org cannot text — a dead control is worse than none", () => {
+  /**
+   * Text is BLOCKED, not hidden. Removing it taught a crew that the shop has no texting at all,
+   * and the row silently changed shape the day the campaign was approved. It keeps its place,
+   * keeps its focus, and says why — `aria-disabled` rather than `disabled` so a screen reader
+   * announces "unavailable" instead of meeting a control that isn't there.
+   */
+  it("keeps the Text button and marks it unavailable when the org cannot text", () => {
     mockCanText = false;
     render(<TechJobModalContent />);
     expect(screen.queryByText("Call")).not.toBeNull();
-    expect(screen.queryByText("Text")).toBeNull();
+    const text = screen.getByText("Text");
+    expect(text.getAttribute("aria-disabled")).toBe("true");
+    // Not the real `disabled` attribute — that would drop it out of the tab order entirely.
+    expect((text as HTMLButtonElement).disabled).toBe(false);
   });
 
-  it("withholds Text from the OFFICE too when the campaign isn't active", () => {
+  it("says why, in a sentence true whether registration is missing, pending or rejected", () => {
+    // The field has ONE boolean (`canText`); a2p.getStatus is ownerOrOffice, so a tech cannot be
+    // told which of the three it is — and "isn't set up" would be a lie during approval.
+    mockCanText = false;
+    render(<TechJobModalContent />);
+    expect(screen.getByText(SMS_FIELD_NOTE)).toBeTruthy();
+    expect(screen.queryByText(/set up texting/i)).toBeNull();
+  });
+
+  it("does not open the thread when Text is blocked", () => {
+    // aria-disabled is a label, not a behaviour: without an explicit guard the click still fires.
+    mockCanText = false;
+    render(<TechJobModalContent />);
+    fireEvent.click(screen.getByText("Text"));
+    expect(mockOpenModal).not.toHaveBeenCalled();
+  });
+
+  it("blocks Text for the OFFICE too when the campaign isn't active", () => {
     mockRole = "owner";
     mockCanText = false;
     render(<TechJobModalContent />);
-    expect(screen.queryByText("Text")).toBeNull();
+    expect(screen.getByText("Text").getAttribute("aria-disabled")).toBe("true");
   });
 
   // A reviewer found this: the modal renders every PLACED visit, unfiltered by assignee, and the

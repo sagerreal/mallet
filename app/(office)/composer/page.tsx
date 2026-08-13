@@ -68,6 +68,7 @@ import {
   type ProposalChip,
   type TierKey,
 } from "./composer-state";
+import { useSmsGate } from "@/features/a2p/use-sms-ready";
 import { suggestFromGood } from "./gbb-suggest";
 import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
 import { CustomerSelector } from "./customer-selector";
@@ -235,6 +236,8 @@ export default function ComposerPage() {
   const previewDraftsRef = useRef<{ key: string; id: string; token: string | null }[]>([]);
   const quoteArchiveMutation = api.v1.quoting.archive.useMutation();
   // Step 3a: send SMS via Twilio (gated on A2P provisioning).
+  // May this shop text at all? Asked before the destination gate — see the SendCard below.
+  const smsGate = useSmsGate();
   const messagingSendMutation = api.v1.messaging.send.useMutation();
   // Step 3b: send the quote link by email via the notifications sender (Resend,
   // gated server-side on RESEND_API_KEY + EMAIL_FROM).
@@ -617,6 +620,10 @@ export default function ComposerPage() {
     // fail delivery with a misleading error, and a retry would mint a
     // duplicate estimate.
     if (deliveryGateReason(cs.sendChannel, selectedLead) != null) return;
+    // Same defense-in-depth for the carrier gate: a quote sent by TEXT on a shop whose 10DLC
+    // campaign isn't active persists the estimate, marks it sent, and then fails delivery — the
+    // customer never hears about a quote the pipeline says they were sent.
+    if (cs.sendChannel === "text" && !smsGate.ready) return;
 
     setSendError(null);
     setIsSending(true);
@@ -930,7 +937,12 @@ export default function ComposerPage() {
         gateReason={sendGateReason(selectedLead != null, linesForSend(cs), recTierName)}
         deliveryGateReason={
           selectedLead != null
-            ? deliveryGateReason(cs.sendChannel, selectedLead)
+            ? // The carrier gate outranks the destination gate: a number on file is no use if the
+              // shop cannot text at all, and naming the missing destination first would send the
+              // owner hunting for a phone number that was there all along.
+              (cs.sendChannel === "text" && !smsGate.ready
+                ? smsGate.note
+                : deliveryGateReason(cs.sendChannel, selectedLead))
             : null
         }
         isSending={isSending}

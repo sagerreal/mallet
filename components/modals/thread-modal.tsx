@@ -22,6 +22,8 @@ import type { MessageDTO } from "@mallet/messaging";
 import { shortWhen } from "@/lib/format";
 import { userMessage } from "@/lib/trpc/error-map";
 import { hasPhone, PhoneAddInput } from "@/lib/phone";
+import { useSmsGate } from "@/features/a2p/use-sms-ready";
+import { SmsNote } from "@/features/a2p/sms-blocked";
 
 function firstName(name: string): string {
   return name.split(" ")[0] ?? name;
@@ -190,6 +192,9 @@ export function CustomerThreadPane({
   const [draft, setDraft] = useState("");
   const [optimistic, setOptimistic] = useState<OptimisticMsg[]>([]);
   const [sendError, setSendError] = useState<string | null>(null);
+  // The office thread. A technician reaching this modal from the field gets the same block via
+  // the tech job sheet, which never opens it when the shop cannot text.
+  const smsGate = useSmsGate();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const utils = api.useUtils();
@@ -356,13 +361,29 @@ export function CustomerThreadPane({
               placeholder={`Text ${firstName(custName)}…`}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Enter") void send();
+                // Enter is a send too. Gating only the button would leave the whole thing
+                // reachable by keyboard, which is how the shop uses it.
+                if (e.key === "Enter" && smsGate.ready) void send();
               }}
             />
-            <button className="btn primary" onClick={() => void send()}>
+            {/* The draft box stays live even when blocked: the words are the shop's answer either
+                way, and taking the field away to make a limitation less visible loses their work. */}
+            <button
+              className="btn primary"
+              aria-disabled={smsGate.ready ? undefined : true}
+              onClick={(e) => {
+                if (!smsGate.ready) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return;
+                }
+                void send();
+              }}
+            >
               Send
             </button>
           </div>
+          <SmsNote gate={smsGate} />
         </>
       )}
     </>
