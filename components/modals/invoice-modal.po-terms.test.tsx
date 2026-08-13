@@ -17,6 +17,9 @@ const updateInvoice = vi.fn();
 let mockInvoices: Invoice[] = [];
 
 vi.mock("@/lib/store/app-store", () => ({
+  // The record trail navigates with this. A stub: these tests assert the sheet's own body.
+  // (useCloseModal is already mocked below — a second key here is a duplicate tsc rejects.)
+  useOpenModal: () => vi.fn(),
   useActiveModal: () => ({ id: "invoice", params: { invoiceId: "inv-1" } }),
   useCloseModal: () => noop,
   usePushModal: () => noop,
@@ -38,6 +41,9 @@ vi.mock("@/lib/store/app-store", () => ({
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
+      // The sheet header's record trail. Undefined data renders nothing, which is what these tests
+      // want — they are about the sheet's own body, not the chain.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       invoicing: {
         get: { useQuery: () => ({ data: undefined, isError: false }) },
       },

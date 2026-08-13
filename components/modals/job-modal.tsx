@@ -54,6 +54,7 @@ import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
+import { Trail } from "./trail";
 import { latestNoteSnippet } from "./lead-modal/lead-notes";
 import { NoteRow, gatherNotes } from "./lead-modal/note-row";
 import { dtoLeadNoteToStore } from "@/lib/store/dto-mapper";
@@ -655,7 +656,11 @@ export function JobModalContent() {
     return <ModalLoading size="lg" />;
   }
 
-  const custName = lead?.name ?? job.title ?? "Customer";
+  // NEVER the job title. This was `lead?.name ?? job.title`, so a job whose customer had not been
+  // loaded printed its own title where the name belongs — twice on one screen — and, because the
+  // link below was gated on `lead`, the only route to the customer vanished at the same moment.
+  // `job.cust` is the name the SERVER resolved for the row; job.leadId is always on the record.
+  const custName = lead?.name ?? job.cust ?? "Customer";
   const phone = job.phone || lead?.phone || "";
   const invoice = invoices.find((i) => i.jobId === job.id);
 
@@ -766,20 +771,9 @@ export function JobModalContent() {
           <span className="stpill" style={{ color: status.c, background: status.bg }}>
             {status.l}
           </span>
-          {lead ? (
-            <button
-              type="button"
-              className="linklike"
-              onClick={() => {
-                close();
-                openModal(MODAL.LEAD, { leadId: lead.id });
-              }}
-            >
-              {custName} →
-            </button>
-          ) : (
-            <span>{custName}</span>
-          )}
+          {/* customer > quote > job > invoice. Replaces a hand-rolled name link that only worked
+              when the store happened to hold the lead, and reached none of the other records. */}
+          <Trail kind="job" id={job.id} />
           {phone && <span>{phone}</span>}
         </div>
       </div>

@@ -42,6 +42,9 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
+      // The sheet header's record trail. Undefined data renders nothing, which is what these tests
+      // want — they are about the sheet's own body, not the chain.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       quoting: {
         get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) },
         clearChangeRequest: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },

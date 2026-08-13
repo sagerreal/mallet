@@ -80,6 +80,19 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     useUtils: () => ({ v1: { invoicing: { list: { invalidate: vi.fn() } } } }),
     v1: {
+      // The sheet header's record trail. Real data here, because the READ-ONLY test below asserts
+      // that the route to the customer record still exists — and the trail IS that route now.
+      links: {
+        forRecord: {
+          useQuery: () => ({
+            data: {
+              customer: { id: "l1", name: "Cole Hayes" },
+              quotes: [], jobs: [], invoices: [],
+              counts: { quotes: 0, jobs: 0, invoices: 0 }, cap: 6,
+            },
+          }),
+        },
+      },
       jobs: { get: { useQuery: () => ({ data: undefined, isLoading: false, isError: false }) } },
       invoicing: { createFromJob: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) } },
       customers: {
@@ -187,8 +200,10 @@ describe("the customer's notes on the job", () => {
     expect(screen.queryByLabelText("Add a note")).toBeNull();
     expect(screen.queryByText("Add note")).toBeNull();
     expect(screen.queryByPlaceholderText("gate code, what they want…")).toBeNull();
-    // The way to edit is the customer link in the header, which stays.
-    expect(screen.getByText("Cole Hayes →")).toBeTruthy();
+    // The way to edit is the header's trail, which is now the route to the customer record. It used
+    // to be a hand-rolled "Cole Hayes →" link that only rendered when the STORE held the lead.
+    const hop = screen.getByRole("button", { name: "Cole Hayes" });
+    expect(hop.className).toContain("hop");
   });
 
   it("reads the LIVE lead — a note added to the customer changes this row", () => {
