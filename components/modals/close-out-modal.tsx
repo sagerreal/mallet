@@ -32,8 +32,8 @@ import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
-import { TapToPayUnavailable } from "@/components/shared/tap-to-pay-unavailable";
-import { useTapToPayAvailability } from "@/lib/native/tap-to-pay";
+import { TapToPayButton } from "@/components/shared/tap-to-pay-button";
+import { useTapToPayAvailability, useTapToPayTermsAccepted } from "@/lib/native/tap-to-pay";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
@@ -499,7 +499,12 @@ function DueCard({ invoice }: { invoice: Invoice }) {
 // ===========================================================================
 
 type PayMethod = "card" | "cash" | "check" | "ach";
-type PayStep = "method" | "card" | "record" | "done";
+/**
+ * `tapterms` and `tap` are the two halves of Apple's 5.3: a shop that has not enabled Tap to Pay
+ * taps the button and lands in the Terms & Conditions (`tapterms`); an enabled one goes straight
+ * to the reader (`tap`).
+ */
+type PayStep = "method" | "card" | "record" | "tapterms" | "tap" | "done";
 
 interface PayState {
   step: PayStep;
@@ -533,6 +538,11 @@ interface PayBlockProps {
    * control there is noise, so they don't get it.
    */
   offerTapToPay: boolean;
+  /**
+   * May this viewer accept Apple's Tap to Pay Terms & Conditions (3.8)? Owner/office bind the
+   * business; a technician does not. Passed in rather than read here so the gate has one home.
+   */
+  tapToPayAuthorized: boolean;
   onFinish: () => void;
   onCancel: () => void;
 }
@@ -551,6 +561,7 @@ function PayBlock({
   surface,
   onCardPaid,
   offerTapToPay,
+  tapToPayAuthorized,
   onFinish,
   onCancel,
 }: PayBlockProps) {
@@ -558,6 +569,8 @@ function PayBlock({
   const card = custCard(lead);
   // Unconditional (hooks law); rendered only when this holder gets the affordance at all.
   const tapAvailability = useTapToPayAvailability();
+  // Asked of Apple every mount + foreground, never cached — requirement 1.6.
+  const tapEnabled = useTapToPayTermsAccepted();
   const [p, setP] = useState<PayState>({ step: "method", amt: due });
   // A record that could NOT proceed (draft send failed, server refused) — named in
   // place on the step the tech is looking at, never a silent "Approved".
@@ -772,6 +785,19 @@ function PayBlock({
             </span>
           </button>
         ) : null}
+        {/* TAP TO PAY IS FIRST. Apple 5.2: reachable without scrolling and "positioned at the
+            top of the list" when several payment options exist. It is also always LIVE (5.3) —
+            a shop that has not enabled it yet taps here and lands in Apple's Terms & Conditions
+            rather than meeting a greyed-out control. */}
+        {offerTapToPay ? (
+          <TapToPayButton
+            availability={tapAvailability}
+            enabled={tapEnabled}
+            role={tapToPayAuthorized ? "authorized" : "unauthorized"}
+            onCollect={() => setP((s) => ({ ...s, step: "tap", method: "card" }))}
+            onEnable={() => setP((s) => ({ ...s, step: "tapterms", method: "card" }))}
+          />
+        ) : null}
         {/* The amount box above applies to RECORDED methods only — a checkout
             session always charges the full balance, so the button says so. */}
         <button
@@ -781,11 +807,6 @@ function PayBlock({
           <b>Card</b>
           <span>scan to pay · charges the full balance</span>
         </button>
-        {/* Tap to Pay — phone-as-reader. The server rails exist (v1.terminal.*); the native
-            reader plugin is the next app-shell PR, so until it ships this renders DISABLED with
-            the honest reason (the ScanUnavailable pattern) — visible so the person at the door
-            knows it is coming, never a dead button pretending to work. */}
-        {offerTapToPay ? <TapToPayUnavailable availability={tapAvailability} /> : null}
         <button
           className="btn"
           onClick={() => setP((s) => ({ ...s, step: "record", method: "cash" }))}
@@ -1473,6 +1494,7 @@ export function CloseOutModalContent() {
             // surface: an owner-operator on My day computes surface "office" and still belongs
             // in the tap audience.
             offerTapToPay={me.data?.role === "tech" || me.data?.role === "owner"}
+            tapToPayAuthorized={isOffice}
             onFinish={() => {
               setPayOpen(false);
               finish();
