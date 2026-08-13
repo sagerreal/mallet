@@ -306,6 +306,103 @@ export class StripeClient {
     }
     return { paymentIntentId: intent.id, amountReceivedCents: intent.amount_received };
   }
+  // ── Terminal (Tap to Pay) — DIRECT charges on the connected account ─────────
+  // Every call below carries the Stripe-Account header: with direct charges, connection tokens,
+  // locations and card_present PaymentIntents all belong to the shop's connected account
+  // (docs.stripe.com/terminal/features/connect, direct variant). One breaker covers these too.
+
+  // Mint a Terminal connection token for the connected account, optionally scoped to a location.
+  // Not idempotency-keyed on purpose (each reader session wants a FRESH token, like account
+  // links); still safe to retry — an extra unused token just expires.
+  async createTerminalConnectionToken(params: {
+    connectedAccountId: string;
+    locationId?: string | null;
+  }): Promise<{ secret: string }> {
+    const token = await call(
+      () =>
+        this.stripe.terminal.connectionTokens.create(
+          params.locationId ? { location: params.locationId } : {},
+          { stripeAccount: params.connectedAccountId, timeout: 10_000 },
+        ),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    return { secret: token.secret };
+  }
+
+  // Create the shop's Terminal Location on its connected account. Idempotency-keyed (stable per
+  // org+account upstream) so a retry after a rolled-back save returns the SAME location. The
+  // address is best facts on file: country is always US (the only country Connect accounts are
+  // created in — see createExpressAccount), line1 is the shop's free-text address when present.
+  async createTerminalLocation(params: {
+    connectedAccountId: string;
+    displayName: string;
+    addressLine1?: string | null;
+    idempotencyKey: string;
+  }): Promise<{ locationId: string }> {
+    const location = await call(
+      () =>
+        this.stripe.terminal.locations.create(
+          {
+            display_name: params.displayName,
+            address: { country: "US", ...(params.addressLine1 ? { line1: params.addressLine1 } : {}) },
+          },
+          { idempotencyKey: params.idempotencyKey, stripeAccount: params.connectedAccountId, timeout: 10_000 },
+        ),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    return { locationId: location.id };
+  }
+
+  // Mint the card_present PaymentIntent a phone-reader collects against — a DIRECT charge on the
+  // connected account, with Mallet's fee as application_fee_amount. capture_method automatic per
+  // the Terminal docs' one-step option: there is no tip/reconciliation step between collect and
+  // capture in this flow, and manual capture's failure mode (an authorization nobody captures
+  // expiring after 2 days) is a silent money loss this codebase refuses by construction.
+  async createCardPresentPaymentIntent(params: {
+    connectedAccountId: string;
+    amountCents: number;
+    currency: string;
+    description: string;
+    orgId: string;
+    invoiceId: string;
+    applicationFeeCents?: number;
+    idempotencyKey: string;
+  }): Promise<{ paymentIntentId: string; clientSecret: string }> {
+    const intent = await call(
+      () =>
+        this.stripe.paymentIntents.create(
+          {
+            amount: params.amountCents,
+            currency: params.currency,
+            payment_method_types: ["card_present"],
+            capture_method: "automatic",
+            description: params.description,
+            // `kind: "tap"` is what lets the reconcile read refuse to double-record a Checkout
+            // intent, and vice versa — the same discriminator role CheckoutSubject.kind plays.
+            metadata: { orgId: params.orgId, invoiceId: params.invoiceId, kind: "tap" },
+            ...(params.applicationFeeCents !== undefined
+              ? { application_fee_amount: params.applicationFeeCents }
+              : {}),
+          },
+          { idempotencyKey: params.idempotencyKey, stripeAccount: params.connectedAccountId, timeout: 10_000 },
+        ),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+    if (!intent.client_secret) throw new Error("stripe returned a payment intent without a client secret");
+    return { paymentIntentId: intent.id, clientSecret: intent.client_secret };
+  }
+
+  // Read back a PaymentIntent from a connected account (tap reconcile). GET — safe to retry.
+  async retrieveConnectedPaymentIntent(
+    connectedAccountId: string,
+    paymentIntentId: string,
+  ): Promise<Stripe.PaymentIntent> {
+    return call(
+      () =>
+        this.stripe.paymentIntents.retrieve(paymentIntentId, {}, { stripeAccount: connectedAccountId, timeout: 10_000 }),
+      { idempotent: true, retries: 2, timeoutMs: 10_000, breaker: this.breaker, shouldRetry: isRetriableStripeError },
+    );
+  }
 }
 
 // ── process-wide shared instance ─────────────────────────────────────────────

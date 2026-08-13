@@ -32,6 +32,8 @@ import { useMe } from "@/features/identity/hooks";
 import { useOrgServiceFee } from "@/features/settings/use-org-service-fee";
 import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
+import { TapToPayButton } from "@/components/shared/tap-to-pay-button";
+import { useTapToPayAvailability, useTapToPayTermsAccepted } from "@/lib/native/tap-to-pay";
 import { CardCheckoutStep } from "./close-out-card-step";
 import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
@@ -497,7 +499,12 @@ function DueCard({ invoice }: { invoice: Invoice }) {
 // ===========================================================================
 
 type PayMethod = "card" | "cash" | "check" | "ach";
-type PayStep = "method" | "card" | "record" | "done";
+/**
+ * `tapterms` and `tap` are the two halves of Apple's 5.3: a shop that has not enabled Tap to Pay
+ * taps the button and lands in the Terms & Conditions (`tapterms`); an enabled one goes straight
+ * to the reader (`tap`).
+ */
+type PayStep = "method" | "card" | "record" | "tapterms" | "tap" | "done";
 
 interface PayState {
   step: PayStep;
@@ -531,6 +538,17 @@ interface PayBlockProps {
   surface: InvoiceWriteSurface;
   /** The card step's poll saw paid/partial — the parent adopts the fresh record. */
   onCardPaid: (invoice: Invoice) => void;
+  /**
+   * Whether this device's holder is the person collecting AT THE DOOR (tech or owner) — the
+   * audience the Tap to Pay affordance exists for. Office staff work a desk: a phone-as-reader
+   * control there is noise, so they don't get it.
+   */
+  offerTapToPay: boolean;
+  /**
+   * May this viewer accept Apple's Tap to Pay Terms & Conditions (3.8)? Owner/office bind the
+   * business; a technician does not. Passed in rather than read here so the gate has one home.
+   */
+  tapToPayAuthorized: boolean;
   onFinish: () => void;
   onCancel: () => void;
 }
@@ -549,11 +567,17 @@ function PayBlock({
   sendInvoice,
   surface,
   onCardPaid,
+  offerTapToPay,
+  tapToPayAuthorized,
   onFinish,
   onCancel,
 }: PayBlockProps) {
   const due = invDue(invoice);
   const card = custCard(lead);
+  // Unconditional (hooks law); rendered only when this holder gets the affordance at all.
+  const tapAvailability = useTapToPayAvailability();
+  // Asked of Apple every mount + foreground, never cached — requirement 1.6.
+  const tapEnabled = useTapToPayTermsAccepted();
   const [p, setP] = useState<PayState>({ step: "method", amt: due });
   // A record that could NOT proceed (draft send failed, server refused) — named in
   // place on the step the tech is looking at, never a silent "Approved".
@@ -763,6 +787,19 @@ function PayBlock({
               {card.via ? "saved from " + card.via + " · " : ""}charges the full balance
             </span>
           </button>
+        ) : null}
+        {/* TAP TO PAY IS FIRST. Apple 5.2: reachable without scrolling and "positioned at the
+            top of the list" when several payment options exist. It is also always LIVE (5.3) —
+            a shop that has not enabled it yet taps here and lands in Apple's Terms & Conditions
+            rather than meeting a greyed-out control. */}
+        {offerTapToPay ? (
+          <TapToPayButton
+            availability={tapAvailability}
+            enabled={tapEnabled}
+            role={tapToPayAuthorized ? "authorized" : "unauthorized"}
+            onCollect={() => setP((s) => ({ ...s, step: "tap", method: "card" }))}
+            onEnable={() => setP((s) => ({ ...s, step: "tapterms", method: "card" }))}
+          />
         ) : null}
         {/* The amount box above applies to RECORDED methods only — a checkout
             session always charges the full balance, so the button says so. */}
@@ -1543,6 +1580,11 @@ export function CloseOutModalContent() {
             sendInvoice={(id) => sendInvoice(id, surface)}
             surface={surface}
             onCardPaid={adoptPaidInvoice}
+            // Techs and owners collect at the door; office staff are at a desk. Role, not
+            // surface: an owner-operator on My day computes surface "office" and still belongs
+            // in the tap audience.
+            offerTapToPay={me.data?.role === "tech" || me.data?.role === "owner"}
+            tapToPayAuthorized={isOffice}
             onFinish={() => {
               setPayOpen(false);
               finish();

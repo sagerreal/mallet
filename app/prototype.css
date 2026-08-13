@@ -1391,6 +1391,19 @@
   .msp-rooms .btn:disabled{opacity:.55;cursor:not-allowed}
   .msp-rooms .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
   .scanwhy{flex:1 1 100%;color:var(--ink-3);font-size:var(--type-sm);margin:var(--space-2) 0 0}
+  /* Tap to Pay. The button carries Apple's SF Symbol beside its label (requirement 5.5), so the
+     bold line becomes a flex row; everything else inherits the pay-block button treatment. */
+  .tap-to-pay b{display:flex;align-items:center;gap:var(--space-2)}
+  .tap-to-pay svg{flex-shrink:0}
+  /* Merchant education (§4) — shown after the terms are accepted and again from Settings. */
+  .ttp-edu{display:flex;flex-direction:column;gap:var(--space-3)}
+  .ttp-edu-h{display:flex;align-items:flex-start;gap:var(--space-3)}
+  .ttp-edu-h h3{font-family:var(--font-display);font-size:var(--type-lg);font-weight:700;margin:0}
+  .ttp-edu-h p{margin:var(--space-1) 0 0;font-size:var(--type-base)}
+  .ttp-edu-row{border-top:1px solid var(--line-2);padding-top:var(--space-3)}
+  .ttp-edu-row b{font-size:var(--type-base);font-weight:650}
+  .ttp-edu-row p{margin:var(--space-1) 0 0;font-size:var(--type-base);line-height:1.5}
+  .ttp-edu-foot{font-size:var(--type-sm);margin:0}
 
   /* ---------- pipeline search (shown only above 20 active leads) ---------- */
   .board-tools{margin-bottom:var(--space-3)}
