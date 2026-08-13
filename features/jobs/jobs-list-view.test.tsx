@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { mkJob, mkLead, mkTech, mkVisit } from "./test-factories";
 import { dPlus } from "@/lib/prototype-sample";
 import type { JobListItem } from "./server-rows";
@@ -12,23 +12,24 @@ const techs = [mkTech()];
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: { leads: unknown; techs: unknown }) => unknown) => sel({ leads, techs }),
 }));
-vi.mock("next/link", () => ({ default: ({ children }: { children: React.ReactNode }) => <>{children}</> }));
+// A real anchor, not a passthrough: the needs-a-slot WHEN cell IS a link, and the thing worth
+// testing about it is that clicking it does not also open the row.
+vi.mock("next/link", () => ({
+  default: ({ children, href, ...rest }: { children: React.ReactNode; href: string }) => (
+    <a href={href} {...rest}>{children}</a>
+  ),
+}));
 
 import { JobsListView } from "./jobs-list-view";
-import { DEFAULT_JOB_COLS } from "./jobs-list-config";
 
 const item = (job: Job, bandKey: JobListItem["bandKey"]): JobListItem => ({ job, bandKey });
 
-const renderList = (items: JobListItem[], sort: { col: "when" | "amount" | "customer"; dir: "asc" | "desc" }) => {
-  render(
-    <JobsListView
-      items={items}
-      sort={sort}
-      onSort={vi.fn()}
-      onOpenJob={vi.fn()}
-      visibleCols={[...DEFAULT_JOB_COLS]}
-    />,
-  );
+const renderList = (
+  items: JobListItem[],
+  sort: { col: "when" | "amount" | "customer"; dir: "asc" | "desc" },
+  onOpenJob: (id: string) => void = vi.fn(),
+) => {
+  render(<JobsListView items={items} sort={sort} onSort={vi.fn()} onOpenJob={onOpenJob} />);
   // The first cell of every row is the "Open <customer> · <job>" button.
   return screen
     .getAllByRole("button", { name: /^Open / })
@@ -68,11 +69,11 @@ describe("JobsListView — the server owns the WHEN order", () => {
 
   it("labels each row from its OWN band, not the first row's", () => {
     renderList(mixed, { col: "when", dir: "asc" });
-    // needsSlot → "Needs a slot"; done → "Done"; later → "Scheduled". All three present means the
-    // per-row band key survived the flattening.
-    expect(screen.getByText("Needs a slot")).toBeTruthy();
-    expect(screen.getAllByText("Done")).toHaveLength(2);
-    expect(screen.getByText("Scheduled")).toBeTruthy();
+    // The band now reads out of the WHEN cell: "sold ..." for needsSlot, "done ..." twice, and a
+    // plain date for the scheduled one. All present means the per-row band key survived the
+    // flattening — the thing the Status pill used to prove.
+    expect(screen.getByText(/^sold /)).toBeTruthy();
+    expect(screen.getAllByText(/^done /)).toHaveLength(2);
   });
 
   it("shows an unscheduled row's 'sold' text and a scheduled row's date, in one flat table", () => {
@@ -106,5 +107,42 @@ describe("JobsListView — the columns the server does not order", () => {
       "Open Ann Alpha",
       "Open Zed Zulu",
     ]);
+  });
+});
+
+describe("JobsListView — the columns themselves", () => {
+  const slotRow: JobListItem[] = [
+    item(mkJob({ id: "a", title: "Sewer repair", leadId: "l1", status: "unscheduled", addr: "418 Cedar St" }), "needsSlot"),
+  ];
+
+  it("has no Status column — it printed the selected chip's own word on every row", () => {
+    renderList(slotRow, { col: "when", dir: "asc" });
+    expect(screen.queryByRole("columnheader", { name: /status/i })).toBeNull();
+  });
+
+  it("shows the job's address, which is the one fact that differs on every row", () => {
+    renderList(slotRow, { col: "when", dir: "asc" });
+    expect(screen.getByRole("columnheader", { name: /address/i })).toBeTruthy();
+    expect(screen.getByText("418 Cedar St")).toBeTruthy();
+  });
+
+  it("sends a needs-a-slot row's WHEN cell to the board WITHOUT opening the job", () => {
+    // The cell is the only control on the row that goes somewhere else. Without stopPropagation it
+    // would open the modal too, and the board would never be reached.
+    const onOpenJob = vi.fn();
+    renderList(slotRow, { col: "when", dir: "asc" }, onOpenJob);
+    const link = screen.getByRole("link", { name: /sold/i });
+    expect(link.getAttribute("href")).toBe("/jobs?tab=schedule");
+    fireEvent.click(link);
+    expect(onOpenJob).not.toHaveBeenCalled();
+  });
+
+  it("marks an overdue row late, and does not link it anywhere", () => {
+    const late: JobListItem[] = [
+      item(mkJob({ id: "b", title: "Slab leak", leadId: "l1", visits: [mkVisit({ date: dPlus(-3), techId: "1", start: 9 })] }), "late"),
+    ];
+    renderList(late, { col: "when", dir: "asc" });
+    expect(screen.getByText(/3d late/)).toBeTruthy();
+    expect(screen.queryByRole("link", { name: /late/i })).toBeNull();
   });
 });

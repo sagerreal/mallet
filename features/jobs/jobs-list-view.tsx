@@ -2,10 +2,16 @@
 
 /**
  * features/jobs/jobs-list-view.tsx
- * The Jobs list — a flat, sortable table (styled like the Customers table). It is
- * built from the server-shaped lifecycle bands so status
- * and default order read by state. Columns can be hidden (Customer/Job is fixed);
- * the Crew filter narrows rows here; the Status filter chooses the bands upstream.
+ * The Jobs list — a flat, sortable table (styled like the Customers table), built from the
+ * server-shaped lifecycle bands so the labels and the default order read by state.
+ *
+ * FIVE FIXED COLUMNS. There used to be a column picker and a Status column; both went in the same
+ * change. Status derived its pill from the row's band, and the band IS the chosen view, so under
+ * the list's default filter it printed "Today" on every row — nothing to scan and nothing to
+ * filter by. Its two remaining jobs (the amber tone, the one link off the row) moved into the WHEN
+ * cell, which was already naming the date. Address took the freed width: it is the one fact that
+ * differs on every row, and what people in the trades recall a job by.
+ *
  * Reads leads/techs from the store; derivation is pure.
  */
 
@@ -15,10 +21,9 @@ import { fmt$ } from "@/lib/format";
 import type { Lead, Tech } from "@/lib/store/types";
 import { custName, leadAgeOf } from "./jobs-helpers";
 import { jobTotal } from "./today-derive";
-import { jobWhenLabel, jobStatusView, jobCrewTech, type WhenLabel, type StatusView } from "./job-row";
+import { jobWhenLabel, jobCrewTech, type WhenLabel } from "./job-row";
 import type { JobListItem } from "./server-rows";
 import type { JobsSort, JobsSortCol } from "./use-jobs-sort";
-import { JOB_COLS, type JobColKey } from "./jobs-list-config";
 
 interface ListRow {
   id: string;
@@ -26,7 +31,7 @@ interface ListRow {
   cust: string;
   amt: number;
   when: WhenLabel;
-  status: StatusView;
+  addr: string;
   tech: Tech | null;
 }
 
@@ -38,7 +43,7 @@ function deriveListRows(items: readonly JobListItem[], leads: Lead[], techs: Tec
     cust: custName(job, leads),
     amt: jobTotal(job),
     when: jobWhenLabel(bandKey, job, leadAgeOf(job, leads)),
-    status: jobStatusView(bandKey, job),
+    addr: job.addr ?? "",
     tech: jobCrewTech(bandKey, job, techs),
   }));
 }
@@ -102,72 +107,45 @@ function SortTh({
   );
 }
 
-/** One column's cell for a row. */
-function RowCell({ col, row }: { col: JobColKey; row: ListRow }) {
-  const label = JOB_COLS[col].label; // doubles as the mobile-card row label
-  switch (col) {
-    case "status": {
-      const pillContent = (
-        <>
-          <span className="d" aria-hidden="true" />
-          {row.status.label}
-        </>
-      );
-      if (row.status.href) {
-        return (
-          <td data-label={label}>
-            <Link
-              href={row.status.href}
-              className={`jst jst-${row.status.tone}`}
-              title="Place it on the Schedule board"
-              onClick={(e) => e.stopPropagation()}
-              onKeyDown={(e) => e.stopPropagation()}
-            >
-              {pillContent}
-            </Link>
-          </td>
-        );
-      }
-      return (
-        <td data-label={label}>
-          <span className={`jst jst-${row.status.tone}`}>
-            {pillContent}
-          </span>
-        </td>
-      );
-    }
-    case "when":
-      return (
-        <td data-label={label}>
-          <span className={`jl-when${row.when.live ? " live" : ""}`}>
-            {row.when.live && <span className="jh-ldot" aria-hidden="true" />}
-            {row.when.live ? `on site · ${row.when.onsiteAt}` : row.when.label}
-          </span>
-        </td>
-      );
-    case "crew":
-      return (
-        <td data-label={label}>
-          {row.tech ? (
-            <span className="jl-crew">
-              <span className="javatar jh-av" style={{ background: row.tech.color }}>{row.tech.initials}</span>
-              {row.tech.name.split(" ")[0]}
-            </span>
-          ) : (
-            <span className="jl-crew">—</span>
-          )}
-        </td>
-      );
-    case "amount":
-      return (
-        <td className="r" data-label={label}>
-          <span className="jl-amt">{fmt$(row.amt)}</span>
-        </td>
-      );
-  }
+/**
+ * The WHEN cell — the date, and since the Status column was retired, the BAND.
+ *
+ * Tone and link come off the WhenLabel rather than being decided here, so the rule lives in one
+ * pure place (job-row.ts) and this stays a renderer.
+ */
+function WhenCell({ when }: { when: WhenLabel }) {
+  const cls = [
+    "jl-when",
+    when.live ? "live" : "",
+    when.tone === "rust" ? "late" : "",
+    when.tone === "amber" ? (when.href ? "slot" : "unbilled") : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const body = (
+    <>
+      {when.live && <span className="jh-ldot" aria-hidden="true" />}
+      {when.live ? `on site · ${when.onsiteAt}` : when.label}
+    </>
+  );
+
+  if (!when.href) return <span className={cls}>{body}</span>;
+  return (
+    // stopPropagation, or the one cell that goes somewhere ELSE also opens the job modal.
+    <Link
+      href={when.href}
+      className={cls}
+      title="Place it on the Schedule board"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
+      {body} <span aria-hidden="true">→</span>
+    </Link>
+  );
 }
 
-function JobsListRow({ row, visibleCols, onOpenJob }: { row: ListRow; visibleCols: JobColKey[]; onOpenJob: (id: string) => void }) {
+function JobsListRow({ row, onOpenJob }: { row: ListRow; onOpenJob: (id: string) => void }) {
   return (
     <tr className="clickable" onClick={() => onOpenJob(row.id)}>
       <td className="jl-cust">
@@ -184,9 +162,19 @@ function JobsListRow({ row, visibleCols, onOpenJob }: { row: ListRow; visibleCol
           <span className="job">{row.title}</span>
         </button>
       </td>
-      {visibleCols.map((col) => (
-        <RowCell key={col} col={col} row={row} />
-      ))}
+      <td data-label="When"><WhenCell when={row.when} /></td>
+      <td data-label="Address"><span className="jl-addr">{row.addr || "—"}</span></td>
+      <td data-label="Crew">
+        {row.tech ? (
+          <span className="jl-crew">
+            <span className="javatar jh-av" style={{ background: row.tech.color }}>{row.tech.initials}</span>
+            {row.tech.name.split(" ")[0]}
+          </span>
+        ) : (
+          <span className="jl-crew">—</span>
+        )}
+      </td>
+      <td className="r" data-label="Amount"><span className="jl-amt">{fmt$(row.amt)}</span></td>
     </tr>
   );
 }
@@ -197,10 +185,9 @@ export interface JobsListViewProps {
   sort: JobsSort;
   onSort: (s: JobsSort) => void;
   onOpenJob: (id: string) => void;
-  visibleCols: JobColKey[];
 }
 
-export function JobsListView({ items, sort, onSort, onOpenJob, visibleCols }: JobsListViewProps) {
+export function JobsListView({ items, sort, onSort, onOpenJob }: JobsListViewProps) {
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
 
@@ -212,8 +199,6 @@ export function JobsListView({ items, sort, onSort, onOpenJob, visibleCols }: Jo
     else onSort({ col, dir: col === "amount" ? "desc" : "asc" });
   }
 
-  const show = (c: JobColKey) => visibleCols.includes(c);
-
   if (rows.length === 0) {
     return <div className="empty-att" style={{ padding: "var(--space-6) 0" }}>Nothing matches.</div>;
   }
@@ -221,25 +206,28 @@ export function JobsListView({ items, sort, onSort, onOpenJob, visibleCols }: Jo
   return (
     <div className="jl-card">
       <table className="jl">
+        {/* Fixed. The column picker went with the Status column: four load-bearing columns is not
+            a set worth hiding, and Customers made the same call. */}
         <colgroup>
           <col />
-          {show("status") && <col style={{ width: 150 }} />}
-          {show("when") && <col style={{ width: 140 }} />}
-          {show("crew") && <col style={{ width: 130 }} />}
-          {show("amount") && <col style={{ width: 104 }} />}
+          <col style={{ width: 150 }} />
+          <col style={{ width: 190 }} />
+          <col style={{ width: 130 }} />
+          <col style={{ width: 104 }} />
         </colgroup>
         <thead>
           <tr>
             <SortTh label="Customer / Job" col="customer" sort={sort} onActivate={clickCol} />
-            {show("status") && <th>{JOB_COLS.status.label}</th>}
-            {show("when") && <SortTh label={JOB_COLS.when.label} col="when" sort={sort} onActivate={clickCol} />}
-            {show("crew") && <th>{JOB_COLS.crew.label}</th>}
-            {show("amount") && <SortTh label={JOB_COLS.amount.label} col="amount" sort={sort} onActivate={clickCol} right />}
+            <SortTh label="When" col="when" sort={sort} onActivate={clickCol} />
+            {/* No server sort for Address, and a header that does nothing is a dead control. */}
+            <th>Address</th>
+            <th>Crew</th>
+            <SortTh label="Amount" col="amount" sort={sort} onActivate={clickCol} right />
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
-            <JobsListRow key={row.id} row={row} visibleCols={visibleCols} onOpenJob={onOpenJob} />
+            <JobsListRow key={row.id} row={row} onOpenJob={onOpenJob} />
           ))}
         </tbody>
       </table>

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { dPlus } from "@/lib/prototype-sample";
 import { mkJob, mkVisit, mkTech } from "./test-factories";
-import { jobWhenLabel, jobStatusView, jobCrewTech } from "./job-row";
+import { jobWhenLabel, jobCrewTech } from "./job-row";
 
 describe("jobWhenLabel", () => {
   it("needsSlot reads how long the job has been sold", () => {
@@ -35,42 +35,49 @@ describe("jobWhenLabel", () => {
   });
 });
 
-describe("jobStatusView — amber is rationed to the states that need the owner", () => {
-  it("flags a slot, a live crew, and an unbilled done job as amber", () => {
-    expect(jobStatusView("needsSlot", mkJob()).tone).toBe("amber");
-    const onsite = mkJob({ visits: [mkVisit({ date: dPlus(0), techId: "1", start: 9, status: "onsite" })] });
-    const s = jobStatusView("today", onsite);
-    expect(s.tone).toBe("amber");
-    expect(s.live).toBe(true);
-    expect(jobStatusView("doneUnbilled", mkJob()).tone).toBe("amber");
+describe("jobWhenLabel — the cell carries the BAND now the Status column is gone", () => {
+  it("names how late an overdue job is, in rust", () => {
+    const j = mkJob({ visits: [mkVisit({ date: dPlus(-3), techId: "1", start: 9 })] });
+    const w = jobWhenLabel("late", j, 0);
+    expect(w.label).toBe("3d late \u00b7 Jun 28");
+    expect(w.tone).toBe("rust");
   });
 
-  it("keeps calm states neutral", () => {
+  it("measures lateness from the OLDEST outstanding trip, not the newest placed one", () => {
+    // A job can carry a finished visit dated AFTER the one still owed — a return trip run out of
+    // order, or a follow-up booked before the original was closed. Reading "the next visit" then
+    // reports the wrong day and a far smaller number than the truth.
+    const j = mkJob({
+      visits: [
+        mkVisit({ id: "a", date: dPlus(-11), techId: "1", start: 9 }),
+        mkVisit({ id: "b", date: dPlus(-1), techId: "1", start: 9, status: "done" }),
+      ],
+    });
+    expect(jobWhenLabel("late", j, 0).label).toBe("11d late \u00b7 Jun 20");
+  });
+
+  it("rations amber to the three states that need the owner", () => {
+    expect(jobWhenLabel("needsSlot", mkJob(), 4).tone).toBe("amber");
+    expect(jobWhenLabel("doneUnbilled", mkJob(), 0).tone).toBe("amber");
+    const onsite = mkJob({ visits: [mkVisit({ date: dPlus(0), techId: "1", start: 9, status: "onsite", onsiteAt: "9:04" })] });
+    expect(jobWhenLabel("today", onsite, 0).live).toBe(true);
+  });
+
+  it("leaves the calm bands untoned", () => {
     const todayJob = mkJob({ visits: [mkVisit({ date: dPlus(0), techId: "1", start: 13 })] });
-    expect(jobStatusView("today", todayJob).tone).toBe("neutral");
-    expect(jobStatusView("thisWeek", mkJob()).tone).toBe("neutral");
-    expect(jobStatusView("later", mkJob()).tone).toBe("neutral");
-    expect(jobStatusView("done", mkJob()).tone).toBe("neutral");
+    expect(jobWhenLabel("today", todayJob, 0).tone).toBeUndefined();
+    expect(jobWhenLabel("thisWeek", mkJob(), 0).tone).toBeUndefined();
+    expect(jobWhenLabel("later", mkJob(), 0).tone).toBeUndefined();
+    expect(jobWhenLabel("done", mkJob(), 0).tone).toBeUndefined();
   });
 
-  it("labels 'Scheduled' for both future bands", () => {
-    expect(jobStatusView("thisWeek", mkJob()).label).toBe("Scheduled");
-    expect(jobStatusView("later", mkJob()).label).toBe("Scheduled");
-  });
-
-  it("labels the archived band 'Archived', neutral", () => {
-    const s = jobStatusView("archived", mkJob());
-    expect(s.label).toBe("Archived");
-    expect(s.tone).toBe("neutral");
-  });
-
-  it("needsSlot carries the schedule board href", () => {
-    expect(jobStatusView("needsSlot", mkJob()).href).toBe("/jobs?tab=schedule");
-  });
-
-  it("other bands do not carry an href", () => {
-    expect(jobStatusView("done", mkJob()).href).toBeUndefined();
-    expect(jobStatusView("thisWeek", mkJob()).href).toBeUndefined();
+  it("links out of needsSlot ONLY — the one action the row click does not already do", () => {
+    // Everything else's action is the job modal, which clicking the row opens. A second arrow
+    // would promise a destination that does not exist.
+    expect(jobWhenLabel("needsSlot", mkJob(), 4).href).toBe("/jobs?tab=schedule");
+    expect(jobWhenLabel("doneUnbilled", mkJob(), 0).href).toBeUndefined();
+    expect(jobWhenLabel("late", mkJob({ visits: [mkVisit({ date: dPlus(-3), techId: "1", start: 9 })] }), 0).href).toBeUndefined();
+    expect(jobWhenLabel("thisWeek", mkJob(), 0).href).toBeUndefined();
   });
 });
 

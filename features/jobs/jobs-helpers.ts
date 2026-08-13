@@ -77,6 +77,26 @@ export function jobDatedUnassignedVisit(j: Job): Visit | null {
   return half.length ? ([...half].sort(byDateStart)[0] as Visit) : null;
 }
 
+/**
+ * The OLDEST trip that was booked onto a past day and has not happened — what "late" measures.
+ *
+ * Deliberately not `jobNextVisit`. That answers "which visit does this row talk about" and, with
+ * nothing in the future, falls back to the LATEST placed visit — including a finished one. A job
+ * can easily carry a completed visit dated after the one still owed (a return trip run out of
+ * order, a follow-up booked before the original closed), and reading that one reports the wrong
+ * day and a far smaller number than the truth.
+ *
+ * Oldest, not newest, among the overdue: the trip that has been waiting longest is the one the
+ * customer is counting. Mirrors `onLate` in modules/jobs/infra/job-views.ts.
+ */
+export function jobOldestOverdueVisit(j: Job): Visit | null {
+  const today = todayISO();
+  const overdue = (j.visits ?? []).filter(
+    (v) => v.status !== "done" && isVisitPlaced(v) && (v.date ?? "") < today,
+  );
+  return overdue.length ? ([...overdue].sort(byDateStart)[0] as Visit) : null;
+}
+
 export function jobsUnscheduled(jobs: Job[]): Job[] {
   return liveJobs(jobs).filter(
     (j) => j.status !== "done" && ((j.visits ?? []).length === 0 || (j.visits ?? []).some((v) => !isVisitPlaced(v)))
