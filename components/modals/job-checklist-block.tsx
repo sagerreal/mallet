@@ -33,6 +33,10 @@ const PHOTO_ITEM_RE = /photo|picture/i;
 // mirror pattern used across the store slices; the module barrel can't be imported
 // from client code under test (it pulls the router → server config validator).
 const JOB_CHECKLIST_MAX_ITEMS = 50;
+// Mirrors the server's own cap (checklist-router createInput: items[].text max 500). Without a
+// client guard a long line reached the API, came back a raw 400, and the office was told only
+// "try again" — the one thing that could not work.
+const JOB_CHECKLIST_MAX_ITEM_CHARS = 500;
 
 // Shown when a persist path (create / attach / remove) fails — state is kept so
 // the office can retry.
@@ -60,6 +64,11 @@ interface AddChecklistPanelProps {
 }
 
 function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
+  // A finished or canceled job refuses every checklist write server-side (Job.patchFields ->
+  // "cannot edit a completed or canceled job"). Attempting it anyway produced the worst possible
+  // shape: the optimistic write flipped the panel away, the typed text was lost, the request
+  // 400'd, and each retry left ANOTHER orphan template behind. Refuse up front and say why.
+  const isTerminal = job.status === "complete" || job.status === "canceled";
   const checklists = useAppStore((s) => s.checklists);
   const addChecklist = useAppStore((s) => s.addChecklist);
   const deleteChecklist = useAppStore((s) => s.deleteChecklist);
@@ -76,6 +85,10 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
 
   /** Attach a snapshot to the job; outcome awaited. Returns true on success. */
   async function attach(chkName: string, items: Checklist["items"]): Promise<boolean> {
+    if (isTerminal) {
+      setError("This job is finished — reopen it to change its checklist.");
+      return false;
+    }
     const { ok } = await updateJob(job.id, { checklist: { name: chkName, items } });
     if (!ok) setError(SAVE_FAILED_COPY);
     return ok;
@@ -102,6 +115,12 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
   /** "Add to job" — save the pasted lines as a checklist, then attach it. */
   async function addToJob() {
     if (busy) return;
+    if (isTerminal) {
+      // Checked BEFORE anything is created — the old order saved a template, failed the attach,
+      // and left the orphan behind on every retry.
+      setError("This job is finished — reopen it to change its checklist.");
+      return;
+    }
     const items = linesToItems(linesRaw);
     if (items.length === 0) {
       setError("Add at least one item — one per line.");
@@ -110,6 +129,16 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
     if (items.length > JOB_CHECKLIST_MAX_ITEMS) {
       setError(
         `A checklist holds at most ${JOB_CHECKLIST_MAX_ITEMS} items — remove ${items.length - JOB_CHECKLIST_MAX_ITEMS}.`,
+      );
+      return;
+    }
+    // Say WHICH line and by how much — the server rejects the whole checklist for one long line,
+    // and "try again" leaves somebody re-pasting the same text forever.
+    const longIdx = items.findIndex((i) => i.text.length > JOB_CHECKLIST_MAX_ITEM_CHARS);
+    if (longIdx !== -1) {
+      const over = (items[longIdx]?.text.length ?? 0) - JOB_CHECKLIST_MAX_ITEM_CHARS;
+      setError(
+        `Line ${longIdx + 1} is ${over} character${over === 1 ? "" : "s"} too long — an item holds at most ${JOB_CHECKLIST_MAX_ITEM_CHARS}.`,
       );
       return;
     }
@@ -247,6 +276,10 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
 // ---- the block ---------------------------------------------------------------
 
 export function JobChecklistBlock({ job }: { job: Job }) {
+  // Every checklist control on this block writes to the job, and the job domain refuses a write
+  // to a completed or canceled job. Rather than let each control fail its own way, the block
+  // reads the state once and stops offering what cannot work.
+  const isTerminal = job.status === "complete" || job.status === "canceled";
   const updateJob = useAppStore((s) => s.updateJob);
   const [open, setOpen] = useState(false);
   const [removeError, setRemoveError] = useState("");
@@ -271,13 +304,17 @@ export function JobChecklistBlock({ job }: { job: Job }) {
       <div className="card" style={{ marginTop: "var(--space-4)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
           <h3 style={{ margin: "0", fontSize: "var(--type-base)" }}>Before you leave</h3>
-          <span
-            className="linklike"
-            style={{ fontSize: "var(--type-sm)" }}
-            onClick={() => void removeChecklist()}
-          >
-            Remove
-          </span>
+          {/* Remove writes to the job, so a finished job can't offer it — the request would 400
+              and the row would reappear on the next render. Read-only is the honest state. */}
+          {isTerminal ? null : (
+            <span
+              className="linklike"
+              style={{ fontSize: "var(--type-sm)" }}
+              onClick={() => void removeChecklist()}
+            >
+              Remove
+            </span>
+          )}
         </div>
         <div className="muted" style={{ fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>{job.checklist.name}</div>
         {removeError && (
@@ -300,7 +337,16 @@ export function JobChecklistBlock({ job }: { job: Job }) {
     return <AddChecklistPanel job={job} onDone={() => setOpen(false)} onCancel={() => setOpen(false)} />;
   }
 
-  // Entry point.
+  // Entry point. A finished or canceled job refuses the write, so the opener isn't offered —
+  // a control that can only fail is a dead button.
+  if (isTerminal) {
+    return (
+      <div className="muted" style={{ marginTop: "var(--space-4)", fontSize: "var(--type-sm)" }}>
+        No checklist on this job — reopen it to add one.
+      </div>
+    );
+  }
+
   return (
     <div style={{ marginTop: "var(--space-4)" }}>
       <span
