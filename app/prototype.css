@@ -1632,6 +1632,12 @@
   .ts-seg button{border:none;background:var(--card);color:var(--ink-2);font:inherit;font-size:var(--type-base);font-weight:600;padding:var(--space-2) var(--space-3);cursor:pointer;border-right:1px solid var(--line)}
   .ts-seg button:last-child{border-right:none}
   .ts-seg button.on{background:var(--ink);color:var(--paper)}
+  /* WHICH kind of time off, revealed under the row above it — a second segmented control rather than
+     eight buttons in one line, which stops being a control and becomes a wall. */
+  .ts-segstack{display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-2)}
+  .ts-seg button{white-space:nowrap}
+  /* the length picker gets a lane, so it does not stretch across the whole editor row */
+  .ts-lenwrap{width:150px}
   /* Seven days do not fit on one line at every width, so this one wraps — and once it wraps the
      single rounded outline of a segmented control stops working, so each day becomes its own key. */
   .ts-dayseg{display:flex;flex-wrap:wrap;gap:var(--space-1);border:none;overflow:visible}

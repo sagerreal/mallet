@@ -26,6 +26,7 @@ import {
   tsMoney,
   tsRollup,
   tsWeekEntries,
+  tsKindChange,
 } from "./timesheet-derive";
 import { type TsPick } from "./timesheets-entries";
 import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
@@ -36,7 +37,7 @@ import { ListLoading } from "@/components/shared/list-loading";
 
 // Fields the office is allowed to edit (mirrors prototype tsSetField whitelist).
 // crew reassignment not supported here — techId is intentionally excluded.
-const TS_EDITABLE: ReadonlySet<string> = new Set(["kind", "jobId", "date", "start", "end", "note"]);
+const TS_EDITABLE: ReadonlySet<string> = new Set(["kind", "jobId", "date", "start", "end", "note", "minutes"]);
 
 // First-run empty-state copy. Timesheets are DOWNSTREAM — hours only exist once field crew clock
 // into jobs (or the office adds one by hand). Shown when there are no time entries at all.
@@ -191,6 +192,12 @@ export function TimesheetsPanel() {
       // An out time finishes the entry, so the clock must stop with it. Leaving `running` set would
       // show a complete span the week still can't be approved on — and QuickBooks would reject it.
       updateTimeEntry(id, { end: String(val), running: false });
+      return;
+    }
+    if (field === "kind") {
+      // Kind can change the row's SHAPE, and the two shapes are mutually exclusive by database
+      // constraint — so the conversion is one write, decided by tsKindChange.
+      updateTimeEntry(id, tsKindChange(e, String(val)));
       return;
     }
     updateTimeEntry(id, { [field]: val } as Partial<TimeEntry>);

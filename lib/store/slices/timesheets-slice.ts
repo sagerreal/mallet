@@ -130,10 +130,20 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       entryId: id,
     };
     if ("date" in patch) mutationInput.workDate = patch.date;
-    if ("start" in patch && patch.start != null) mutationInput.startTime = patch.start;
+    /**
+     * `start: null` HAS TO TRAVEL. The old guard was `patch.start != null`, which silently dropped
+     * it — and clearing the punch times is exactly what turning a row into a day off requires, so
+     * the write arrived half-converted, the domain refused it, and the optimistic row rolled back.
+     * The office clicked "Time off" and watched the row snap back to Job with no explanation.
+     */
+    if ("start" in patch) mutationInput.startTime = patch.start ?? null;
     if ("end" in patch) mutationInput.endTime = patch.end ?? null;
+    /** The LENGTH of a day off. Never forwarded before, so time off could not be recorded at all. */
+    if ("minutes" in patch) mutationInput.minutes = patch.minutes ?? null;
     if ("kind" in patch && patch.kind !== undefined) {
-      mutationInput.kind = patch.kind as "job" | "travel" | "break" | "shop";
+      // All eight kinds, not just the clocked four — the router's enum has always accepted the
+      // time-off kinds, and the narrower cast here only ever documented an assumption that is false.
+      mutationInput.kind = patch.kind as NonNullable<typeof mutationInput.kind>;
     }
     if ("jobId" in patch) mutationInput.jobId = patch.jobId ?? null;
     if ("note" in patch && patch.note !== undefined) mutationInput.note = patch.note;

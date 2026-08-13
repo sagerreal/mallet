@@ -13,7 +13,17 @@ import type { Job, Lead, Tech, TimeEntry } from "@/lib/store/types";
 import { timeToH } from "@/lib/time";
 import { useGroupLabel } from "@/components/ui/input";
 import { custName, liveJobs, techById } from "./jobs-helpers";
-import { TS_KINDS, TS_KIND_KEYS, MAX_JOB_SUGGESTIONS } from "./timesheet-constants";
+import {
+  TS_KINDS,
+  TS_KIND_KEYS,
+  TS_TIME_OFF_KEYS,
+  TS_TIME_OFF_MINUTES,
+  TS_TIME_OFF_DEFAULT_MINUTES,
+  tsIsTimeOffKind,
+  tsMinutesLabel,
+  MAX_JOB_SUGGESTIONS,
+} from "./timesheet-constants";
+import { SelectMenu } from "@/components/ui/select-menu";
 import {
   tsJob,
   tsLabel,
@@ -39,21 +49,76 @@ interface TsKindSegProps {
   onPick: (kind: string) => void;
 }
 
-/** Segmented control choosing the entry kind (job/travel/break/shop). */
+/**
+ * What kind of time this row records: the four CLOCKED kinds, then time off.
+ *
+ * Time off is one choice rather than four more buttons, because eight in a row stops being a
+ * segmented control and starts being a wall (Hick's law — and it would wrap on a narrow office
+ * window). Choosing it reveals which kind, which is the only question left.
+ *
+ * The office needs this at all because "Techs can edit their own times" defaults OFF: on most
+ * accounts this picker is the ONLY place in the product where a holiday can be recorded.
+ */
 function TsKindSeg({ entry, onPick }: TsKindSegProps) {
+  const isOff = tsIsTimeOffKind(entry.kind);
   return (
-    <div className="ts-seg">
-      {TS_KIND_KEYS.map((k) => (
+    // A block wrapper, so the second control lands UNDER the first. Two inline-flex segments side by
+    // side ran the time-off kinds off the edge of the editor and clipped "Holiday".
+    <div className="ts-segstack">
+      <div className="ts-seg">
+        {TS_KIND_KEYS.map((k) => (
+          <button
+            key={k}
+            className={entry.kind === k ? "on" : ""}
+            aria-pressed={entry.kind === k}
+            onClick={() => onPick(k)}
+          >
+            {TS_KINDS[k]}
+          </button>
+        ))}
         <button
-          key={k}
-          className={entry.kind === k ? "on" : ""}
-          aria-pressed={entry.kind === k}
-          onClick={() => onPick(k)}
+          className={isOff ? "on" : ""}
+          aria-pressed={isOff}
+          // Lands on PTO, the commonest, so one tap records the ordinary case.
+          onClick={() => onPick(isOff ? entry.kind : "pto")}
         >
-          {TS_KINDS[k]}
+          Time off
         </button>
-      ))}
+      </div>
+      {isOff ? (
+        <div className="ts-seg ts-seg-sub">
+          {TS_TIME_OFF_KEYS.map((k) => (
+            <button
+              key={k}
+              className={entry.kind === k ? "on" : ""}
+              aria-pressed={entry.kind === k}
+              onClick={() => onPick(k)}
+            >
+              {TS_KINDS[k]}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+/**
+ * How long the day off was — half-hour steps, because that is how time off is taken and paid.
+ *
+ * A LENGTH, not a span: there are no punch times to a day off, and inventing 8:00–16:00 for one
+ * would put times in the record that nobody stood behind.
+ */
+function TsLengthPicker({ entry, onPick }: { entry: TimeEntry; onPick: (minutes: number) => void }) {
+  const current = entry.minutes ?? TS_TIME_OFF_DEFAULT_MINUTES;
+  return (
+    <SelectMenu
+      value={String(current)}
+      // No aria-label: the editor row is a composite widget whose own label names it ("How long"),
+      // the same way the Day, Type and Time rows work. Naming the control too says it twice.
+      options={TS_TIME_OFF_MINUTES.map((m) => ({ value: String(m), label: tsMinutesLabel(m) }))}
+      onChange={(v) => onPick(Number(v))}
+    />
   );
 }
 
@@ -291,6 +356,14 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
           </div>
         </div>
       )}
+      {tsIsTimeOffKind(entry.kind) ? (
+        <div className="ts-erow" {...timeGroup.groupProps}>
+          <label {...timeGroup.labelProps}>How long</label>
+          <div className="ts-lenwrap">
+            <TsLengthPicker entry={entry} onPick={(m) => onSetField("minutes", m)} />
+          </div>
+        </div>
+      ) : (
       <div className="ts-erow" {...timeGroup.groupProps}>
         <label {...timeGroup.labelProps}>Time</label>
         <div className="ts-times">
@@ -322,6 +395,7 @@ function TsEditor({ entry, jobs, leads, techs, weekDates, pick, onSetPick, onSet
           </div>
         </div>
       </div>
+      )}
       <div style={{ textAlign: "right" }}>
         <button className="btn sm primary" onClick={onClose}>
           Done
@@ -411,11 +485,15 @@ function TsEntryRow({
   const appr = entry.status === "approved";
   const isJob = entry.kind === "job";
   const hasJob = !!tsJob(entry, jobs);
-  const timeStr = entry.running
-    ? `${tsTimeLabel(entry.start)}– running`
-    : entry.end
-      ? `${tsTimeLabel(entry.start)}–${tsTimeLabel(entry.end)}`
-      : tsTimeLabel(entry.start);
+  const isOff = tsIsTimeOffKind(entry.kind);
+  // A day off has no punch times, so the time column says what it IS rather than rendering "—–—".
+  const timeStr = isOff
+    ? "paid time off"
+    : entry.running
+      ? `${tsTimeLabel(entry.start)}– running`
+      : entry.end
+        ? `${tsTimeLabel(entry.start)}–${tsTimeLabel(entry.end)}`
+        : tsTimeLabel(entry.start);
   const lbl = isJob ? (hasJob ? tsLabel(entry, jobs, leads) : "— no job —") : tsLabel(entry, jobs, leads);
   // Mirrors the panel's own rule for opening the editor: an APPROVED row is locked (reopen first).
   // A running row is editable here — stopping one is exactly what the office needs to do.
