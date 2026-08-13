@@ -33,7 +33,7 @@ const data = (over: Record<string, unknown> = {}) => ({
 
 /** Label text with the count stripped, in chain order. */
 const labels = () =>
-  Array.from(document.querySelectorAll(".trail .hop, .trail .here, .trail .none")).map((e) =>
+  Array.from(document.querySelectorAll(".sheet-trail .hop, .sheet-trail .here, .sheet-trail .none")).map((e) =>
     (e.textContent ?? "").trim(),
   );
 
@@ -45,7 +45,7 @@ beforeEach(() => {
 describe("Trail", () => {
   it("renders nothing until the read lands — a chain that fills in reads as a glitch", () => {
     render(<Trail kind="job" id="job-1" />);
-    expect(document.querySelector(".trail")).toBeNull();
+    expect(document.querySelector(".sheet-trail")).toBeNull();
   });
 
   it("always shows four positions in chain order, whatever exists", () => {
@@ -57,7 +57,7 @@ describe("Trail", () => {
   it("marks where you are as plain ink, not a link — it goes nowhere", () => {
     trail = data({ quotes: [QUOTE], jobs: [JOB], counts: { quotes: 1, jobs: 1, invoices: 0 } });
     render(<Trail kind="job" id="job-1" />);
-    const here = document.querySelector(".trail .here");
+    const here = document.querySelector(".sheet-trail .here");
     expect(here?.textContent).toBe("Job");
     expect(here?.tagName).not.toBe("BUTTON");
     expect(screen.queryByRole("button", { name: "Job" })).toBeNull();
@@ -102,10 +102,10 @@ describe("Trail", () => {
       counts: { quotes: 0, jobs: 2, invoices: 0 },
     });
     render(<Trail kind="customer" id="lead-1" />);
-    expect(document.querySelector(".trail-pick")).toBeNull();
+    expect(document.querySelector(".sheet-trail-pick")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "2 jobs" }));
-    const pick = document.querySelector(".trail-pick");
+    const pick = document.querySelector(".sheet-trail-pick");
     expect(pick).toBeTruthy();
     // A sibling of the trail, not a portal — the house rule forbids floating panels.
     expect(pick?.parentElement?.tagName).not.toBe("BODY");
@@ -119,9 +119,9 @@ describe("Trail", () => {
     render(<Trail kind="customer" id="lead-1" />);
     const hop = screen.getByRole("button", { name: "2 jobs" });
     fireEvent.click(hop);
-    expect(document.querySelector(".trail-pick")).toBeTruthy();
+    expect(document.querySelector(".sheet-trail-pick")).toBeTruthy();
     fireEvent.click(hop);
-    expect(document.querySelector(".trail-pick")).toBeNull();
+    expect(document.querySelector(".sheet-trail-pick")).toBeNull();
   });
 
   it("says the chooser is a truncation when the count exceeds the rows", () => {

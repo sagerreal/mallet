@@ -1032,35 +1032,43 @@
      15px, not the strip's 12px, and a STANDING underline rather than hover-only — a link you have to
      hover to discover is not a link, and this is the only route between the four records. The
      vertical padding takes the hit area to 32px without pushing the line taller. */
-  .trail{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;font-size:var(--type-md);min-width:0}
-  .trail-step{display:inline-flex;align-items:center;gap:var(--space-2)}
-  .trail .hop{border:none;background:none;font:inherit;font-size:var(--type-md);font-weight:700;
+  /* NOWRAP inside, so the chain never breaks mid-way. .sheet-meta wraps, so when the strip is too
+     narrow the whole trail drops to its own line and stays one readable chain — a long customer name
+     used to stack every position onto a line of its own with a leading chevron. The NAME is the only
+     variable-length position, so it is the one that truncates. */
+  /* NAMED .sheet-trail, not .trail: `.trail` was already taken by the payment-reminder trail
+     further down this file, which is flex-direction:column — and being later, it won. The chain
+     rendered as a vertical stack with a leading chevron on every line until this was renamed. */
+  .sheet-trail{display:flex;align-items:center;gap:var(--space-2);flex-wrap:nowrap;font-size:var(--type-md);min-width:0}
+  .sheet-trail-step{display:inline-flex;align-items:center;gap:var(--space-2);flex-shrink:0}
+  .sheet-trail .hop{border:none;background:none;font:inherit;font-size:var(--type-md);font-weight:700;
     color:var(--green-700);cursor:pointer;white-space:nowrap;padding:var(--space-1) 0;
+    max-width:18ch;overflow:hidden;text-overflow:ellipsis;
     text-decoration:underline;text-decoration-thickness:1.5px;text-underline-offset:3px;
     text-decoration-color:color-mix(in srgb,var(--green-700) 30%,transparent)}
-  .trail .hop:hover,.trail .hop.open{text-decoration-color:var(--green-700)}
-  .trail .hop:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:var(--radius-2xs)}
+  .sheet-trail .hop:hover,.sheet-trail .hop.open{text-decoration-color:var(--green-700)}
+  .sheet-trail .hop:focus-visible{outline:2px solid var(--ink);outline-offset:2px;border-radius:var(--radius-2xs)}
   /* WHERE YOU ARE — ink, no underline, not a control, because it goes nowhere. */
-  .trail .here{font-size:var(--type-md);font-weight:700;color:var(--ink);white-space:nowrap;
-    padding:var(--space-1) 0;max-width:20ch;overflow:hidden;text-overflow:ellipsis}
+  .sheet-trail .here{font-size:var(--type-md);font-weight:700;color:var(--ink);white-space:nowrap;
+    padding:var(--space-1) 0;max-width:18ch;overflow:hidden;text-overflow:ellipsis;flex-shrink:1;min-width:0}
   /* WHAT DOES NOT EXIST — stated, not dashed (a dash reads as broken data), and NOT a button:
      there is nothing to navigate to, and creating a record from a breadcrumb would be a surprise. */
-  .trail .none{font-size:var(--type-md);font-weight:600;color:var(--ink-3);white-space:nowrap;padding:var(--space-1) 0}
-  .trail .sep{color:var(--ink-3);flex-shrink:0;font-size:var(--type-md)}
+  .sheet-trail .none{font-size:var(--type-md);font-weight:600;color:var(--ink-3);white-space:nowrap;padding:var(--space-1) 0}
+  .sheet-trail .sep{color:var(--ink-3);flex-shrink:0;font-size:var(--type-md)}
   /* Several attached: the chooser opens ANCHORED AND FLUSH beneath the trail, in flow. No popover. */
-  .trail-pick{margin-top:var(--space-2);border:1px solid var(--line);border-radius:var(--radius-md);
+  .sheet-trail-pick{margin-top:var(--space-2);border:1px solid var(--line);border-radius:var(--radius-md);
     background:var(--paper);overflow:hidden}
-  .trail-pick .pk{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:48px;
+  .sheet-trail-pick .pk{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:48px;
     padding:0 var(--space-3);border:none;border-bottom:1px solid var(--line-2);background:none;
     font-family:inherit;font-size:var(--type-base);color:var(--ink);text-align:left;cursor:pointer}
-  .trail-pick .pk:last-child{border-bottom:none}
-  .trail-pick .pk:hover{background:var(--card)}
-  .trail-pick .pk:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
-  .trail-pick .pk .who{font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .trail-pick .pk .when{color:var(--ink-2);font-size:var(--type-sm);white-space:nowrap}
-  .trail-pick .pk .chev{color:var(--ink-3);flex-shrink:0}
+  .sheet-trail-pick .pk:last-child{border-bottom:none}
+  .sheet-trail-pick .pk:hover{background:var(--card)}
+  .sheet-trail-pick .pk:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+  .sheet-trail-pick .pk .who{font-weight:600;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sheet-trail-pick .pk .when{color:var(--ink-2);font-size:var(--type-sm);white-space:nowrap}
+  .sheet-trail-pick .pk .chev{color:var(--ink-3);flex-shrink:0}
   /* Past the cap the chooser says so rather than implying these are all of them. */
-  .trail-pick .pk-more{display:block;padding:var(--space-2) var(--space-3);border-top:1px solid var(--line-2);
+  .sheet-trail-pick .pk-more{display:block;padding:var(--space-2) var(--space-3);border-top:1px solid var(--line-2);
     font-size:var(--type-sm);color:var(--ink-2)}
   .sheet-rows{margin-top:var(--space-4);border-top:1px solid var(--line-2)}
   .sheet-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:52px;border:none;border-bottom:1px solid var(--line-2);background:none;padding:0;font-family:inherit;font-size:var(--type-md);color:var(--ink);text-align:left;cursor:pointer}

@@ -139,7 +139,7 @@ export function Trail({ kind, id }: TrailProps) {
 
   return (
     <>
-      <span className="trail">
+      <span className="sheet-trail">
         {t.customer ? (
           kind === "customer" ? (
             <span className="here">{t.customer.name}</span>
@@ -152,7 +152,7 @@ export function Trail({ kind, id }: TrailProps) {
           <span className="none">no customer</span>
         )}
         {SLOTS.map((slot) => (
-          <span key={slot} className="trail-step">
+          <span key={slot} className="sheet-trail-step">
             <span className="sep" aria-hidden="true">
               ›
             </span>
@@ -163,7 +163,7 @@ export function Trail({ kind, id }: TrailProps) {
 
       {/* ANCHORED AND FLUSH under the trail, in flow — never a popover (house rule). */}
       {picking && pickRows.length > 0 && (
-        <div className="trail-pick" role="group" aria-label={`Choose a ${picking}`}>
+        <div className="sheet-trail-pick" role="group" aria-label={`Choose a ${picking}`}>
           {pickRows.map((row) => (
             <button key={row.id} type="button" className="pk" onClick={() => openOne(picking, row.id)}>
               <span className="who">{titleFor(picking, row)}</span>
