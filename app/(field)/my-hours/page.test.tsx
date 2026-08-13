@@ -39,6 +39,11 @@ let removeMutate: ReturnType<typeof vi.fn>;
 let updateError: { message: string } | null;
 let meUserId: string | undefined;
 let unreportedQuery: { data?: { items: unknown[] }; refetch: () => void };
+/** The shop's overtime rule, as the field surface reads it. Federal unless a test says otherwise. */
+let overtimePolicy: { weeklyThresholdMinutes: number; dailyThresholdMinutes: number | null } = {
+  weeklyThresholdMinutes: 2400,
+  dailyThresholdMinutes: null,
+};
 
 vi.mock("@/features/identity/hooks", () => ({
   useMe: () => ({ data: meUserId === undefined ? undefined : { userId: meUserId } }),
@@ -49,7 +54,11 @@ vi.mock("@/lib/trpc/client", () => ({
     useUtils: () => ({ v1: { timesheets: { list: { invalidate: vi.fn() } } } }),
     v1: {
       // The field surface's only settings read — punch clock vs sheet. Defaults on.
-      settings: { fieldToggles: { useQuery: () => ({ data: { timesheetClock: true } }) } },
+      settings: {
+        fieldToggles: {
+          useQuery: () => ({ data: { timesheetClock: true, overtime: overtimePolicy } }),
+        },
+      },
       field: {
         // The editor offers the caller's own jobs so a shop row can be re-filed as a job.
         myJobs: { useQuery: () => ({ data: { items: [{ id: "job-9", num: "JOB-9", title: "boiler" }] }, isLoading: false }) },
@@ -359,5 +368,81 @@ describe("deleting a row", () => {
 
     expect(removeMutate).toHaveBeenCalledTimes(1);
     expect(removeMutate.mock.calls[0]?.[0]).toEqual({ entryId: "draft-1" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// OVERTIME. This page had the federal weekly-40 threshold compiled in, so in a daily-overtime
+// state it reported a technician's overtime as ZERO — ten hours he is owed, missing from the only
+// screen that tells him what he earned. The figure now comes from the shop's own rule.
+// ---------------------------------------------------------------------------
+
+describe("My hours — the overtime figure obeys the shop's rule", () => {
+  // Mon–Fri of the mocked week (2026-07-01 is a Wednesday, so this week starts Mon 2026-06-29).
+  const tenHourWeek = (): MyHoursEntry[] =>
+    ["2026-06-29", "2026-06-30", "2026-07-01", "2026-07-02", "2026-07-03"].map((workDate, i) =>
+      entry({ id: `d${i}`, workDate, startTime: "07:00", endTime: "17:00" }),
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    meUserId = ME;
+    updateError = null;
+    unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
+    listQuery = {
+      data: { items: tenHourWeek(), nextCursor: null },
+      isFetched: true,
+      isError: false,
+      isRefetching: false,
+      refetch: vi.fn(),
+    };
+    overtimePolicy = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null };
+  });
+
+  it("reports the weekly overage, and names the weekly rule, under a weekly-only policy", () => {
+    // 50 worked, 10 past forty. Federal and California both land on ten here — by different
+    // routes, which is exactly why the figure has to say which rule produced it.
+    render(<MyHoursPage />);
+    expect(screen.getByText(/10\.00 OT/)).toBeTruthy();
+    expect(screen.getByText(/past 40h this week/)).toBeTruthy();
+  });
+
+  it("reports the same ten hours as DAILY overtime in a daily-overtime state, never twice", () => {
+    // California: 8h/day. The trap is counting the 10h daily overage AND the 10h past 40 — the
+    // same hours, which would report 20.
+    overtimePolicy = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 };
+    render(<MyHoursPage />);
+    expect(screen.getByText(/10\.00 OT/)).toBeTruthy();
+    expect(screen.queryByText(/20\.00 OT/)).toBeNull();
+    expect(screen.getByText(/past 8h a day or 40h this week/)).toBeTruthy();
+  });
+
+  it("catches the overtime a weekly-only rule cannot see", () => {
+    // Four ten-hour days: 40 worked, so a weekly-40 rule reports nothing — and in California the
+    // man is owed 8 hours of overtime. This is the case the compiled-in threshold got wrong.
+    listQuery.data = { items: tenHourWeek().slice(0, 4), nextCursor: null };
+    overtimePolicy = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 };
+    render(<MyHoursPage />);
+    expect(screen.getByText(/8\.00 OT/)).toBeTruthy();
+  });
+
+  it("shows no OT clause at all when there is none", () => {
+    listQuery.data = { items: [entry({ startTime: "08:00", endTime: "16:00" })], nextCursor: null };
+    render(<MyHoursPage />);
+    expect(screen.queryByText(/OT/)).toBeNull();
+  });
+
+  it("counts paid time off toward paid hours but never toward overtime", () => {
+    listQuery.data = {
+      items: [
+        ...tenHourWeek().slice(0, 4), // 40 worked
+        entry({ id: "pto", workDate: "2026-07-03", kind: "pto", startTime: null, endTime: null, minutes: 480 }),
+      ],
+      nextCursor: null,
+    };
+    render(<MyHoursPage />);
+    // 40 worked + 8 paid off = 48 paid; the holiday cannot push anyone into overtime.
+    expect(screen.getByText(/48\.00 paid h/)).toBeTruthy();
+    expect(screen.queryByText(/OT/)).toBeNull();
   });
 });

@@ -28,6 +28,11 @@ export interface FieldToggles {
   readonly timesheetClock: boolean;
   /** May this technician hand-edit their own hours? False = corrections go through the office. */
   readonly techEditsTimes: boolean;
+  /** The shop's overtime rule — My hours computes the technician's own overtime from it. */
+  readonly overtime: {
+    readonly weeklyThresholdMinutes: number;
+    readonly dailyThresholdMinutes: number | null;
+  };
 }
 
 export class GetFieldTogglesUseCase {
@@ -39,6 +44,10 @@ export class GetFieldTogglesUseCase {
       measurementEstimating: config.props.measurementEstimating,
       timesheetClock: config.props.timesheetClock,
       techEditsTimes: config.props.techEditsTimes,
+      overtime: {
+        weeklyThresholdMinutes: config.props.otWeeklyThresholdMinutes,
+        dailyThresholdMinutes: config.props.otDailyThresholdMinutes,
+      },
     });
   }
 }

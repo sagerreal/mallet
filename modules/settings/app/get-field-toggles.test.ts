@@ -63,6 +63,6 @@ describe("GetFieldTogglesUseCase", () => {
      * The bar for the next one is the same: would a technician learn something from it they could
      * not learn by doing their job? If yes, it does not belong here.
      */
-    expect(Object.keys(result.value).sort()).toEqual(["measurementEstimating", "techEditsTimes", "timesheetClock"]);
+    expect(Object.keys(result.value).sort()).toEqual(["measurementEstimating", "overtime", "techEditsTimes", "timesheetClock"]);
   });
 });

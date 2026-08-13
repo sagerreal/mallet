@@ -31,7 +31,6 @@ import {
   weekStart,
   weekDates,
   weekEntries,
-  rollup,
   shortDayLabel,
   DAYS_PER_WEEK,
   HOURS_PRECISION,
@@ -41,6 +40,8 @@ import { openEntryOf, suggestEndTime } from "@/features/field/my-hours-edit";
 import { MyHoursWeek } from "@/features/field/my-hours-entries";
 import { UnreportedDayCard } from "@/features/field/unreported-day-card";
 import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
+import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
+import { weekSummary, type OvertimePolicy } from "@/features/field/hours-sheet-derive";
 import { StillOpenBanner } from "@/features/field/my-hours-still-open";
 import { AddBlockForm } from "@/features/field/my-hours-add-block";
 import { useMyHoursWrites } from "@/features/field/use-my-hours-writes";
@@ -57,16 +58,22 @@ function Screen({ children }: { children: ReactNode }) {
   );
 }
 
+/** Shared, so the summary's identity does not change on every render. */
+const EMPTY_STANDARD: ReadonlyMap<string, number | null> = new Map();
+
 interface WeekNavProps {
   readonly weekStartISO: string;
   readonly thisWeekISO: string;
   readonly paid: number;
   readonly overtime: number;
+  /** The rule the OT figure was computed with — a figure nobody can derive is a figure nobody
+   *  trusts, and it differs by state. */
+  readonly rulePhrase: string;
   readonly onNav: (weeks: number) => void;
   readonly onThisWeek: () => void;
 }
 
-function WeekNav({ weekStartISO, thisWeekISO, paid, overtime, onNav, onThisWeek }: WeekNavProps) {
+function WeekNav({ weekStartISO, thisWeekISO, paid, overtime, rulePhrase, onNav, onThisWeek }: WeekNavProps) {
   return (
     <div className="mh-nav">
       <Button variant="quiet" size="sm" onClick={() => onNav(-1)} aria-label="Previous week">
@@ -85,7 +92,9 @@ function WeekNav({ weekStartISO, thisWeekISO, paid, overtime, onNav, onThisWeek 
       ) : null}
       <span className="mh-total">
         {paid.toFixed(HOURS_PRECISION)} paid h
-        {overtime > 0 ? ` · ${overtime.toFixed(HOURS_PRECISION)} OT` : ""}
+        {overtime > 0 ? (
+          <span title={rulePhrase}>{` · ${overtime.toFixed(HOURS_PRECISION)} OT (${rulePhrase})`}</span>
+        ) : null}
       </span>
     </div>
   );
@@ -123,13 +132,30 @@ interface WeekViewProps {
   readonly unreported: readonly { userId: string; date: string; visits: number; firstAt: string | null; lastAt: string | null }[];
   readonly onAcceptDay: (date: string, startTime: string, endTime: string) => void;
   readonly onEnterOwn: (date: string) => void;
+  readonly overtimePolicy: OvertimePolicy;
 }
 
 /** The populated surface. Owns which week is shown and which row is open — nothing else needs it. */
-function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addSlot, unreported, onAcceptDay, onEnterOwn }: WeekViewProps) {
+function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addSlot, unreported, onAcceptDay, onEnterOwn, overtimePolicy }: WeekViewProps) {
   const [weekStartISO, setWeekStartISO] = useState(() => weekStart(today));
   const [editingId, setEditingId] = useState<string | null>(null);
-  const week = rollup(entries, weekStartISO);
+  /**
+   * PAID and OVERTIME come from the shop's own rule, not a compiled-in forty. This page reported
+   * five ten-hour days as zero overtime in a daily-overtime state — ten hours the technician is
+   * owed, absent from the only screen that tells him what he earned.
+   *
+   * Paid = regular + overtime: every hour the shop owes, including paid time off, which is paid but
+   * never worked and so can never create overtime.
+   */
+  const summary = weekSummary({
+    entries: weekEntries(entries, weekStartISO),
+    policy: overtimePolicy,
+    // Missing-day naming needs each date's standard length, which is a batched read this page does
+    // not make yet; an empty map asks about no day rather than guessing at one.
+    standardMinutesByDate: EMPTY_STANDARD,
+    todayISO: today,
+  });
+  const week = { paid: summary.regularHours + summary.overtimeHours, overtime: summary.overtimeHours };
 
   return (
     <>
@@ -147,6 +173,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         thisWeekISO={weekStart(today)}
         paid={week.paid}
         overtime={week.overtime}
+        rulePhrase={summary.rulePhrase}
         onNav={(weeks) => setWeekStartISO((prev) => addDaysISO(prev, weeks * DAYS_PER_WEEK))}
         onThisWeek={() => setWeekStartISO(weekStart(today))}
       />
@@ -188,6 +215,10 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
 export default function MyHoursPage() {
   const today = todayISO();
   const myUserId = useMe().data?.userId;
+  // The shop's own rule, from the field surface's one settings window. Federal weekly-40 while it
+  // loads — the same value the column defaults to, so the figure never jumps for a shop that has
+  // not set a daily rule.
+  const overtimePolicy = useOvertimePolicy();
 
   // Same builder — and therefore the same query key — as the field hydrator's idle prefetch.
   // Scoped to ME: without it an owner-operator is served every technician's rows (the list
@@ -275,6 +306,7 @@ export default function MyHoursPage() {
         unreported={unreported}
         onAcceptDay={acceptDay}
         onEnterOwn={() => setAddOpen(true)}
+        overtimePolicy={overtimePolicy}
         addSlot={
           addOpen ? (
             addBlock

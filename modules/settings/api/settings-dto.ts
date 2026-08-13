@@ -108,6 +108,16 @@ export const fieldTogglesDTO = z.object({
    *  read-only (corrections go through the office) when false. */
   techEditsTimes: z.boolean(),
   /**
+   * The shop's overtime rule. On the field surface because MY HOURS COMPUTES MY OVERTIME: without
+   * it the page can only assume federal weekly-40, which is simply wrong in a daily-overtime state
+   * and understates what a California technician is owed. It is also the least secret fact on this
+   * payload — a man learns his own overtime rule from his first paycheck.
+   */
+  overtime: z.object({
+    weeklyThresholdMinutes: z.number().int(),
+    dailyThresholdMinutes: z.number().int().nullable(),
+  }),
+  /**
    * Does this shop punch a clock? False = a sheet shop: the crew types their week instead, so the
    * field surface hides the clock and leads with adding hours. A capability flag, exactly the kind
    * of fact this endpoint exists for — the office `get` is ownerOrOffice and always will be.
