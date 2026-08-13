@@ -63,10 +63,15 @@ export class VapiVoiceRegistrar implements VoiceRegistrar {
   /**
    * Point an ALREADY-IMPORTED number at this deployment's webhook, with this deployment's secret.
    *
-   * The webhook rejects any request whose `x-vapi-secret` does not match (401, before any parse) —
-   * fail-closed, and correct. A number imported without that secret therefore rings and dies
-   * silently. Repairing on the duplicate path means the fix rides the same call that provisioning
-   * and the settings switch already make, rather than needing anyone to notice.
+   * Two ways a number Vapi already holds can still be wrong, and neither is visible from outside:
+   * its `server.url` may name an older deployment, and its `server.secret` may be absent or stale —
+   * the webhook rejects a mismatched `x-vapi-secret` with 401 before any parse (fail-closed, and
+   * correct), so the line rings and dies silently.
+   *
+   * Note Vapi REDACTS `server.secret` when reading a number back, so neither this code nor an
+   * operator can confirm the secret is right by inspection — only overwrite it. Repairing on the
+   * duplicate path means the fix rides the same call provisioning and the settings switch already
+   * make, rather than needing anyone to notice.
    */
   private async repair(phoneNumber: string): Promise<Result<void, ExternalServiceError>> {
     const listed = await this.transport.get("/phone-number");
@@ -115,9 +120,12 @@ export class VapiVoiceRegistrar implements VoiceRegistrar {
       //
       // This used to return ok() here, on the reasoning that a retried provision should not report
       // a broken line. But "Vapi holds this number" says nothing about whether it points at the
-      // right place with the right secret — and both live numbers were imported BY HAND in the
-      // dashboard with no server secret, so every inbound call was rejected 401 by our own webhook
-      // before Mallet saw it. Silent, and indistinguishable from the AI simply not answering.
+      // right place with the right secret — and a number imported by hand in the dashboard, or
+      // registered against a previous deployment URL, holds neither. Every such call fails before
+      // Mallet ever sees it: silent, and indistinguishable from the AI simply not answering.
+      //
+      // Overwriting is the only way to KNOW: Vapi redacts server.secret on read, so a number that
+      // reads back as `secret: (none)` may well have one. Correctness here cannot be inspected.
       //
       // So a duplicate is repaired rather than assumed: read the number back and PATCH its server
       // config to what this deployment actually expects.

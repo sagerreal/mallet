@@ -86,6 +86,16 @@ interface AddressInputProps {
    */
   onSelect?: (value: string, location: PlaceLocation | null) => void;
   onBlur?: () => void;
+  /**
+   * Enter pressed with NO suggestion highlighted — i.e. the user typed an address and pressed
+   * Enter, which is the ordinary way to say "that's the one".
+   *
+   * Without this, Enter did nothing unless a dropdown row was selected, and the value survived only
+   * if the field happened to blur. A shop typed its office address, reached for the next control,
+   * and lost it — the radius beside it saved on every keystroke, so it looked like the address
+   * simply "didn't save".
+   */
+  onCommit?: () => void;
   placeholder?: string;
   className?: string;
   inputStyle?: React.CSSProperties;
@@ -103,6 +113,7 @@ export function AddressInput({
   onChange,
   onSelect,
   onBlur,
+  onCommit,
   placeholder,
   className,
   inputStyle,
@@ -196,6 +207,18 @@ export function AddressInput({
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    // Enter with nothing highlighted commits what was typed. Checked BEFORE the guard below,
+    // which returns early whenever the suggestion list is closed or empty — the exact state a
+    // finished address is usually in.
+    //
+    // Gated on onCommit being PASSED, not merely called: two consumers (new-job, new-customer) put
+    // this input inside a <form>, where Enter has always submitted. Swallowing it for them would be
+    // an unrelated behaviour change on surfaces that never asked for one.
+    if (onCommit && e.key === "Enter" && (!open || suggestions.length === 0 || activeIdx < 0)) {
+      e.preventDefault();
+      onCommit();
+      return;
+    }
     if (!open || suggestions.length === 0) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();

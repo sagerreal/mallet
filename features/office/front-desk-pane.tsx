@@ -216,9 +216,31 @@ export function FrontDeskPane() {
   const setBookingDayHours = useAppStore((s) => s.setBookingDayHours);
   const setBookingArea = useAppStore((s) => s.setBookingArea);
 
-  // The address box is typed into, so it holds a draft and commits on select or blur — the store
-  // write geocodes server-side, and firing it per keystroke would geocode every partial address.
-  const [originDraft, setOriginDraft] = useState(bk.area.originAddress);
+  // The address box is typed into, so it holds a draft and commits on select, Enter, or blur — the
+  // store write geocodes server-side, and firing it per keystroke would geocode every partial
+  // address. The radius beside it has no draft and commits on change; that asymmetry is the whole
+  // reason this field needs the care below.
+  const savedOrigin = bk.area.originAddress;
+  const [originDraft, setOriginDraft] = useState(savedOrigin);
+
+  // Adopt the stored address whenever it changes underneath the draft.
+  //
+  // THE BUG THIS FIXES. `useState` runs once, at mount — and this pane mounts BEFORE settings
+  // hydrate (the shimmer below is an early return placed after every hook). So on a cold reload the
+  // draft was seeded from `EMPTY_BOOKING`, the store then filled in with the real address, and this
+  // field went on rendering "". The radius, which reads the store directly, showed its saved value.
+  // A shop saw its address blank next to a radius that had survived and concluded the address had
+  // not saved — when the DB held it the whole time.
+  //
+  // Render-phase sync rather than an effect: an effect would paint the empty box for one frame
+  // first, which is the very thing that misled. Typing is safe — `savedOrigin` does not move while
+  // a draft is uncommitted, so this only fires on a real store change (hydration, a commit, or a
+  // rollback after a failed write, where showing the truth is right).
+  const [originSeen, setOriginSeen] = useState(savedOrigin);
+  if (savedOrigin !== originSeen) {
+    setOriginSeen(savedOrigin);
+    setOriginDraft(savedOrigin);
+  }
 
   // Single-expanded service accordion — null = all collapsed
   const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
@@ -554,6 +576,7 @@ export function FrontDeskPane() {
                 value={originDraft}
                 onChange={setOriginDraft}
                 onSelect={(v) => { setOriginDraft(v); setBookingArea("originAddress", v); }}
+                onCommit={() => setBookingArea("originAddress", originDraft)}
                 onBlur={() => setBookingArea("originAddress", originDraft)}
                 placeholder="e.g. 200 Ray St, Pleasanton, CA 94566"
                 aria-label="Office address"

@@ -21,6 +21,7 @@ interface Store {
 }
 let store: Store;
 const setToggle = vi.fn();
+const setBookingArea = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(store),
@@ -55,9 +56,13 @@ const booking = (over: Record<string, unknown> = {}) => ({
   ...over,
 });
 
+const setupRender = (over: Partial<Store> = {}) => {
+  store = { toggles: { frontDesk: false }, booking: booking(), setToggle, setBookingArea, ...over } as Store;
+  return render(<FrontDeskPane />);
+};
+
 const setup = (over: Partial<Store> = {}) => {
-  store = { toggles: { frontDesk: false }, booking: booking(), setToggle, ...over } as Store;
-  render(<FrontDeskPane />);
+  setupRender(over);
   return screen.getByLabelText("Front Desk on/off") as HTMLInputElement;
 };
 
@@ -113,5 +118,60 @@ describe("FrontDeskPane — the readiness gate on the switch", () => {
     expect(input.getAttribute("aria-disabled")).toBe("false");
     fireEvent.click(input);
     expect(setToggle).toHaveBeenCalledWith("frontDesk", false);
+  });
+});
+
+/**
+ * The office address must survive the two ways it was being lost.
+ *
+ * Owen's report — "I reloaded the page and only the service radius saved" — is one screen with two
+ * separate defects on it, both making a saved address look unsaved:
+ *
+ *   1. The draft only ever committed on blur or on picking a suggestion. Typing a full address and
+ *      pressing Enter did nothing at all.
+ *   2. `useState` seeded the draft at MOUNT, and this pane mounts before settings hydrate (the
+ *      shimmer is an early return placed after every hook). The store then filled in with the real
+ *      address and the box went on rendering "". The radius, which reads the store directly, kept
+ *      its value — which is exactly the asymmetry he described.
+ */
+describe("FrontDeskPane — the office address", () => {
+  // The address lives inside the collapsed "Service area" rule row — open it, as a user would.
+  const openArea = () => fireEvent.click(screen.getByText("Service area"));
+  const addr = () => screen.getByLabelText("Office address") as HTMLInputElement;
+
+  it("commits on Enter, not only on blur", () => {
+    setup({ booking: booking({ area: NO_ORIGIN }) });
+    openArea();
+    fireEvent.change(addr(), { target: { value: "2100 Rheem Drive, Pleasanton CA" } });
+    fireEvent.keyDown(addr(), { key: "Enter" });
+    expect(setBookingArea).toHaveBeenCalledWith("originAddress", "2100 Rheem Drive, Pleasanton CA");
+  });
+
+  it("still commits on blur", () => {
+    setup({ booking: booking({ area: NO_ORIGIN }) });
+    openArea();
+    fireEvent.change(addr(), { target: { value: "9 Main St" } });
+    fireEvent.blur(addr());
+    expect(setBookingArea).toHaveBeenCalledWith("originAddress", "9 Main St");
+  });
+
+  it("shows an address that hydrates AFTER mount", () => {
+    // The reload case. Mount empty (pre-hydration), then let the store fill in.
+    const { rerender } = setupRender({ booking: booking({ area: NO_ORIGIN }) });
+    openArea();
+    expect(addr().value).toBe("");
+
+    store = { ...store, booking: booking() };
+    rerender(<FrontDeskPane />);
+    expect(addr().value).toBe("2100 Rheem Drive, Pleasanton CA");
+  });
+
+  it("does not clobber what is being typed", () => {
+    // The sync must fire on a STORE change, never on every render — otherwise it eats keystrokes.
+    const { rerender } = setupRender({ booking: booking() });
+    openArea();
+    fireEvent.change(addr(), { target: { value: "2100 Rheem Dr" } });
+    rerender(<FrontDeskPane />);
+    expect(addr().value).toBe("2100 Rheem Dr");
   });
 });
