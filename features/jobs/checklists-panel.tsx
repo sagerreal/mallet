@@ -50,10 +50,9 @@ export function ChecklistsPanel() {
   // (drafted items are suggestions, never auto-published).
   function handleAdd(
     name: string,
-    stage: "job" | "scope",
     items: Array<{ text: string; type: "check" | "photo" }> = [],
   ) {
-    const { checklist } = addChecklist(name, stage, items);
+    const { checklist } = addChecklist(name, "job", items);
     setExpandedId(checklist.id);
     setAddOpen(false);
   }

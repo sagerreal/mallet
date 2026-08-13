@@ -363,3 +363,29 @@ describe("JobChecklistBlock — the two ways \"Couldn't save the checklist\" hap
     expect(screen.queryByText("Remove")).toBeNull();
   });
 });
+
+describe("JobChecklistBlock — one kind of checklist", () => {
+  it("offers a checklist left on the retired scope stage", async () => {
+    // The panel filtered to stage === "job", so a scoping list could be created but never attached
+    // from the job sheet — the only way onto a job was at creation time. With the stages collapsed
+    // there is one pool, and a shop's existing scope lists must not stay stranded.
+    h.state.checklists = [makeSaved({ id: "chk-legacy", name: "Repipe walkthrough", stage: "scope" })];
+    openPanel();
+
+    expect(screen.getByText("Repipe walkthrough")).toBeTruthy();
+  });
+
+  it("attaches it to the job when tapped", async () => {
+    h.state.checklists = [makeSaved({ id: "chk-legacy", name: "Repipe walkthrough", stage: "scope" })];
+    openPanel();
+
+    fireEvent.click(screen.getByText("Repipe walkthrough"));
+
+    await waitFor(() =>
+      expect(h.state.updateJob).toHaveBeenCalledWith(
+        "job-111",
+        expect.objectContaining({ checklist: expect.objectContaining({ name: "Repipe walkthrough" }) }),
+      ),
+    );
+  });
+});

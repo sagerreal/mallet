@@ -81,7 +81,10 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
   // content it was built from — a retry with unchanged content reuses it
   // instead of minting a duplicate.
   const createdRef = useRef<{ id: string; fingerprint: string } | null>(null);
-  const saved = checklists.filter((c) => c.stage === "job");
+  // Every saved checklist, unfiltered. This used to filter to stage === "job", which meant a list
+  // on the retired "scope" stage could be created but never attached from here — the only way onto
+  // a job was at creation time. There is one kind of checklist now.
+  const saved = checklists;
 
   /** Attach a snapshot to the job; outcome awaited. Returns true on success. */
   async function attach(chkName: string, items: Checklist["items"]): Promise<boolean> {
