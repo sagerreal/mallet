@@ -277,7 +277,6 @@ export default function MyDayPage() {
   return (
     <>
       <h1>My day</h1>
-      <div className="sub">Your open jobs, and what you finished today.</div>
 
       {/* The day clock owns its own queries — it must not wait on the agenda, and the agenda's
           loading state must not blank the row that says whether he is being paid. A sheet shop

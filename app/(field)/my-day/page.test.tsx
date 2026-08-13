@@ -408,10 +408,12 @@ describe("My day — which day a row is actually from", () => {
   });
 
   // The heading and the empty state described a narrower list than the query returns.
+  // The explanatory subtitle was removed entirely — only the plain "My day" heading remains.
   it("the heading names what the list actually holds", () => {
     withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })]);
     render(<MyDayPage />);
-    expect(screen.getByText("Your open jobs, and what you finished today.")).toBeTruthy();
+    expect(screen.getByText("My day")).toBeTruthy();
+    expect(screen.queryByText("Your open jobs, and what you finished today.")).toBeNull();
     expect(screen.queryByText(/Today's jobs/)).toBeNull();
   });
 });

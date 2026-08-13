@@ -1,4 +1,4 @@
-import type { OrgId, LeadId, MessageId } from "@mallet/shared/types";
+import type { OrgId, LeadId, MessageId, UserId } from "@mallet/shared/types";
 import type { DeliveryStatus } from "./delivery-status";
 import type { Message } from "./message";
 import type { MessageDirection } from "./message";
@@ -15,6 +15,8 @@ import type { MessageDirection } from "./message";
 export interface ClaimOutboundCmd {
   readonly id: string;
   readonly leadId: LeadId | null;
+  /** The staffer whose send this is — recorded so the thread can say who spoke as the business. */
+  readonly sentByUserId: UserId | null;
   /** The org's own Twilio number — the `from` on the wire. */
   readonly from: string;
   readonly to: string;
@@ -87,9 +89,27 @@ export interface MessageRepository {
     at: Date;
   }): Promise<boolean>;
   // One efficient query — no N+1. Returns one ConversationRow per lead that has at least
-  // one non-deleted message, sorted newest-first. An optional leadId filter is reserved for
-  // a future tech-scoping pass; pass undefined (default) for all leads in the org.
-  listConversations(filter?: { leadId?: LeadId }): Promise<ConversationRow[]>;
+  // one non-deleted message, sorted newest-first. `assignedToUserId` is the tech scope: only
+  // threads for customers with a job (or visit) assigned to that user. `leadId` narrows to one
+  // thread. Pass undefined (default) for all leads in the org.
+  listConversations(filter?: { leadId?: LeadId; assignedToUserId?: UserId }): Promise<ConversationRow[]>;
+}
+
+/**
+ * Answers the field-access rule: is this tech scheduled on ANY job for this customer? The
+ * job-level assignee or any visit assignee counts, past or future — the assignment is the
+ * grant, not the calendar window ("when a tech gets scheduled on the job they get the whole
+ * thread"). Soft-deleted jobs/visits do not count.
+ */
+export interface LeadAssignmentReader {
+  isLeadAssignedToUser(leadId: LeadId, userId: UserId): Promise<boolean>;
+}
+
+// Writer used when someone opens a thread: clears the lead's unread flag. Shared org state —
+// one person reading it clears it for everyone, same as it always has for the office.
+// Idempotent: already-read leads are a no-op (returns false).
+export interface LeadReadMarker {
+  markLeadRead(leadId: LeadId, now: Date): Promise<boolean>;
 }
 
 // Unprivileged reader used by the inbound webhook to resolve which org owns a Twilio To-number.

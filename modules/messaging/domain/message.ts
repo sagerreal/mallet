@@ -1,4 +1,4 @@
-import type { MessageId, OrgId, LeadId, Result, ValidationError } from "@mallet/shared/types";
+import type { MessageId, OrgId, LeadId, Result, ValidationError, UserId } from "@mallet/shared/types";
 import { validation, ok, err } from "@mallet/shared/types";
 
 export type MessageDirection = "inbound" | "outbound";
@@ -24,6 +24,11 @@ export interface MessageProps {
   readonly fromNumber: string;
   readonly toNumber: string;
   readonly providerSid: string | null;
+  /**
+   * WHO sent an outbound message — the staffer behind the shared business number. Null for
+   * inbound, system sends (reminders, OMW, front desk) and rows from before attribution existed.
+   */
+  readonly sentByUserId: UserId | null;
   readonly status: MessageStatus;
   /**
    * The CARRIER's reason a message failed (Twilio's numeric code as text), or null. Present only

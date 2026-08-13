@@ -1,0 +1,2 @@
+ALTER TABLE "messages" ADD COLUMN "sent_by_user_id" uuid;--> statement-breakpoint
+ALTER TABLE "messages" ADD CONSTRAINT "messages_org_sender_fk" FOREIGN KEY ("org_id","sent_by_user_id") REFERENCES "public"."users"("org_id","id") ON DELETE no action ON UPDATE no action;

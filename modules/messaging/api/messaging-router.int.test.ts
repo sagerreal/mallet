@@ -24,8 +24,8 @@ const stubAuth: AuthProvider = {
   },
 };
 
-const ctxFor = (orgId: string, role: Role): Context => ({
-  principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
+const ctxForUser = (orgId: string, role: Role, userId: string): Context => ({
+  principal: { userId: asUserId(userId), orgId: asOrgId(orgId), role } satisfies Principal,
   unmapped: null,
   tx: null,
   deps: {
@@ -44,6 +44,8 @@ const ctxFor = (orgId: string, role: Role): Context => ({
     },
   },
 });
+
+const ctxFor = (orgId: string, role: Role): Context => ctxForUser(orgId, role, randomUUID());
 
 suite("messaging tRPC router (full stack, live RLS)", () => {
   let admin: Sql;
@@ -89,6 +91,10 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     if (orgAId) {
       await admin`delete from messages where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from a2p_registrations where org_id in (${orgAId}, ${orgBId})`;
+      // The tech-access fixtures reference users through non-cascading composite FKs
+      // (job_visits_assignee_fk) — clear them before the org cascade reaches users.
+      await admin`delete from job_visits where org_id in (${orgAId}, ${orgBId})`;
+      await admin`delete from jobs where org_id in (${orgAId}, ${orgBId})`;
       await admin`delete from orgs where id in (${orgAId}, ${orgBId})`;
     }
     if (rateLimitOrgIds.length > 0) {
@@ -146,11 +152,10 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     expect(conversations).toHaveLength(0);
   });
 
-  it("a tech cannot list conversations (FORBIDDEN)", async () => {
+  it("a tech with no assignments gets an EMPTY inbox — scoped, not locked out", async () => {
     const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
-    await expect(
-      callerTech.v1.messaging.listConversations(),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const conversations = await callerTech.v1.messaging.listConversations();
+    expect(conversations).toHaveLength(0);
   });
 
   // ── send: config guard ────────────────────────────────────────────────────────
@@ -169,18 +174,18 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
 
   // ── RBAC ──────────────────────────────────────────────────────────────────────
 
-  it("a tech cannot send messages (FORBIDDEN)", async () => {
+  it("an UNASSIGNED tech cannot send — NOT_FOUND, the same scoped refusal as reads", async () => {
     const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(
       callerTech.v1.messaging.send({ leadId: leadAId, body: "Hi" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
-  it("a tech cannot list thread (FORBIDDEN)", async () => {
+  it("an unassigned tech gets NOT_FOUND on a thread read — scoped, not role-blocked", async () => {
     const callerTech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(
       callerTech.v1.messaging.listByLead({ leadId: leadAId }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
   });
 
   // ── send: input validation ────────────────────────────────────────────────────
@@ -269,6 +274,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       new DrizzleMessageRepository(tx, orgA).claimOutbound({
         id: randomUUID(),
         leadId: asLeadId(leadAId),
+        sentByUserId: null,
         from: "+15005550006",
         to: "+15555550199",
         body: "follow-up",
@@ -279,6 +285,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       new DrizzleMessageRepository(tx, orgA).claimOutbound({
         id: randomUUID(),
         leadId: asLeadId(leadAId),
+        sentByUserId: null,
         from: "+15005550006",
         to: "+15555550199",
         body: "follow-up",
@@ -305,6 +312,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       new DrizzleMessageRepository(tx, orgA).claimOutbound({
         id: randomUUID(),
         leadId: asLeadId(leadAId),
+        sentByUserId: null,
         from: "+15005550006",
         to: "+15555550199",
         body: "follow-up",
@@ -315,6 +323,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       new DrizzleMessageRepository(tx, orgB).claimOutbound({
         id: randomUUID(),
         leadId: null,
+        sentByUserId: null,
         from: "+15005550007",
         to: "+15555550199",
         body: "follow-up",
@@ -336,6 +345,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
     const key = `okq-int-${randomUUID()}-fu1`;
     const claimCmd = {
       leadId: asLeadId(leadAId),
+      sentByUserId: null,
       from: "+15005550006",
       to: "+15555550199",
       body: "follow-up",
@@ -387,6 +397,7 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       new DrizzleMessageRepository(tx, orgA).claimOutbound({
         id: randomUUID(),
         leadId: asLeadId(leadAId),
+        sentByUserId: null,
         from: "+15005550006",
         to: "+15555550199",
         body: "follow-up",
@@ -406,5 +417,115 @@ suite("messaging tRPC router (full stack, live RLS)", () => {
       select status, error_code from messages where id = ${id}`;
     expect(failed!.status).toBe("failed");
     expect(failed!.error_code).toBe("30034");
+  });
+
+  // ── The field gate: a tech reaches exactly the threads for customers they're scheduled on ──
+  //
+  // "When a tech gets scheduled on the job they should have access to all past and future
+  // messages" — the assignment (job-level assignee OR any visit assignee) is the grant. An
+  // unassigned tech sees an empty inbox and NOT_FOUND per-thread: scoped, never the whole book.
+  describe("tech thread access", () => {
+    let techId = "";
+    let officeId = "";
+    let leadCId = ""; // a second customer the tech is NOT assigned to
+
+    beforeAll(async () => {
+      const [tech] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role, name)
+        values (${orgAId}, ${randomUUID()}, ${"tech-" + randomUUID() + "@e2e.test"}, 'tech', 'Dana Fieldtech')
+        returning id`;
+      techId = tech!.id;
+      const [office] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role, name)
+        values (${orgAId}, ${randomUUID()}, ${"office-" + randomUUID() + "@e2e.test"}, 'office', 'Priya Office')
+        returning id`;
+      officeId = office!.id;
+
+      // Job for leadA assigned to the tech AT THE JOB LEVEL.
+      await admin`
+        insert into jobs (org_id, num, lead_id, title, assignee_user_id)
+        values (${orgAId}, ${"J-" + randomUUID().slice(0, 8)}, ${leadAId}, 'Water heater swap', ${techId})`;
+
+      // A second customer with a thread the tech has NO assignment on.
+      const [leadC] = await admin<{ id: string }[]>`
+        insert into leads (org_id, name, phone_e164)
+        values (${orgAId}, 'Unassigned Customer', '+15555550166')
+        returning id`;
+      leadCId = leadC!.id;
+      await admin`
+        insert into messages (org_id, lead_id, direction, channel, body, from_number, to_number, status)
+        values (${orgAId}, ${leadCId}, 'inbound', 'sms', 'is anyone coming?', '+15555550166', '+15005550006', 'received')`;
+      // And make sure leadA has at least one message so the inbox has a row to show.
+      await admin`
+        insert into messages (org_id, lead_id, direction, channel, body, from_number, to_number, status, sent_by_user_id)
+        values (${orgAId}, ${leadAId}, 'outbound', 'sms', 'On our way.', '+15005550006', '+15555550155', 'sent', ${officeId})`;
+    });
+
+    it("an assigned tech's inbox holds THEIR customer's thread — and not the other one", async () => {
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "tech", techId));
+      const conversations = await caller.v1.messaging.listConversations();
+      const leadIds = conversations.map((c) => c.leadId);
+      expect(leadIds).toContain(leadAId);
+      expect(leadIds).not.toContain(leadCId);
+    });
+
+    it("the office still sees every thread, unscoped", async () => {
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "office", officeId));
+      const leadIds = (await caller.v1.messaging.listConversations()).map((c) => c.leadId);
+      expect(leadIds).toContain(leadAId);
+      expect(leadIds).toContain(leadCId);
+    });
+
+    it("an assigned tech reads the whole thread, and outbound rows carry the sender's name", async () => {
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "tech", techId));
+      const thread = await caller.v1.messaging.listByLead({ leadId: leadAId });
+      expect(thread.length).toBeGreaterThan(0);
+      const attributed = thread.find((m) => m.senderName !== null);
+      expect(attributed?.senderName).toBe("Priya Office");
+    });
+
+    it("an unassigned tech gets NOT_FOUND on the thread — and on send, before any telephony read", async () => {
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "tech", techId));
+      await expect(caller.v1.messaging.listByLead({ leadId: leadCId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(
+        caller.v1.messaging.send({ leadId: leadCId, body: "hi" }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("a VISIT-level assignment opens the thread too — the board's multi-visit shape counts", async () => {
+      const [tech2] = await admin<{ id: string }[]>`
+        insert into users (org_id, auth_user_id, email, role)
+        values (${orgAId}, ${randomUUID()}, ${"tech2-" + randomUUID() + "@e2e.test"}, 'tech')
+        returning id`;
+      const [job] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, num, lead_id, title)
+        values (${orgAId}, ${"J-" + randomUUID().slice(0, 8)}, ${leadCId}, 'Return visit')
+        returning id`;
+      await admin`
+        insert into job_visits (org_id, job_id, assignee_user_id)
+        values (${orgAId}, ${job!.id}, ${tech2!.id})`;
+
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "tech", tech2!.id));
+      const thread = await caller.v1.messaging.listByLead({ leadId: leadCId });
+      expect(thread.length).toBeGreaterThan(0);
+    });
+
+    it("markThreadRead: an assigned tech clears the shared unread flag", async () => {
+      await admin`update leads set unread = true where id = ${leadAId}`;
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "tech", techId));
+      const out = await caller.v1.messaging.markThreadRead({ leadId: leadAId });
+      expect(out.cleared).toBe(true);
+      const [row] = await admin<{ unread: boolean }[]>`select unread from leads where id = ${leadAId}`;
+      expect(row!.unread).toBe(false);
+    });
+
+    it("markThreadRead: an unassigned tech cannot touch the flag", async () => {
+      const caller = appRouter.createCaller(ctxForUser(orgAId, "tech", techId));
+      await expect(caller.v1.messaging.markThreadRead({ leadId: leadCId })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    });
   });
 });

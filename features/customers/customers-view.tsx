@@ -138,7 +138,6 @@ export function CustomersView() {
           </button>
         </div>
       </div>
-      <div className="sub">Everyone you might do work for.</div>
 
       {/* Segment tabs — this branch only renders for the People segment, so the
           People tab is always active and Companies is always inactive here. */}

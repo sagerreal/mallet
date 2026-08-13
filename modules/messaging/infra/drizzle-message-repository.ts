@@ -3,7 +3,7 @@ import { messages, orgs, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { supersedes, type DeliveryStatus } from "../domain/delivery-status";
 import { ownerDb } from "@mallet/shared/db/owner-client";
-import type { OrgId, LeadId, MessageId } from "@mallet/shared/types";
+import type { OrgId, LeadId, MessageId, UserId } from "@mallet/shared/types";
 import { asOrgId, asLeadId } from "@mallet/shared/types";
 import type { Message } from "../domain/message";
 import type { MessageDirection } from "../domain/message";
@@ -14,6 +14,8 @@ import type {
   OrgByNumberReader,
   LeadByPhoneReader,
   LeadUnreadMarker,
+  LeadReadMarker,
+  LeadAssignmentReader,
   ConversationRow,
 } from "../domain/message-repository";
 import { toDomain } from "./message-mapper";
@@ -71,6 +73,7 @@ export class DrizzleMessageRepository implements MessageRepository {
         fromNumber: cmd.from,
         toNumber: cmd.to,
         providerSid: null,
+        sentByUserId: cmd.sentByUserId,
         status: "queued",
         idempotencyKey: cmd.idempotencyKey,
       })
@@ -113,6 +116,7 @@ export class DrizzleMessageRepository implements MessageRepository {
         // them would attach this row to a message it is no longer reporting on.
         providerSid: null,
         errorCode: null,
+        sentByUserId: cmd.sentByUserId,
         updatedAt: sql`now()`,
       })
       .where(
@@ -223,13 +227,34 @@ export class DrizzleMessageRepository implements MessageRepository {
   // the whole result by lastAt DESC. RLS scopes to the current org via withTenant; the
   // explicit m.org_id = current_org_id() filter inside the subquery adds defense-in-depth
   // (same pattern as DrizzleLeadByPhoneReader) so the tenant boundary is visible in the SQL.
-  // The optional leadId filter is a stub for a future tech-scoping pass.
-  async listConversations(filter?: { leadId?: LeadId }): Promise<ConversationRow[]> {
-    // Build the optional WHERE clause for the future lead-scoping pass.
+  // `assignedToUserId` is the tech scope: only threads for customers with a job or visit
+  // assigned to that user (see LeadAssignmentReader for the rule's rationale).
+  async listConversations(filter?: { leadId?: LeadId; assignedToUserId?: UserId }): Promise<ConversationRow[]> {
     // When filter.leadId is set we add `AND m.lead_id = <id>` inside the DISTINCT ON sub-select.
     const leadFilter =
       filter?.leadId != null
         ? sql` AND m.lead_id = ${filter.leadId}`
+        : sql``;
+    // Tech scope, applied inside the same sub-select so the DISTINCT ON never even considers
+    // threads outside the tech's jobs. Mirrors isLeadAssignedToUser — keep the two in step.
+    const assignedFilter =
+      filter?.assignedToUserId != null
+        ? sql` AND EXISTS (
+            SELECT 1 FROM jobs j
+            WHERE j.org_id = current_org_id()
+              AND j.lead_id = m.lead_id
+              AND j.deleted_at IS NULL
+              AND (
+                j.assignee_user_id = ${filter.assignedToUserId}
+                OR EXISTS (
+                  SELECT 1 FROM job_visits v
+                  WHERE v.org_id = current_org_id()
+                    AND v.job_id = j.id
+                    AND v.deleted_at IS NULL
+                    AND v.assignee_user_id = ${filter.assignedToUserId}
+                )
+              )
+          )`
         : sql``;
 
     // DISTINCT ON (m.lead_id) paired with ORDER BY m.lead_id, m.created_at DESC picks exactly
@@ -265,6 +290,7 @@ export class DrizzleMessageRepository implements MessageRepository {
           AND m.deleted_at IS NULL
           AND m.org_id = current_org_id()
           ${leadFilter}
+          ${assignedFilter}
         ORDER BY m.lead_id, m.created_at DESC
       ) AS latest
       JOIN leads l ON l.id = latest.lead_id AND l.deleted_at IS NULL
@@ -324,7 +350,7 @@ export class DrizzleLeadByPhoneReader implements LeadByPhoneReader {
 // Org-scoped writer — runs inside a withTenant tx. Loads the lead through the domain's LeadRepository,
 // calls markUnread(), and persists via save() so invariants are enforced by the domain layer.
 // Idempotent: if the lead is already unread or not found, no row is written (returns false).
-export class DrizzleLeadUnreadMarker implements LeadUnreadMarker {
+export class DrizzleLeadUnreadMarker implements LeadUnreadMarker, LeadReadMarker {
   constructor(
     private readonly tx: TenantTx,
     private readonly orgId: OrgId,
@@ -339,6 +365,51 @@ export class DrizzleLeadUnreadMarker implements LeadUnreadMarker {
     if (updated === lead) return false;
     await repo.save(updated);
     return true;
+  }
+
+  // Mirror of markLeadUnread: opening a thread clears the flag for the whole org (shared state).
+  async markLeadRead(leadId: LeadId, now: Date): Promise<boolean> {
+    const repo = new DrizzleLeadRepository(this.tx, this.orgId);
+    const lead = await repo.findById(leadId);
+    if (!lead) return false;
+    const updated = lead.markRead(now);
+    if (updated === lead) return false;
+    await repo.save(updated);
+    return true;
+  }
+
+}
+
+// The field-access rule (LeadAssignmentReader): a tech is on a customer's thread when any
+// non-deleted job for that lead names them — as the job's assignee or on any of its visits,
+// past or future (the assignment is the grant, not the calendar window). Keep this predicate
+// in step with the assignedFilter in DrizzleMessageRepository.listConversations.
+export class DrizzleLeadAssignmentReader implements LeadAssignmentReader {
+  constructor(
+    private readonly tx: TenantTx,
+    private readonly orgId: OrgId,
+  ) {}
+
+  async isLeadAssignedToUser(leadId: LeadId, userId: UserId): Promise<boolean> {
+    const rows = await this.tx.execute<{ assigned: boolean }>(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM jobs j
+        WHERE j.org_id = ${this.orgId}
+          AND j.lead_id = ${leadId}
+          AND j.deleted_at IS NULL
+          AND (
+            j.assignee_user_id = ${userId}
+            OR EXISTS (
+              SELECT 1 FROM job_visits v
+              WHERE v.org_id = ${this.orgId}
+                AND v.job_id = j.id
+                AND v.deleted_at IS NULL
+                AND v.assignee_user_id = ${userId}
+            )
+          )
+      ) AS "assigned"
+    `);
+    return rows[0]?.assigned === true;
   }
 }
 

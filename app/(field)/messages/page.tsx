@@ -290,7 +290,15 @@ function CustomerInbox() {
           lastDirection={c.lastDirection}
           lastAt={c.lastAt}
           unread={c.unread}
-          onClick={() => openModal(MODAL.THREAD, { leadId: c.leadId })}
+          onClick={() =>
+            openModal(MODAL.THREAD, {
+              leadId: c.leadId,
+              // The tech shell has no leads store (customers hydrator is office-only) — the
+              // modal renders the header and phone gate from these.
+              leadName: c.leadName,
+              phone: c.phone,
+            })
+          }
         />
       ))}
     </>

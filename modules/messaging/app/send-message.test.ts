@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { asOrgId, asLeadId, asMessageId } from "@mallet/shared/types";
+import { asOrgId, asLeadId, asMessageId, asUserId } from "@mallet/shared/types";
 import type { OrgId, LeadId, AppError } from "@mallet/shared/types";
 import { SendMessageUseCase } from "./send-message";
 import type { MessageRepository, ClaimOutboundCmd } from "../domain/message-repository";
@@ -43,6 +43,7 @@ function makeMessage(cmd: ClaimOutboundCmd): Message {
     fromNumber: cmd.from,
     toNumber: cmd.to,
     providerSid: null,
+    sentByUserId: cmd.sentByUserId,
     status: "queued",
     errorCode: null,
     createdAt: new Date(),
@@ -128,6 +129,7 @@ const BASE_CMD: SendMessageCmd = {
   messagingServiceSid: null,
   leadId: LEAD_ID,
   leadPhone: LEAD_PHONE,
+  senderUserId: asUserId("00000000-0000-0000-0000-00000000aaaa"),
   body: BODY,
 };
 
@@ -138,6 +140,18 @@ describe("SendMessageUseCase", () => {
 
   beforeEach(() => {
     repo = makeRepo();
+  });
+
+  it("stamps the claim with the sender, so the thread can say who spoke as the business", async () => {
+    const repo = makeRepo();
+    const uc = new SendMessageUseCase(repo, makeSmsDeps(vi.fn(async () => ({ sid: "SM_attr" }))), makeIds());
+
+    const result = await uc.exec({ ...BASE_CMD });
+
+    expect(vi.mocked(repo.claimOutbound)).toHaveBeenCalledWith(
+      expect.objectContaining({ sentByUserId: BASE_CMD.senderUserId }),
+    );
+    expect(result.ok && result.value.props.sentByUserId).toBe(BASE_CMD.senderUserId);
   });
 
   it("sends THROUGH the A2P Messaging Service when the org has one", async () => {

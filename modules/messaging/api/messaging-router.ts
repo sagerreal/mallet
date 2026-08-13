@@ -1,13 +1,13 @@
 import { z } from "zod";
-import { eq } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
-import { router, ownerOrOffice } from "@/trpc/init";
+import { router, ownerOrOffice, anyRole } from "@/trpc/init";
 import { loadConfig } from "@mallet/shared/config";
 import { logger } from "@mallet/shared/observability";
 import { FixedWindowLimiter } from "@mallet/platform/resilience";
-import { orgs, leads, a2pRegistrations } from "@mallet/shared/db/schema";
-import { asLeadId, Phone } from "@mallet/shared/types";
-import { DrizzleMessageRepository } from "../infra/drizzle-message-repository";
+import { orgs, leads, users, a2pRegistrations } from "@mallet/shared/db/schema";
+import { asLeadId, Phone, type LeadId } from "@mallet/shared/types";
+import { DrizzleMessageRepository, DrizzleLeadAssignmentReader, DrizzleLeadUnreadMarker } from "../infra/drizzle-message-repository";
 import { SendMessageUseCase } from "../app/send-message";
 import { ListThreadUseCase } from "../app/list-thread";
 import { ListConversationsUseCase } from "../app/list-conversations";
@@ -31,6 +31,44 @@ import type { ConversationRow } from "../domain/message-repository";
 const SEND_LIMIT_PER_MIN = 30;
 const SEND_LIMIT_WINDOW_MS = 60_000;
 const sendLimiter = new FixedWindowLimiter({ limit: SEND_LIMIT_PER_MIN, windowMs: SEND_LIMIT_WINDOW_MS });
+
+/**
+ * The field-access rule: a tech only reaches threads for customers they're scheduled on (any
+ * non-deleted job or visit naming them — past or future; the assignment is the grant). Office
+ * and owner pass untouched. Runs FIRST in every resolver, before any precondition, so an
+ * unassigned tech learns nothing about the org's telephony setup.
+ *
+ * NOT_FOUND rather than FORBIDDEN: the error map passes this sentence through (FORBIDDEN gets
+ * replaced by generic role copy), and it declines to confirm the thread even exists.
+ */
+const assertThreadAccess = async (
+  reader: DrizzleLeadAssignmentReader,
+  principal: { role: string; userId: string },
+  leadId: LeadId,
+): Promise<void> => {
+  if (principal.role !== "tech") return;
+  const assigned = await reader.isLeadAssignedToUser(leadId, principal.userId as never);
+  if (!assigned) {
+    throw new TRPCError({ code: "NOT_FOUND", message: "no conversation for this customer on your jobs" });
+  }
+};
+
+// One query per thread read: resolve the display names behind sent_by_user_id so every
+// outbound bubble can say who spoke as the business. Falls back to the account email when a
+// staffer has no display name yet (users.name is nullable).
+const senderNamesFor = async (
+  tx: NonNullable<import("@/trpc/init").Context["tx"]>,
+  orgId: string,
+  thread: readonly { props: { sentByUserId: string | null } }[],
+): Promise<ReadonlyMap<string, string>> => {
+  const ids = [...new Set(thread.map((m) => m.props.sentByUserId).filter((v): v is string => v !== null))];
+  if (ids.length === 0) return new Map();
+  const rows = await tx
+    .select({ id: users.id, name: users.name, email: users.email })
+    .from(users)
+    .where(and(eq(users.orgId, orgId), inArray(users.id, ids)));
+  return new Map(rows.map((r) => [r.id, r.name ?? r.email]));
+};
 
 // Wire DTO for the conversations-list endpoint. One entry per lead thread, sorted newest-first.
 const conversationDTO = z.object({
@@ -83,7 +121,7 @@ export const createMessagingRouter = () =>
   router({
     // Send an outbound SMS to a lead. Resolves the org's Twilio number and the lead's phone
     // within the tenant transaction (RLS enforces org scoping). Returns the recorded message.
-    send: ownerOrOffice
+    send: anyRole
       .input(sendInput)
       .output(messageDTO)
       .mutation(async ({ ctx, input }) => {
@@ -99,6 +137,9 @@ export const createMessagingRouter = () =>
         }
 
         const tx = ctx.tx;
+
+        // Field gate before ANY telephony read — see assertThreadAccess.
+        await assertThreadAccess(new DrizzleLeadAssignmentReader(tx, orgId), ctx.principal, asLeadId(input.leadId));
 
         // Resolve the org's outbound Twilio number (null if not provisioned yet).
         const orgRows = await tx
@@ -191,6 +232,7 @@ export const createMessagingRouter = () =>
           leadPhone,
           body: input.body,
           idempotencyKey: input.idempotencyKey,
+          senderUserId: ctx.principal.userId,
         });
 
         if (!result.ok) {
@@ -199,33 +241,51 @@ export const createMessagingRouter = () =>
           throw new TRPCError({ code: "BAD_GATEWAY", message: result.error.message });
         }
 
-        return toMessageDTO(result.value);
+        return toMessageDTO(result.value, await senderNamesFor(tx, orgId, [result.value]));
       }),
 
     // List the SMS thread for a lead, chronological (oldest-first).
-    listByLead: ownerOrOffice
+    listByLead: anyRole
       .input(listByLeadInput)
       .output(z.array(messageDTO))
       .query(async ({ ctx, input }) => {
         const repo = new DrizzleMessageRepository(ctx.tx, ctx.principal.orgId);
+        await assertThreadAccess(new DrizzleLeadAssignmentReader(ctx.tx, ctx.principal.orgId), ctx.principal, asLeadId(input.leadId));
         const useCase = new ListThreadUseCase(repo);
         const thread = await useCase.exec({
           leadId: asLeadId(input.leadId),
           limit: input.limit,
           offset: input.offset,
         });
-        return thread.map(toMessageDTO);
+        const names = await senderNamesFor(ctx.tx, ctx.principal.orgId, thread);
+        return thread.map((m) => toMessageDTO(m, names));
       }),
 
-    // List all customer conversation threads for the org, newest-first.
-    // One entry per lead (the lead's most-recent non-deleted message). Owner/office only;
-    // a future pass will add tech scoping by passing filter.leadId into the use-case.
-    listConversations: ownerOrOffice
+    // List customer conversation threads, newest-first — one entry per lead (its most-recent
+    // non-deleted message). Office/owner see every thread; a tech sees only threads for
+    // customers they're scheduled on (the same rule assertThreadAccess enforces per-thread).
+    listConversations: anyRole
       .output(z.array(conversationDTO))
       .query(async ({ ctx }) => {
         const repo = new DrizzleMessageRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new ListConversationsUseCase(repo);
-        const rows = await useCase.exec({});
+        const rows = await useCase.exec(
+          ctx.principal.role === "tech" ? { assignedToUserId: ctx.principal.userId } : {},
+        );
         return rows.map(toConversationDTO);
+      }),
+
+    // Opening a thread clears the lead's unread flag. Shared org state — one reader clears it
+    // for everyone, exactly as it worked when only the office could read. Techs pass the same
+    // field gate as every other thread surface.
+    markThreadRead: anyRole
+      .input(z.object({ leadId: z.string().uuid() }))
+      .output(z.object({ cleared: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const orgId = ctx.principal.orgId;
+        const leadId = asLeadId(input.leadId);
+        await assertThreadAccess(new DrizzleLeadAssignmentReader(ctx.tx, orgId), ctx.principal, leadId);
+        const cleared = await new DrizzleLeadUnreadMarker(ctx.tx, orgId).markLeadRead(leadId, ctx.deps.clock.now());
+        return { cleared };
       }),
   });
