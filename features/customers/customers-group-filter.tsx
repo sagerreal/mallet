@@ -18,6 +18,11 @@ import { LEAD_GROUPS, LEAD_GROUP_LABELS, type LeadGroup } from "@/modules/custom
  * DELIBERATELY THE SAME COMPONENT SHAPE AS JobsViewFilter, down to the `.chip` class: the two
  * lists ask the same kind of question, and a second chip treatment would be a new visual language
  * for no new idea. Anchored and in-flow per the house rule — this is not a popover.
+ *
+ * SELECTED IS `.on`, NOT `.sel`. It was briefly `.sel` — the pale option-chip fill used inside
+ * forms — because `.chip.on` had no CSS rule at the time. It has one now, so the three filter rows
+ * are back to one treatment: an ink fill, matching the Active/Archived control beside them.
+ * `.sel`'s fill is #ECE7DC against a #EFEAE0 page, which is a border-only difference.
  */
 
 export interface CustomersGroupFilterProps {
@@ -34,7 +39,7 @@ export function CustomersGroupFilter({ group, counts, onGroup, disabled = false 
     <div className="jh-filters" role="group" aria-label="Filter customers by where their work is">
       <button
         type="button"
-        className={`chip${group === null ? " sel" : ""}`}
+        className={`chip${group === null ? " on" : ""}`}
         aria-pressed={group === null}
         disabled={disabled}
         onClick={() => onGroup(null)}
@@ -48,7 +53,7 @@ export function CustomersGroupFilter({ group, counts, onGroup, disabled = false 
           <button
             key={g}
             type="button"
-            className={`chip${group === g ? " sel" : ""}`}
+            className={`chip${group === g ? " on" : ""}`}
             aria-pressed={group === g}
             disabled={disabled}
             onClick={() => onGroup(group === g ? null : g)}

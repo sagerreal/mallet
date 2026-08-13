@@ -38,6 +38,15 @@ export interface LeadFilter {
   readonly group?: LeadGroup;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
+  /**
+   * The ARCHIVED set instead of the live one.
+   *
+   * Archiving a customer is a soft delete (`deleted_at`), and every read filtered
+   * `deleted_at IS NULL` unconditionally — so the Customers screen's Archived tab could not show an
+   * archived customer even in principle. It showed the live list with a Restore button bolted on,
+   * and Restore on a live customer is a no-op. Absent or false means the live set, as before.
+   */
+  readonly archived?: boolean;
 }
 
 export interface LeadRepository {
