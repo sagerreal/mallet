@@ -26,6 +26,8 @@ export interface FieldToggles {
   readonly measurementEstimating: boolean;
   /** False = a sheet shop: no punch clock, the crew types their week. */
   readonly timesheetClock: boolean;
+  /** May this technician hand-edit their own hours? False = corrections go through the office. */
+  readonly techEditsTimes: boolean;
 }
 
 export class GetFieldTogglesUseCase {
@@ -36,6 +38,7 @@ export class GetFieldTogglesUseCase {
     return ok({
       measurementEstimating: config.props.measurementEstimating,
       timesheetClock: config.props.timesheetClock,
+      techEditsTimes: config.props.techEditsTimes,
     });
   }
 }

@@ -293,7 +293,7 @@ describe("settings-slice persistence", () => {
       markup: 40,
       taxRate: 8.75,
       trade: "hvac",
-      toggles: { techSeesPrice: false, timesheetClock: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
+      toggles: { techSeesPrice: false, timesheetClock: false, techEditsTimes: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
     };
     store.get().setSettings(snap);
     expect(store.get().markup).toBe(40);

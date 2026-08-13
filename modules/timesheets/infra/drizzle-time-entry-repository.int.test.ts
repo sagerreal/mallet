@@ -57,10 +57,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
     kind: "shop",
     startTime,
     endTime: null,
+    minutes: null,
     note: "",
     src: "clock",
     status: "draft",
     running: true,
+    editedByUserId: null,
   });
 
   afterAll(async () => {
@@ -82,10 +84,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         kind: "job",
         startTime: "08:00",
         endTime: "12:00",
+        minutes: null,
         note: "Morning shift",
         src: "manual",
         status: "draft",
         running: false,
+        editedByUserId: null,
       });
     });
     expect(entry.props.workDate).toBe("2026-07-07");
@@ -116,10 +120,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         kind: "job",
         startTime: "13:00",
         endTime: "17:00",
+        minutes: null,
         note: "",
         src: "manual",
         status: "draft",
         running: false,
+        editedByUserId: null,
       });
       const patched = created.patch({ note: "Afternoon shift" }, new Date());
       if (!patched.ok) throw new Error("patch failed");
@@ -142,10 +148,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         kind: "break",
         startTime: "10:00",
         endTime: "10:15",
+        minutes: null,
         note: "",
         src: "manual",
         status: "draft",
         running: false,
+        editedByUserId: null,
       });
       const count = await repo.remove(created.props.id, new Date());
       const after = await repo.findById(created.props.id);
@@ -166,6 +174,7 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         ...runningEntry(orgAId, techId, "08:00"),
         endTime: "12:00",
         running: false,
+        editedByUserId: null,
       });
       return repo.findOpenForTech(asUserId(techId));
     });
@@ -183,6 +192,7 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         ...runningEntry(orgAId, techId, "08:00"),
         endTime: "12:00",
         running: false,
+        editedByUserId: null,
       });
       const created = await repo.create(runningEntry(orgAId, techId, "13:00"));
       const open = await repo.findOpenForTech(asUserId(techId));
@@ -272,10 +282,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         kind: "job",
         startTime: "08:00",
         endTime: "12:00",
+        minutes: null,
         note: "",
         src: "manual",
         status: "draft",
         running: false,
+        editedByUserId: null,
       });
       const e2 = await repo.create({
         id: crypto.randomUUID(),
@@ -286,10 +298,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         kind: "job",
         startTime: "08:00",
         endTime: "12:00",
+        minutes: null,
         note: "",
         src: "manual",
         status: "draft",
         running: false,
+        editedByUserId: null,
       });
       const count = await repo.approveWeek(techUser, ["2026-07-01", "2026-07-02"], new Date());
       const after1 = await repo.findById(e1.props.id);
@@ -316,10 +330,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
         kind: "job",
         startTime: "08:00",
         endTime: "12:00",
+        minutes: null,
         note: "",
         src: "manual",
         status: "draft",
         running: false,
+        editedByUserId: null,
       });
       // Approve once.
       await repo.approveWeek(techUser, ["2026-07-03"], new Date());
@@ -368,10 +384,12 @@ suite("DrizzleTimeEntryRepository against live Supabase RLS", () => {
           kind: "job",
           startTime: "08:00",
           endTime: "12:00",
+          minutes: null,
           note: "Mallory",
           src: "manual",
           status: "draft",
           running: false,
+          editedByUserId: null,
         });
       });
     } catch {

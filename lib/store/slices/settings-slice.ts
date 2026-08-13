@@ -120,6 +120,12 @@ export interface SettingsToggles {
    * with it. Off hides the day clock on My day and makes adding a day the primary action.
    */
   timesheetClock: boolean;
+  /**
+   * May technicians hand-edit their own time entries? OFF (the default) is the HCP model — the
+   * clock and the visit taps are the field's only writers and corrections go through the
+   * office. A timesheet a tech can silently rewrite is not a record.
+   */
+  techEditsTimes: boolean;
   frontDesk: boolean;
   /** Money's "Auto-remind" switch. It was useState(true) in that header — a control promising
    *  reminder texts on a schedule and wired to nothing at all. */
@@ -181,6 +187,7 @@ const EMPTY_TRADE = "plumbing";
 const EMPTY_TOGGLES: SettingsToggles = {
   techSeesPrice: true,
   timesheetClock: true,
+  techEditsTimes: false,
   frontDesk: true,
   autoRemind: true,
   // "unknown", NOT false. This placeholder used to be `false`, which made a settings read that
@@ -681,6 +688,7 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const toggleToField: Record<BooleanToggleKey, string> = {
       techSeesPrice: "techSeesPrice",
       timesheetClock: "timesheetClock",
+      techEditsTimes: "techEditsTimes",
       frontDesk: "frontDesk",
       autoRemind: "autoRemind",
     };

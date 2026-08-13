@@ -30,12 +30,14 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     jobId: string | null;
     workDate: string;
     kind: string;
-    startTime: string;
+    startTime: string | null;
     endTime: string | null;
+    minutes: number | null;
     note: string;
     src: string;
     status: string;
     running: boolean;
+    editedByUserId: string | null;
   }): Promise<TimeEntry> {
     const rows = await this.tx
       .insert(timeEntries)
@@ -48,6 +50,8 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
         kind: input.kind,
         startTime: input.startTime,
         endTime: input.endTime,
+        minutes: input.minutes,
+        editedByUserId: input.editedByUserId,
         note: input.note,
         src: input.src,
         status: input.status,

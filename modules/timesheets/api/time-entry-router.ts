@@ -3,9 +3,12 @@ import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { asTimeEntryId, asUserId, asJobId, toPage } from "@mallet/shared/types";
+import type { OrgId } from "@mallet/shared/types";
+import type { TenantTx } from "@mallet/shared/db/tx";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { DrizzleTimeEntryRepository } from "../infra/drizzle-time-entry-repository";
+import { DrizzleWeekSubmissionRepository } from "../infra/drizzle-week-submission-repository";
 import { DrizzleUnreportedDaysReader } from "../infra/drizzle-unreported-days-reader";
 import { CreateTimeEntryUseCase } from "../app/create-time-entry";
 import { ListTimeEntriesUseCase } from "../app/list-time-entries";
@@ -15,6 +18,8 @@ import { UpdateTimeEntryUseCase } from "../app/update-time-entry";
 import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
 import { SetClockStateUseCase } from "../app/set-clock-state";
+import { SubmitWeekUseCase } from "../app/submit-week";
+import { weekStartOf } from "../domain/week-submission";
 import type { ClockTap } from "../domain/clock";
 import { timeEntryDTO, toTimeEntryDTO } from "./time-entry-dto";
 
@@ -34,14 +39,18 @@ const listInput = z.object({
   sortDir: z.enum(["asc", "desc"]).optional(),
 });
 
+const ENTRY_KINDS = ["job", "travel", "break", "shop", "pto", "vacation", "sick", "holiday"] as const;
+
 const createInput = z.object({
   id: z.string().uuid().optional(),
   techUserId: z.string().uuid(),
   jobId: z.string().uuid().nullable().optional(),
   workDate: z.string().min(1),
-  kind: z.enum(["job", "travel", "break", "shop"]),
-  startTime: z.string().min(1),
+  kind: z.enum(ENTRY_KINDS),
+  // Nullable since the time-off kinds — the domain's shape matrix decides what each kind needs.
+  startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
+  minutes: z.number().int().nullable().optional(),
   note: z.string().optional(),
   src: z.enum(["manual", "clock", "timer"]).optional(),
   running: z.boolean().optional(),
@@ -51,9 +60,10 @@ const updateInput = z.object({
   entryId: z.string().uuid(),
   jobId: z.string().uuid().nullable().optional(),
   workDate: z.string().optional(),
-  kind: z.enum(["job", "travel", "break", "shop"]).optional(),
-  startTime: z.string().optional(),
+  kind: z.enum(ENTRY_KINDS).optional(),
+  startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
+  minutes: z.number().int().nullable().optional(),
   note: z.string().optional(),
   src: z.enum(["manual", "clock", "timer"]).optional(),
   running: z.boolean().optional(),
@@ -101,6 +111,53 @@ const clockTapInput = z.object({
 const clockStateDTO = z.object({
   open: timeEntryDTO.nullable(),
 });
+
+const weekSubmissionDTO = z.object({
+  weekStart: z.string(),
+  submittedAt: z.string(),
+  reopenedAt: z.string().nullable(),
+  reopenReason: z.string().nullable(),
+});
+
+const toWeekSubmissionDTO = (sub: import("../domain/week-submission").WeekSubmission) => ({
+  weekStart: sub.props.weekStart,
+  submittedAt: sub.props.submittedAt.toISOString(),
+  reopenedAt: sub.props.reopenedAt ? sub.props.reopenedAt.toISOString() : null,
+  reopenReason: sub.props.reopenReason,
+});
+
+/**
+ * The tech-edit boundary, phrased ONCE so create/update/remove cannot drift.
+ *
+ * Office callers pass untouched. A tech caller is refused when the org keeps hand edits off
+ * (the HCP model — the clock and the visit taps are the field's only writers), or when any
+ * touched week is already SUBMITTED (the attestation is with the office; the clock path is
+ * exempt and reopens the submission instead — see SetClockStateUseCase).
+ */
+async function assertTechMayEditTimes(
+  ctx: { tx: TenantTx; principal: { role: string; userId: string; orgId: OrgId } },
+  workDates: readonly string[],
+): Promise<void> {
+  if (ctx.principal.role !== "tech") return;
+  const allowed = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechEditsTimes();
+  if (!allowed) {
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "Hand edits are off for technicians on this account — ask the office to change the hours.",
+    });
+  }
+  const submissions = new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId);
+  const weeks = [...new Set(workDates.map(weekStartOf))];
+  for (const weekStart of weeks) {
+    const sub = await submissions.findFor(asUserId(ctx.principal.userId), weekStart);
+    if (sub !== null && sub.isActive()) {
+      throw new TRPCError({
+        code: "CONFLICT",
+        message: "This week is with the office — it was submitted. Ask the office to change it.",
+      });
+    }
+  }
+}
 
 // Layer 5: thin transport. Parse/normalize input, construct the org-scoped use-case from the
 // request's tx + ports, delegate, map the result. No business logic lives here except the
@@ -243,7 +300,13 @@ export const createTimesheetRouter = () =>
         // module's domain, and a wrong zone files a plumber's evening on tomorrow's sheet, so it
         // belongs where it can be seen being passed in.
         const timeZone = await new DrizzleSettingsRepository(ctx.tx, orgId).getTimezone();
-        const useCase = new SetClockStateUseCase(repo, ctx.deps.clock, ctx.deps.ids, timeZone);
+        const useCase = new SetClockStateUseCase(
+          repo,
+          ctx.deps.clock,
+          ctx.deps.ids,
+          timeZone,
+          new DrizzleWeekSubmissionRepository(ctx.tx, orgId),
+        );
 
         orThrow(
           await useCase.exec(
@@ -267,6 +330,7 @@ export const createTimesheetRouter = () =>
         if (ctx.principal.role === "tech" && input.techUserId !== ctx.principal.userId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "techs may only create their own time entries" });
         }
+        await assertTechMayEditTimes(ctx, [input.workDate]);
 
         const repo = new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CreateTimeEntryUseCase(repo, ctx.deps.clock, ctx.deps.ids);
@@ -277,11 +341,14 @@ export const createTimesheetRouter = () =>
             jobId: input.jobId ? asJobId(input.jobId) : null,
             workDate: input.workDate,
             kind: input.kind,
-            startTime: input.startTime,
+            startTime: input.startTime ?? null,
             endTime: input.endTime ?? null,
+            minutes: input.minutes ?? null,
             note: input.note ?? "",
             src: input.src ?? "manual",
             running: input.running ?? false,
+            // Every row through this endpoint was typed by SOMEBODY's hand — sign it.
+            editedBy: asUserId(ctx.principal.userId),
           },
           ctx.principal.orgId,
         );
@@ -302,6 +369,14 @@ export const createTimesheetRouter = () =>
         if (ctx.principal.role === "tech" && entry.props.techUserId !== ctx.principal.userId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "techs may only edit their own time entries" });
         }
+        // BOTH weeks: the one the row sits in and the one it may be moving to — moving a row
+        // out of a submitted week is as much an edit of that week as changing its hours.
+        await assertTechMayEditTimes(
+          ctx,
+          input.workDate !== undefined
+            ? [entry.props.workDate, input.workDate]
+            : [entry.props.workDate],
+        );
 
         const useCase = new UpdateTimeEntryUseCase(repo, ctx.deps.clock);
         const result = await useCase.exec(
@@ -312,9 +387,11 @@ export const createTimesheetRouter = () =>
             kind: input.kind,
             startTime: input.startTime,
             endTime: input.endTime,
+            minutes: input.minutes,
             note: input.note,
             src: input.src,
             running: input.running,
+            editedBy: asUserId(ctx.principal.userId),
           },
           ctx.principal.orgId,
         );
@@ -335,6 +412,7 @@ export const createTimesheetRouter = () =>
         if (ctx.principal.role === "tech" && entry.props.techUserId !== ctx.principal.userId) {
           throw new TRPCError({ code: "FORBIDDEN", message: "techs may only remove their own time entries" });
         }
+        await assertTechMayEditTimes(ctx, [entry.props.workDate]);
 
         const useCase = new RemoveTimeEntryUseCase(repo, ctx.deps.clock);
         const result = await useCase.exec(
@@ -361,6 +439,50 @@ export const createTimesheetRouter = () =>
           "time_entry.reopened",
         );
         return toTimeEntryDTO(reopened);
+      }),
+
+    /**
+     * The technician signs a week off. Self-scoped by construction — the CALLER is the only
+     * tech a submit can name, so there is nothing to forge. Idempotent via the unique
+     * (org, tech, week); refused only while the caller's clock is running.
+     */
+    submitWeek: anyRole
+      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .output(weekSubmissionDTO)
+      .mutation(async ({ ctx, input }) => {
+        const useCase = new SubmitWeekUseCase(
+          new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId),
+          new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId),
+          ctx.deps.clock,
+          ctx.deps.ids,
+        );
+        const result = await useCase.exec(
+          { techUserId: asUserId(ctx.principal.userId), weekStart: input.weekStart },
+          ctx.principal.orgId,
+        );
+        return toWeekSubmissionDTO(orThrow(result));
+      }),
+
+    /**
+     * The caller's own attestation for one week, or null — what the Submit button renders from.
+     * Office callers may ask about any tech (the review chip); techs are pinned to themselves.
+     */
+    submissionFor: anyRole
+      .input(
+        z.object({
+          weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          techUserId: z.string().uuid().optional(),
+        }),
+      )
+      .output(z.object({ submission: weekSubmissionDTO.nullable() }))
+      .query(async ({ ctx, input }) => {
+        const techUserId =
+          ctx.principal.role === "tech"
+            ? asUserId(ctx.principal.userId)
+            : asUserId(input.techUserId ?? ctx.principal.userId);
+        const repo = new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId);
+        const sub = await repo.findFor(techUserId, input.weekStart);
+        return { submission: sub === null ? null : toWeekSubmissionDTO(sub) };
       }),
 
     // Approval is a management action — ownerOrOffice only.

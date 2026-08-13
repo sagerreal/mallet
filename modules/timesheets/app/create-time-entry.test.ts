@@ -152,9 +152,11 @@ describe("CreateTimeEntryUseCase — workDate validation guard", () => {
       kind: "job",
       startTime: "08:00",
       endTime: "10:00",
+      minutes: null,
       note: "",
       src: "manual",
       running: false,
+      editedBy: null,
     };
 
     const result = await useCase.exec(cmd, ORG);
@@ -183,9 +185,11 @@ describe("CreateTimeEntryUseCase — id-minted branch", () => {
       kind: "job",
       startTime: "08:00",
       endTime: "10:00",
+      minutes: null,
       note: "",
       src: "manual",
       running: false,
+      editedBy: null,
     };
 
     const result = await useCase.exec(cmd, ORG);
@@ -210,9 +214,11 @@ describe("CreateTimeEntryUseCase — id-minted branch", () => {
       kind: "job",
       startTime: "08:00",
       endTime: "10:00",
+      minutes: null,
       note: "",
       src: "manual",
       running: false,
+      editedBy: null,
     };
 
     const result = await useCase.exec(cmd, ORG);
@@ -238,6 +244,7 @@ describe("CreateTimeEntryUseCase — happy path", () => {
       kind: "travel",
       startTime: "09:00",
       endTime: "11:30",
+      minutes: null,
       note: "drove to site",
       src: "clock",
       running: false,
@@ -251,9 +258,11 @@ describe("CreateTimeEntryUseCase — happy path", () => {
       kind: "travel",
       startTime: "09:00",
       endTime: "11:30",
+      minutes: null,
       note: "drove to site",
       src: "clock",
       running: false,
+      editedBy: null,
     };
 
     const result = await useCase.exec(cmd, ORG);
@@ -297,9 +306,11 @@ describe("CreateTimeEntryUseCase — happy path", () => {
       kind: "job",
       startTime: "08:00",
       endTime: "10:00",
+      minutes: null,
       note: "",
       src: "manual",
       running: false,
+      editedBy: null,
     };
 
     const result = await useCase.exec(cmd, ORG);
@@ -323,9 +334,11 @@ describe("CreateTimeEntryUseCase — happy path", () => {
       kind: "job",
       startTime: "08:00",
       endTime: null,
+      minutes: null,
       note: "",
       src: "timer",
       running: true,
+      editedBy: null,
     };
 
     const result = await useCase.exec(cmd, ORG);
@@ -351,9 +364,11 @@ describe("CreateTimeEntryUseCase — one person cannot be two places at once", (
     kind: "shop",
     startTime: "10:37",
     endTime: "10:38",
+    minutes: null,
     note: "",
     src: "manual",
     running: false,
+    editedBy: null,
     ...over,
   });
 
@@ -407,9 +422,11 @@ describe("CreateTimeEntryUseCase — overlap gate edge cases", () => {
     kind: "shop",
     startTime: "10:00",
     endTime: "22:00",
+    minutes: null,
     note: "",
     src: "manual",
     running: false,
+    editedBy: null,
     ...over,
   });
 

@@ -101,6 +101,7 @@ export function SettingsHydrator() {
       toggles: {
         techSeesPrice: dto.config.techSeesPrice,
         timesheetClock: dto.config.timesheetClock,
+        techEditsTimes: dto.config.techEditsTimes,
         frontDesk: dto.config.frontDesk,
         autoRemind: dto.config.autoRemind,
         measurementEstimating: measurementGateFrom(dto.config.measurementEstimating),

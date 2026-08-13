@@ -6,6 +6,7 @@ import type {
   AppError,
   Clock,
 } from "@mallet/shared/types";
+import { asOrgId } from "@mallet/shared/types";
 import { ok, err, validation } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
@@ -16,6 +17,9 @@ import type {
   TimeEntryStatus,
 } from "../domain/time-entry";
 import type { TimeEntryRepository } from "../domain/time-entry-repository";
+import type { WeekSubmissionRepository } from "../domain/week-submission-repository";
+import { weekStartOf } from "../domain/week-submission";
+import { reopenSubmissionForNewHours } from "./submit-week";
 import {
   planTap,
   MAX_OPEN_SEGMENT_MS,
@@ -287,6 +291,13 @@ export class SetClockStateUseCase {
      * being injected. An unknown zone is refused by the conversion, never defaulted to UTC.
      */
     private readonly timeZone: string,
+    /**
+     * Optional so existing callers/tests are unaffected. When present, hours landing on a week
+     * the technician already SUBMITTED reopen that attestation — the clock outranks the
+     * submission (payroll-first: the clock never refuses), and a signature over a week that has
+     * since grown is not a signature. Same transaction as the hours, so they commit together.
+     */
+    private readonly submissions?: WeekSubmissionRepository,
   ) {}
 
   async exec(
@@ -350,6 +361,23 @@ export class SetClockStateUseCase {
       "timeEntry.clockTapped",
     );
 
+    if (this.submissions) {
+      // Every week these writes touched: the closed row, any midnight remainders, the new open
+      // row. Deduped — one reopen per week however many segments landed in it.
+      const touched = new Set<string>();
+      for (const entry of closed) touched.add(weekStartOf(entry.props.workDate));
+      if (opened !== null) touched.add(weekStartOf(opened.props.workDate));
+      for (const weekStart of touched) {
+        await reopenSubmissionForNewHours(this.submissions, {
+          orgId: asOrgId(orgId),
+          techUserId: cmd.techUserId,
+          weekStart,
+          reason: "new hours landed after you submitted",
+          now,
+        });
+      }
+    }
+
     return {
       noop: false,
       closed,
@@ -383,10 +411,12 @@ export class SetClockStateUseCase {
           kind: source.kind,
           startTime: day.startTime,
           endTime: day.endTime,
+          minutes: null,
           note: source.note,
           src: TAP_SRC,
           status: NEW_ENTRY_STATUS,
           running: false,
+          editedByUserId: null,
         }),
       );
     }
@@ -408,10 +438,12 @@ export class SetClockStateUseCase {
       startTime: opening.startTime,
       // No end until the next tap. This is the one row a technician can be inside.
       endTime: null,
+      minutes: null,
       note: NO_NOTE,
       src: TAP_SRC,
       status: NEW_ENTRY_STATUS,
       running: true,
+      editedByUserId: null,
     });
   }
 }

@@ -114,6 +114,12 @@ export interface OrgSettingsProps {
   /** Duration of an install visit (clamped to ≥ VISIT_FLOOR_MINUTES). */
   readonly visitInstallMinutes: number;
   readonly timesheetClock: boolean;
+  /** May technicians hand-edit their own time entries? FALSE = the HCP model (office-only edits). */
+  readonly techEditsTimes: boolean;
+  /** Overtime policy — config, never code (state rules invert). Weekly threshold in minutes. */
+  readonly otWeeklyThresholdMinutes: number;
+  /** Optional daily threshold in minutes (California-style daily OT); null = no daily rule. */
+  readonly otDailyThresholdMinutes: number | null;
   readonly techSeesPrice: boolean;
   readonly techTexts: boolean;
   readonly frontDesk: boolean;
@@ -376,6 +382,23 @@ export class OrgSettings {
     // or a valid forward range (open < close). A half-open (open=8, close=0), zero-width, or inverted
     // range reads as "closed" to the voice availability math and would silently route every caller to
     // voicemail — reject it at the boundary so no write path persists a silently-broken schedule.
+    // Overtime policy bounds: a week holds 10,080 minutes, a day 1,440 — thresholds outside
+    // them are typos, not policies. Zero is refused too: "overtime after 0h" means every hour.
+    if (
+      !Number.isInteger(props.otWeeklyThresholdMinutes) ||
+      props.otWeeklyThresholdMinutes < 1 ||
+      props.otWeeklyThresholdMinutes > 10080
+    ) {
+      return err(validation("weekly overtime threshold must be within one week", "otWeeklyThresholdMinutes"));
+    }
+    if (
+      props.otDailyThresholdMinutes !== null &&
+      (!Number.isInteger(props.otDailyThresholdMinutes) ||
+        props.otDailyThresholdMinutes < 1 ||
+        props.otDailyThresholdMinutes > 1440)
+    ) {
+      return err(validation("daily overtime threshold must be within one day", "otDailyThresholdMinutes"));
+    }
     const hoursError = firstInvalidDayHours(props);
     if (hoursError) return err(hoursError);
 
@@ -441,6 +464,16 @@ export class OrgSettings {
           : this.p.visitInstallMinutes,
       timesheetClock:
         fields.timesheetClock !== undefined ? fields.timesheetClock : this.p.timesheetClock,
+      techEditsTimes:
+        fields.techEditsTimes !== undefined ? fields.techEditsTimes : this.p.techEditsTimes,
+      otWeeklyThresholdMinutes:
+        fields.otWeeklyThresholdMinutes !== undefined
+          ? fields.otWeeklyThresholdMinutes
+          : this.p.otWeeklyThresholdMinutes,
+      otDailyThresholdMinutes:
+        fields.otDailyThresholdMinutes !== undefined
+          ? fields.otDailyThresholdMinutes
+          : this.p.otDailyThresholdMinutes,
       techSeesPrice:
         fields.techSeesPrice !== undefined ? fields.techSeesPrice : this.p.techSeesPrice,
       techTexts: fields.techTexts !== undefined ? fields.techTexts : this.p.techTexts,

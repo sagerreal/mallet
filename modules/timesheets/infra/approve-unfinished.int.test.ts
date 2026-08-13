@@ -40,10 +40,12 @@ suite("approveWeek must not swallow unfinished hours (live)", () => {
       kind: "job",
       startTime: "08:00",
       endTime: over.endTime === undefined ? "16:00" : over.endTime,
+      minutes: null,
       note: "",
       src: "clock",
       status: "draft",
       running: over.running ?? false,
+      editedByUserId: null,
     });
   };
 

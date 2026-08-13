@@ -1,4 +1,4 @@
-import type { TimeEntryId, JobId, Result, AppError } from "@mallet/shared/types";
+import type { TimeEntryId, JobId, UserId, Result, AppError } from "@mallet/shared/types";
 import { notFound, err, ok, conflict } from "@mallet/shared/types";
 import { overlapGateError } from "./overlap-gate";
 import type { Clock } from "@mallet/shared/types";
@@ -11,11 +11,14 @@ export interface UpdateTimeEntryCommand {
   readonly jobId?: JobId | null;
   readonly workDate?: string;
   readonly kind?: TimeEntryKind;
-  readonly startTime?: string;
+  readonly startTime?: string | null;
   readonly endTime?: string | null;
+  readonly minutes?: number | null;
   readonly note?: string;
   readonly src?: TimeEntrySrc;
   readonly running?: boolean;
+  /** Whose hand made this edit (null = a system write). Signs the row for payroll review. */
+  readonly editedBy?: UserId | null;
 }
 
 export class UpdateTimeEntryUseCase {
@@ -49,11 +52,13 @@ export class UpdateTimeEntryUseCase {
         kind: cmd.kind !== undefined ? cmd.kind : entry.props.kind,
         startTime: cmd.startTime !== undefined ? cmd.startTime : entry.props.startTime,
         endTime: cmd.endTime !== undefined ? cmd.endTime : entry.props.endTime,
+        minutes: cmd.minutes !== undefined ? cmd.minutes : entry.props.minutes,
         note: cmd.note !== undefined ? cmd.note : entry.props.note,
         src: cmd.src !== undefined ? cmd.src : entry.props.src,
         running: cmd.running !== undefined ? cmd.running : entry.props.running,
       },
       now,
+      cmd.editedBy ?? undefined,
     );
     if (!patched.ok) return patched;
 
