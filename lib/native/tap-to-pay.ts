@@ -45,6 +45,35 @@ export interface TapToPayPlugin {
    * device and would put a live reader in front of terms nobody currently accepts.
    */
   termsAccepted(): Promise<{ accepted: boolean }>;
+  /**
+   * Discover + connect the on-device reader ahead of a tap (Apple 1.5).
+   *
+   * Called at launch and on foreground. A cold `connectReader` performs discovery, account checks
+   * and possibly a reader software update — seconds, where 5.6 budgets ONE for the Tap to Pay UI
+   * to appear. Warming is what makes the requirement reachable rather than aspirational.
+   *
+   * Resolves `{ ready: false, reason }` rather than rejecting when it cannot connect: a warm-up is
+   * speculative, and a background failure must never surface an error at app launch. The tap
+   * itself connects on demand and reports anything real.
+   */
+  prepare(options: { locationId: string }): Promise<{ ready: boolean; reason?: string }>;
+  /**
+   * Apple's own How-to-Tap walkthrough (`ProximityReaderDiscovery`), which Apple states fulfils
+   * requirements 4.4 and 4.6 by itself. Resolves `{ presented: false }` below iOS 18 so the web
+   * education screens can stand in.
+   */
+  presentEducation(): Promise<{ presented: boolean; reason?: string }>;
+  /**
+   * Take one payment against a server-minted card_present PaymentIntent.
+   *
+   * `succeeded` does NOT mean the money is recorded — the caller must then call
+   * `v1.terminal.reconcileTapPayment`, which reads the intent back from the shop's own connected
+   * account and records it. Same split as the Checkout success-page reconcile, and the reason a
+   * confirmed-but-unreconciled tap is recoverable rather than lost.
+   */
+  collectPayment(options: { clientSecret: string; locationId: string }): Promise<
+    { status: "succeeded"; paymentIntentId: string } | { status: "cancelled" }
+  >;
 }
 
 /** The named native plugin, or null on the web / before the bridge is injected. */
