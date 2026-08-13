@@ -1,10 +1,11 @@
 import { chromium } from "@playwright/test";
+import { OWNER } from "./e2e-credentials.mjs";
 const base = process.env.SHOT_BASE || "http://localhost:3000";
 const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1512, height: 950 } });
 await page.goto(base + "/login", { waitUntil: "networkidle" });
-await page.getByLabel("Email").fill("owner@e2e.mallet.test");
-await page.getByLabel("Password").fill("e2e-password-1");
+await page.getByLabel("Email").fill(OWNER.email);
+await page.getByLabel("Password").fill(OWNER.password);
 await page.getByRole("button", { name: "Sign in" }).click();
 await page.waitForURL("**/dashboard", { timeout: 30000 });
 await page.waitForTimeout(2500);
