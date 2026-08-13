@@ -98,8 +98,14 @@ export const bookingCfgDTO = z.object({
  *     `v1.a2p.getStatus` (the office's source for the same fact) is ownerOrOffice, so a
  *     technician had no way to learn it. One boolean, no registration detail, no failure reason.
  *
- * Anything added here becomes readable by every technician in the org. Keep it to capability
- * flags that describe what the SHOP can do — never prices, credentials, or office configuration.
+ * Anything added here becomes readable by every technician in the org. The bar is the FACT, not
+ * its shape: it must describe what the SHOP can do or the rule the shop works under — never
+ * prices, credentials, customer data, or office configuration.
+ *
+ * It started as booleans and is no longer only booleans. The OVERTIME RULE is a structured value,
+ * and it belongs here for the same reason the booleans do: a technician learns his own overtime
+ * rule from his first paycheck, and My hours cannot compute his overtime without it. Widening the
+ * shape was deliberate; widening the BAR would not be.
  */
 export const fieldTogglesDTO = z.object({
   measurementEstimating: z.boolean(),
@@ -107,6 +113,16 @@ export const fieldTogglesDTO = z.object({
   /** May this technician hand-edit their own hours? A capability flag: the My hours page renders
    *  read-only (corrections go through the office) when false. */
   techEditsTimes: z.boolean(),
+  /**
+   * The shop's overtime rule. On the field surface because MY HOURS COMPUTES MY OVERTIME: without
+   * it the page can only assume federal weekly-40, which is simply wrong in a daily-overtime state
+   * and understates what a California technician is owed. It is also the least secret fact on this
+   * payload — a man learns his own overtime rule from his first paycheck.
+   */
+  overtime: z.object({
+    weeklyThresholdMinutes: z.number().int(),
+    dailyThresholdMinutes: z.number().int().nullable(),
+  }),
   /**
    * Does this shop punch a clock? False = a sheet shop: the crew types their week instead, so the
    * field surface hides the clock and leads with adding hours. A capability flag, exactly the kind

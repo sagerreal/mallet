@@ -314,7 +314,12 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     // technician would be shown pencils and Add buttons that the server refuses — a screen that
     // lies about what it can do. It is a capability, not a secret: the man finds out the first
     // time he tries to fix a punch.
-    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating", "techEditsTimes", "timesheetClock"]);
+    //
+    // `overtime` clears it for a blunter reason: MY HOURS COMPUTES MY OVERTIME. Without the rule
+    // the page can only assume federal weekly-40, which understates what a technician in a
+    // daily-overtime state is owed — and a man learns his own overtime rule from his first
+    // paycheck, so there is nothing here to keep from him.
+    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating", "overtime", "techEditsTimes", "timesheetClock"]);
   });
 
   it("fieldToggles is org-scoped — org B never sees org A's flag", async () => {

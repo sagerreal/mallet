@@ -53,15 +53,60 @@ describe("resolveFieldToggles — canText", () => {
   });
 });
 
+// The same defect a third time, in the worst place: the overtime rule rode in on this very payload
+// and was dropped here too, so My hours computed the FEDERAL figure on first paint and corrected
+// itself a beat later. On a California week that is "no overtime" flashing into "8.00 OT" — the
+// exact number the rule exists to get right, wrong for a beat.
+describe("resolveFieldToggles — the overtime rule", () => {
+  it("seeds the shop's own rule, daily threshold included", async () => {
+    fieldToggles.mockResolvedValue({
+      measurementEstimating: false,
+      canText: false,
+      overtime: { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 },
+    });
+    await expect(resolveFieldToggles(principal)).resolves.toMatchObject({
+      overtime: { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 },
+    });
+  });
+
+  it("passes a no-daily-rule shop through as null rather than inventing a threshold", async () => {
+    fieldToggles.mockResolvedValue({
+      measurementEstimating: false,
+      canText: false,
+      overtime: { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null },
+    });
+    await expect(resolveFieldToggles(principal)).resolves.toMatchObject({
+      overtime: { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null },
+    });
+  });
+
+  it("carries a non-federal weekly threshold, so a 44h-week shop is not shown a 40h figure", async () => {
+    fieldToggles.mockResolvedValue({
+      measurementEstimating: false,
+      canText: false,
+      overtime: { weeklyThresholdMinutes: 2640, dailyThresholdMinutes: null },
+    });
+    await expect(resolveFieldToggles(principal)).resolves.toMatchObject({
+      overtime: { weeklyThresholdMinutes: 2640, dailyThresholdMinutes: null },
+    });
+  });
+});
+
 describe("resolveFieldToggles — failure", () => {
-  it("fails soft to unknown on BOTH flags when the read throws — it must never 500 the shell", async () => {
+  it("fails soft to unknown on EVERY field when the read throws — it must never 500 the shell", async () => {
     fieldToggles.mockRejectedValue(new Error("settings read exploded"));
     // "unknown" now means what it says: the read failed. The scan surfaces answer that with a
     // visible, disabled control and a stated reason; Text answers it by staying away, because a
     // control the carrier is certain to refuse is worse than no control.
+    //
+    // Overtime has no third state to fall to, so its seed is simply ABSENT (null) and the hook
+    // falls back to the federal rule. That is the one honest default: it is the floor every state
+    // is at least as generous as, so a failed read can only ever UNDERSTATE overtime on the
+    // technician's own screen — never overstate what the shop is about to pay.
     await expect(resolveFieldToggles(principal)).resolves.toEqual({
       measurement: "unknown",
       canText: "unknown",
+      overtime: null,
     });
   });
 });

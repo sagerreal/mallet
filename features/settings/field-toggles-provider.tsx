@@ -18,6 +18,7 @@
 import type { ReactNode } from "react";
 import { MeasurementGateProvider } from "@/features/settings/measurement-gate-provider";
 import { CanTextProvider } from "@/features/messaging/use-can-text";
+import { OvertimePolicyProvider } from "@/features/settings/use-overtime-policy";
 import type { FieldTogglesSeed } from "@/lib/field-toggles-seed";
 
 export function FieldTogglesProvider({
@@ -29,7 +30,9 @@ export function FieldTogglesProvider({
 }) {
   return (
     <MeasurementGateProvider gate={seed.measurement}>
-      <CanTextProvider seed={seed.canText}>{children}</CanTextProvider>
+      <CanTextProvider seed={seed.canText}>
+        <OvertimePolicyProvider seed={seed.overtime}>{children}</OvertimePolicyProvider>
+      </CanTextProvider>
     </MeasurementGateProvider>
   );
 }
