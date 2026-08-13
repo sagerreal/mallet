@@ -1,6 +1,8 @@
 import type { BandKey } from "./today-derive";
 import type { Job } from "@/lib/store/types";
 import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
+import { isVisitPlaced } from "@/lib/store/visit-placement";
+import { todayISO } from "@/lib/clock";
 import type { RouterOutputs } from "@/lib/trpc/client";
 
 import type { JobView } from "@/modules/jobs/infra/job-views";
@@ -27,6 +29,7 @@ import type { JobSort } from "@/modules/jobs/infra/job-sorts";
 /** Server view → the band key the row helpers already understand. */
 const BAND_FOR_VIEW: Record<JobView, BandKey> = {
   needsSlot: "needsSlot",
+  late: "late",
   today: "today",
   week: "thisWeek",
   upcoming: "later",
@@ -43,6 +46,14 @@ const BAND_FOR_VIEW: Record<JobView, BandKey> = {
 const bandForJob = (job: Job): BandKey => {
   if (job.status === "done") return "done";
   if (job.status === "unscheduled") return "needsSlot";
+  // The `late` arm is the first one that can visibly DISAGREE with the server — it renders as a
+  // rust date rather than a plain one — so it mirrors viewCondition clause for clause: an
+  // OUTSTANDING visit (placed, not finished) landing before today, with today winning when the job
+  // carries both. `isVisitPlaced` is the shared primitive, never a local copy of the rule.
+  const today = todayISO();
+  const outstanding = (job.visits ?? []).filter((v) => v.status !== "done" && isVisitPlaced(v));
+  if (outstanding.some((v) => v.date === today)) return "today";
+  if (outstanding.some((v) => (v.date ?? "") < today)) return "late";
   return "later";
 };
 

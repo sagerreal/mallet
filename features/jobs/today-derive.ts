@@ -21,7 +21,7 @@ export function todayVisit(j: Job): Visit | null {
 
 // ---- the banded ledger — each job lands in exactly one band ------------------
 
-export type BandKey = "needsSlot" | "today" | "thisWeek" | "later" | "doneUnbilled" | "done" | "archived";
+export type BandKey = "needsSlot" | "late" | "today" | "thisWeek" | "later" | "doneUnbilled" | "done" | "archived";
 
 export interface JobBand {
   key: BandKey;
