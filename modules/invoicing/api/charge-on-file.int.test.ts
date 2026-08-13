@@ -374,7 +374,10 @@ suite("chargeOnFile — field + office, live RLS", () => {
     const customer = day.customers.find((c) => c.id === leadAId);
     expect(customer?.card).toEqual({ brand: "visa", last4: "4242", via: "payment" });
     // The Stripe pointers must never cross the field wire — the DTO has no key for them.
-    expect(Object.keys(customer!)).toEqual(["id", "name", "phone", "card"]);
+    // `address` joined this list in 28d702e (My day cards are visits): the card needs a "where do
+    // I drive" line when the job carries no address of its own. This assertion is an ALLOWLIST,
+    // so a legitimately-added field fails it until it is named here — which is the point.
+    expect(Object.keys(customer!)).toEqual(["id", "name", "phone", "address", "card"]);
   });
 
   it("customers.list carries the card for the office; a card-less customer answers null", async () => {

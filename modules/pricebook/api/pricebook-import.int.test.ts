@@ -104,7 +104,9 @@ suite("pricebook tRPC router — CSV import (full stack, live RLS)", () => {
           costCents: 1500,
           taxable: false,
         },
-        // (d) a duplicate of (a)'s name — same org, same case — must dedupe, not create.
+        // (d) a duplicate of (a)'s name — same org, same case — is a RE-IMPORT: 73cc7fa made a
+        // name collision patch the existing service instead of throwing the row away, because a
+        // shop doing an annual price update had no other way to apply it.
         {
           name: heaterName,
           category: "Water Heaters",
@@ -118,7 +120,10 @@ suite("pricebook tRPC router — CSV import (full stack, live RLS)", () => {
     });
 
     expect(result.created).toBe(3);
-    expect(result.deduped).toBe(1);
+    // Services are never "deduped" now — see the router, which hard-codes `deduped: 0` and counts
+    // the patch under `updated`. The field is kept on the DTO for the material importer.
+    expect(result.updated).toBe(1);
+    expect(result.deduped).toBe(0);
     expect(result.failed).toBe(0);
     expect(result.errors).toHaveLength(0);
 
