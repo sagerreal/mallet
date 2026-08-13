@@ -34,7 +34,10 @@ export function PaymentsCard() {
   // param so a manual page refresh doesn't re-trigger it.
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    if (params.get("tab") === "payments" && params.get("connect") === "return") {
+    // Keyed on `connect=return` ALONE, not on the tab name. Stripe only ever appends that on its
+    // way back from onboarding, and pinning the check to `tab=payments` meant renaming a Settings
+    // tab would silently stop refreshing a shop's payout status mid-signup.
+    if (params.get("connect") === "return") {
       refresh.mutate();
       params.delete("connect");
       window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);

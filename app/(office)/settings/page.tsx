@@ -26,6 +26,7 @@ import { DocumentsCard } from "./documents-card";
 import { SalesTaxCard } from "./sales-tax-card";
 import { CallbackNumberCard } from "./callback-number-card";
 import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
+import { resolveSettingsTab, DEFAULT_SET_TAB, type SetTab } from "./settings-tabs";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
@@ -75,11 +76,10 @@ function SecWorkspace() {
       {/* Next to Business details: both are facts the customer sees on a document, and both
           are set once when a shop is stood up. */}
       <SalesTaxCard />
-      <A2pRegistrationCard />
+      {/* Texting registration and the CSV importer moved to Integrations — both are connections to
+          something outside Mallet, and neither is a fact about the company the way the cards here
+          are. */}
       <TimezoneCard />
-      {/* Last in Workspace: a shop reads this card ONCE, on the day it moves in, and never again.
-          Everything above it is a setting that gets revisited. */}
-      <ImportCard />
     </>
   );
 }
@@ -758,6 +758,37 @@ function TeamRolesBlock() {
 // Section: Lead sources
 // ============================================================================
 
+/**
+ * Everything Mallet plugs into: the money rails, the accounting ledger, the carrier registration
+ * that lets it text, the places leads arrive from, and the one-time move-in import.
+ *
+ * WHY THEY BELONG TOGETHER. These six were scattered across three tabs — QuickBooks and Payments
+ * each owned a tab, texting registration and the importer sat in Workspace beside the company's
+ * name and tax rate, and the lead marketplaces sat in Channels. What they actually share is not a
+ * topic but a SHAPE: each one is a connection to something outside Mallet, each is set up once by
+ * whoever stood the shop up, and each can be broken by the other side (a revoked token, an expired
+ * campaign, a disconnected account) without anybody in the shop touching it.
+ *
+ * ORDER IS BY WHAT BREAKS WORST. Payments and QuickBooks first — money stops moving. Texting next:
+ * an inactive campaign silently stops every message. Then where leads arrive from, then the
+ * importer, which a shop reads once on the day it moves in and never again.
+ */
+function SecIntegrations() {
+  return (
+    <>
+      <PaymentsCard />
+      {/* Directly beneath Connect onboarding: Apple 3.4 wants the way to enable Tap to Pay at the
+          end of merchant onboarding, and 3.6 wants it reachable outside checkout. */}
+      <TapToPayCard />
+      <QuickbooksCard />
+      <A2pRegistrationCard />
+      <LeadMarketplacesCard />
+      <WebsiteFormCard />
+      <ImportCard />
+    </>
+  );
+}
+
 function SecChannels() {
   const sources = useAppStore((s) => s.sources);
   const leads = useAppStore((s) => s.leads);
@@ -801,10 +832,8 @@ function SecChannels() {
 
   return (
     <>
-      <LeadMarketplacesCard />
-
-      <WebsiteFormCard />
-
+      {/* The marketplaces and the website form moved to Integrations. What is left here is the
+          SOURCE LIST: not a connection to anything, just the vocabulary this shop tags leads with. */}
       <FoldCard title="Source list" summary={settingsLoading ? "…" : `${DEFAULT_SOURCES.length + sources.length} sources`}>
         <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-1)" }}>
           Where your leads come from — tag each lead with one. Built-in sources are always available; add your own below.
@@ -857,70 +886,44 @@ function SecChannels() {
 // share the Workspace tab under a heading, so a new office hire opened Settings and saw the
 // company's branding, the company's texting registration and their own mobile stacked together
 // with nothing saying which of them they could safely change.
-const SET_TABS = ["workspace", "team", "channels", "payments", "quickbooks", "you"] as const;
-type SetTab = (typeof SET_TABS)[number];
-
-// Old deep-link tab names → their new homes (settings-IA regroup). ?tab=payments must keep
-// working verbatim — Stripe's Connect onboarding return URL points at it server-side.
-const TAB_ALIASES: Record<string, SetTab> = {
-  sources: "channels",
-  fields: "workspace",
-  archive: "workspace",
-};
-
 interface SectionDef {
   k: SetTab;
   label: string;
-  ownerOnly?: boolean;
   body: React.ReactNode;
 }
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<SetTab>("workspace");
+  const [activeTab, setActiveTab] = useState<SetTab>(DEFAULT_SET_TAB);
   // Deep-link support (/settings?tab=booking) — read once on mount; avoids the
   // useSearchParams/Suspense requirement and any SSR hydration mismatch.
   // ?tab=pricing moved to its own surface (settings-IA decision, Jul 2026) —
   // old links redirect there rather than dead-ending on Workspace.
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get("tab");
-    if (t === "pricing") {
-      router.replace("/pricebook");
+    const { redirectTo, tab } = resolveSettingsTab(new URLSearchParams(window.location.search).get("tab"));
+    if (redirectTo) {
+      router.replace(redirectTo);
       return;
     }
-    // The Front Desk moved to its own Office page — old booking/frontdesk links follow it.
-    if (t === "booking" || t === "frontdesk") {
-      router.replace("/frontdesk");
-      return;
-    }
-    if (!t) return;
-    const canonical: SetTab | undefined = (SET_TABS as readonly string[]).includes(t)
-      ? (t as SetTab)
-      : TAB_ALIASES[t];
-    if (canonical) setActiveTab(canonical);
+    if (tab) setActiveTab(tab);
   }, [router]);
-  const { data: me } = api.v1.identity.me.useQuery();
-  const role = me?.role ?? "office";
-
   const allSections = [
     { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace /> },
     { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
     { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
-    { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: (
-      <>
-        <PaymentsCard />
-        {/* Directly beneath Connect onboarding: Apple 3.4 wants the way to enable Tap to Pay at
-            the end of merchant onboarding, and 3.6 wants it reachable outside checkout. */}
-        <TapToPayCard />
-      </>
-    ) },
-    // ?tab=quickbooks must keep working verbatim — the OAuth callback redirects to it server-side.
-    { k: "quickbooks" as SetTab, label: "QuickBooks", ownerOnly: true, body: <QuickbooksCard /> },
+    { k: "integrations" as SetTab, label: "Integrations", body: <SecIntegrations /> },
     { k: "you" as SetTab, label: "You", body: <SecYou /> },
   ] satisfies SectionDef[];
-  const sections: SectionDef[] = allSections.filter((s) => role === "owner" || role === "office" || !s.ownerOnly);
+  /**
+   * No per-tab role filter, because there was never a real one. `ownerOnly` was read as
+   * `role === "owner" || role === "office" || !ownerOnly`, and a TECH cannot reach /settings at all
+   * — the (office) layout guards the route — so the left side was always true and the flag hid
+   * nothing from anybody. Keeping it would be keeping a lie about who can see what; if a tab ever
+   * genuinely needs owner-only, it needs a check that actually excludes office.
+   */
+  const sections: SectionDef[] = allSections;
 
-  const tab = sections.some((s) => s.k === activeTab) ? activeTab : "workspace";
+  const tab = sections.some((s) => s.k === activeTab) ? activeTab : DEFAULT_SET_TAB;
 
   return (
     <div>
