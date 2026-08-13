@@ -113,13 +113,16 @@ const createInput = z.object({
   address: z.string().max(500).optional(),
 });
 
+// Nullable AND optional, for two different reasons: null is a mapped column with a blank cell,
+// ABSENT is a column the sheet does not have at all (buildRows omits unmapped fields). Requiring
+// the key would reject an ordinary two-column "Name, Phone" file at the boundary.
 const importRowInput = z.object({
   name: z.string().min(1).max(255),
-  phone: z.string().max(40).nullable(), // raw string; server parses leniently, never rejects the batch
-  email: z.string().max(320).nullable(), // raw string; server validates leniently, never rejects the batch
-  source: z.string().max(255).nullable(),
-  address: z.string().max(500).nullable(),
-  notes: z.string().max(2000).nullable(),
+  phone: z.string().max(40).nullable().optional(), // raw string; server parses leniently, never rejects the batch
+  email: z.string().max(320).nullable().optional(), // raw string; server validates leniently, never rejects the batch
+  source: z.string().max(255).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
 });
 const importInput = z.object({ rows: z.array(importRowInput).min(1).max(500) });
 
@@ -410,7 +413,9 @@ export const createLeadRouter = () =>
             name: r.name,
             phone,
             email,
-            source: r.source,
+            // Absent (no such column) and null (mapped, blank) both mean "nothing to write" for a
+            // customer being created — customers are never patched on re-import.
+            source: r.source ?? null,
             companyId: null,
             role: null,
             notes: r.notes?.trim() || null,

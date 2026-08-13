@@ -21,6 +21,7 @@ import { ListJobsUseCase } from "../app/list-jobs";
 import { CreateManualJobUseCase } from "../app/create-manual-job";
 import { CreateVisitUseCase } from "../app/create-visit";
 import { ImportJobsUseCase } from "../app/import-jobs";
+import { importJobsInput } from "./import-jobs-input";
 import { UpdateJobUseCase } from "../app/update-job";
 import {
   JOB_CHECKLIST_MAX_ITEMS,
@@ -123,24 +124,6 @@ const listByLeadInput = z.object({
 // reuse them for client-side validation without duplicating the bounds).
 const kindInputEnum = z.enum(["work", "estimate"]);
 
-// Bulk CSV import (mirrors `importCustomers` in lead-router.ts and `importServices` in
-// pricebook-router.ts). A row names its CUSTOMER rather than carrying a leadId — the server
-// resolves that per chunk, creating the customer when nothing matches. Client-side parsing has
-// already coerced dates and statuses; this endpoint re-validates and writes.
-const importJobRowInput = z.object({
-  customer: z.string().min(1).max(255),
-  phone: z.string().max(50).nullable(),
-  svc: z.string().max(60).nullable(),
-  scope: z.string().max(4000).nullable(),
-  addr: z.string().max(1000).nullable(),
-  status: z.enum(JOB_STATUSES as unknown as [string, ...string[]]).nullable(),
-  /** "YYYY-MM-DD" — null when the sheet carried no date; the job imports unscheduled. */
-  scheduledDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable(),
-  /** "HH:MM" — null falls back to the org's opening hour for that weekday. */
-  scheduledStart: z.string().regex(/^\d{2}:\d{2}$/).nullable(),
-});
-
-const importJobsInput = z.object({ rows: z.array(importJobRowInput).min(1).max(500) });
 
 const importJobsResultDTO = z.object({
   created: z.number().int(),
@@ -328,7 +311,7 @@ export const createJobRouter = () =>
           leads: leadRepo,
           ensureCustomer: new EnsureCustomerUseCase(leadRepo, ctx.deps.bus, ctx.deps.clock),
         }).exec(
-          input.rows.map((r) => ({ name: r.customer, phone: r.phone })),
+          input.rows.map((r) => ({ name: r.customer, phone: r.phone ?? null })),
           "Import",
         );
 
@@ -344,12 +327,15 @@ export const createJobRouter = () =>
           const r = input.rows[i]!;
           rows.push({
             leadId: ref.lead.props.id,
-            svc: r.svc,
-            scope: r.scope,
-            addr: r.addr,
+            // An absent key (no such column in the sheet) and a null (mapped column, blank cell)
+            // mean the same thing to a job being CREATED: there is nothing to write. The
+            // distinction only matters on update, which jobs do not do.
+            svc: r.svc ?? null,
+            scope: r.scope ?? null,
+            addr: r.addr ?? null,
             status: (r.status ?? "scheduled") as JobStatus,
-            scheduledDate: r.scheduledDate,
-            scheduledStart: r.scheduledStart,
+            scheduledDate: r.scheduledDate ?? null,
+            scheduledStart: r.scheduledStart ?? null,
             ...(ref.ambiguousName ? { ambiguousName: ref.ambiguousName } : {}),
           });
         }
