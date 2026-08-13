@@ -1394,6 +1394,16 @@
   /* Tap to Pay. The button carries Apple's SF Symbol beside its label (requirement 5.5), so the
      bold line becomes a flex row; everything else inherits the pay-block button treatment. */
   .tap-to-pay b{display:flex;align-items:center;gap:var(--space-2)}
+  /* The Tap to Pay step of the close-out: setup, the tap itself, and the outcome (Apple 5.7-5.9). */
+  .tapstep{display:flex;flex-direction:column;align-items:center;text-align:center;gap:var(--space-2);padding:var(--space-5) var(--space-4)}
+  .tapstep-h{font-family:var(--font-display);font-size:var(--type-lg);font-weight:700;margin:0}
+  .tapstep p{margin:0;max-width:38ch}
+  .tapstep-acts{display:flex;gap:var(--space-2);flex-wrap:wrap;justify-content:center;margin-top:var(--space-3)}
+  /* Amber, not red: on the unreconciled path the customer HAS paid — the money is safe and the
+     record is what is missing. Red would say "something went wrong with the payment", which is
+     the one thing that is not true. */
+  .tapstep-warn{background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius)}
+  .tapstep-warn .tapstep-h{color:var(--amber)}
   .tap-to-pay svg{flex-shrink:0}
   /* Merchant education (§4) — shown after the terms are accepted and again from Settings. */
   .ttp-edu{display:flex;flex-direction:column;gap:var(--space-3)}

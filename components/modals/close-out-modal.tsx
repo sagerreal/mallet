@@ -35,6 +35,8 @@ import { ListLoading } from "@/components/shared/list-loading";
 import { TapToPayButton } from "@/components/shared/tap-to-pay-button";
 import { useTapToPayAvailability, useTapToPayTermsAccepted } from "@/lib/native/tap-to-pay";
 import { CardCheckoutStep } from "./close-out-card-step";
+import { CloseOutTapStep } from "./close-out-tap-step";
+import { CloseOutTapTermsStep } from "./close-out-tap-terms-step";
 import { CloseOutDocument, SendDocumentButton } from "./close-out-document";
 import { invDue, invPaid } from "@/lib/store/invoice-balance";
 import { jobPricedTotals } from "@/lib/store/job-pricing";
@@ -657,6 +659,29 @@ function PayBlock({
       inFlightRef.current = false;
       setBusy(false);
     }
+  }
+
+  // step: tap — the phone IS the reader. Apple 5.7–5.9 live in CloseOutTapStep. -
+  if (p.step === "tap") {
+    return (
+      <CloseOutTapStep
+        invoiceId={invoice?.id ?? ""}
+        amount={due}
+        onPaid={() => setP({ step: "done", method: "card", amt: due })}
+        onBack={() => setP({ step: "method", amt: due })}
+      />
+    );
+  }
+
+  // step: tapterms — Apple 5.3's other half. Pressing Tap to Pay before the shop has accepted
+  // the terms must OPEN them, not refuse: enrolment is the entry point, not a locked door.
+  if (p.step === "tapterms") {
+    return (
+      <CloseOutTapTermsStep
+        onAccepted={() => setP({ ...p, step: "tap" })}
+        onBack={() => setP({ step: "method", amt: due })}
+      />
+    );
   }
 
   // step: card — a REAL Stripe Checkout as a QR (the simulated tap is gone) ----

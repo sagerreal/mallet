@@ -15,6 +15,7 @@ import { LeadsHydrator } from "@/features/customers/leads-hydrator";
 import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
 import { SettingsHydrator } from "@/features/settings/settings-hydrator";
 import { FieldTogglesHydrator } from "@/features/settings/field-toggles-hydrator";
+import { TapToPayWarmer } from "@/features/settings/tap-to-pay-warmer";
 import { BusinessIdentityHydrator } from "@/features/settings/business-identity-hydrator";
 import { DocumentWordingHydrator } from "@/features/settings/document-wording-hydrator";
 import { WriteErrorToast } from "@/components/shared/write-error-toast";
@@ -48,6 +49,9 @@ export default async function FieldLayout({ children }: { children: ReactNode })
             ownerOrOffice-only, so without this a tech's store (and the
             tech-job-modal it feeds) would stay empty. */}
         <FieldJobsHydrator />
+        {/* Apple 1.5 — warm the reader at launch and on foreground. 5.6's one-second budget is
+            unreachable without it; see the component. Renders nothing. */}
+        <TapToPayWarmer />
         {/* Owner/office on the field surface: FieldJobsHydrator is tech-only (it must not
             replace the office's full lists with a personal subset), so on a COLD load of
             /my-day their store was empty and tapping a job opened a blank modal. Mount the
