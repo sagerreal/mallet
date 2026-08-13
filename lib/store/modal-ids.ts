@@ -8,6 +8,8 @@ export const MODAL = {
   NEW_CUSTOMER: "new-customer",
   CALL: "call",
   THREAD: "thread",
+  /** A staff conversation (DM or group) — internal, never customer-visible. */
+  TEAM_CHAT: "team-chat",
   VISIT: "visit",
   CLEAN_UP: "clean-up",
   SWEEP: "sweep",

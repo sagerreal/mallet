@@ -18,6 +18,7 @@ import { shortWhen } from "@/lib/format";
 import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { useMe } from "@/features/identity/hooks";
 import { inboxQueryOptions } from "@/features/field/inbox-query-options";
+import { TeamInbox } from "@/features/team-chat/team-inbox";
 
 function leadInitials(name: string): string {
   return (name ?? "?")
@@ -370,6 +371,11 @@ export default function MessagesPage() {
 
         {/* Customer inbox — only for owner/office once role is confirmed */}
         {canSeeInbox && <CustomerInbox />}
+
+        {/* Staff conversations — EVERY role. Customer texts are owner/office only
+            (v1.messaging is ownerOrOffice), so before this a tech's Messages tab
+            was the Artie card and nothing else. */}
+        <TeamInbox meUserId={me?.userId} />
       </div>
     </>
   );

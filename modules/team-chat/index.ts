@@ -3,6 +3,7 @@ export { createTeamChatRouter } from "./api/team-chat-router";
 export type { TeamThreadDTO, TeamMessageDTO } from "./api/team-chat-dto";
 export { TeamThread, dmKeyFor, MAX_GROUP_TITLE, MAX_GROUP_MEMBERS } from "./domain/team-thread";
 export type { ThreadKind } from "./domain/team-thread";
+export { displayNameOf } from "./domain/display-name";
 export {
   TeamMessage,
   CHAT_MEDIA_TYPES,
