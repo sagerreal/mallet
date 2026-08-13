@@ -40,6 +40,8 @@ let updateError: { message: string } | null;
 let meUserId: string | undefined;
 let unreportedQuery: { data?: { items: unknown[] }; refetch: () => void };
 let visitStampsQuery: { data?: { items: unknown[] } };
+let submissionQuery: { data?: { submission: { weekStart: string; submittedAt: string; reopenedAt: string | null; reopenReason: string | null } | null }; isFetched: boolean };
+let submitMutate: ReturnType<typeof vi.fn>;
 /** The shop's overtime rule, as the field surface reads it. Federal unless a test says otherwise. */
 /**
  * Does the ORG let technicians correct their own hours? Defaults OFF in production (#457, the
@@ -58,7 +60,9 @@ vi.mock("@/features/identity/hooks", () => ({
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
-    useUtils: () => ({ v1: { timesheets: { list: { invalidate: vi.fn() } } } }),
+    useUtils: () => ({
+      v1: { timesheets: { list: { invalidate: vi.fn() }, submissionFor: { invalidate: vi.fn() } } },
+    }),
     v1: {
       // The field surface's only settings read — punch clock vs sheet. Defaults on.
       settings: {
@@ -81,6 +85,10 @@ vi.mock("@/lib/trpc/client", () => ({
         // A separate read from `list` on purpose: the clock and the job taps are different records
         // and do not have to agree.
         visitStamps: { useQuery: () => visitStampsQuery },
+        // His own sign-off for the week on show. Null = not submitted, which is what most of this
+        // file assumes; the submitted case has its own block at the foot.
+        submissionFor: { useQuery: () => submissionQuery },
+        submitWeek: { useMutation: () => ({ mutate: submitMutate, isPending: false, error: null }) },
         update: {
           useMutation: () => ({ mutate: updateMutate, error: updateError, isPending: false }),
         },
@@ -115,6 +123,8 @@ beforeEach(() => {
   updateError = null;
   unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
   visitStampsQuery = { data: { items: [] } };
+  submissionQuery = { data: { submission: null }, isFetched: true };
+  submitMutate = vi.fn();
   techEditsTimes = true;
   meUserId = ME;
   withEntries([]);
@@ -405,6 +415,8 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     updateError = null;
     unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
     visitStampsQuery = { data: { items: [] } };
+    submissionQuery = { data: { submission: null }, isFetched: true };
+    submitMutate = vi.fn();
     techEditsTimes = true;
     listQuery = {
       data: { items: tenHourWeek(), nextCursor: null },
@@ -546,5 +558,73 @@ describe("a shop that keeps timesheet changes with the office", () => {
     render(<MyHoursPage />);
     expect(screen.getByText("No hours yet")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SUBMITTING THE WEEK. "These are my hours" — the third state between draft and approved, and the
+// one that makes approval safe: without it an approver cannot tell a week the technician considers
+// finished from one he is still filling in on Thursday afternoon.
+// ---------------------------------------------------------------------------
+
+const submittedWeek = (over: { reopenedAt?: string | null } = {}) => ({
+  data: {
+    submission: {
+      weekStart: "2026-06-29",
+      submittedAt: "2026-07-03T21:14:00.000Z",
+      reopenedAt: over.reopenedAt ?? null,
+      reopenReason: null,
+    },
+  },
+  isFetched: true,
+});
+
+describe("submitting the week", () => {
+  beforeEach(() => withEntries([entry({ id: "mine", startTime: "08:00", endTime: "16:00" })]));
+
+  it("offers Submit week on a week that has hours", () => {
+    render(<MyHoursPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Submit week" }));
+    expect(submitMutate).toHaveBeenCalledWith({ weekStart: "2026-06-29" });
+  });
+
+  it("does not offer it on an empty week — an attestation about nothing is not one", () => {
+    withEntries([]);
+    render(<MyHoursPage />);
+    expect(screen.queryByRole("button", { name: "Submit week" })).toBeNull();
+  });
+
+  it("becomes the FACT once submitted, with no second button to press", () => {
+    submissionQuery = submittedWeek();
+    render(<MyHoursPage />);
+    expect(screen.getByText(/^Submitted/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Submit week" })).toBeNull();
+  });
+
+  it("LOCKS the week — the server refuses edits to a submitted week, so the pencil goes", () => {
+    submissionQuery = submittedWeek();
+    render(<MyHoursPage />);
+    expect(screen.queryByRole("button", { name: /^Edit the shift on/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
+  });
+
+  it("says the week is with the office rather than removing the controls silently", () => {
+    submissionQuery = submittedWeek();
+    render(<MyHoursPage />);
+    expect(screen.getByText(/You submitted this week/)).toBeTruthy();
+  });
+
+  it("unlocks again once the office reopens it", () => {
+    // A reopened submission is not an attestation — `isActive()` is the one question the lock asks.
+    submissionQuery = submittedWeek({ reopenedAt: "2026-07-04T15:00:00.000Z" });
+    render(<MyHoursPage />);
+    expect(screen.getByRole("button", { name: "Submit week" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Edit the shift on/ })).toBeTruthy();
+  });
+
+  it("offers nothing to submit on a shop that keeps timesheets with the office", () => {
+    techEditsTimes = false;
+    render(<MyHoursPage />);
+    expect(screen.queryByRole("button", { name: "Submit week" })).toBeNull();
   });
 });

@@ -124,6 +124,7 @@ export function TimesheetsPanel() {
   const [unfinishedDays, setUnfinishedDays] = useState<readonly string[] | null>(null);
 
   const weekDates = tsWeekDates(weekStart);
+
   const wkEnd = tsAddDays(weekStart, 6);
   const thisWeek = tsWeekStart(today);
   const dl = (iso: string) =>
@@ -226,6 +227,19 @@ export function TimesheetsPanel() {
   }
 
   const selTech = selId != null ? techById(techs, selId) : undefined;
+
+  /**
+   * Whether the SELECTED technician has signed this week off — the third state between draft and
+   * approved. Scoped to the person on screen: the approver reads one week at a time, and asking for
+   * the whole crew would be a query per chip for a fact only the open card shows.
+   */
+  const submissionQ = api.v1.timesheets.submissionFor.useQuery(
+    { weekStart, techUserId: selId ?? undefined },
+    { enabled: selId != null, refetchOnWindowFocus: false },
+  );
+  const submission = submissionQ.data?.submission ?? null;
+  const submittedAt =
+    submission !== null && submission.reopenedAt === null ? submission.submittedAt : null;
 
   // No-flash first-run gate on the ALL-TIME entry count, counted in the database — NOT on the rows
   // loaded for the week. A shop that took last week off has hours; offering it the set-up screen
@@ -382,6 +396,7 @@ export function TimesheetsPanel() {
               onApprove={() => void handleApprove(selTech.id)}
               onReopen={() => handleReopen(es)}
               unfinishedDays={unfinishedDays}
+              submittedAt={submittedAt}
             />
           );
         })()}

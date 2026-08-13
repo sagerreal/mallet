@@ -10,6 +10,7 @@
 
 import type { Job, Lead, Tech, TimeEntry } from "@/lib/store/types";
 import { tsDayLabel, type TsRollup } from "./timesheet-derive";
+import { stampLabel } from "@/features/field/job-time-derive";
 import { TsEntriesBlock, type TsPick } from "./timesheets-entries";
 
 export interface TsCrewChipsProps {
@@ -89,6 +90,21 @@ export interface TsTechWeekCardProps {
   onReopen: () => void;
   /** Days the last approval was refused over — empty/null when nothing was refused. */
   unfinishedDays: readonly string[] | null;
+  /**
+   * When the technician SIGNED this week off, ISO — null when he has not.
+   *
+   * The third state, and the one that makes approval safe. This card could tell APPROVED from
+   * not-approved and nothing else, so an approver could not distinguish a week the man considers
+   * finished from one he is still filling in on Thursday afternoon. Approving the second kind is how
+   * somebody gets paid for four days of a five-day week.
+   */
+  submittedAt: string | null;
+}
+
+/** "Thu 2:14p" — when he signed it off, in the reader's own timezone. */
+function tsSubmittedLabel(iso: string): string {
+  const at = new Date(iso);
+  return `${at.toLocaleDateString(undefined, { weekday: "short" })} ${stampLabel(iso)}`;
 }
 
 /** The week's totals. HOURS ONLY — what anyone is paid lives in payroll, never in Mallet. */
@@ -135,6 +151,7 @@ export function TsTechWeekCard({
   onApprove,
   onReopen,
   unfinishedDays,
+  submittedAt,
 }: TsTechWeekCardProps) {
   const locked = rollup.approved;
   const refused = unfinishedDays != null && unfinishedDays.length > 0;
@@ -143,6 +160,14 @@ export function TsTechWeekCard({
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-1)", flexWrap: "wrap" }}>
         <b style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{tech.name} · this week</b>
         <span style={{ flex: 1 }} />
+        {!locked && submittedAt !== null ? (
+          <span className="ts-sent">Submitted · {tsSubmittedLabel(submittedAt)}</span>
+        ) : null}
+        {!locked && submittedAt === null ? (
+          // Said plainly rather than left blank: "not submitted" is a fact the approver is deciding
+          // ON, and a blank space is indistinguishable from a card that failed to load it.
+          <span className="ts-unsent">Not submitted yet</span>
+        ) : null}
         {locked ? (
           <>
             <span

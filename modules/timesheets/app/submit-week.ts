@@ -3,6 +3,7 @@ import { ok, err, conflict } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { IdGenerator } from "@mallet/shared/ports";
 import type { TimeEntryRepository } from "../domain/time-entry-repository";
+import { weekStartOf } from "../domain/week-submission";
 import type { WeekSubmissionRepository } from "../domain/week-submission-repository";
 import type { WeekSubmission } from "../domain/week-submission";
 
@@ -29,8 +30,17 @@ export class SubmitWeekUseCase {
   ) {}
 
   async exec(cmd: SubmitWeekCommand, orgId: OrgId): Promise<Result<WeekSubmission, AppError>> {
+    /**
+     * A day still on the clock IN THIS WEEK blocks it — he cannot attest to hours that have not
+     * finished. A day on the clock in ANOTHER week does not.
+     *
+     * This used to refuse on any open entry at all, and a technician has at most one: the day he is
+     * standing in. So the ordinary flow — submitting last week on Monday morning, while working —
+     * was refused every time, with a message ("End the day before submitting the week") pointing at
+     * a week that had nothing open in it.
+     */
     const open = await this.entries.findOpenForTech(cmd.techUserId);
-    if (open !== null) {
+    if (open !== null && weekStartOf(open.props.workDate) === cmd.weekStart) {
       return err(conflict("End the day before submitting the week."));
     }
 
