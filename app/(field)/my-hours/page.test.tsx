@@ -110,7 +110,7 @@ describe("correcting a row", () => {
     withEntries([entry({ id: "draft-1", startTime: "08:00", endTime: "16:00" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     fireEvent.change(screen.getByLabelText("End"), { target: { value: "17:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
@@ -131,7 +131,7 @@ describe("correcting a row", () => {
     withEntries([entry({ id: "draft-1", startTime: "08:00", endTime: "16:00" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     fireEvent.change(screen.getByLabelText("End"), { target: { value: "07:00" } });
 
     expect(screen.getByText("The end time has to be after the start time.")).toBeTruthy();
@@ -143,7 +143,7 @@ describe("correcting a row", () => {
     updateError = { message: "These hours are approved. Reopen the entry before changing it." };
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
 
     expect(
       screen.getByText("These hours are approved. Reopen the entry before changing it."),
@@ -161,7 +161,7 @@ describe("the editing window", () => {
     // Both days sit in the week before this one.
     fireEvent.click(screen.getByRole("button", { name: "Previous week" }));
 
-    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^Edit the shift on/ })).toHaveLength(1);
     expect(screen.getByText("Older than 7 days — ask the office to change it.")).toBeTruthy();
   });
 });
@@ -213,7 +213,7 @@ describe("approved hours", () => {
     ]);
     render(<MyHoursPage />);
 
-    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Edit the shift on/ })).toBeNull();
     expect(screen.getByText(/ask the office to reopen$/)).toBeTruthy();
   });
 
@@ -224,7 +224,7 @@ describe("approved hours", () => {
     ]);
     render(<MyHoursPage />);
 
-    expect(screen.getAllByRole("button", { name: "Edit" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /^Edit the shift on/ })).toHaveLength(1);
     expect(screen.getByText(/ask the office to reopen$/)).toBeTruthy();
   });
 });
@@ -301,7 +301,7 @@ describe("the four list states", () => {
     render(<MyHoursPage />);
 
     expect(screen.queryByText("No hours yet")).toBeNull();
-    expect(screen.getByRole("button", { name: "Edit" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /^Edit the shift on/ })).toBeTruthy();
   });
 
   // Everything the clock cannot attribute lands as "shop". Re-filing it as a job is the one
@@ -311,7 +311,7 @@ describe("the four list states", () => {
     withEntries([entry({ id: "draft-1", startTime: "13:01", endTime: "18:02" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     fireEvent.change(screen.getByLabelText("Job"), { target: { value: "job-9" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
@@ -323,7 +323,7 @@ describe("the four list states", () => {
     withEntries([entry({ id: "draft-1", startTime: "13:01", endTime: "18:02" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     fireEvent.change(screen.getByLabelText("Job"), { target: { value: "job-9" } });
     // Changed their mind: a break is not work on a job.
@@ -337,7 +337,7 @@ describe("the four list states", () => {
     withEntries([entry({ id: "draft-1", startTime: "13:01", endTime: "18:02" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     expect(screen.queryByLabelText("Job")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     expect(screen.getByLabelText("Job")).toBeTruthy();
@@ -351,7 +351,7 @@ describe("deleting a row", () => {
     withEntries([entry({ id: "draft-1", startTime: "08:00", endTime: "16:00" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
 
     expect(removeMutate).not.toHaveBeenCalled();
@@ -362,7 +362,7 @@ describe("deleting a row", () => {
     withEntries([entry({ id: "draft-1", startTime: "08:00", endTime: "16:00" })]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.click(screen.getByRole("button", { name: /^Edit the shift on/ }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     fireEvent.click(screen.getByRole("button", { name: "⚠ Really delete? Tap again" }));
 
@@ -399,12 +399,26 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     overtimePolicy = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null };
   });
 
+  /** The summary's Overtime cell — read through its own label, not by hunting the page for text. */
+  const overtimeCell = (): HTMLElement => {
+    const label = screen.getByText("Overtime");
+    const cell = label.parentElement;
+    if (!cell) throw new Error("the Overtime label has no cell");
+    return cell;
+  };
+  const regularCell = (): HTMLElement => {
+    const label = screen.getByText("Regular hours");
+    const cell = label.parentElement;
+    if (!cell) throw new Error("the Regular hours label has no cell");
+    return cell;
+  };
+
   it("reports the weekly overage, and names the weekly rule, under a weekly-only policy", () => {
     // 50 worked, 10 past forty. Federal and California both land on ten here — by different
     // routes, which is exactly why the figure has to say which rule produced it.
     render(<MyHoursPage />);
-    expect(screen.getByText(/10\.00 OT/)).toBeTruthy();
-    expect(screen.getByText(/past 40h this week/)).toBeTruthy();
+    expect(overtimeCell().textContent).toContain("10h");
+    expect(overtimeCell().textContent).toContain("past 40h this week");
   });
 
   it("reports the same ten hours as DAILY overtime in a daily-overtime state, never twice", () => {
@@ -412,9 +426,9 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     // same hours, which would report 20.
     overtimePolicy = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 };
     render(<MyHoursPage />);
-    expect(screen.getByText(/10\.00 OT/)).toBeTruthy();
-    expect(screen.queryByText(/20\.00 OT/)).toBeNull();
-    expect(screen.getByText(/past 8h a day or 40h this week/)).toBeTruthy();
+    expect(overtimeCell().textContent).toContain("10h");
+    expect(overtimeCell().textContent).not.toContain("20h");
+    expect(overtimeCell().textContent).toContain("past 8h a day or 40h this week");
   });
 
   it("catches the overtime a weekly-only rule cannot see", () => {
@@ -423,13 +437,15 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     listQuery.data = { items: tenHourWeek().slice(0, 4), nextCursor: null };
     overtimePolicy = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 };
     render(<MyHoursPage />);
-    expect(screen.getByText(/8\.00 OT/)).toBeTruthy();
+    expect(overtimeCell().textContent).toContain("8h");
   });
 
-  it("shows no OT clause at all when there is none", () => {
+  it("reads zero rather than going blank when there is no overtime", () => {
+    // The cell is always present: a missing figure and a zero figure are different claims, and on a
+    // payroll screen the blank one reads as "we did not work it out".
     listQuery.data = { items: [entry({ startTime: "08:00", endTime: "16:00" })], nextCursor: null };
     render(<MyHoursPage />);
-    expect(screen.queryByText(/OT/)).toBeNull();
+    expect(overtimeCell().textContent).toContain("0h");
   });
 
   it("counts paid time off toward paid hours but never toward overtime", () => {
@@ -441,8 +457,18 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
       nextCursor: null,
     };
     render(<MyHoursPage />);
-    // 40 worked + 8 paid off = 48 paid; the holiday cannot push anyone into overtime.
-    expect(screen.getByText(/48\.00 paid h/)).toBeTruthy();
-    expect(screen.queryByText(/OT/)).toBeNull();
+    // 40 worked + 8 paid off = 48 REGULAR, uncapped: showing 40 would state a smaller number than
+    // the shop is about to pay. And the holiday cannot push anyone into overtime.
+    expect(regularCell().textContent).toContain("48h");
+    expect(overtimeCell().textContent).toContain("0h");
+  });
+
+  it("measures the regular bar against the shop's OWN week, not a compiled-in forty", () => {
+    // A 44-hour-week shop: 50 worked is 44 regular and 6 over. A hardcoded 40 would report 10.
+    overtimePolicy = { weeklyThresholdMinutes: 2640, dailyThresholdMinutes: null };
+    render(<MyHoursPage />);
+    expect(regularCell().textContent).toContain("44h");
+    expect(regularCell().textContent).toContain("of a 44h week");
+    expect(overtimeCell().textContent).toContain("6h");
   });
 });

@@ -27,17 +27,18 @@ import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { Button } from "@/components/ui/button";
+import { MINUTES_PER_HOUR } from "@/lib/time";
 import {
   weekStart,
   weekDates,
   weekEntries,
-  shortDayLabel,
   DAYS_PER_WEEK,
-  HOURS_PRECISION,
   type MyHoursEntry,
 } from "@/features/field/my-hours-derive";
 import { openEntryOf, suggestEndTime } from "@/features/field/my-hours-edit";
-import { MyHoursWeek } from "@/features/field/my-hours-entries";
+import { HoursSummary } from "@/features/field/hours-summary";
+import { HoursWeekNav } from "@/features/field/hours-week-nav";
+import { HoursSheet } from "@/features/field/hours-sheet";
 import { UnreportedDayCard } from "@/features/field/unreported-day-card";
 import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
@@ -60,45 +61,6 @@ function Screen({ children }: { children: ReactNode }) {
 
 /** Shared, so the summary's identity does not change on every render. */
 const EMPTY_STANDARD: ReadonlyMap<string, number | null> = new Map();
-
-interface WeekNavProps {
-  readonly weekStartISO: string;
-  readonly thisWeekISO: string;
-  readonly paid: number;
-  readonly overtime: number;
-  /** The rule the OT figure was computed with — a figure nobody can derive is a figure nobody
-   *  trusts, and it differs by state. */
-  readonly rulePhrase: string;
-  readonly onNav: (weeks: number) => void;
-  readonly onThisWeek: () => void;
-}
-
-function WeekNav({ weekStartISO, thisWeekISO, paid, overtime, rulePhrase, onNav, onThisWeek }: WeekNavProps) {
-  return (
-    <div className="mh-nav">
-      <Button variant="quiet" size="sm" onClick={() => onNav(-1)} aria-label="Previous week">
-        ‹ Prev
-      </Button>
-      <b>
-        {shortDayLabel(weekStartISO)} – {shortDayLabel(addDaysISO(weekStartISO, DAYS_PER_WEEK - 1))}
-      </b>
-      <Button variant="quiet" size="sm" onClick={() => onNav(1)} aria-label="Next week">
-        Next ›
-      </Button>
-      {weekStartISO !== thisWeekISO ? (
-        <Button variant="quiet" size="sm" onClick={onThisWeek}>
-          This week
-        </Button>
-      ) : null}
-      <span className="mh-total">
-        {paid.toFixed(HOURS_PRECISION)} paid h
-        {overtime > 0 ? (
-          <span title={rulePhrase}>{` · ${overtime.toFixed(HOURS_PRECISION)} OT (${rulePhrase})`}</span>
-        ) : null}
-      </span>
-    </div>
-  );
-}
 
 /** Nothing has ever been recorded for this technician — an invitation to act, not a dead end. */
 function NoHoursYet({ onAdd }: { onAdd: () => void }) {
@@ -126,8 +88,12 @@ interface WeekViewProps {
   readonly writes: Writes;
   readonly openEntry: MyHoursEntry | null;
   readonly suggestEndFor: (entry: MyHoursEntry) => string | null;
-  /** The add-a-block affordance, owned by the page because the first-run screen opens it too. */
-  readonly addSlot: ReactNode;
+  /** The add-hours BUTTON, which rides in the week pager. Owned by the page because the
+   *  first-run screen opens the same form. */
+  readonly addButton: ReactNode;
+  /** The add-hours FORM, in flow under the pager when it is open — never inside the pager itself,
+   *  which is a single flex row. */
+  readonly addForm: ReactNode;
   /** Days with visits stamped and no hours submitted — see UnreportedDayCard. */
   readonly unreported: readonly { userId: string; date: string; visits: number; firstAt: string | null; lastAt: string | null }[];
   readonly onAcceptDay: (date: string, startTime: string, endTime: string) => void;
@@ -136,7 +102,7 @@ interface WeekViewProps {
 }
 
 /** The populated surface. Owns which week is shown and which row is open — nothing else needs it. */
-function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addSlot, unreported, onAcceptDay, onEnterOwn, overtimePolicy }: WeekViewProps) {
+function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addButton, addForm, unreported, onAcceptDay, onEnterOwn, overtimePolicy }: WeekViewProps) {
   const [weekStartISO, setWeekStartISO] = useState(() => weekStart(today));
   const [editingId, setEditingId] = useState<string | null>(null);
   /**
@@ -151,11 +117,20 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
     entries: weekEntries(entries, weekStartISO),
     policy: overtimePolicy,
     // Missing-day naming needs each date's standard length, which is a batched read this page does
-    // not make yet; an empty map asks about no day rather than guessing at one.
+    // not make yet; an empty map asks about no day rather than guessing at one. The summary's
+    // missing figure comes from `unreported` instead — see below.
     standardMinutesByDate: EMPTY_STANDARD,
     todayISO: today,
   });
-  const week = { paid: summary.regularHours + summary.overtimeHours, overtime: summary.overtimeHours };
+  /**
+   * The days this week that are missing hours, and the ONE definition of that on this screen: the
+   * summary counts exactly the days the cards below call out, because they read this same array.
+   * Two definitions of "missing" on one page is how a man ends up not believing either.
+   *
+   * Evidence-based, not schedule-based: visits stamped with no hours recorded. A shop that never
+   * told Mallet who works Saturdays gets no invented accusations.
+   */
+  const weekMissing = unreported.filter((d) => weekDates(weekStartISO).includes(d.date));
 
   return (
     <>
@@ -168,35 +143,37 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
           onEnd={(endTime) => writes.endOpenDay(openEntry.id, endTime)}
         />
       ) : null}
-      <WeekNav
+      <HoursSummary
+        regularHours={summary.regularHours}
+        overtimeHours={summary.overtimeHours}
+        weeklyThresholdHours={overtimePolicy.weeklyThresholdMinutes / MINUTES_PER_HOUR}
+        rulePhrase={summary.rulePhrase}
+        missingDays={weekMissing.map((d) => d.date)}
+      />
+      <HoursWeekNav
         weekStartISO={weekStartISO}
         thisWeekISO={weekStart(today)}
-        paid={week.paid}
-        overtime={week.overtime}
-        rulePhrase={summary.rulePhrase}
         onNav={(weeks) => setWeekStartISO((prev) => addDaysISO(prev, weeks * DAYS_PER_WEEK))}
         onThisWeek={() => setWeekStartISO(weekStart(today))}
+        actions={addButton}
       />
-      {/* Above the week, not inside it: a day with NO rows has no group to sit under, and this is
-          the one thing on the screen that costs money to ignore. Scoped to the week on show, so
-          navigating away from it does not carry somebody else's Wednesday along. */}
-      {unreported
-        .filter((d) => weekDates(weekStartISO).includes(d.date))
-        .map((d) => (
-          <UnreportedDayCard
-            key={d.date}
-            date={d.date}
-            visits={d.visits}
-            firstAt={d.firstAt}
-            lastAt={d.lastAt}
-            busy={writes.adding}
-            onAccept={(start, end) => onAcceptDay(d.date, start, end)}
-            onEnterOwn={onEnterOwn}
-          />
-        ))}
-      <MyHoursWeek
+      {addForm}
+      {/* Above the register, not inside it: a day with NO rows has no row to sit under, and this is
+          the one thing on the screen that costs money to ignore. */}
+      {weekMissing.map((d) => (
+        <UnreportedDayCard
+          key={d.date}
+          date={d.date}
+          visits={d.visits}
+          firstAt={d.firstAt}
+          lastAt={d.lastAt}
+          busy={writes.adding}
+          onAccept={(start, end) => onAcceptDay(d.date, start, end)}
+          onEnterOwn={onEnterOwn}
+        />
+      ))}
+      <HoursSheet
         entries={weekEntries(entries, weekStartISO)}
-        weekStartISO={weekStartISO}
         today={today}
         myUserId={myUserId}
         editingId={editingId}
@@ -207,7 +184,6 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         onSave={(entryId, patch) => writes.saveEntry(entryId, patch, () => setEditingId(null))}
         onDelete={(entryId) => writes.removeEntry(entryId, () => setEditingId(null))}
       />
-      {addSlot}
     </>
   );
 }
@@ -307,20 +283,18 @@ export default function MyHoursPage() {
         onAcceptDay={acceptDay}
         onEnterOwn={() => setAddOpen(true)}
         overtimePolicy={overtimePolicy}
-        addSlot={
-          addOpen ? (
-            addBlock
-          ) : (
-            <div className="mh-acts">
-              {/* In a SHEET shop this is not a correction path, it is the only way hours ever get
-                  recorded — so it leads rather than sits quietly at the bottom, and it says what
-                  it does rather than apologising for being after the fact. */}
-              <Button variant={hasClock ? "quiet" : "primary"} onClick={() => setAddOpen(true)}>
-                {hasClock ? "Add hours" : "Add a day"}
-              </Button>
-            </div>
+        addButton={
+          /* In the week pager, not at the foot of the page: in a SHEET shop this is not a
+             correction path, it is the only way hours ever get recorded, so it belongs beside the
+             week it writes into. It says what it does rather than apologising for being after the
+             fact. Hidden while the form is open — the form IS the control then. */
+          addOpen ? null : (
+            <Button variant={hasClock ? "quiet" : "primary"} onClick={() => setAddOpen(true)}>
+              {hasClock ? "Add hours" : "Add a day"}
+            </Button>
           )
         }
+        addForm={addOpen ? addBlock : null}
       />
     </Screen>
   );

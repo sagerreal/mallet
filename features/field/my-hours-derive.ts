@@ -8,7 +8,7 @@
  */
 
 import { addDaysISO } from "@/lib/clock";
-import { timeToH, timeLabelShort } from "@/lib/time";
+import { timeToH, timeLabelShort, colLabel } from "@/lib/time";
 import type { RouterOutputs } from "@/lib/trpc/client";
 
 /** One row of the technician's own timesheet, exactly as the router returns it. */
@@ -54,6 +54,13 @@ export function dayLabel(iso: string): string {
 /** "Jul 20" — the week-range label. */
 export function shortDayLabel(iso: string): string {
   return noon(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** "Mon 8/4" — the register's date column, which is narrow and read down rather than across.
+ *  The weekday leads because that is what a man remembers; the date settles which one it was. */
+export function sheetDayLabel(iso: string): string {
+  const d = noon(iso);
+  return `${colLabel(iso)} ${d.getMonth() + 1}/${d.getDate()}`;
 }
 
 /** "07:42" → "7:42a". The technician reads a clock, not a 24-hour string. */
