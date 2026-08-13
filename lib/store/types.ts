@@ -418,6 +418,17 @@ export interface Job {
   kind?: string;
   origin: string;
   title: string;
+  /**
+   * The customer's name as the SERVER resolved it for this row.
+   *
+   * The Jobs list joins jobs against the store's `leads` collection, and leads hit the same page
+   * ceiling jobs do — so any job whose lead sat past that page rendered "—". Three of twenty rows
+   * on a real shop's screen. The wire has carried the name the whole time
+   * (jobSummaryDTO.customerName, whose own docstring describes this bug); both client mappers
+   * dropped it on the floor. See custName in features/jobs/jobs-helpers.ts for why the store lead
+   * still wins when it has one.
+   */
+  cust?: string;
   addr: string;
   phone: string;
   status: string;

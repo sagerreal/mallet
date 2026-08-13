@@ -99,6 +99,9 @@ export function toStoreJob(dto: JobSummaryDTO): Job {
     kind: dto.kind,
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
+    // The list's read path. The server resolves this per row; dropping it is what put "—" in the
+    // customer column for every job whose lead sat past the leads hydrator's page.
+    cust: dto.customerName ?? "",
     // Were hard-coded empty here (no columns existed), so even after the write started persisting
     // the list read would blank them again on the next refetch.
     addr: dto.addr ?? "",

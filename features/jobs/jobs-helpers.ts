@@ -36,8 +36,12 @@ export function liveJobs(jobs: Job[]): Job[] {
 }
 
 export function custName(j: Job, leads: Lead[]): string {
+  // STORE LEAD FIRST, on purpose: a customer renamed in the office updates the store immediately,
+  // while `cust` is a per-read snapshot that stays stale until the next refetch. The wire value is
+  // the fallback — and it is the link that was never populated, which is why a paginated Jobs list
+  // printed "—" for every job whose lead sat past the leads hydrator's page.
   const lead = leads.find((l) => l.id === j.leadId);
-  return lead?.name ?? (j as { cust?: string }).cust ?? "—";
+  return lead?.name ?? j.cust ?? "—";
 }
 
 export function custPhone(j: Job, leads: Lead[]): string {

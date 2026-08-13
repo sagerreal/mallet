@@ -108,3 +108,25 @@ describe("boardItemsFor — the block's title", () => {
     expect(items[0]?.title).toBe("Water heater swap");
   });
 });
+
+describe("custName — the paginated list's customer column", () => {
+  const job = (over: Record<string, unknown> = {}) =>
+    ({ id: "j1", leadId: "lead-past-the-page", visits: [], ...over }) as never;
+
+  it("uses the server-resolved name when the lead is not in the store", () => {
+    // THE BUG: three of twenty rows on a real shop's screen read "—" because their leads sat past
+    // the leads hydrator's page. The name was on the wire the whole time.
+    expect(custName(job({ cust: "Ruth Whitaker" }), [])).toBe("Ruth Whitaker");
+  });
+
+  it("prefers the STORE lead, so an office rename shows immediately", () => {
+    // cust is a per-read snapshot and stays stale until the next refetch; the store updates on the
+    // optimistic write.
+    const leads = [{ id: "lead-past-the-page", name: "Ruth Whitaker-Doyle" }] as never;
+    expect(custName(job({ cust: "Ruth Whitaker" }), leads)).toBe("Ruth Whitaker-Doyle");
+  });
+
+  it("still falls back to the dash when neither side knows", () => {
+    expect(custName(job(), [])).toBe("—");
+  });
+});

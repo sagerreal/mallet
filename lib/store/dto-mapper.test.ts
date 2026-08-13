@@ -491,6 +491,21 @@ describe("dtoJobToStoreJob svc mapping", () => {
   });
 });
 
+describe("dtoJobToStoreJob keeps the server-resolved customer name", () => {
+  it("carries customerName through to the store job's cust", () => {
+    // The Jobs list joins jobs against the store's leads collection, and leads hit the same page
+    // ceiling jobs do — so a job whose lead sat past that page printed "—". The wire has always
+    // carried the name; this mapper dropped it.
+    const job = dtoJobToStoreJob({ ...baseJobDto, customerName: "Ruth Whitaker" } as never);
+    expect(job.cust).toBe("Ruth Whitaker");
+  });
+
+  it("falls back to empty rather than undefined when the join found nothing", () => {
+    const job = dtoJobToStoreJob({ ...baseJobDto, customerName: null } as never);
+    expect(job.cust).toBe("");
+  });
+});
+
 // ---------------------------------------------------------------------------
 // dtoJobToStoreJob — sourceEstimateId threading
 // ---------------------------------------------------------------------------

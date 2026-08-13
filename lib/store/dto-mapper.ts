@@ -415,6 +415,7 @@ export function dtoJobToStoreJob(dto: JobDTO): Job {
     kind: dto.kind,
     origin: JOB_ORIGIN.DB,
     title: dto.title ?? "Job",
+    cust: dto.customerName ?? "",
     addr: dto.addr ?? "",
     phone: dto.phone ?? "",
     status,
