@@ -25,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { A2pBusinessForm } from "./a2p-business-form";
 import type { A2pStatusView } from "@mallet/a2p";
 import { SMS_PENDING_DETAIL } from "@/features/a2p/sms-copy";
+import { MarkTexting } from "../setting-marks";
 
 function summaryFor(status: A2pStatusView | null): string {
   // "…" is a LOADING state, and it is only honest while something is actually loading. When the
@@ -41,7 +42,7 @@ export function A2pRegistrationCard() {
   const [formOpen, setFormOpen] = useState(false);
 
   return (
-    <FoldCard title="Texting (A2P 10DLC)" summary={summaryFor(status)} defaultOpen anchorId="texting">
+    <FoldCard title="Texting (A2P 10DLC)" mark={<MarkTexting />} summary={summaryFor(status)} defaultOpen anchorId="texting">
       {!status && (
         <p className="muted" style={{ fontSize: "var(--type-base)", margin: 0 }}>
           Checking your texting registration…

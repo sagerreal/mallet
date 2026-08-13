@@ -19,6 +19,7 @@ import { useState, useEffect } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import { FoldCard } from "./fold-card";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
+import { MarkBranding } from "./setting-marks";
 
 // Fallback so the preview banner + chip are never invisible when a fresh org
 // has no brand colour yet. Matches the app's warm-theme accent (near-black).
@@ -82,7 +83,7 @@ export function BrandingCard() {
   const previewSub = [tagline.trim(), site.trim()].filter(Boolean).join(" · ");
 
   return (
-    <FoldCard title="Branding" summary={name} defaultOpen>
+    <FoldCard title="Branding" mark={<MarkBranding />} summary={name} defaultOpen>
       {/* Live WYSIWYG preview — the exact header a customer sees atop a quote or
           invoice (mirrors CustHead in cust-quote-modal). */}
       <div style={{ marginBottom: "var(--space-4)" }}>

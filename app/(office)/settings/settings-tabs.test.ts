@@ -22,7 +22,7 @@ describe("the links production generates", () => {
 
   it("keeps every alias resolving to a tab that actually exists", () => {
     // The failure this catches is a rename: an alias pointing at a tab nobody removed it with.
-    for (const alias of ["sources", "fields", "archive", "payments", "quickbooks"]) {
+    for (const alias of ["workspace", "channels", "sources", "fields", "archive", "payments", "quickbooks"]) {
       const { tab } = resolveSettingsTab(alias);
       expect(tab, `${alias} resolved to nothing`).toBeDefined();
       expect(SET_TABS as readonly string[]).toContain(tab);
@@ -57,7 +57,7 @@ describe("the ordinary cases", () => {
     // A typo or a link from a future version should leave the page on its default, not silently
     // assert that the default is what was asked for.
     expect(resolveSettingsTab("nonsense")).toEqual({});
-    expect(DEFAULT_SET_TAB).toBe("workspace");
+    expect(DEFAULT_SET_TAB).toBe("company");
   });
 });
 
@@ -67,7 +67,14 @@ describe("the Integrations regroup", () => {
     expect(SET_TABS as readonly string[]).not.toContain("quickbooks");
   });
 
-  it("has exactly the five tabs, in reading order", () => {
-    expect([...SET_TABS]).toEqual(["workspace", "team", "channels", "integrations", "you"]);
+  it("has exactly the four tabs, in reading order", () => {
+    expect([...SET_TABS]).toEqual(["company", "team", "integrations", "you"]);
+  });
+
+  it("still answers the old Workspace and Channels links", () => {
+    // Both named a tab that no longer exists; a bookmark or a setup-checklist link must not
+    // dead-end because the shelf was relabelled.
+    expect(resolveSettingsTab("workspace").tab).toBe("company");
+    expect(resolveSettingsTab("channels").tab).toBe("company");
   });
 });

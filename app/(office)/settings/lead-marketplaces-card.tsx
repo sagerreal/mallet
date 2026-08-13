@@ -12,6 +12,7 @@
 import { useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
+import { MarkMarketplaces } from "./setting-marks";
 
 function origin(): string {
   return typeof window !== "undefined" ? window.location.origin : "";
@@ -64,7 +65,7 @@ function ConnectRow({ channel, label, steps }: { channel: "angi" | "thumbtack"; 
 
 export function LeadMarketplacesCard() {
   return (
-    <FoldCard title="Lead marketplaces" summary="Angi · Thumbtack">
+    <FoldCard title="Lead marketplaces" mark={<MarkMarketplaces />} summary="Angi · Thumbtack">
       <ConnectRow channel="angi" label="Angi" steps="In Angi, email crmintegrations@angi.com with this webhook URL to route your leads here." />
       <ConnectRow channel="thumbtack" label="Thumbtack" steps="In Thumbtack → integrations, add this URL as a custom lead webhook." />
     </FoldCard>

@@ -12,6 +12,7 @@
 import { useEffect, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
+import { MarkPayments } from "./setting-marks";
 
 export function PaymentsCard() {
   const status = api.v1.settings.payments.status.useQuery();
@@ -53,7 +54,7 @@ export function PaymentsCard() {
   const started = !!s && s.hasAccount && !s.detailsSubmitted;
 
   return (
-    <FoldCard title="Payments" summary={complete ? "Connected" : "Not connected"} defaultOpen>
+    <FoldCard title="Payments" mark={<MarkPayments />} summary={complete ? "Connected" : "Not connected"} defaultOpen>
       <p style={{ fontSize: "var(--type-base)", color: "var(--ink-2)", margin: "0 0 var(--space-4)" }}>
         Connect your bank through Stripe so customers can pay you by card. Stripe verifies your
         details and deposits payouts to your account.

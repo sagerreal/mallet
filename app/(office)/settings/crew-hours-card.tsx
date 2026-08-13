@@ -15,6 +15,7 @@ import { FoldCard } from "./fold-card";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { HourSelect } from "./hour-select";
 import { Segmented } from "./segmented";
+import { MarkSchedule } from "./setting-marks";
 
 // ---- constants ----------------------------------------------------------------
 
@@ -274,7 +275,7 @@ export function CrewHoursCard() {
     : `${fieldCrew.length} field crew`;
 
   return (
-    <FoldCard title="Crew hours" summary={summary}>
+    <FoldCard title="Crew hours" mark={<MarkSchedule />} summary={summary}>
       {isLoading && (
         <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>Loading…</p>
       )}

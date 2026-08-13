@@ -14,16 +14,20 @@
  * without rendering a page full of live queries.
  */
 
-export const SET_TABS = ["workspace", "team", "channels", "integrations", "you"] as const;
+export const SET_TABS = ["company", "team", "integrations", "you"] as const;
 export type SetTab = (typeof SET_TABS)[number];
 
-export const DEFAULT_SET_TAB: SetTab = "workspace";
+export const DEFAULT_SET_TAB: SetTab = "company";
 
 /** Old tab names → where that content lives now. */
 const TAB_ALIASES: Record<string, SetTab> = {
-  sources: "channels",
-  fields: "workspace",
-  archive: "workspace",
+  // "Workspace" named nothing an owner would go looking for, and "Channels" ended up holding a
+  // single card that was not a channel. Both fold into Company — who this shop is and how it runs.
+  workspace: "company",
+  channels: "company",
+  sources: "company",
+  fields: "company",
+  archive: "company",
   // The two server-generated return URLs. See the header.
   payments: "integrations",
   quickbooks: "integrations",

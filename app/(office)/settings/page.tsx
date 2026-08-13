@@ -26,6 +26,7 @@ import { DocumentsCard } from "./documents-card";
 import { SalesTaxCard } from "./sales-tax-card";
 import { CallbackNumberCard } from "./callback-number-card";
 import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
+import { MarkYou, MarkTeam, MarkPermissions, MarkPunch, MarkSources } from "./setting-marks";
 import { resolveSettingsTab, DEFAULT_SET_TAB, type SetTab } from "./settings-tabs";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
@@ -59,16 +60,35 @@ function cap(s: string): string {
 // Section: Workspace
 // ============================================================================
 
-function SecWorkspace() {
-  // COMPANY only. Everything here is one shared value the whole shop sees; anything that differs
-  // per person lives under "You".
+/**
+ * A heading INSIDE a tab.
+ *
+ * The tabs answer "which area of the business"; these answer "which KIND of thing". Without them a
+ * tab is one undifferentiated stack of identical rows — which is what makes a settings page feel
+ * structureless even when the grouping above it is right.
+ */
+function SetGroup({ children }: { children: React.ReactNode }) {
+  return <h2 className="setgroup">{children}</h2>;
+}
+
+/**
+ * The COMPANY: who this shop is, what its paperwork says, and how it runs.
+ *
+ * It was called "Workspace", which named nothing an owner would go looking for — a man hunting for
+ * his licence number or his tax rate had no reason to open it. Everything here is one shared value
+ * the whole shop sees; anything that differs per person lives under "You".
+ */
+function SecCompany() {
   return (
     <>
+      <SetGroup>Who you are</SetGroup>
       <BrandingCard />
       {/* Directly under Branding: both answer "what does the customer see". Branding is how the
           shop LOOKS on a document, this is who it IS — and the two are edited together the once,
           when a shop sets itself up. */}
       <BusinessIdentityCard />
+
+      <SetGroup>What your paperwork says</SetGroup>
       {/* Directly under Business details: Branding is how the shop looks, Business details is
           who it is, Documents is what its paperwork SAYS — the wording slots on invoices and
           change orders. */}
@@ -76,9 +96,14 @@ function SecWorkspace() {
       {/* Next to Business details: both are facts the customer sees on a document, and both
           are set once when a shop is stood up. */}
       <SalesTaxCard />
-      {/* Texting registration and the CSV importer moved to Integrations — both are connections to
-          something outside Mallet, and neither is a fact about the company the way the cards here
-          are. */}
+
+      <SetGroup>How the shop runs</SetGroup>
+      {/* The source list arrived from its own "Channels" tab, which held nothing else. It is not a
+          connection to anything — it is this shop's own vocabulary for where a lead came from, so it
+          belongs with how the company describes itself. The two real lead CONNECTIONS (the
+          marketplaces and the website form) are in Integrations. */}
+      <SecChannels />
+      {/* Last: a shop sets this once, on the day it moves in. */}
       <TimezoneCard />
     </>
   );
@@ -112,6 +137,7 @@ function SecYou() {
 function SecTeam() {
   return (
     <>
+      <SetGroup>Your people</SetGroup>
       <TeamRolesBlock />
       <CrewHoursCard />
     </>
@@ -152,7 +178,7 @@ function YourNameField() {
   }
 
   return (
-    <FoldCard title="Your name" defaultOpen summary={me?.name ?? me?.email ?? ""}>
+    <FoldCard mark={<MarkYou />} title="Your name" defaultOpen summary={me?.name ?? me?.email ?? ""}>
       <div className="muted" style={{ fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>
         Shown in greetings and on the dispatch board. Your login email stays unchanged.
       </div>
@@ -624,7 +650,7 @@ function TeamRolesBlock() {
 
   return (
     <>
-      <FoldCard title="Your team" defaultOpen summary={isLoading ? "…" : `${memberCount} ${memberCount === 1 ? "person" : "people"}`}>
+      <FoldCard mark={<MarkTeam />} title="Your team" defaultOpen summary={isLoading ? "…" : `${memberCount} ${memberCount === 1 ? "person" : "people"}`}>
         {isLoading && (
           <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-2) 0" }}>Loading members…</div>
         )}
@@ -644,7 +670,7 @@ function TeamRolesBlock() {
         </div>
       </FoldCard>
 
-      <FoldCard title="Sensitive data" summary="permissions">
+      <FoldCard mark={<MarkPermissions />} title="Sensitive data" summary="permissions">
         <div className="stage-row" style={{ borderTop: "none", marginTop: "0" }}>
           <div style={{ flex: 1 }}>
             <b>Techs can see job prices</b>
@@ -667,7 +693,11 @@ function TeamRolesBlock() {
       {/* Not "sensitive data" — how the shop RECORDS hours, which is a working practice rather
           than a permission. Its own card so it is not read as another thing being withheld from
           the crew. */}
-      <FoldCard title="How your crew records hours" summary={timesheetClock ? "punch clock" : "written in"}>
+      {/* The two hours cards read as one answer to "how does time become payroll", so the heading
+          sits here rather than in SecTeam — the rules card is inside this block and Crew hours
+          follows it. */}
+      <SetGroup>Hours</SetGroup>
+      <FoldCard mark={<MarkPunch />} title="How your crew records hours" summary={timesheetClock ? "punch clock" : "written in"}>
         <div className="stage-row" style={{ borderTop: "none", marginTop: "0" }}>
           <div style={{ flex: 1 }}>
             <b>Crew punch a clock</b>
@@ -776,14 +806,21 @@ function TeamRolesBlock() {
 function SecIntegrations() {
   return (
     <>
+      <SetGroup>Money</SetGroup>
       <PaymentsCard />
       {/* Directly beneath Connect onboarding: Apple 3.4 wants the way to enable Tap to Pay at the
           end of merchant onboarding, and 3.6 wants it reachable outside checkout. */}
       <TapToPayCard />
       <QuickbooksCard />
+
+      <SetGroup>Messaging</SetGroup>
       <A2pRegistrationCard />
+
+      <SetGroup>Where work comes from</SetGroup>
       <LeadMarketplacesCard />
       <WebsiteFormCard />
+
+      <SetGroup>Your data</SetGroup>
       <ImportCard />
     </>
   );
@@ -834,7 +871,7 @@ function SecChannels() {
     <>
       {/* The marketplaces and the website form moved to Integrations. What is left here is the
           SOURCE LIST: not a connection to anything, just the vocabulary this shop tags leads with. */}
-      <FoldCard title="Source list" summary={settingsLoading ? "…" : `${DEFAULT_SOURCES.length + sources.length} sources`}>
+      <FoldCard mark={<MarkSources />} title="Source list" summary={settingsLoading ? "…" : `${DEFAULT_SOURCES.length + sources.length} sources`}>
         <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-1)" }}>
           Where your leads come from — tag each lead with one. Built-in sources are always available; add your own below.
         </p>
@@ -908,9 +945,8 @@ export default function SettingsPage() {
     if (tab) setActiveTab(tab);
   }, [router]);
   const allSections = [
-    { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace /> },
-    { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
-    { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
+    { k: "company" as SetTab, label: "Company", body: <SecCompany /> },
+    { k: "team"    as SetTab, label: "Team",    body: <SecTeam /> },
     { k: "integrations" as SetTab, label: "Integrations", body: <SecIntegrations /> },
     { k: "you" as SetTab, label: "You", body: <SecYou /> },
   ] satisfies SectionDef[];

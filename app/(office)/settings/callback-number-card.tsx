@@ -10,11 +10,12 @@
 
 import { CallbackNumberForm, useCallbackNumberSummary } from "@/features/settings/callback-number-form";
 import { FoldCard } from "./fold-card";
+import { MarkPhone } from "./setting-marks";
 
 export function CallbackNumberCard() {
   const summary = useCallbackNumberSummary();
   return (
-    <FoldCard title="Your callback number" defaultOpen summary={summary}>
+    <FoldCard title="Your callback number" mark={<MarkPhone />} defaultOpen summary={summary}>
       <CallbackNumberForm />
     </FoldCard>
   );

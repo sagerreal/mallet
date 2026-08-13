@@ -28,6 +28,7 @@ import { useState } from "react";
 import { FoldCard } from "./fold-card";
 import { TapToPayEducation } from "@/components/shared/tap-to-pay-education";
 import { useTapToPayAvailability, useTapToPayTermsAccepted } from "@/lib/native/tap-to-pay";
+import { MarkTapToPay } from "./setting-marks";
 
 export function TapToPayCard() {
   const availability = useTapToPayAvailability();
@@ -39,6 +40,7 @@ export function TapToPayCard() {
   return (
     <FoldCard
       title="Tap to Pay on iPhone"
+      mark={<MarkTapToPay />}
       summary={accepted ? "On" : onPhone ? "Not set up" : "iPhone only"}
     >
       <p className="muted" style={{ margin: "0 0 var(--space-3)" }}>

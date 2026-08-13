@@ -24,6 +24,7 @@ import { Field, Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { FoldCard } from "./fold-card";
+import { MarkTax } from "./setting-marks";
 
 const TITLE = "Sales tax";
 
@@ -65,7 +66,7 @@ export function SalesTaxCard() {
 
   if (settings.isLoading) {
     return (
-      <FoldCard title={TITLE} summary="Loading…">
+      <FoldCard title={TITLE} mark={<MarkTax />} summary="Loading…">
         <p className="muted">Loading…</p>
       </FoldCard>
     );
@@ -90,7 +91,7 @@ export function SalesTaxCard() {
   };
 
   return (
-    <FoldCard title={TITLE} summary={serverBps > 0 ? `${bpsToPercentText(serverBps)}%` : "Not set"}>
+    <FoldCard title={TITLE} mark={<MarkTax />} summary={serverBps > 0 ? `${bpsToPercentText(serverBps)}%` : "Not set"}>
       <Field label="Sales tax rate (%)" style={{ margin: 0 }}>
         <Input
           value={draft}

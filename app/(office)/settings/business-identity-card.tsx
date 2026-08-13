@@ -23,6 +23,7 @@ import { Button } from "@/components/ui/button";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { userMessage } from "@/lib/trpc/error-map";
 import { FoldCard } from "./fold-card";
+import { MarkBusiness } from "./setting-marks";
 
 const TITLE = "Business details";
 
@@ -117,7 +118,7 @@ export function BusinessIdentityCard() {
   // still in flight invite a Save that writes four blanks over four real values.
   if (!settings.isFetched) {
     return (
-      <FoldCard title={TITLE} summary="Loading…">
+      <FoldCard title={TITLE} mark={<MarkBusiness />} summary="Loading…">
         <p className="muted" style={{ fontSize: "var(--type-base)", margin: 0 }}>
           Loading…
         </p>
@@ -160,7 +161,7 @@ export function BusinessIdentityCard() {
   }
 
   return (
-    <FoldCard title={TITLE} summary={draft.address.trim() || "Not set"}>
+    <FoldCard title={TITLE} mark={<MarkBusiness />} summary={draft.address.trim() || "Not set"}>
       <p className="muted" style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)" }}>
         Printed on every invoice and quote you send.
       </p>

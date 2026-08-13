@@ -28,6 +28,7 @@ import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { userMessage } from "@/lib/trpc/error-map";
 import { FoldCard } from "./fold-card";
+import { MarkDocuments } from "./setting-marks";
 import {
   defaultPayInstructions,
   defaultReceiptNote,
@@ -285,7 +286,7 @@ function SlotRow({
 /** One shell for the loading and loaded states, so the card never changes shape mid-fetch. */
 function FoldCardShell({ summary, children }: { summary: string; children: React.ReactNode }) {
   return (
-    <FoldCard title={TITLE} summary={summary}>
+    <FoldCard title={TITLE} mark={<MarkDocuments />} summary={summary}>
       {children}
     </FoldCard>
   );

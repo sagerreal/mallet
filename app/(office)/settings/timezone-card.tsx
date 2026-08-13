@@ -20,6 +20,7 @@ import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
 import { userMessage } from "@/lib/trpc/error-map";
 import { TZ_LABEL } from "@/lib/geo/zip-timezone";
 import { FoldCard } from "./fold-card";
+import { MarkClock } from "./setting-marks";
 
 // Single source of truth: TZ_LABEL (lib/geo/zip-timezone.ts) is also what /welcome's derivation
 // preview reads. A third, independently-maintained zone list here is exactly how this control used
@@ -46,7 +47,7 @@ export function TimezoneCard() {
   // (`status.isLoading ? "Loading…" : …`).
   if (!settings.isFetched) {
     return (
-      <FoldCard title="Time zone" summary="Loading…" defaultOpen>
+      <FoldCard title="Time zone" mark={<MarkClock />} summary="Loading…" defaultOpen>
         <p className="muted" style={{ fontSize: "var(--type-base)", margin: 0 }}>
           Loading…
         </p>
@@ -61,7 +62,7 @@ export function TimezoneCard() {
   const currentIsKnown = ZONES.some(([value]) => value === current);
 
   return (
-    <FoldCard title="Time zone" summary={labelFor(current)} defaultOpen>
+    <FoldCard title="Time zone" mark={<MarkClock />} summary={labelFor(current)} defaultOpen>
       <Field label="Time zone">
         <Select
           value={current}

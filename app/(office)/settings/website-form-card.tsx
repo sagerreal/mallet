@@ -11,6 +11,7 @@ import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
 import { IconWell } from "./icon-well";
 import { useFieldId } from "@/components/ui/input";
+import { MarkWebsiteForm } from "./setting-marks";
 
 // The public form lives at <origin>/f/<token>. Match the app's existing client link-building
 // (the quote link uses window.location.origin — see components/modals/estimate-modal.tsx).
@@ -44,7 +45,7 @@ export function WebsiteFormCard() {
   }
 
   return (
-    <FoldCard title="Website form" summary={form ? "Live" : "Not set up"}>
+    <FoldCard title="Website form" mark={<MarkWebsiteForm />} summary={form ? "Live" : "Not set up"}>
       {!form ? (
         <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "flex-start" }}>
           <IconWell>
