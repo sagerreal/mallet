@@ -305,6 +305,15 @@ export interface SettingsSlice {
   taxRate: number;
   trade: string;
   toggles: SettingsToggles;
+  /**
+   * Whether the front desk MAY be switched on, and what is still missing.
+   *
+   * Carried from the server rather than recomputed here: frontDeskReadiness is the one definition
+   * of the rule, and a second copy in the browser is how the toggle and the save end up disagreeing.
+   * Optimistic default `true` so the switch is never disabled by a slice that has not hydrated.
+   */
+  frontDeskReady: boolean;
+  frontDeskMissing: readonly ("hours" | "serviceArea" | "services")[];
 
   /** Replace the whole slice — called by SettingsHydrator (Task 8). */
   setSettings: (snapshot: {
@@ -316,6 +325,8 @@ export interface SettingsSlice {
     taxRate: number;
     trade: string;
     toggles: SettingsToggles;
+    frontDeskReady: boolean;
+    frontDeskMissing: readonly ("hours" | "serviceArea" | "services")[];
   }) => void;
 
   // labor rates
@@ -394,6 +405,10 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   taxRate: EMPTY_TAX_RATE,
   trade: EMPTY_TRADE,
   toggles: EMPTY_TOGGLES,
+  // Assume ready until the server says otherwise — a not-yet-hydrated slice must not disable a
+  // control the shop is entitled to use.
+  frontDeskReady: true,
+  frontDeskMissing: [],
 
   // ---- hydration ------------------------------------------------------------
 

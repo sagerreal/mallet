@@ -106,6 +106,9 @@ export function SettingsHydrator() {
         autoRemind: dto.config.autoRemind,
         measurementEstimating: measurementGateFrom(dto.config.measurementEstimating),
       },
+      // Derived server-side from this same row — see orgSettingsDTO.
+      frontDeskReady: dto.config.frontDeskReady,
+      frontDeskMissing: dto.config.frontDeskMissing,
     });
   }, [data, isError, error, setSettings]);
 

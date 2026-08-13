@@ -53,6 +53,47 @@ suite("v1.identity (live RLS)", () => {
    * with prices we invented — so a roofing shop's receptionist offered water heater repair, and
    * would have quoted "$99 drain cleaning" to a real caller on that shop's behalf.
    */
+  /**
+   * A NEW SHOP MUST LAND READY TO ANSWER.
+   *
+   * frontDeskReadiness wants three things: open hours, a bookable service and a service ORIGIN.
+   * Hours are defaulted 8-17 and services come from the trade playbook, but nothing ever set the
+   * origin — so every shop landed exactly one field short, with nothing on screen saying which.
+   * Two shops that signed up in August are still switched off for precisely this reason.
+   */
+  it("seeds the service origin from the signup ZIP, so the shop is ready to switch on", async () => {
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(
+      unmappedCtx({ authUserId, email: `origin-${authUserId}@e2e.test`, orgNameHint: "Origin Plumbing", name: null }),
+    );
+    const me = await caller.v1.identity.signup({ trade: "plumbing", postalCode: "02189" });
+    createdOrgIds.push(me.orgId);
+
+    const [row] = await admin<{ service_origin_address: string | null; booking: { services: unknown[] }; hours_mon_open: number; hours_mon_close: number }[]>`
+      select service_origin_address, booking, hours_mon_open, hours_mon_close
+        from org_settings where org_id = ${me.orgId}`;
+
+    // The origin — the piece that was missing.
+    expect(row!.service_origin_address).toBe("02189");
+    // And the other two readiness inputs, so this test fails if either regresses.
+    expect(row!.booking.services.length).toBeGreaterThan(0);
+    expect(row!.hours_mon_close).toBeGreaterThan(row!.hours_mon_open);
+  });
+
+  it("leaves the origin unset when signup carried no ZIP, rather than inventing one", async () => {
+    // A guessed service area silently declines real customers as out-of-area. Better unset: the
+    // readiness gate then says so, and the check degrades to "book anyway".
+    const authUserId = randomUUID();
+    const caller = appRouter.createCaller(
+      unmappedCtx({ authUserId, email: `nozip-${authUserId}@e2e.test`, orgNameHint: "No Zip Plumbing", name: null }),
+    );
+    const me = await caller.v1.identity.signup({ trade: "plumbing" });
+    createdOrgIds.push(me.orgId);
+    const [row] = await admin<{ service_origin_address: string | null }[]>`
+      select service_origin_address from org_settings where org_id = ${me.orgId}`;
+    expect(row!.service_origin_address).toBeNull();
+  });
+
   it("seeds the front desk from the shop's OWN trade, not plumbing", async () => {
     const authUserId = randomUUID();
     const caller = appRouter.createCaller(

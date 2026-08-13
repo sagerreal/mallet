@@ -158,9 +158,28 @@ function HrRow({
   );
 }
 
+/** The missing pieces in the shop's own words — mirrors the sentence the server refuses with. */
+const GAP_WORDS: Record<string, string> = {
+  hours: "your opening hours",
+  serviceArea: "your service area",
+  services: "a bookable service",
+};
+
+function gapWords(missing: readonly string[]): string {
+  const words = missing.map((m) => GAP_WORDS[m] ?? m);
+  if (words.length <= 1) return words[0] ?? "the missing details";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
 export function FrontDeskPane() {
   const setToggle = useAppStore((s) => s.setToggle);
   const frontDesk = useAppStore((s) => s.toggles.frontDesk);
+  // Server-derived (frontDeskReadiness), carried on the settings DTO. The switch used to be a
+  // plain checkbox, so a shop could turn the desk on with no service area and its AI would answer
+  // real customers on the shop's own number knowing nothing about where it works — one live org
+  // is in exactly that state. Turning OFF is never blocked.
+  const fdReady = useAppStore((s) => s.frontDeskReady);
+  const fdMissing = useAppStore((s) => s.frontDeskMissing);
   const bk = useAppStore((s) => s.booking);
   const updateBookingService = useAppStore((s) => s.updateBookingService);
   const addBookingService = useAppStore((s) => s.addBookingService);
@@ -274,9 +293,17 @@ export function FrontDeskPane() {
               ? bizNumber
                 ? "Answering"
                 : "Will answer once your number is live"
-              : "Off — calls go to voicemail"}
+              : fdReady
+                ? "Off — calls go to voicemail"
+                : "Not set up yet"}
           </span>
-          {bizNumber ? (
+          {/* What is still missing outranks the number: a shop that cannot answer needs to know
+              WHY before it needs to know its number. */}
+          {!fdReady && !frontDesk ? (
+            <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Add {gapWords(fdMissing)} to turn this on.
+            </span>
+          ) : bizNumber ? (
             <span className="fdnum">{fmtPhone(bizNumber)}</span>
           ) : (
             <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
@@ -298,7 +325,14 @@ export function FrontDeskPane() {
         </span>
         <span className="sp" />
         <label className="switch">
-          <input type="checkbox" checked={frontDesk} onChange={(e) => setToggle("frontDesk", e.target.checked)} aria-label="Front Desk on/off" />
+          <input
+            type="checkbox"
+            checked={frontDesk}
+            // Off is always allowed; on only once the server says the desk can answer.
+            disabled={!frontDesk && !fdReady}
+            onChange={(e) => setToggle("frontDesk", e.target.checked)}
+            aria-label="Front Desk on/off"
+          />
           <i />
         </label>
       </div>

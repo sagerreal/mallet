@@ -215,7 +215,7 @@ export const createIdentityRouter = () =>
         // and because the identity was already mapped, a retry took the `if (ctx.principal)` early
         // return above and never reached number provisioning again, permanently stranding the org
         // with twilio_number = null. Matches the adjacent Twilio block's pattern for the same reason.
-        if ((input.timezone || input.trade) && role === "owner") {
+        if ((input.timezone || input.trade || input.postalCode) && role === "owner") {
           try {
             await withTenant(asOrgId(provisioned.orgId), async (tx) => {
               const repo = new DrizzleSettingsRepository(tx, asOrgId(provisioned.orgId));
@@ -250,6 +250,21 @@ export const createIdentityRouter = () =>
               const patched = settings.patch(
                 {
                   ...(input.timezone ? { timezone: input.timezone } : {}),
+                  // SEED THE SERVICE ORIGIN FROM THE ZIP.
+                  //
+                  // frontDeskReadiness wants three things: open hours (defaulted 8-17), a bookable
+                  // service (seeded from the trade playbook just below) and a service ORIGIN. Only
+                  // the origin had no default, so every new shop landed exactly one field short of
+                  // a front desk that could answer — and nothing on the screen said which field.
+                  // Two live shops that signed up in August are still sitting off for this reason.
+                  //
+                  // The ZIP is the only location signup collects, and it is enough: the origin is
+                  // geocoded to a point and a ZIP resolves to its centroid, which is the right
+                  // order of accuracy for a service RADIUS measured in miles. The owner refines it
+                  // to their yard address in Settings whenever they like. And the whole check
+                  // degrades to "unknown" — book anyway — on a geocode miss, so a rough origin can
+                  // never wrongly turn a customer away.
+                  ...(input.postalCode ? { serviceOriginAddress: input.postalCode } : {}),
                   // measurementEstimating is DEFAULTED from the trade at creation, never asked:
                   // Owen's rule is that the industry decides it and the shop should not have to
                   // know to switch it off. See tradeMeasures().
