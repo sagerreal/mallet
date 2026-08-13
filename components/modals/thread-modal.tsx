@@ -278,9 +278,10 @@ export function CustomerThreadPane({
 
     try {
       await trpcVanilla.v1.messaging.send.mutate({ leadId, body: v });
-      // Success: drop the optimistic row and let the refetch carry the real message.
-      setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
+      // Refetch FIRST, then drop the optimistic row. The other order leaves a gap where the
+      // just-sent text vanishes from the thread and returns a beat later.
       await utils.v1.messaging.listByLead.invalidate({ leadId });
+      setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
     } catch (err: unknown) {
       // Rollback optimistic row, restore the draft so the user can retry or edit, show inline error.
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));

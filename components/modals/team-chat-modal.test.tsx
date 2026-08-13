@@ -184,6 +184,30 @@ describe("TeamChatModalContent — sending", () => {
   });
 });
 
+describe("TeamChatModalContent — the optimistic bubble must not blink", () => {
+  it("keeps the sent message on screen until the refetch has LANDED", async () => {
+    // The bug Owen hit: the optimistic bubble was dropped as soon as the mutation resolved, so
+    // for one render the server list had not arrived and the message he had just sent vanished
+    // and then came back. Hold the invalidate open and assert the text never leaves the DOM.
+    let releaseRefetch: () => void = () => {};
+    h.invalidateMessages.mockImplementationOnce(
+      () => new Promise<void>((resolve) => { releaseRefetch = resolve; }),
+    );
+
+    render(<TeamChatModalContent />);
+    fireEvent.change(screen.getByLabelText("Message"), { target: { value: "hey guys whats going on" } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+
+    // Mutation has resolved, refetch is still in flight — the bubble must still be there.
+    await vi.waitFor(() => expect(h.invalidateMessages).toHaveBeenCalled());
+    expect(screen.getByText("hey guys whats going on")).toBeTruthy();
+
+    // Only once the data is in hand may the optimistic copy go.
+    releaseRefetch();
+    await vi.waitFor(() => expect(h.invalidateThreads).toHaveBeenCalled());
+  });
+});
+
 describe("TeamChatModalContent — read state", () => {
   it("opening clears MY cursor and refreshes the inbox count", async () => {
     render(<TeamChatModalContent />);

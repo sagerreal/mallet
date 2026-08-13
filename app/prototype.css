@@ -1699,10 +1699,12 @@
   .msg-row:hover{border-color:var(--ink-3)}
   .msg-row.unread{background:var(--manila)}
   .msg-main{flex:1;min-width:0}
-  .msg-nm{font-weight:650;display:flex;align-items:center;gap:var(--space-2)}
+  .msg-nm{font-weight:650;display:flex;align-items:center;gap:var(--space-2);min-width:0;flex-wrap:nowrap}
+  .msg-nmtxt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .msg-nm>.msg-tag,.msg-nm>.msg-badge,.msg-nm>.msg-dot{flex:0 0 auto}
   .msg-dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block}
   .msg-snip{color:var(--ink-2);font-size:var(--type-base);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--space-2xs)}
-  .msg-tm{color:var(--ink-3);font-size:var(--type-sm);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .msg-tm{color:var(--ink-3);font-size:var(--type-sm);white-space:nowrap;font-variant-numeric:tabular-nums;flex:0 0 auto;align-self:flex-start}
 
   /* ── Messages: two panes, and the internal/external distinction ──────────────────────────
      A customer conversation leaves the building; a team conversation does not. That fact is
@@ -1748,7 +1750,7 @@
   .msg-row.internal::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--ink)}
   .msg-row.internal .msg-av{background:var(--ink);color:var(--card)}
   .msg-row.internal.unread{background:var(--manila-2)}
-  .msg-tag{font-size:var(--type-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:var(--space-2xs) var(--space-2);border-radius:var(--radius-pill);border:1px solid currentColor;color:var(--ink);opacity:.7}
+  .msg-tag{font-size:var(--type-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:var(--space-2xs) var(--space-2);border-radius:var(--radius-pill);border:1px solid currentColor;color:var(--ink);opacity:.7;white-space:nowrap}
   .msg-badge{background:var(--ink);color:var(--card);font-size:var(--type-xs);font-weight:800;min-width:19px;height:19px;padding:0 var(--space-1);border-radius:var(--radius-pill);display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
   .segctl-n{font-size:var(--type-xs);font-weight:700;opacity:.75;font-variant-numeric:tabular-nums;margin-left:var(--space-1)}
   /* The internal thread itself: manila, ruled like a work order. */
