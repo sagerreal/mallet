@@ -12,6 +12,10 @@ class MalletViewController: CAPBridgeViewController {
 
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(RoomScanPlugin())
+        // Tap to Pay. Same instance registration and same reason — see the RoomScanPlugin note.
+        // A build that forgets this line probes as `plugin-missing` on the web side, which
+        // already renders "Tap to Pay arrives with the next app update."
+        bridge?.registerPluginInstance(TapToPayPlugin())
     }
 
     override func viewDidLoad() {
