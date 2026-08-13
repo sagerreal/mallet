@@ -336,8 +336,9 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     // The job taps are the clock too. While only the day-clock path carried the submissions repo,
     // On my way / Arrived / Done filed hours onto an attested week that still read as attested —
     // and the submitted-week lock then refused the tech the rows his own tap had created.
-    const [{ d: thisMonday }] = await admin<{ d: string }[]>`
+    const [mondayRow] = await admin<{ d: string }[]>`
       select to_char(date_trunc('week', current_date)::date, 'YYYY-MM-DD') as d`;
+    const thisMonday = mondayRow!.d;
     const [tapTech] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role)
       values (${orgId}, ${randomUUID()}, 'taptech@field.test', 'tech') returning id`;
@@ -351,13 +352,13 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       values (${orgId}, ${job!.id}, 'pending', 1, current_date, '09:00', ${tapTechId})`;
 
     const caller = appRouter.createCaller(ctxFor(tapTechId, orgId, "tech"));
-    const submitted = await caller.v1.timesheets.submitWeek({ weekStart: thisMonday! });
+    const submitted = await caller.v1.timesheets.submitWeek({ weekStart: thisMonday });
     expect(submitted.reopenedAt).toBeNull();
 
     try {
       // Arrived: opens job time through runVisitClockTap — the path that used to skip the reopen.
       await caller.v1.field.start({ jobId: job!.id });
-      const after = await caller.v1.timesheets.submissionFor({ weekStart: thisMonday! });
+      const after = await caller.v1.timesheets.submissionFor({ weekStart: thisMonday });
       expect(after.submission?.reopenedAt).not.toBeNull();
       expect(after.submission?.reopenReason).toContain("new hours");
     } finally {

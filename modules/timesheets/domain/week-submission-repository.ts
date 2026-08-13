@@ -8,9 +8,6 @@ export interface WeekSubmissionRepository {
   /** The one row for (tech, week), or null — the unique index guarantees at most one. */
   findFor(techUserId: UserId, weekStart: string): Promise<WeekSubmission | null>;
 
-  /** Every submission for the caller's org inside [fromWeek, toWeek] — the office review read. */
-  listWeeks(fromWeek: string, toWeek: string): Promise<WeekSubmission[]>;
-
   /**
    * Insert-or-return on the unique (org, tech, week): a replayed submit finds the existing
    * row instead of erroring — idempotency by construction, not by retry handling.

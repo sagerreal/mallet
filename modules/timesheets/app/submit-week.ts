@@ -1,5 +1,5 @@
 import type { UserId, OrgId, Result, AppError, Clock } from "@mallet/shared/types";
-import { ok, err, validation, conflict } from "@mallet/shared/types";
+import { ok, err, conflict } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { IdGenerator } from "@mallet/shared/ports";
 import type { TimeEntryRepository } from "../domain/time-entry-repository";
@@ -95,6 +95,13 @@ export async function reopenSubmissionForNewHours(
   );
 }
 
-/** The submitted-week edit lock, phrased once so create/update/remove cannot drift. */
-export const submittedWeekError = (): AppError =>
-  validation("This week is with the office — it was submitted. Ask the office to change it.", "workDate");
+/**
+ * The submitted-week refusal, phrased ONCE so the paths that enforce it cannot drift.
+ *
+ * A CONFLICT, not a validation error: nothing about the request is malformed — the week's current
+ * state disallows the change, the same shape as the approved-entry lock in UpdateTimeEntryUseCase.
+ */
+export const SUBMITTED_WEEK_MESSAGE =
+  "This week is with the office — it was submitted. Ask the office to change it.";
+
+export const submittedWeekError = (): AppError => conflict(SUBMITTED_WEEK_MESSAGE);

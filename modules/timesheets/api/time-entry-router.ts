@@ -18,7 +18,7 @@ import { UpdateTimeEntryUseCase } from "../app/update-time-entry";
 import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
 import { SetClockStateUseCase } from "../app/set-clock-state";
-import { SubmitWeekUseCase } from "../app/submit-week";
+import { SubmitWeekUseCase, SUBMITTED_WEEK_MESSAGE } from "../app/submit-week";
 import { weekStartOf } from "../domain/week-submission";
 import type { ClockTap } from "../domain/clock";
 import { timeEntryDTO, toTimeEntryDTO } from "./time-entry-dto";
@@ -45,7 +45,9 @@ const createInput = z.object({
   id: z.string().uuid().optional(),
   techUserId: z.string().uuid(),
   jobId: z.string().uuid().nullable().optional(),
-  workDate: z.string().min(1),
+  // The shape is enforced HERE because the value reaches weekStartOf (Date arithmetic) in the
+  // edit guard — an unparseable string would surface as an uncaught RangeError, not a refusal.
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   kind: z.enum(ENTRY_KINDS),
   // Nullable since the time-off kinds — the domain's shape matrix decides what each kind needs.
   startTime: z.string().nullable().optional(),
@@ -59,7 +61,7 @@ const createInput = z.object({
 const updateInput = z.object({
   entryId: z.string().uuid(),
   jobId: z.string().uuid().nullable().optional(),
-  workDate: z.string().optional(),
+  workDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   kind: z.enum(ENTRY_KINDS).optional(),
   startTime: z.string().nullable().optional(),
   endTime: z.string().nullable().optional(),
@@ -151,10 +153,7 @@ async function assertTechMayEditTimes(
   for (const weekStart of weeks) {
     const sub = await submissions.findFor(asUserId(ctx.principal.userId), weekStart);
     if (sub !== null && sub.isActive()) {
-      throw new TRPCError({
-        code: "CONFLICT",
-        message: "This week is with the office — it was submitted. Ask the office to change it.",
-      });
+      throw new TRPCError({ code: "CONFLICT", message: SUBMITTED_WEEK_MESSAGE });
     }
   }
 }
@@ -447,7 +446,17 @@ export const createTimesheetRouter = () =>
      * (org, tech, week); refused only while the caller's clock is running.
      */
     submitWeek: anyRole
-      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .input(
+        z.object({
+          // A Monday, checked at the BOUNDARY. The domain enforces it too, but claim() only
+          // reaches the domain through the mapper AFTER the INSERT — so a mid-week date used to
+          // land a row and then throw "corrupt timesheet_submission".
+          weekStart: z
+            .string()
+            .regex(/^\d{4}-\d{2}-\d{2}$/)
+            .refine((d) => weekStartOf(d) === d, "weekStart must be a Monday"),
+        }),
+      )
       .output(weekSubmissionDTO)
       .mutation(async ({ ctx, input }) => {
         const useCase = new SubmitWeekUseCase(

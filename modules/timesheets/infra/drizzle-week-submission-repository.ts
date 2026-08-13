@@ -1,4 +1,4 @@
-import { and, asc, eq, gte, lte } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { timesheetSubmissions } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { asOrgId, asUserId, type OrgId, type UserId } from "@mallet/shared/types";
@@ -47,21 +47,6 @@ export class DrizzleWeekSubmissionRepository implements WeekSubmissionRepository
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
-  }
-
-  async listWeeks(fromWeek: string, toWeek: string): Promise<WeekSubmission[]> {
-    const rows = await this.tx
-      .select()
-      .from(timesheetSubmissions)
-      .where(
-        and(
-          eq(timesheetSubmissions.orgId, this.orgId),
-          gte(timesheetSubmissions.weekStart, fromWeek),
-          lte(timesheetSubmissions.weekStart, toWeek),
-        ),
-      )
-      .orderBy(asc(timesheetSubmissions.weekStart), asc(timesheetSubmissions.techUserId));
-    return rows.map(toDomain);
   }
 
   async claim(input: {
