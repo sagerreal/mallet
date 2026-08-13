@@ -10,6 +10,7 @@ import { createIdentityRouter } from "@mallet/identity";
 import { createTaskRouter } from "@mallet/tasks";
 import { createTimesheetRouter } from "@mallet/timesheets";
 import { createCompanyRouter } from "@mallet/companies";
+import { createTrailRouter } from "@mallet/links";
 import { createTeamChatRouter } from "@mallet/team-chat";
 import { createMeasurementRouter } from "@mallet/measurements";
 import { createMessagingRouter } from "@mallet/messaging";
@@ -44,6 +45,8 @@ export const appRouter = router({
     tasks: createTaskRouter(),
     timesheets: createTimesheetRouter(),
     companies: createCompanyRouter(),
+    // The customer > quote > job > invoice trail every sheet header shows.
+    links: createTrailRouter(),
     teamChat: createTeamChatRouter(),
     measurements: createMeasurementRouter(),
     messaging: createMessagingRouter(),
