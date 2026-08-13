@@ -1695,7 +1695,7 @@
   .ts-tfilter{display:block;width:100%;max-width:320px;border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font:inherit;font-size:var(--type-base);background:var(--card);color:var(--ink);margin-bottom:var(--space-2)}
   /* tech messages inbox */
   .msg-list{display:flex;flex-direction:column;gap:var(--space-2)}
-  .msg-row{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-md);background:var(--card);cursor:pointer}
+  .msg-row{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}
   .msg-row:hover{border-color:var(--ink-3)}
   .msg-row.unread{background:var(--manila)}
   .msg-main{flex:1;min-width:0}
@@ -1708,7 +1708,7 @@
      A customer conversation leaves the building; a team conversation does not. That fact is
      carried by the PAPER: white card for customers, MANILA for internal — the same work-order
      stock the hero ticket uses — plus an ink rail so a row reads as internal even in isolation. */
-  .msg-shell{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:var(--space-4);align-items:start}
+  .msg-shell{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:var(--space-4);align-items:stretch}
   .msg-pane-list{display:flex;flex-direction:column;gap:var(--space-2);min-width:0}
   /* The mode control hugs its labels; the action sits with it rather than on a row of its own. */
   /* The people picker's selected chip carries a FILL, not just a tint: picking who to message
@@ -1723,12 +1723,15 @@
   .msg-nothread{display:flex;align-items:center;justify-content:center;min-height:520px;padding:var(--space-6)}
   /* The reading pane's own head/composer are the pane's, so the sheet's negative bleed would
      tear them out of the card. */
-  .msg-pane-thread .sheet-head{margin:0;padding:var(--space-4) var(--space-5);position:static}
-  .msg-pane-thread .thread{max-height:none;flex:1;margin:0;border:0;border-radius:0}
+  .msg-pane-thread .sheet-head{margin:0;padding:var(--space-4) var(--space-5);position:static;border-bottom:1px solid var(--line)}
+  .msg-pane-thread .sheet-head h2{font-size:var(--type-xl);padding-right:0}
+  /* The subtitle is a fact about the conversation, not a paragraph — one line, and it may ellipsis. */
+  .msg-pane-thread .sheet-meta{gap:var(--space-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .msg-pane-thread .thread{max-height:none;flex:1;margin:0;border:0;border-radius:0;padding:var(--space-5)}
   .msg-pane-thread .composer{padding:var(--space-3) var(--space-5) var(--space-5)}
   .msg-pane-thread .sheet-secrow{padding:0 var(--space-5) var(--space-4)}
 
-  .msg-av{width:38px;height:38px;font-size:var(--type-base);background:var(--manila-2);color:var(--ink-2)}
+  .msg-av{width:38px;height:38px;font-size:var(--type-base);background:var(--manila-2);color:var(--ink)}
   .msg-row.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
   /* INTERNAL: manila ground + ink rail + filled avatar. */
   .msg-row.internal{background:var(--manila);border-color:var(--manila-line);position:relative}
@@ -1811,8 +1814,8 @@
   .iph-field{flex:1;border:1px solid #d1d1d6;border-radius:var(--radius-xl);padding:var(--space-2) var(--space-3);font-size:var(--type-base);color:#8e8e93}
   .iph-send{width:31px;height:31px;border-radius:50%;background:#34c759;color:#fff;display:flex;align-items:center;justify-content:center;border:none;cursor:pointer;font-size:var(--type-lg);flex:none}
   .thread{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius);padding:var(--space-4);max-height:380px;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-2);margin:var(--space-3) 0}
-  .msg{display:flex;flex-direction:column;max-width:78%}
-  .msg .bub{padding:var(--space-2) var(--space-3);border-radius:var(--radius-lg);font-size:var(--type-base);line-height:1.45}
+  .msg{display:flex;flex-direction:column;max-width:min(78%,34rem)}
+  .msg .bub{padding:var(--space-2) var(--space-3);border-radius:var(--radius-lg);font-size:var(--type-base);line-height:1.45;overflow-wrap:anywhere}
   .msg .meta{font-size:var(--type-xs);color:var(--ink-3);margin-top:var(--space-2xs);padding:0 var(--space-1)}
   /* A photo in a chat bubble. Capped by height so a portrait phone shot cannot push the whole
      thread off screen, and by max-width so it never escapes the bubble column. */
