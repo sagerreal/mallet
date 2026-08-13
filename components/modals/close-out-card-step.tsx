@@ -18,7 +18,12 @@
 import { useEffect, useRef, useState } from "react";
 import { userMessage } from "@/lib/trpc/error-map";
 import { CheckoutQr } from "@/components/shared/checkout-qr";
-import { mintCheckoutSession, readInvoice, type InvoiceWriteSurface } from "@/lib/store/invoice-write";
+import {
+  mintCheckoutSession,
+  readInvoice,
+  reconcileCheckout,
+  type InvoiceWriteSurface,
+} from "@/lib/store/invoice-write";
 import type { Invoice } from "@/lib/store/types";
 
 const POLL_MS = 4_000;
@@ -77,6 +82,8 @@ export function CardCheckoutStep({
   // interval each time — resetting the wall-clock cap and, worse, re-arming a poll the settle
   // guard had already retired.
   const invoiceRef = useRef(invoice);
+  /** The minted cs_… id — the poll reconciles with it (see the poll note below). */
+  const sessionIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     onPaidRef.current = onPaid;
@@ -106,6 +113,7 @@ export function CardCheckoutStep({
           }
         }
         const session = await mintCheckoutSession(surface, invoice.id);
+        sessionIdRef.current = session.sessionId;
         if (aliveRef.current) setUrl(session.url);
       } catch (err: unknown) {
         // Domain refusals pass their own sentence through userMessage —
@@ -116,11 +124,15 @@ export function CardCheckoutStep({
     })();
   }, [invoice.id, invoice.status, sendInvoice, surface]);
 
-  // ---- poll the invoice while the QR is up ----------------------------------
-  // The webhook is the source of truth for RECORDING the payment; this only reads
-  // status. createPayment charges the FULL balance, so a completed session lands
-  // as "paid"; "partial" is treated as paid-progress and advances the same way
-  // (the DTO carries exactly what was recorded).
+  // ---- poll while the QR is up: RECONCILE, then read --------------------------
+  // This poll used to be a passive read, on the theory that the webhook records the money.
+  // The platform sweep proved the hole: a checkout completed on Stripe (session
+  // `complete/paid`) while the invoice sat at `sent`, $0 — the webhook needs configuration
+  // to exist, and the success-page recorder needs the CUSTOMER's browser to finish the
+  // redirect, which the QR flow's customer (paying on their own phone) routinely never does.
+  // So the device that minted the session settles it: each tick asks the server to retrieve
+  // the session from Stripe and record it if paid (idempotent on payment_intent — a webhook
+  // landing too dedups to a no-op), then reads the invoice as before.
   useEffect(() => {
     if (!url || expired) return;
     const startedAt = Date.now();
@@ -130,7 +142,12 @@ export function CardCheckoutStep({
         setExpired(true);
         return;
       }
-      readInvoice(surface, invoice.id, invoiceRef.current)
+      const sessionId = sessionIdRef.current;
+      (sessionId
+        ? reconcileCheckout(surface, invoice.id, sessionId).catch(() => undefined)
+        : Promise.resolve(undefined)
+      )
+        .then(() => readInvoice(surface, invoice.id, invoiceRef.current))
         .then((fresh) => {
           if (fresh.status !== "paid" && fresh.status !== "partial") return;
           if (settledRef.current) return;
@@ -140,8 +157,7 @@ export function CardCheckoutStep({
         })
         .catch(() => {
           // Transient poll failure (offline blip, 500) — deliberately kept quiet and
-          // polling continues: the webhook already recorded any payment, and the
-          // wall-clock cap's sentence covers a line that stays dead.
+          // polling continues; the wall-clock cap's sentence covers a line that stays dead.
         });
     }, POLL_MS);
     return () => clearInterval(iv);

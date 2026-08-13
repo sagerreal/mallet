@@ -65,4 +65,58 @@ export const COERCERS: Readonly<Record<CoercerId, Coercer>> = {
     const hit = table[raw.trim().toLowerCase()];
     return hit === undefined ? bad(`Unrecognised value "${raw}"`) : ok(hit);
   },
+
+  /**
+   * Calendar date → "YYYY-MM-DD". No timezone is applied: a date in a spreadsheet is a calendar
+   * day, and converting it through a zone is how a job lands on the wrong one.
+   *
+   * Ambiguous slash dates are read as MONTH FIRST (US), matching the beachhead market. That is a
+   * genuine guess — 03/04 is March 4 here and April 3 in most of the world — so it is stated in
+   * the mapping preview rather than applied silently. ISO input is never ambiguous and wins.
+   */
+  date: (raw) => {
+    const value = raw.trim();
+
+    const iso = /^(\d{4})-(\d{1,2})-(\d{1,2})$/.exec(value);
+    if (iso) return isoOrBad(Number(iso[1]), Number(iso[2]), Number(iso[3]), value);
+
+    const slash = /^(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})$/.exec(value);
+    if (slash) {
+      const year = Number(slash[3]);
+      // A 2-digit year is this century: a shop's job sheet is not from 1926.
+      return isoOrBad(year < 100 ? 2000 + year : year, Number(slash[1]), Number(slash[2]), value);
+    }
+
+    return bad(`Couldn't read date "${raw}"`);
+  },
+
+  /** Clock time → "HH:MM", 24-hour. Accepts "14:30", "2:30 PM", "2pm". */
+  time: (raw) => {
+    const value = raw.trim().toLowerCase();
+    const match = /^(\d{1,2})(?::(\d{2}))?\s*(am|pm)?$/.exec(value);
+    if (!match) return bad(`Couldn't read time "${raw}"`);
+
+    let hour = Number(match[1]);
+    const minute = match[2] ? Number(match[2]) : 0;
+    const meridiem = match[3];
+
+    if (meridiem === "pm" && hour < 12) hour += 12;
+    if (meridiem === "am" && hour === 12) hour = 0;
+    if (hour > 23 || minute > 59) return bad(`Couldn't read time "${raw}"`);
+
+    return ok(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`);
+  },
 };
+
+/**
+ * Build "YYYY-MM-DD", rejecting a date that does not exist. Round-tripping through UTC catches
+ * 31 February, which a bare range check would wave through.
+ */
+function isoOrBad(year: number, month: number, day: number, raw: string): CoerceResult {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return bad(`Couldn't read date "${raw}"`);
+  const utc = new Date(Date.UTC(year, month - 1, day));
+  if (utc.getUTCMonth() !== month - 1 || utc.getUTCDate() !== day) {
+    return bad(`Couldn't read date "${raw}"`);
+  }
+  return ok(`${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`);
+}

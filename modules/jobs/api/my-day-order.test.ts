@@ -16,7 +16,7 @@ import {
   isOk,
 } from "@mallet/shared/types";
 import { Job, JobVisit, type JobProps, type JobVisitProps } from "../domain/job";
-import { earliestLiveVisitAt, byAgenda } from "./my-day-order";
+import { earliestLiveVisitAt, byAgenda, visitOnAt, byVisitOn } from "./my-day-order";
 
 const ORG = asOrgId("22222222-2222-2222-2222-222222222222");
 const LEAD = asLeadId("33333333-3333-3333-3333-333333333333");
@@ -225,5 +225,112 @@ describe("byAgenda", () => {
     });
     expect([b, a].sort(byAgenda).map((j) => j.props.num)).toEqual([a.props.num, b.props.num]);
     expect([a, b].sort(byAgenda).map((j) => j.props.num)).toEqual([a.props.num, b.props.num]);
+  });
+});
+
+describe("visitOnAt", () => {
+  const DAY = "2026-08-14";
+
+  it("is null when no visit lands on the asked day", () => {
+    const job = makeJob({
+      visits: [makeVisit({ scheduledDate: "2026-08-13", scheduledStart: "09:00" })],
+    });
+    expect(visitOnAt(job, DAY)).toBeNull();
+  });
+
+  it("keys on the asked DAY'S visit, not the job's earliest visit overall", () => {
+    // The half-done return-trip shape: byAgenda would key this job on its live Aug 15 visit, but a
+    // day view of Aug 14 is about the stop worked ON Aug 14 — even though that stop is complete.
+    const job = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: DAY, scheduledStart: "10:00", status: "complete" }),
+        makeVisit({ scheduledDate: "2026-08-15", scheduledStart: "07:00", status: "pending" }),
+      ],
+    });
+    expect(visitOnAt(job, DAY)).toBe("10:00");
+  });
+
+  it("takes the earliest of two same-day visits", () => {
+    const job = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: DAY, scheduledStart: "15:00" }),
+        makeVisit({ scheduledDate: DAY, scheduledStart: "08:30" }),
+      ],
+    });
+    expect(visitOnAt(job, DAY)).toBe("08:30");
+  });
+
+  it("ignores a canceled visit on the day", () => {
+    const job = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: DAY, scheduledStart: "07:00", status: "canceled" }),
+        makeVisit({ scheduledDate: DAY, scheduledStart: "11:00" }),
+      ],
+    });
+    expect(visitOnAt(job, DAY)).toBe("11:00");
+  });
+
+  it("treats a dated visit with no start time as the top of the day", () => {
+    const job = makeJob({ visits: [makeVisit({ scheduledDate: DAY })] });
+    expect(visitOnAt(job, DAY)).toBe("00:00");
+  });
+});
+
+describe("byVisitOn", () => {
+  const DAY = "2026-08-14";
+  const at = (start: string) =>
+    makeJob({ visits: [makeVisit({ scheduledDate: DAY, scheduledStart: start })] });
+
+  it("orders the asked day by its own clock, earliest first", () => {
+    const nine = at("09:00");
+    const seven = at("07:30");
+    const one = at("13:00");
+    expect([nine, one, seven].sort(byVisitOn(DAY)).map((j) => j.props.num)).toEqual([
+      seven.props.num,
+      nine.props.num,
+      one.props.num,
+    ]);
+  });
+
+  it("orders by the day's OWN stop even when another day's visit is earlier", () => {
+    // Multi-visit job whose other stop is at 06:00 the day before: byAgenda would drag it to the
+    // head of any list, but on Aug 14 it belongs at its 13:00 slot.
+    const other = makeJob({
+      visits: [
+        makeVisit({ scheduledDate: "2026-08-13", scheduledStart: "06:00", status: "complete" }),
+        makeVisit({ scheduledDate: DAY, scheduledStart: "13:00" }),
+      ],
+    });
+    const ten = at("10:00");
+    expect([other, ten].sort(byVisitOn(DAY)).map((j) => j.props.num)).toEqual([
+      ten.props.num,
+      other.props.num,
+    ]);
+  });
+
+  it("sorts a job with nothing on the day last, deterministically", () => {
+    // The filter should never hand byVisitOn such a job, but a comparator that flips order on
+    // unexpected input corrupts the whole sort — nulls pin to the end instead.
+    const stray = makeJob({
+      visits: [makeVisit({ scheduledDate: "2026-08-15", scheduledStart: "08:00" })],
+    });
+    const nine = at("09:00");
+    expect([stray, nine].sort(byVisitOn(DAY)).map((j) => j.props.num)).toEqual([
+      nine.props.num,
+      stray.props.num,
+    ]);
+  });
+
+  it("breaks a same-time tie the same way twice", () => {
+    const a = makeJob({
+      createdAt: new Date("2026-08-01T00:00:00Z"),
+      visits: [makeVisit({ scheduledDate: DAY, scheduledStart: "09:00" })],
+    });
+    const b = makeJob({
+      createdAt: new Date("2026-08-02T00:00:00Z"),
+      visits: [makeVisit({ scheduledDate: DAY, scheduledStart: "09:00" })],
+    });
+    expect([b, a].sort(byVisitOn(DAY)).map((j) => j.props.num)).toEqual([a.props.num, b.props.num]);
+    expect([a, b].sort(byVisitOn(DAY)).map((j) => j.props.num)).toEqual([a.props.num, b.props.num]);
   });
 });

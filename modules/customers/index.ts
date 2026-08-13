@@ -3,6 +3,8 @@ export { createLeadRouter } from "./api/lead-router";
 export type { Lead, LeadStage, LeadProps } from "./domain/lead";
 export type { LeadRepository } from "./domain/lead-repository";
 export { EnsureCustomerUseCase } from "./app/ensure-customer";
+export { ResolveCustomerRefsUseCase } from "./app/resolve-customer-refs";
+export type { CustomerRef, ResolvedCustomer } from "./app/resolve-customer-refs";
 export { ListLeadsUseCase } from "./app/list-leads";
 // Exposed for the AI agent tool registry (constructs the repo from a tenant tx, like the router).
 export { DrizzleLeadRepository } from "./infra/drizzle-lead-repository";

@@ -22,7 +22,9 @@ export type CoercerId =
   | "money"
   | "integer"
   | "boolean"
-  | "enum";
+  | "enum"
+  | "date"
+  | "time";
 
 /**
  * What happens to the ROW when a field's value is missing or unreadable.

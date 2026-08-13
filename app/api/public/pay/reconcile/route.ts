@@ -7,7 +7,13 @@ import { asOrgId, asInvoiceId } from "@mallet/shared/types";
 import { runWithContext, enrichRequestContext, logger } from "@mallet/shared/observability";
 import { FixedWindowLimiter } from "@mallet/platform/resilience";
 import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
-import { DrizzleInvoiceRepository, RecordCardPaymentUseCase, reconcileCheckoutSession } from "@mallet/invoicing";
+import {
+  DrizzleInvoiceRepository,
+  RecordCardPaymentUseCase,
+  reconcileCheckoutSession,
+  captureCardOnFile,
+  saveCardOnFile,
+} from "@mallet/invoicing";
 import { recordEstimateDeposit } from "@mallet/quoting";
 import { getAppDeps } from "@/trpc/di";
 
@@ -93,6 +99,14 @@ export async function POST(req: Request): Promise<Response> {
           enrichRequestContext({ orgId });
           return recordEstimateDeposit(orgId, estimateId, amountCents, paymentRef);
         },
+        // Same capture hook as the webhook route: whichever delivery lands first stores the
+        // card; the second upserts the same facts. Never throws (caught inside).
+        captureCard: (args) =>
+          captureCardOnFile(args, {
+            retrieveCard: (pi) => client.retrieveSavedCardFromIntent(pi),
+            saveProfile: saveCardOnFile,
+            log: (message, ctx) => logger.warn(ctx ?? {}, message),
+          }),
         log: (message, ctx) => logger.warn(ctx ?? {}, message),
       });
       return NextResponse.json(outcome);

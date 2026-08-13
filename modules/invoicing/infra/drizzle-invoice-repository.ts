@@ -166,13 +166,17 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
 
   async insertForJob(invoice: Invoice): Promise<boolean> {
     const p = invoice.props;
+    // ON CONFLICT DO NOTHING with NO arbiter: any conflict means "this create already
+    // happened" and the caller re-fetches the winner. The arbiter used to name only
+    // (org_id, source_job_id), which absorbed the two-callers race but let a REPLAY of the
+    // same create — the id is client-authored, so a retried request carries the same pk —
+    // die on invoices_pkey with a 500. The platform sweep hit exactly that: the wrap-up
+    // stranded on "Couldn't raise the invoice" while the first delivery's invoice existed.
+    // Values are identical on a replay, so absorbing the pk conflict loses nothing.
     const inserted = await this.tx
       .insert(invoices)
       .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...this.headerColumns(invoice) })
-      .onConflictDoNothing({
-        target: [invoices.orgId, invoices.sourceJobId],
-        where: sql`source_job_id is not null and deleted_at is null`,
-      })
+      .onConflictDoNothing()
       .returning({ id: invoices.id });
     if (inserted.length === 0) return false;
     await this.diffLines(invoice);

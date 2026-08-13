@@ -3,7 +3,8 @@ import { sql } from "drizzle-orm";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { asCompanyId, toPage } from "@mallet/shared/types";
+import { asCompanyId, toPage, isOk, type CompanyId } from "@mallet/shared/types";
+import { logger } from "@mallet/shared/observability";
 import { DrizzleCompanyRepository } from "../infra/drizzle-company-repository";
 import { CreateCompanyUseCase } from "../app/create-company";
 import { ListCompaniesUseCase } from "../app/list-companies";
@@ -19,6 +20,29 @@ const paginatedCompanyDTO = z.object({
 const listInput = z.object({
   limit: z.number().int().positive().max(500).optional(),
   cursor: z.string().nullish(),
+});
+
+// Every field but `name` is OPTIONAL, and that is load-bearing on re-import: an ABSENT key means
+// the sheet had no such column, so an existing account keeps what it already holds, while an
+// explicit null means the user mapped the column and left the cell blank — a deliberate clear.
+const importCompanyRowInput = z.object({
+  name: z.string().min(1).max(255),
+  phone: z.string().max(50).nullable().optional(),
+  email: z.string().max(320).nullable().optional(),
+  website: z.string().max(500).nullable().optional(),
+  address: z.string().max(500).nullable().optional(),
+  notes: z.string().max(2000).nullable().optional(),
+});
+
+const importCompaniesInput = z.object({ rows: z.array(importCompanyRowInput).min(1).max(500) });
+
+const importResultDTO = z.object({
+  created: z.number().int(),
+  /** Rows that matched an existing account and PATCHED it. */
+  updated: z.number().int(),
+  deduped: z.number().int(),
+  failed: z.number().int(),
+  errors: z.array(z.object({ index: z.number().int(), message: z.string() })),
 });
 
 const createInput = z.object({
@@ -108,6 +132,97 @@ export const createCompanyRouter = () =>
             revenueWonCents: Number(r.revenueWonCents),
           }),
         );
+      }),
+
+    /** Live company names, lowercased — powers the import confirm step's new/updated split. */
+    importNames: ownerOrOffice
+      .output(z.object({ names: z.array(z.string()) }))
+      .query(async ({ ctx }) => {
+        const repo = new DrizzleCompanyRepository(ctx.tx, ctx.principal.orgId);
+        // Paged in bulk: the confirm step needs the COMPLETE set, and a name is a few dozen bytes.
+        const page = await repo.list(toPage({ limit: 500, cursor: null }));
+        return { names: page.items.map((c) => c.props.name.trim().toLowerCase()) };
+      }),
+
+    // Bulk CSV import. Same contract as the pricebook importers: a name collision PATCHES the
+    // existing account rather than creating a second one, and only the keys the sheet carries are
+    // written (an absent key leaves the stored value alone).
+    importCompanies: ownerOrOffice
+      .input(importCompaniesInput)
+      .output(importResultDTO)
+      .mutation(async ({ ctx, input }) => {
+        const orgId = ctx.principal.orgId;
+        const repo = new DrizzleCompanyRepository(ctx.tx, orgId);
+        const createCompany = new CreateCompanyUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const updateCompany = new UpdateCompanyUseCase(repo, ctx.deps.clock);
+
+        // The whole chunk's existing accounts in ONE read, keyed by lowercased name — resolving
+        // per row would be an N+1 across 500 rows.
+        const existing = new Map<string, CompanyId>();
+        for (const company of await repo.findByNames(input.rows.map((r) => r.name))) {
+          existing.set(company.props.name.trim().toLowerCase(), company.props.id);
+        }
+
+        let created = 0;
+        let updated = 0;
+        let failed = 0;
+        const errors: { index: number; message: string }[] = [];
+
+        /**
+         * Overwrite an account this row's name already matches. Only the keys the SHEET carries
+         * are passed — an absent key leaves the stored value alone (Company.patch ignores
+         * undefined), so a phone-only sheet cannot wipe addresses and notes.
+         */
+        const patchExisting = (row: z.infer<typeof importCompanyRowInput>, companyId: CompanyId) =>
+          updateCompany.exec(
+            {
+              companyId,
+              ...(row.phone !== undefined ? { phone: row.phone } : {}),
+              ...(row.email !== undefined ? { email: row.email } : {}),
+              ...(row.website !== undefined ? { website: row.website } : {}),
+              ...(row.address !== undefined ? { address: row.address } : {}),
+              ...(row.notes !== undefined ? { notes: row.notes } : {}),
+            },
+            orgId,
+          );
+
+        for (let i = 0; i < input.rows.length; i++) {
+          const row = input.rows[i]!;
+          const key = row.name.trim().toLowerCase();
+          const hit = existing.get(key);
+
+          const result = hit
+            ? await patchExisting(row, hit)
+            : await createCompany.exec(
+                {
+                  name: row.name,
+                  phone: row.phone ?? null,
+                  email: row.email ?? null,
+                  website: row.website ?? null,
+                  address: row.address ?? null,
+                  notes: row.notes ?? null,
+                },
+                orgId,
+              );
+
+          if (!isOk(result)) {
+            failed += 1;
+            errors.push({ index: i, message: result.error.message });
+            continue;
+          }
+
+          if (hit) {
+            updated += 1;
+          } else {
+            created += 1;
+            // Fold the new account in so a later row in the SAME chunk naming it updates rather
+            // than creating a second one.
+            existing.set(key, result.value.props.id);
+          }
+        }
+
+        logger.info({ orgId, created, updated, failed }, "companies.imported");
+        return { created, updated, deduped: 0, failed, errors };
       }),
 
     create: ownerOrOffice

@@ -83,6 +83,11 @@ class FakeCompanyRepository implements CompanyRepository {
     throw new Error("create not used in archive tests");
   }
 
+  async findByNames(names: readonly string[]): Promise<Company[]> {
+    const wanted = new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean));
+    return [...this.store.values()].filter((c) => wanted.has(c.props.name.trim().toLowerCase()));
+  }
+
   async list(): Promise<{ items: Company[]; nextCursor: string | null }> {
     throw new Error("list not used in archive tests");
   }

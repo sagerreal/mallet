@@ -34,7 +34,7 @@ import { useMe } from "@/features/identity/hooks";
 import type { Job, Lead } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
-import { dtoJobToStoreJob, type JobDTO } from "@/lib/store/dto-mapper";
+import { dtoJobToStoreJob, dtoCardToStore, type JobDTO, type CardOnFileDTO } from "@/lib/store/dto-mapper";
 import { myHoursListInput, MY_HOURS_STALE_MS } from "./my-hours-input";
 import { useMyDayInput } from "./my-day-input";
 import { INBOX_POLL_MS } from "./inbox-query-options";
@@ -48,7 +48,9 @@ const toStoreJob = (item: MyDayItem): Job => dtoJobToStoreJob(item as unknown as
 // The field surface knows a customer only as "who this job is for and the number to call" — it has
 // no lead list and no lead detail. Enough of a Lead to name them in the call bar and pass the
 // has-a-phone gate; the rest of the shape is empty because the field simply does not have it.
-const toStoreLead = (c: { id: string; name: string; phone: string | null }): Lead => ({
+// `card` is the one deliberate addition: the presentational card-on-file facts that light up the
+// close-out's "Charge Visa ···· 4242" (the charge itself is server-gated — fieldInvoicing.chargeOnFile).
+const toStoreLead = (c: { id: string; name: string; phone: string | null; card: CardOnFileDTO | null }): Lead => ({
   id: c.id,
   name: c.name,
   phone: c.phone ?? "",
@@ -57,6 +59,7 @@ const toStoreLead = (c: { id: string; name: string; phone: string | null }): Lea
   age: 0,
   job: "",
   last: "",
+  ...(c.card ? { card: dtoCardToStore(c.card) } : {}),
 });
 
 export function FieldJobsHydrator() {

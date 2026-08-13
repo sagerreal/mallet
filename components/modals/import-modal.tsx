@@ -18,10 +18,14 @@ import { buildRows } from "@/lib/import/engine/build-rows";
 import type { BuildResult, BuiltRow, ImportDescriptor, MappingConfig } from "@/lib/import/engine/descriptor";
 import { CsvDropzone, ImportingLine, ImportDoneCard } from "./import-shared";
 import { ImportMappingStep } from "./import-mapping-step";
+import { ImportPreviewStep } from "./import-preview-step";
 
 /** What the server reports back for one chunk. Identical across entities. */
 export interface ChunkResult {
   created: number;
+  /** Matched an existing record and PATCHED it (services re-import). */
+  updated?: number;
+  /** Matched an existing record and left it alone (customers). */
   deduped: number;
   failed: number;
 }
@@ -48,9 +52,14 @@ interface Props {
   /** Refreshes the caller's queries after each chunk, so the list fills in progressively. */
   readonly onChunkDone: () => Promise<unknown>;
   readonly isPending: boolean;
+  /**
+   * How many of the built rows will overwrite an existing record, for entities that re-import.
+   * The caller owns this because only it knows the entity's match key. Omitted → create-only.
+   */
+  readonly countUpdates?: (rows: readonly BuiltRow[]) => number;
 }
 
-type Phase = "upload" | "map" | "importing" | "done";
+type Phase = "upload" | "map" | "preview" | "importing" | "done";
 
 /**
  * Committed-offset progress. `done` counts rows already sent AND acknowledged, so a retry resumes
@@ -58,9 +67,24 @@ type Phase = "upload" | "map" | "importing" | "done";
  * entity, so a re-sent row could be created AGAIN as a duplicate. Reset to ZERO whenever the file
  * or the mapping changes, since `done` only ever indexes into the CURRENT rows.
  */
-const ZERO = { done: 0, created: 0, deduped: 0, failed: 0 };
+const ZERO = { done: 0, created: 0, updated: 0, deduped: 0, failed: 0 };
 
-export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPending }: Props) {
+/**
+ * The line under the done headline, which reports only what actually happened. An import that
+ * refreshed 88 existing services has to SAY so — "412 added" alone hides the fact that records
+ * were overwritten.
+ */
+function buildDoneSub(summary: ChunkResult, copy: ImportModalCopy): React.ReactNode {
+  const parts: string[] = [];
+  if (summary.updated && summary.updated > 0) {
+    parts.push(`${summary.updated} updated`);
+  }
+  if (summary.deduped > 0) parts.push(copy.dedupedLabel(summary.deduped));
+  if (summary.failed > 0) parts.push(`${summary.failed} couldn’t be read`);
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPending, countUpdates }: Props) {
   const close = useCloseModal();
 
   const [phase, setPhase] = useState<Phase>("upload");
@@ -104,29 +128,32 @@ export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPendin
     if (!built) return;
     setPhase("importing");
     setError(null);
-    let { done, created, deduped, failed } = progress;
+    let { done, created, updated, deduped, failed } = progress;
     try {
       // Resume from the committed offset; a retry after a mid-batch failure must not re-send
       // already-created rows.
       for (let i = done; i < built.rows.length; i += descriptor.chunkSize) {
         const res = await sendChunk(built.rows.slice(i, i + descriptor.chunkSize));
         created += res.created;
+        updated += res.updated ?? 0;
         deduped += res.deduped;
         failed += res.failed;
         done = Math.min(i + descriptor.chunkSize, built.rows.length);
-        setProgress({ done, created, deduped, failed });
+        setProgress({ done, created, updated, deduped, failed });
         await onChunkDone(); // refresh after each chunk, not only at the end
       }
-      setSummary({ created, deduped, failed });
+      setSummary({ created, updated, deduped, failed });
       setPhase("done");
     } catch (err) {
-      setProgress({ done, created, deduped, failed }); // persist so a retry RESUMES, not re-sends
+      setProgress({ done, created, updated, deduped, failed }); // persist so a retry RESUMES, not re-sends
       setError(
         err instanceof Error
           ? err.message
           : "Import stopped partway. Saved rows were kept — click Import to finish the rest.",
       );
-      setPhase("map");
+      // Back to the preview, not the mapping: the offset is still valid, so the primary action
+      // reads "Resume — N left" and picks up where it stopped.
+      setPhase("preview");
     }
   }
 
@@ -169,13 +196,25 @@ export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPendin
           mapping={map}
           built={built}
           skipReason={copy.skipReason}
-          importLabel={copy.importLabel}
-          resumeFrom={progress.done}
           busy={isPending}
           error={error}
           onSetField={setField}
           onBack={reset}
-          onImport={runImport}
+          onImport={() => { setError(null); setPhase("preview"); }}
+        />
+      )}
+
+      {phase === "preview" && built && (
+        <ImportPreviewStep
+          built={built}
+          skipReason={copy.skipReason}
+          importLabel={copy.importLabel}
+          resumeFrom={progress.done}
+          busy={isPending}
+          error={error}
+          willUpdate={countUpdates ? countUpdates(built.rows) : undefined}
+          onBack={() => { setError(null); setPhase("map"); }}
+          onConfirm={runImport}
         />
       )}
 
@@ -184,15 +223,7 @@ export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPendin
       {phase === "done" && summary && (
         <ImportDoneCard
           headline={copy.doneHeadline(summary.created)}
-          sub={
-            summary.deduped > 0 || summary.failed > 0 ? (
-              <>
-                {summary.deduped > 0 && copy.dedupedLabel(summary.deduped)}
-                {summary.deduped > 0 && summary.failed > 0 && " · "}
-                {summary.failed > 0 && `${summary.failed} couldn’t be read`}
-              </>
-            ) : undefined
-          }
+          sub={buildDoneSub(summary, copy)}
           onClose={close}
         />
       )}

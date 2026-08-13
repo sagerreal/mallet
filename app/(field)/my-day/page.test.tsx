@@ -31,6 +31,17 @@ let completeOpts: typeof startOpts = {};
 let startPending = false;
 const startMutate = vi.fn();
 const completeMutate = vi.fn();
+let enrouteOpts: { onMutate?: (v: { jobId: string; visitId: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
+let visitStatusOpts: { onMutate?: (v: { jobId: string; visitId: string; status: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
+const enrouteMutate = vi.fn();
+const visitStatusMutate = vi.fn();
+const adoptJobSpy = vi.fn();
+const pushModal = vi.fn();
+let dayQueryState: { data: unknown; isLoading: boolean; isFetched?: boolean; isError?: boolean; isRefetching?: boolean } = {
+  data: undefined,
+  isLoading: false,
+};
+const dayRefetch = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
@@ -46,6 +57,7 @@ vi.mock("@/lib/trpc/client", () => ({
     v1: {
       // The field surface's only settings read — punch clock vs sheet. Defaults on.
       settings: { fieldToggles: { useQuery: () => ({ data: { timesheetClock: true } }) } },
+      timesheets: { list: { useQuery: () => ({ data: { items: [] }, isFetched: true, isError: false }) } },
       field: {
         myDay: { useQuery: () => ({ ...queryState, refetch }) },
         start: {
@@ -60,6 +72,19 @@ vi.mock("@/lib/trpc/client", () => ({
             return { mutate: completeMutate, isPending: false };
           },
         },
+        setVisitEnroute: {
+          useMutation: (opts: typeof enrouteOpts) => {
+            enrouteOpts = opts;
+            return { mutate: enrouteMutate, isPending: false };
+          },
+        },
+        setVisitStatus: {
+          useMutation: (opts: typeof visitStatusOpts) => {
+            visitStatusOpts = opts;
+            return { mutate: visitStatusMutate, isPending: false };
+          },
+        },
+        day: { useQuery: () => ({ ...dayQueryState, refetch: dayRefetch }) },
       },
     },
   },
@@ -74,7 +99,11 @@ vi.mock("@/lib/store/write-error", () => ({
 
 // One stable spy, not a fresh vi.fn() per render — the row-tap tests below assert on it.
 const openModal = vi.fn();
-vi.mock("@/lib/store/app-store", () => ({ useOpenModal: () => openModal }));
+vi.mock("@/lib/store/app-store", () => ({
+  useOpenModal: () => openModal,
+  usePushModal: () => pushModal,
+  useAppStore: (sel: (s: { adoptJob: typeof adoptJobSpy }) => unknown) => sel({ adoptJob: adoptJobSpy }),
+}));
 vi.mock("@/features/field/day-clock", () => ({ DayClock: () => <div /> }));
 
 import MyDayPage from "./page";
@@ -109,7 +138,7 @@ describe("My day — the screen moves when you press", () => {
 
   it("flips the card on the press, not two round trips later", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Start job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Arrived" }));
 
     expect(startMutate).toHaveBeenCalledWith({ jobId: "job-1" });
     // The optimistic patch is what the user actually sees change.
@@ -123,7 +152,7 @@ describe("My day — the screen moves when you press", () => {
     // exactly the window that turned one press into six.
     queryState = { data: { items: [job()], customers: [] }, isLoading: false, isFetching: true };
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Start job" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Arrived" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("says so when the clock threw the segment away for being under a minute", () => {
@@ -165,16 +194,16 @@ describe("My day — the screen moves when you press", () => {
   // offered only "Start job" and the endpoint behind ✓ Complete refused a scheduled job outright.
   // A technician who finished a call without tapping Start hit a wall on the card and none on the
   // sheet, which reads as the app contradicting itself. v1.field.complete now starts it first.
-  it("lets a SCHEDULED job be completed without pressing Start first", () => {
+  it("lets a SCHEDULED job be completed without pressing Arrived first", () => {
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Start job" })).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    expect(screen.getByRole("button", { name: "Arrived" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
   });
 
   it("still moves the card straight to done on that press", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: "✓ Complete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
     completeOpts.onMutate?.({ jobId: "job-1" });
     const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { status: string }[] };
     expect(patch({ items: [job()] }).items[0]!.status).toBe("complete");
@@ -282,8 +311,10 @@ describe("My day — the time on the card", () => {
   // while the board — correctly — showed today 9a. The visit already worked is history; the card
   // reads the next one to drive to.
   it("shows the NEXT live visit on a half-done job, not the visit already worked", () => {
+    // The worked stop carries its real finish stamp — yesterday — so it belongs to the pager's
+    // view of yesterday, not to today's glass. Only the return trip renders here.
     withVisits([
-      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete" }),
+      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete", completedAt: "2026-06-30T19:30:00.000Z" }),
       visit({ id: "v2", scheduledDate: "2026-07-01", scheduledStart: "09:00", status: "pending" }),
     ]);
     render(<MyDayPage />);
@@ -304,7 +335,7 @@ describe("My day — the time on the card", () => {
   // has no slot yet — not quietly re-adopt the done visit's stale day and time.
   it("says 'Not scheduled' when the only LIVE visit is unplaced, not the done visit's old slot", () => {
     withVisits([
-      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete" }),
+      visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete", completedAt: "2026-06-30T19:30:00.000Z" }),
       visit({ id: "v2", status: "pending" }),
     ]);
     render(<MyDayPage />);
@@ -348,11 +379,12 @@ describe("My day — which day a row is actually from", () => {
   };
 
   // The pinned clock is 2026-07-01 (vitest.setup.ts).
-  it("prints the time ALONE for today — a 'Today' label on every row is noise", () => {
+  it("prints the time ALONE for today — a 'Today' label on every card is noise", () => {
     withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })]);
-    render(<MyDayPage />);
+    const { container } = render(<MyDayPage />);
     expect(screen.getByText("8:30a")).toBeTruthy();
-    expect(screen.queryByText("Today")).toBeNull();
+    // The PAGER says Today (its job); the card's own when-column must not repeat it.
+    expect(container.querySelector(".mdc-when .md-day")).toBeNull();
   });
 
   // THE DEFECT: this row sorts to the top of the list and used to be indistinguishable from the
@@ -416,16 +448,16 @@ describe("My day — the whole row opens the job, not just the words", () => {
     expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
   });
 
-  it("opens from the job-number line under the title", () => {
-    render(<MyDayPage />);
-    fireEvent.click(screen.getByText(/JOB-1011/));
+  it("opens from the progress strip, which is not a word anyone typed", () => {
+    const { container } = render(<MyDayPage />);
+    fireEvent.click(container.querySelector(".mdc-steps")!);
     expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
   });
 
   // THE REGRESSION. This is the band that swallowed the tap.
-  it("opens from the empty strip beside the action button", () => {
+  it("opens from the empty strip beside the action buttons", () => {
     const { container } = render(<MyDayPage />);
-    const acts = container.querySelector(".md-acts");
+    const acts = container.querySelector(".fca-row");
     expect(acts).not.toBeNull();
     // Clicking the WRAPPER, not the button inside it — the pixels a thumb lands on.
     fireEvent.click(acts!);
@@ -440,18 +472,235 @@ describe("My day — the whole row opens the job, not just the words", () => {
     expect(openModal).toHaveBeenCalledWith(MODAL.TECH_JOB, { jobId: "job-1" });
   });
 
-  it("starts the job without also opening it when Start job is pressed", () => {
+  // The card is a VISIT now, so its buttons write the visit mutations — the same ones the job
+  // sheet uses. Arrived must not also open the sheet.
+  it("marks the visit arrived without also opening the sheet", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Start job" }));
-    expect(startMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Arrived" }));
+    expect(visitStatusMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1", status: "in_progress" });
     expect(openModal).not.toHaveBeenCalled();
   });
 
-  it("completes the job without also opening it when ✓ Complete is pressed", () => {
-    queryState = rowAt({ status: "in_progress" });
+  it("finishes the visit without also opening the sheet", () => {
     render(<MyDayPage />);
-    fireEvent.click(screen.getByRole("button", { name: /Complete/ }));
-    expect(completeMutate).toHaveBeenCalledWith({ jobId: "job-1" });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    expect(visitStatusMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1", status: "complete" });
     expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("sends on-my-way from the card and patches the stamp optimistically", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "On my way" }));
+    expect(enrouteMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1" });
+    enrouteOpts.onMutate?.({ jobId: "job-1", visitId: "visit-1" });
+    const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { visits: { enrouteAt: string | null }[] }[] };
+    const patched = patch({ items: [job({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30" })] })] });
+    expect(patched.items[0]!.visits[0]!.enrouteAt).not.toBeNull();
+  });
+
+  it("shows the live On-site-since stamp while the visit is in progress", () => {
+    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30", status: "in_progress", startedAt: "2026-07-01T19:38:00.000Z" })] });
+    render(<MyDayPage />);
+    expect(screen.getByText(/On site · since/)).toBeTruthy();
+  });
+
+  it("hides On my way once the tech is on site — a stamp nobody needs anymore", () => {
+    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30", status: "in_progress" })] });
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: "On my way" })).toBeNull();
+    // On site: Done is the one primary left.
+    expect(screen.queryByRole("button", { name: "Arrived" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Done" })).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE DAY PAGER. Paging is a VIEW change: today keeps its live path untouched, a paged day reads
+// v1.field.day, and no card on another day offers Arrived/Done — you cannot be en route to
+// Thursday. The running clock must survive paging (it is a server row the DayClock renders).
+// ---------------------------------------------------------------------------
+
+describe("My day — the day pager", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+    queryState = {
+      data: { items: [job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })] })], customers: [] },
+      isLoading: false,
+      isFetching: false,
+    };
+    dayQueryState = { data: undefined, isLoading: false, isFetched: false, isError: false };
+  });
+
+  it("starts on Today with the date beside it", () => {
+    render(<MyDayPage />);
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Next day" })).toBeTruthy();
+    expect(screen.queryByText("Back to today")).toBeNull();
+  });
+
+  it("pages forward to Tomorrow, reads field.day, and offers the way back", () => {
+    dayQueryState = {
+      data: { items: [job({ visits: [visit({ id: "visit-9", scheduledDate: "2026-07-02", scheduledStart: "10:00" })] })], customers: [] },
+      isLoading: false,
+      isFetched: true,
+      isError: false,
+    };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(screen.getByText("Tomorrow")).toBeTruthy();
+    expect(screen.getByText("Back to today")).toBeTruthy();
+    // Tomorrow's card offers no state buttons — the sheet handles corrections, the card does not.
+    expect(screen.queryByRole("button", { name: "Arrived" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "On my way" })).toBeNull();
+  });
+
+  it("returns to the live today view from Back to today", () => {
+    dayQueryState = { data: { items: [], customers: [] }, isLoading: false, isFetched: true, isError: false };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    fireEvent.click(screen.getByText("Back to today"));
+    expect(screen.getByText("Today")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Arrived" })).toBeTruthy();
+  });
+
+  it("adopts a paged day's jobs into the store so the sheet can open them", () => {
+    dayQueryState = {
+      data: { items: [job({ id: "job-far", visits: [visit({ scheduledDate: "2026-07-02" })] })], customers: [] },
+      isLoading: false,
+      isFetched: true,
+      isError: false,
+    };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Next day" }));
+    expect(adoptJobSpy).toHaveBeenCalled();
+  });
+
+  it("names an empty past day honestly", () => {
+    dayQueryState = { data: { items: [], customers: [] }, isLoading: false, isFetched: true, isError: false };
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Previous day" }));
+    expect(screen.getByText("Yesterday")).toBeTruthy();
+    expect(screen.getByText("Nothing ran this day.")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE MONEY SLOT. A finished card must say where the money stands without opening the sheet:
+// Take payment (filled $ circle → the close-out sheet, which finds or mints the job's invoice
+// from the jobId), Paid ✓ with the ledger's figure, or Sent to the office. A voided bill keeps
+// the job's one invoice slot, so the card offers nothing.
+// ---------------------------------------------------------------------------
+
+describe("My day — the finished card's money slot", () => {
+  const doneVisit = () =>
+    visit({ status: "complete", completedAt: "2026-07-01T20:00:00.000Z", scheduledDate: "2026-07-01", scheduledStart: "08:30" });
+  const finishedJob = (over: Record<string, unknown> = {}) =>
+    job({ status: "complete", visits: [doneVisit()], ...over });
+  const withJob = (j: unknown) => {
+    queryState = { data: { items: [j], customers: [] }, isLoading: false, isFetching: false };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+  });
+
+  it("offers Take payment with the job's figure when nothing is billed yet", () => {
+    withJob(finishedJob({ total: { cents: 184500, currency: "USD" }, bill: null }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $1,845" })).toBeTruthy();
+  });
+
+  it("pushes the close-out sheet from the jobId alone — it finds or mints the invoice itself", () => {
+    withJob(finishedJob({ bill: null }));
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Take payment" }));
+    // "field-job" is the close-out's return-to-My-day contract (where Done lands) — the card
+    // rides the same sentinel the job sheet declares, never a lookalike the modal ignores.
+    expect(pushModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", from: "field-job" });
+    // A money tap is not a card tap — the sheet opens INSTEAD of the job modal, not behind it.
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("shows Paid with the ledger's own figure once the bill is paid", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: { cents: 41200, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Paid ✓ · $412")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+  });
+
+  it("shows Paid without a figure for a redacted tech — paid is a fact, the amount is a price", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: null } }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Paid ✓")).toBeTruthy();
+  });
+
+  it("says Sent to the office ONLY when the office was actually asked to bill", () => {
+    withJob(finishedJob({ bill: null, invRequested: true }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Sent to the office")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+  });
+
+  it("keeps a SENT bill collectible — the close-out sends as a step of taking payment", () => {
+    // Interrupted close-out: invoice auto-sent, card declined, tech pulled away. The card must
+    // still offer the door money, exactly as the sheet's own foot would.
+    withJob(finishedJob({ total: { cents: 90000, currency: "USD" }, bill: { status: "sent", amountPaid: { cents: 0, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $900" })).toBeTruthy();
+    expect(screen.queryByText("Sent to the office")).toBeNull();
+  });
+
+  it("offers the REMAINING balance on a partial payment", () => {
+    withJob(finishedJob({ total: { cents: 90000, currency: "USD" }, bill: { status: "partial", amountPaid: { cents: 40000, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $500" })).toBeTruthy();
+  });
+
+  it("offers nothing on a voided bill — the invoice slot is spent", () => {
+    withJob(finishedJob({ bill: { status: "void", amountPaid: null } }));
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+    expect(screen.queryByText(/Paid/)).toBeNull();
+    expect(screen.queryByText("Sent to the office")).toBeNull();
+  });
+
+  it("keeps the Receipt link beside Paid — the close-out is the receipt surface", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: { cents: 41200, currency: "USD" } } }));
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Receipt" }));
+    expect(pushModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", from: "field-job" });
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("shows the figure the office was sent with beside the office chip", () => {
+    withJob(finishedJob({ total: { cents: 26850, currency: "USD" }, bill: null, invRequested: true }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Sent to the office")).toBeTruthy();
+    expect(screen.getByText("$269")).toBeTruthy();
+  });
+
+  it("offers no money on a finished STOP whose JOB still has a trip to run", () => {
+    // Visit done, job open (the return-trip shape): the close-out would refuse an open job,
+    // so the card must not offer what the sheet will bounce.
+    withJob(job({
+      status: "in_progress",
+      total: { cents: 184500, currency: "USD" },
+      visits: [
+        doneVisit(),
+        visit({ status: "pending", scheduledDate: null, scheduledStart: null }),
+      ],
+    }));
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+    expect(screen.queryByText(/Paid/)).toBeNull();
+  });
+
+  it("puts no money slot on a live card — collecting happens after Done", () => {
+    withJob(job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })], total: { cents: 184500, currency: "USD" } }));
+    render(<MyDayPage />);
+    expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
   });
 });

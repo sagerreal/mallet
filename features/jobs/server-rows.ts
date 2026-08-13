@@ -62,15 +62,16 @@ export interface ServerRowsResult {
 export type JobListRow = RouterOutputs["v1"]["jobs"]["list"]["items"][number];
 
 /**
- * The summary DTO omits the lifecycle timestamps the full record carries. The store mapper reads
- * them, so they are supplied as null EXPLICITLY rather than cast away: null is the honest value —
- * the list genuinely does not know them — and a cast would let a future field go missing silently.
+ * The summary DTO omits MOST of the lifecycle timestamps the full record carries. The store
+ * mapper reads them, so they are supplied as null EXPLICITLY rather than cast away: null is the
+ * honest value — the list genuinely does not know them — and a cast would let a future field go
+ * missing silently. completedAt is no longer in this set: the summary now carries it (the field
+ * agenda's Finished bucket sorts on it), so the row's own value flows through.
  */
 const asStoreJob = (row: JobListRow) =>
   dtoJobToStoreJob({
     scheduledEnd: null,
     startedAt: null,
-    completedAt: null,
     canceledAt: null,
     enrouteAt: null,
     cancelReason: null,

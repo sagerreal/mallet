@@ -58,6 +58,11 @@ class FakeCompanyRepository implements CompanyRepository {
     this._nextResult = result;
   }
 
+  async findByNames(names: readonly string[]): Promise<Company[]> {
+    const wanted = new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean));
+    return [...this.store.values()].filter((c) => wanted.has(c.props.name.trim().toLowerCase()));
+  }
+
   async list(page: CursorPage): Promise<Paginated<Company>> {
     this.listCallCount += 1;
     this.lastListPage = page;

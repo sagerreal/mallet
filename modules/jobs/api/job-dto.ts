@@ -227,6 +227,9 @@ export const jobSummaryDTO = z.object({
   status: statusEnum,
   assigneeUserId: z.string().uuid().nullable(),
   scheduledStart: z.string().nullable(),
+  // When the JOB finished — the field agenda's "Finished today" bucket sorts its visit-less
+  // job-level cards by this; without it they pinned to the top out of order.
+  completedAt: z.string().nullable(),
   // Nullable: the tech-facing field surface redacts total server-side when the
   // org's techSeesPrice is off. Office/owner responses are never null.
   total: moneyDTO.nullable(),
@@ -253,6 +256,20 @@ export const jobSummaryDTO = z.object({
   addons: z.array(jobAddonDTO),
   verifyAnswers: z.array(jobVerifyAnswerDTO),
   photos: z.array(jobPhotoDTO),
+  /**
+   * The bill raised from this job, when the FIELD agenda loaded it — the finished card's money
+   * slot reads this to say Paid / Take payment without opening the sheet. OPTIONAL: only
+   * fieldAgendaPage stamps it (one batched read); office list responses omit it entirely.
+   * paid amount is money and rides techSeesPrice redaction; status does not (paid is a fact,
+   * not a price).
+   */
+  bill: z
+    .object({
+      status: z.enum(["draft", "sent", "partial", "paid", "void"]),
+      amountPaid: moneyDTO.nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const money = (cents: number) => ({ cents, currency: "USD" as const });
@@ -479,6 +496,7 @@ export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution,
     status: p.status,
     assigneeUserId: p.assigneeUserId,
     scheduledStart: iso(p.scheduledStart),
+    completedAt: iso(p.completedAt),
     total: money(p.total),
     discBps: p.discBps,
     taxBps: p.taxBps,

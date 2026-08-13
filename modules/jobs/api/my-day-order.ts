@@ -73,6 +73,54 @@ export function byAgenda(a: Job, b: Job): number {
     if (bv === null) return -1;
     return av < bv ? -1 : 1;
   }
+  return tieBreak(a, b);
+}
+
+/**
+ * The earliest stop ON ONE NAMED DAY — the key the day pager's view orders by.
+ *
+ * NOT `earliestLiveVisitAt`. That key answers "when is this job's next work", which is the right
+ * question for today's agenda and the wrong one for a day being LOOKED AT: a half-done job whose
+ * return trip is booked tomorrow 07:00 would sort at the head of yesterday's view, above the stop
+ * that was actually worked yesterday at 10:00. A day view is a route as driven (or as booked) —
+ * every non-canceled visit dated that day keeps its slot, complete or not.
+ *
+ * Returns the wall-clock start (`"HH:MM"`, `"00:00"` when the visit is dated but unslotted), or
+ * null when nothing lands on the day. Same string-comparison stance as the rest of this file.
+ */
+export function visitOnAt(job: Job, date: string): string | null {
+  let earliest: string | null = null;
+  for (const visit of job.props.visits) {
+    const v = visit.props;
+    if (v.status === "canceled") continue;
+    if (v.scheduledDate !== date) continue;
+    const at = v.scheduledStart ?? "00:00";
+    if (earliest === null || at < earliest) earliest = at;
+  }
+  return earliest;
+}
+
+/**
+ * Comparator for one named day's view: that day's own clock, earliest first.
+ *
+ * A job with nothing on the day should never reach this (the query filters on the same predicate),
+ * but a comparator that misbehaves on unexpected input corrupts the entire sort — so nulls pin to
+ * the end, and ties break exactly as byAgenda's do.
+ */
+export function byVisitOn(date: string): (a: Job, b: Job) => number {
+  return (a, b) => {
+    const av = visitOnAt(a, date);
+    const bv = visitOnAt(b, date);
+    if (av !== bv) {
+      if (av === null) return 1;
+      if (bv === null) return -1;
+      return av < bv ? -1 : 1;
+    }
+    return tieBreak(a, b);
+  };
+}
+
+function tieBreak(a: Job, b: Job): number {
   const byCreated = a.props.createdAt.getTime() - b.props.createdAt.getTime();
   if (byCreated !== 0) return byCreated;
   return a.props.id < b.props.id ? -1 : a.props.id > b.props.id ? 1 : 0;

@@ -57,6 +57,11 @@ const mockRecordPayment = vi.fn<
 const mockSendInvoice = vi.fn<(id: string) => Promise<{ ok: boolean; error?: string }>>(() =>
   Promise.resolve({ ok: true }),
 );
+// The REAL charge of the saved card (slice action). Default: Stripe settled it. The refusal
+// path carries Stripe's own decline sentence, which the sheet must show verbatim.
+const mockChargeCardOnFile = vi.fn<
+  (id: string, surface?: InvoiceWriteSurface) => Promise<{ ok: boolean; error?: string }>
+>(() => Promise.resolve({ ok: true }));
 
 const mockClose = vi.fn();
 const mockDismissModals = vi.fn();
@@ -77,6 +82,7 @@ vi.mock("@/lib/store/app-store", () => ({
       updateJob: noop,
       setJobLines: noop,
       recordPayment: mockRecordPayment,
+      chargeCardOnFile: mockChargeCardOnFile,
       sendInvoice: mockSendInvoice,
       updateLead: noop,
       setAddonStatus: noop,
@@ -589,10 +595,10 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     expect(screen.getByText(/Couldn't record the payment/)).toBeTruthy();
   });
 
-  it("charge-on-file takes the same refusal path — no Approved on a rejected card record", async () => {
+  it("charge-on-file is a REAL charge: a decline is named verbatim, nothing is recorded", async () => {
     mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
-    mockRecordPayment.mockImplementationOnce(() =>
-      Promise.resolve({ ok: false, error: "this invoice is already paid in full" }),
+    mockChargeCardOnFile.mockImplementationOnce(() =>
+      Promise.resolve({ ok: false, error: "Your card has insufficient funds." }),
     );
 
     mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
@@ -602,8 +608,40 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     fireEvent.click(screen.getByText(/Charge Visa/));
     await act(async () => {});
 
-    expect(screen.getByText("this invoice is already paid in full")).toBeTruthy();
+    // Stripe's own sentence, on the step where the button was tapped — and NO ledger write:
+    // the decline came from the charge action, and recordPayment must never be its fallback.
+    expect(screen.getByText("Your card has insufficient funds.")).toBeTruthy();
     expect(screen.queryByText(/Approved/)).toBeNull();
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+  });
+
+  it("charge-on-file success comes from the charge action — never from recordPayment", async () => {
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "sent" } as Invoice);
+    mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText(/Charge Visa/));
+    await act(async () => {});
+
+    expect(mockChargeCardOnFile).toHaveBeenCalledWith("inv-1", "office");
+    expect(mockRecordPayment).not.toHaveBeenCalled();
+    expect(screen.getByText(/Approved · \$450/)).toBeTruthy();
+    expect(screen.getByText(/Visa ···· 4242 on file/)).toBeTruthy();
+  });
+
+  it("charge-on-file SENDS a draft first — the server refuses to charge a draft", async () => {
+    mockInvoices = [{ ...cardInvoice, status: "draft" } as Invoice];
+    mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice);
+    mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
+
+    render(<CloseOutModalContent />);
+    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText(/Charge Visa/));
+    await act(async () => {});
+
+    expect(mockSendInvoice).toHaveBeenCalledWith("inv-1", "office");
+    expect(mockChargeCardOnFile).toHaveBeenCalledWith("inv-1", "office");
   });
 });
 
@@ -647,15 +685,83 @@ describe("CloseOutModalContent — never an empty sheet", () => {
   });
 
   it("renders the server's own reason when the create fails, not a blank sheet", async () => {
+    // A refusal with no self-retry lane (the race message has its own test below).
     mockCreatePersisted = () =>
-      Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" });
+      Promise.resolve({ ok: false, error: "this job's customer was deleted" });
 
     render(<CloseOutModalContent />);
     await act(async () => {});
 
     expect(screen.getByText("Couldn't raise the invoice")).toBeTruthy();
-    expect(screen.getByText("job must be complete before it can be invoiced")).toBeTruthy();
+    expect(screen.getByText("this job's customer was deleted")).toBeTruthy();
     expect(screen.queryByText("Raising the invoice…")).toBeNull();
+  });
+
+  /**
+   * THE COMPLETION RACE. Opened straight off "Finish job →", the raise reaches the server
+   * before the complete write commits — "job must be complete before it can be invoiced", a
+   * refusal that is true for milliseconds. It self-retries on a short fuse and succeeds
+   * without the technician ever seeing an error; a job that genuinely never completes runs
+   * out of retries and surfaces the sentence. (The sweep also caught the OLD failure shape:
+   * without the createError guard the effect looped the refused create forever, wiping its
+   * own error each lap — endless skeletons. That guard is asserted by the surface tests.)
+   */
+  it("self-retries the not-complete race and lands without an error", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      mockCreatePersisted = () => {
+        calls += 1;
+        return calls < 2
+          ? Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" })
+          : Promise.resolve({ ok: true });
+      };
+
+      render(<CloseOutModalContent />);
+      await act(async () => {});
+      expect(calls).toBe(1);
+      // No error surfaced — the retry is armed, the sheet keeps its loading state.
+      expect(screen.queryByText("Couldn't raise the invoice")).toBeNull();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1300);
+      });
+      await act(async () => {});
+      expect(calls).toBe(2);
+      expect(screen.queryByText("Couldn't raise the invoice")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a race that outlives its retries surfaces the sentence instead of looping forever", async () => {
+    vi.useFakeTimers();
+    try {
+      let calls = 0;
+      mockCreatePersisted = () => {
+        calls += 1;
+        return Promise.resolve({ ok: false, error: "job must be complete before it can be invoiced" });
+      };
+
+      render(<CloseOutModalContent />);
+      await act(async () => {});
+      for (let i = 0; i < 6; i++) {
+        await act(async () => {
+          vi.advanceTimersByTime(1300);
+        });
+        await act(async () => {});
+      }
+      // 1 initial + 5 self-retries, then it STOPS — the createError guard holds the loop.
+      expect(calls).toBe(6);
+      expect(screen.getByText("Couldn't raise the invoice")).toBeTruthy();
+      const before = calls;
+      await act(async () => {
+        vi.advanceTimersByTime(5000);
+      });
+      expect(calls).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("Try again re-fires the create, and the sheet renders once the invoice lands", async () => {

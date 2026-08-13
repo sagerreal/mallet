@@ -59,7 +59,11 @@ vi.mock("./customers-columns", () => ({
   DEFAULT_COLS: ["name"],
   colWidths: (cols: readonly string[]) => cols.map(() => `${100 / cols.length}%`),
 }));
-vi.mock("./customers-filters", () => ({ CustomersFilters: () => <div /> }));
+vi.mock("./customers-group-filter", () => ({ CustomersGroupFilter: () => <div data-testid="groups" /> }));
+// The chips read their counts from the server — one query, mocked flat so the view can render.
+vi.mock("@/lib/trpc/client", () => ({
+  api: { v1: { customers: { groupCounts: { useQuery: () => ({ data: undefined }) } } } },
+}));
 vi.mock("@/components/shared/view-toggle", () => ({ ViewToggle: () => <div /> }));
 vi.mock("@/features/pipeline/pipeline-constants", () => ({ isStaleLead: () => false }));
 

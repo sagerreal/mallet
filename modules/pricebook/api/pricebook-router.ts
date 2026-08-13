@@ -92,19 +92,45 @@ const serviceArchiveInput = z.object({
 // id — the client never sees category ids; the server resolves/creates them per row. Cents are
 // re-validated server-side (never trust the client, even though it already parsed the money
 // strings) — non-negative ints only.
+// Every field but `name` is OPTIONAL, and that is load-bearing on re-import: an ABSENT key means
+// the sheet had no such column, so an existing service keeps whatever it already holds, while an
+// explicit null means the user mapped the column and left the cell blank — a deliberate clear.
+// Collapsing the two would let "refresh my prices" wipe descriptions the shop maintains in-app.
 const importServiceRowInput = z.object({
   name: z.string().min(1).max(500),
-  category: z.string().max(255).nullable(),
-  description: z.string().max(10_000).nullable(),
-  code: z.string().max(120).nullable(),
-  unitPriceCents: z.number().int().nonnegative(),
-  costCents: z.number().int().nonnegative(),
-  taxable: z.boolean(),
+  category: z.string().max(255).nullable().optional(),
+  description: z.string().max(10_000).nullable().optional(),
+  code: z.string().max(120).nullable().optional(),
+  unitPriceCents: z.number().int().nonnegative().optional(),
+  costCents: z.number().int().nonnegative().optional(),
+  taxable: z.boolean().optional(),
 });
 const importServicesInput = z.object({ rows: z.array(importServiceRowInput).min(1).max(500) });
 
+// Same optional-means-absent rule as services (see above): an absent key leaves the stored value
+// alone on re-import, an explicit null clears it.
+const importMaterialRowInput = z.object({
+  name: z.string().min(1).max(500),
+  category: z.string().max(255).nullable().optional(),
+  description: z.string().max(10_000).nullable().optional(),
+  code: z.string().max(120).nullable().optional(),
+  unitCostCents: z.number().int().nonnegative().optional(),
+  /** Absent → the markup rule derives the price. Present → the material goes manual. */
+  unitPriceCents: z.number().int().nonnegative().optional(),
+  // Not nullable: the column is NOT NULL with an "each" default, so a blank cell means "leave it"
+  // rather than "clear it" — there is nothing to clear it to.
+  unitOfMeasure: z.string().max(40).optional(),
+  vendor: z.string().max(255).nullable().optional(),
+  taxable: z.boolean().optional(),
+});
+
+const importMaterialsInput = z.object({ rows: z.array(importMaterialRowInput).min(1).max(500) });
+
 const importResultDTO = z.object({
   created: z.number().int(),
+  // Rows that matched an existing service and PATCHED it. Distinct from `deduped`, which means
+  // "matched and left alone" — the customers importer still reports that, services no longer can.
+  updated: z.number().int(),
   deduped: z.number().int(),
   failed: z.number().int(),
   errors: z.array(z.object({ index: z.number().int(), message: z.string() })),
@@ -184,6 +210,23 @@ const serviceMaterialDetachInput = z.object({
 export const createPricebookRouter = () =>
   router({
     service: router({
+      /**
+       * Every live service NAME, lowercased. Exists so the import confirm step can say "412 new ·
+       * 88 will be updated" before writing anything — a re-import overwrites records, and the
+       * shop has to see that coming.
+       *
+       * Names only, deliberately: the full DTO for a large book is a lot of payload for a
+       * question that is answered by string comparison. Unpaginated for the same reason — the
+       * whole point is a complete set, and a name is a few dozen bytes.
+       */
+      importNames: ownerOrOffice
+        .output(z.object({ names: z.array(z.string()) }))
+        .query(async ({ ctx }) => {
+          const repo = new DrizzleServiceRepository(ctx.tx, ctx.principal.orgId);
+          const names = await repo.allNames();
+          return { names: names.map((n) => n.trim().toLowerCase()) };
+        }),
+
       list: ownerOrOffice
         .input(serviceListInput)
         .output(paginatedServiceDTO)
@@ -282,6 +325,7 @@ export const createPricebookRouter = () =>
         const serviceRepo = new DrizzleServiceRepository(ctx.tx, ctx.principal.orgId);
         const categoryRepo = new DrizzleCategoryRepository(ctx.tx, ctx.principal.orgId);
         const createService = new CreateServiceUseCase(serviceRepo, ctx.deps.clock, ctx.deps.ids);
+        const updateService = new UpdateServiceUseCase(serviceRepo, ctx.deps.clock);
         const createCategory = new CreateCategoryUseCase(categoryRepo, ctx.deps.clock, ctx.deps.ids);
         const listCategories = new ListCategoriesUseCase(categoryRepo);
 
@@ -295,8 +339,18 @@ export const createPricebookRouter = () =>
           categoryIdByName.set(category.props.name.toLowerCase(), category.props.id);
         }
 
+        // Find a live service by exact name, case-insensitively — the same rule
+        // CreateServiceUseCase applies when it decides a name is taken, so the row that was
+        // rejected as a duplicate is the row we patch. `search` narrows on the name index rather
+        // than scanning the whole book.
+        const findServiceByName = async (name: string) => {
+          const wanted = name.trim().toLowerCase();
+          const candidates = await serviceRepo.list(toPage(), { search: name.trim() });
+          return candidates.items.find((s) => s.props.name.toLowerCase() === wanted) ?? null;
+        };
+
         let created = 0;
-        let deduped = 0;
+        let updated = 0;
         let failed = 0;
         const errors: { index: number; message: string }[] = [];
 
@@ -339,10 +393,13 @@ export const createPricebookRouter = () =>
               id: undefined,
               name: row.name,
               categoryId,
-              code: row.code,
-              description: row.description,
-              unitPriceCents: row.unitPriceCents,
-              costCents: row.costCents,
+              code: row.code ?? null,
+              description: row.description ?? null,
+              // A NEW service whose sheet carried no price column starts at zero — the same
+              // place a hand-created one starts. (On UPDATE the absent key is passed through as
+              // undefined instead, so an existing price is left alone.)
+              unitPriceCents: row.unitPriceCents ?? 0,
+              costCents: row.costCents ?? 0,
               taxable: row.taxable,
             },
             ctx.principal.orgId,
@@ -350,19 +407,59 @@ export const createPricebookRouter = () =>
 
           if (isOk(serviceResult)) {
             created += 1;
-          } else if (serviceResult.error.kind === "conflict") {
-            deduped += 1;
-          } else {
+            continue;
+          }
+
+          if (serviceResult.error.kind !== "conflict") {
             failed += 1;
             errors.push({ index: i, message: serviceResult.error.message });
+            continue;
+          }
+
+          // A name collision is a RE-IMPORT, not a rejection: the shop is refreshing a price book
+          // it already has. Patch the existing service instead of skipping the row, which is what
+          // every comparable product does and what makes an annual price update possible at all.
+          //
+          // Only the keys this row actually carries are passed — an absent key leaves the stored
+          // value alone (Service.patch ignores undefined), so a two-column sheet cannot wipe the
+          // rest of the record.
+          const existing = await findServiceByName(row.name);
+          if (!existing) {
+            // The conflict came from somewhere we cannot now find — an archived row, or a
+            // concurrent write. Report it rather than silently doing nothing.
+            failed += 1;
+            errors.push({ index: i, message: `Could not update the existing "${row.name}".` });
+            continue;
+          }
+
+          const patched = await updateService.exec(
+            {
+              serviceId: existing.props.id,
+              ...(categoryName !== null ? { categoryId } : {}),
+              ...(row.code !== undefined ? { code: row.code } : {}),
+              ...(row.description !== undefined ? { description: row.description } : {}),
+              ...(row.unitPriceCents !== undefined ? { unitPriceCents: row.unitPriceCents } : {}),
+              ...(row.costCents !== undefined ? { costCents: row.costCents } : {}),
+              ...(row.taxable !== undefined ? { taxable: row.taxable } : {}),
+            },
+            ctx.principal.orgId,
+          );
+
+          if (isOk(patched)) {
+            updated += 1;
+          } else {
+            failed += 1;
+            errors.push({ index: i, message: patched.error.message });
           }
         }
 
         logger.info(
-          { orgId: ctx.principal.orgId, created, deduped, failed },
+          { orgId: ctx.principal.orgId, created, updated, failed },
           "pricebook.services.imported",
         );
-        return { created, deduped, failed, errors };
+        // Services are never "deduped" now — a name match is patched, not skipped — but the field
+        // stays in the shared DTO for the customers importer, which still means it.
+        return { created, updated, deduped: 0, failed, errors };
       }),
 
     category: router({
@@ -394,7 +491,152 @@ export const createPricebookRouter = () =>
         }),
     }),
 
+    // Bulk CSV import for materials. Same contract as importServices: a name collision PATCHES the
+    // existing material rather than skipping the row, and only the keys the sheet actually carries
+    // are written (an absent key leaves the stored value alone).
+    importMaterials: ownerOrOffice
+      .input(importMaterialsInput)
+      .output(importResultDTO)
+      .mutation(async ({ ctx, input }) => {
+        const orgId = ctx.principal.orgId;
+        const materialRepo = new DrizzleMaterialRepository(ctx.tx, orgId);
+        const categoryRepo = new DrizzleCategoryRepository(ctx.tx, orgId);
+        const bands = new DrizzleMarkupBandsRepository(ctx.tx, orgId);
+        const createMaterial = new CreateMaterialUseCase(materialRepo, bands, ctx.deps.clock, ctx.deps.ids);
+        const updateMaterial = new UpdateMaterialUseCase(materialRepo, bands, ctx.deps.clock);
+        const createCategory = new CreateCategoryUseCase(categoryRepo, ctx.deps.clock, ctx.deps.ids);
+
+        // Categories loaded ONCE for the batch, with new ones folded back in, so a chunk sharing
+        // a category name reuses the id instead of creating duplicates (no N+1).
+        const categoryIdByName = new Map<string, string>();
+        for (const category of await new ListCategoriesUseCase(categoryRepo).exec()) {
+          categoryIdByName.set(category.props.name.toLowerCase(), category.props.id);
+        }
+
+        const findMaterialByName = async (name: string) => {
+          const wanted = name.trim().toLowerCase();
+          const candidates = await materialRepo.list(toPage(), { search: name.trim() });
+          return candidates.items.find((m) => m.props.name.toLowerCase() === wanted) ?? null;
+        };
+
+        /**
+         * Overwrite the material this row's name already matches. Only the keys the SHEET carries
+         * are passed — an absent key leaves the stored value alone (Material.patch ignores
+         * undefined), so a cost-only supplier sheet cannot wipe vendors or descriptions.
+         */
+        const patchExistingMaterial = async (
+          row: z.infer<typeof importMaterialRowInput>,
+          categoryName: string | null,
+          categoryId: string | null,
+        ): Promise<{ ok: true } | { ok: false; message: string }> => {
+          const existing = await findMaterialByName(row.name);
+          // The conflict came from somewhere we cannot now find — an archived row, or a
+          // concurrent write. Reported rather than silently doing nothing.
+          if (!existing) return { ok: false, message: `Could not update the existing "${row.name}".` };
+
+          const patched = await updateMaterial.exec(
+            {
+              materialId: existing.props.id,
+              ...(categoryName !== null ? { categoryId } : {}),
+              ...(row.code !== undefined ? { code: row.code } : {}),
+              ...(row.description !== undefined ? { description: row.description } : {}),
+              ...(row.unitCostCents !== undefined ? { unitCostCents: row.unitCostCents } : {}),
+              ...(row.unitPriceCents !== undefined ? { unitPriceCents: row.unitPriceCents } : {}),
+              ...(row.unitOfMeasure !== undefined ? { unitOfMeasure: row.unitOfMeasure } : {}),
+              ...(row.vendor !== undefined ? { vendor: row.vendor } : {}),
+              ...(row.taxable !== undefined ? { taxable: row.taxable } : {}),
+            },
+            orgId,
+          );
+          return isOk(patched) ? { ok: true } : { ok: false, message: patched.error.message };
+        };
+
+        let created = 0;
+        let updated = 0;
+        let failed = 0;
+        const errors: { index: number; message: string }[] = [];
+
+        /**
+         * Find-or-create a category, reusing the batch's map so a chunk sharing a category name
+         * makes one row rather than one per line. Returns undefined when the NAME was present but
+         * could not be created — the caller counts that row failed.
+         */
+        const resolveCategory = async (
+          name: string | null,
+        ): Promise<{ id: string | null } | { error: string }> => {
+          if (!name) return { id: null };
+          const key = name.toLowerCase();
+          const cached = categoryIdByName.get(key);
+          if (cached) return { id: cached };
+          const made = await createCategory.exec({ name }, orgId);
+          if (!isOk(made)) return { error: made.error.message };
+          categoryIdByName.set(key, made.value.props.id);
+          return { id: made.value.props.id };
+        };
+
+        for (let i = 0; i < input.rows.length; i++) {
+          const row = input.rows[i]!;
+
+          const categoryName = row.category?.trim() || null;
+          const category = await resolveCategory(categoryName);
+          if ("error" in category) {
+            failed += 1;
+            errors.push({ index: i, message: category.error });
+            continue;
+          }
+          const categoryId = category.id;
+
+          const result = await createMaterial.exec(
+            {
+              name: row.name,
+              categoryId,
+              code: row.code ?? null,
+              description: row.description ?? null,
+              unitCostCents: row.unitCostCents ?? 0,
+              // Absent price → rule mode, derived from cost by the markup bands. Passing one
+              // flips the material to manual, the same one-gesture override the pricebook offers.
+              ...(row.unitPriceCents !== undefined ? { unitPriceCents: row.unitPriceCents } : {}),
+              ...(row.unitOfMeasure ? { unitOfMeasure: row.unitOfMeasure } : {}),
+              vendor: row.vendor ?? null,
+              taxable: row.taxable,
+            },
+            orgId,
+          );
+
+          if (isOk(result)) {
+            created += 1;
+            continue;
+          }
+
+          if (result.error.kind !== "conflict") {
+            failed += 1;
+            errors.push({ index: i, message: result.error.message });
+            continue;
+          }
+
+          const patched = await patchExistingMaterial(row, categoryName, categoryId);
+          if (patched.ok) {
+            updated += 1;
+          } else {
+            failed += 1;
+            errors.push({ index: i, message: patched.message });
+          }
+        }
+
+        logger.info({ orgId, created, updated, failed }, "pricebook.materials.imported");
+        return { created, updated, deduped: 0, failed, errors };
+      }),
+
     material: router({
+      /** Live material names, lowercased — powers the import confirm step's new/updated split. */
+      importNames: ownerOrOffice
+        .output(z.object({ names: z.array(z.string()) }))
+        .query(async ({ ctx }) => {
+          const repo = new DrizzleMaterialRepository(ctx.tx, ctx.principal.orgId);
+          const names = await repo.allNames();
+          return { names: names.map((n) => n.trim().toLowerCase()) };
+        }),
+
       list: ownerOrOffice
         .input(materialListInput)
         .output(paginatedMaterialDTO)

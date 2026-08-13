@@ -62,6 +62,12 @@ export interface Lead {
   customFields?: { label: string; value: string }[] | null;
   source: string;
   stage: string;
+  /**
+   * Where this customer's WORK has got to — derived server-side, supplied on the LIST read only.
+   * Undefined elsewhere, and deliberately NOT defaulted: a row that has not been through the list
+   * has no group, and inventing one would contradict the chips a moment later.
+   */
+  group?: string;
   age: number;
   job: string;
   /** Prose "what happened last" — prototype sample data and optimistic in-session writes only. */
@@ -463,7 +469,6 @@ export interface Payment {
   amt: number;
   when: string;
   method: string;
-  onFile?: boolean;
 }
 
 export interface Invoice {

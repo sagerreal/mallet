@@ -1,5 +1,5 @@
 import type { AuthProvider, ApiKeyVerifier, TokenVerifier, SignupStore } from "@mallet/identity";
-import type { PaymentLinkGateway, TerminalGateway } from "@mallet/invoicing";
+import type { PaymentLinkGateway, TerminalGateway, CardChargeGateway } from "@mallet/invoicing";
 import type { ConnectGateway } from "@mallet/settings";
 import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender } from "@mallet/notifications";
@@ -26,6 +26,10 @@ export interface AppDeps {
   // absent in tests, null when Stripe is unconfigured — every v1.terminal procedure then answers
   // PRECONDITION_FAILED rather than half-working.
   readonly terminalGateway?: TerminalGateway | null;
+  // Off-session charge of a saved card (charge card on file). Optional-nullable like
+  // voiceTokenIssuer: absent in tests, null when Stripe is unconfigured — both chargeOnFile
+  // procedures then answer PRECONDITION_FAILED rather than half-working.
+  readonly cardChargeGateway?: CardChargeGateway | null;
   // Stripe Connect (Express) onboarding. null when Stripe is unconfigured — onboarding self-disables
   // (payments.beginOnboarding returns PRECONDITION_FAILED).
   readonly connectGateway: ConnectGateway | null;

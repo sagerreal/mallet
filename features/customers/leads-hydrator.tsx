@@ -18,7 +18,7 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
 import { useStoreHydrator } from "@/lib/store/use-store-hydrator";
 import { HYDRATOR_STALE_MS, HYDRATOR_PAGE_LIMIT } from "@/lib/store/hydrator-config";
-import { backendStageToStore } from "@/lib/store/dto-mapper";
+import { backendStageToStore, dtoCardToStore } from "@/lib/store/dto-mapper";
 
 type LeadDTO = RouterOutputs["v1"]["customers"]["list"]["items"][number];
 
@@ -36,6 +36,7 @@ export function toStoreLead(dto: LeadDTO): Lead {
     phone: dto.phone ?? "",
     source: dto.source ?? "",
     stage: backendStageToStore(dto.stage),
+    ...(dto.group ? { group: dto.group } : {}),
     age: daysAgo(dto.createdAt),
     job: "",
     last: "",
@@ -48,6 +49,9 @@ export function toStoreLead(dto: LeadDTO): Lead {
     customFields: dto.customFields ?? undefined,
     notes: dto.notes ?? undefined,
     address: dto.address ?? undefined,
+    // The key is set only when a card exists, so adoptLead's `{ ...prior, ...lead }` merge from
+    // a card-less mutation DTO cannot erase a card the list already delivered.
+    ...(dto.card ? { card: dtoCardToStore(dto.card) } : {}),
     acts: [],
     archived: false,
   };

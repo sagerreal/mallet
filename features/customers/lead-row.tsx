@@ -7,6 +7,7 @@
 "use client";
 
 import type { Lead } from "@/lib/store/types";
+import { LEAD_GROUP_LABELS, type LeadGroup } from "@/modules/customers/infra/lead-views";
 import { StagePill, SrcPill } from "@/components/shared/stage-pill";
 import { ALL_COL_DEFS } from "./customers-columns";
 import { fmt$, agoShort } from "@/lib/format";
@@ -36,7 +37,10 @@ function LeadCell({ lead, col }: LeadCellProps) {
     case "source":
       return <SrcPill src={lead.source} />;
     case "stage":
-      return <StagePill stage={lead.stage} />;
+      // The DERIVED group, never the stored `lead.stage`. That column read "New customer" on every
+      // row of a 678-customer book because nothing maintains it; this is computed from estimates,
+      // visits and invoices and cannot go stale. Falls back only where no list read supplied one.
+      return <StagePill stage={lead.group ? LEAD_GROUP_LABELS[lead.group as LeadGroup] ?? lead.stage : lead.stage} />;
     case "latest":
       return <span className="muted">{agoShort(lead.lastActivityAt)}</span>;
     case "value":

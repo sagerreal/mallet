@@ -524,8 +524,14 @@ interface PayBlockProps {
   onApprove: (args: {
     amt: number;
     method: PayMethod;
-    onFile: boolean;
   }) => Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }>;
+  /**
+   * Charge the card on file — REAL money via Stripe, server-side, always the FULL balance (the
+   * amount box above the methods applies to RECORDED payments only). Resolves ok: false with
+   * Stripe's own decline sentence for payErr to show verbatim. This used to be a recordPayment
+   * with `onFile: true` — a ledger row claiming a charge that never happened; that path is dead.
+   */
+  onChargeOnFile: () => Promise<{ ok: boolean; error?: string }>;
   /** The store's sendInvoice — the card step must SEND a draft before minting. */
   sendInvoice: (id: string) => Promise<{ ok: boolean; error?: string }>;
   /** Which API the card step's mint + poll go to. See CardCheckoutStepProps.surface. */
@@ -557,6 +563,7 @@ function PayBlock({
   invoice,
   lead,
   onApprove,
+  onChargeOnFile,
   sendInvoice,
   surface,
   onCardPaid,
@@ -604,25 +611,21 @@ function PayBlock({
     </>
   );
 
-  // ---- charge card on file → record, jump to done (coPay 'onfile') -----------
+  // ---- charge card on file → REAL Stripe charge, then done (coPay 'onfile') --
+  // The server charges the FULL balance — the amount box applies to recorded methods only, and
+  // the button says so. A decline lands in payErr verbatim (Stripe's own sentence).
   async function chargeOnFile() {
-    if (inFlightRef.current) return; // single-flight — a double tap must not double-record
+    if (inFlightRef.current) return; // single-flight — a double tap must not double-charge
     inFlightRef.current = true;
     setBusy(true);
     setPayErr(null);
     try {
-      const amt = clampAmt(p.amt, due);
-      const res = await onApprove({ amt, method: "card", onFile: true });
+      const res = await onChargeOnFile();
       if (!res.ok) {
-        setPayErr(res.error ?? "Couldn't record the payment — try again.");
+        setPayErr(res.error ?? "Couldn't charge the card — collect another way.");
         return;
       }
-      if (res.alreadyPaid) {
-        // The checkout QR (or an emailed link) already collected the balance.
-        setP({ step: "done", method: "card", amt: due });
-        return;
-      }
-      setP({ step: "done", method: "card", amt, onFile: true });
+      setP({ step: "done", method: "card", amt: due, onFile: true });
     } finally {
       inFlightRef.current = false;
       setBusy(false);
@@ -640,7 +643,7 @@ function PayBlock({
     try {
       const amt = clampAmt(p.amt, due);
       const method = p.method ?? "cash";
-      const res = await onApprove({ amt, method, onFile: false });
+      const res = await onApprove({ amt, method });
       if (!res.ok) {
         setPayErr(res.error ?? "Couldn't record the payment — try again.");
         return;
@@ -781,7 +784,7 @@ function PayBlock({
               {busy ? "Charging…" : <>Charge {card.brand} ···· {card.last4}</>}
             </b>
             <span>
-              {card.via ? "saved from " + card.via + " · " : ""}instant, no tap
+              {card.via ? "saved from " + card.via + " · " : ""}charges the full balance
             </span>
           </button>
         ) : null}
@@ -1084,6 +1087,7 @@ export function CloseOutModalContent() {
   const updateJob = useAppStore((s) => s.updateJob);
   const setJobLines = useAppStore((s) => s.setJobLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
+  const chargeOnFileAction = useAppStore((s) => s.chargeCardOnFile);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
   const setAddonStatus = useAppStore((s) => s.setAddonStatus);
   const setAddonInvSkip = useAppStore((s) => s.setAddonInvSkip);
@@ -1128,9 +1132,40 @@ export function CloseOutModalContent() {
   //      one from the job. Creation runs in an effect (never mutate the store
   //      during render); a ref guards against a duplicate before the new invoice
   //      shows up in `invoices`.
-  const invoice = job
-    ? invoices.find((i) => (invoiceIdParam ? i.id === invoiceIdParam : i.jobId === job.id))
+  /**
+   * The id of the invoice THIS mount created. The job→invoice lookup below rides
+   * `invoice.jobId`, and a mid-flow list refetch can momentarily blank that link — the sweep
+   * caught the effect re-firing off exactly that flap and minting a DUPLICATE invoice, whose
+   * insert then 500s on the number collision and strands the sheet on the generic error. The
+   * id is client-authored (create endpoints preserve it), so it is valid the moment addInvoice
+   * returns; the lookup falls back to it and the effect refuses a second create outright.
+   */
+  const createdInvoiceIdRef = useRef<string | null>(null);
+  /**
+   * The invoice this sheet is ALREADY showing, pinned — id AND object. The lookup can miss
+   * for one render while the collection churns (a list refetch blanks `invoice.jobId`; the
+   * idempotent create path swaps the row's id at adoption), and one missed frame unmounts
+   * the whole pay flow: the sweep watched the card step bounce back to the method picker
+   * mid-mint, and the auto-create effect fire a DUPLICATE into the same gap. A payment
+   * sheet never changes which bill it is collecting, so once a record has resolved, the
+   * last-known record carries any one-frame miss; the store's next render re-resolves it.
+   */
+  const shownInvoiceIdRef = useRef<string | null>(null);
+  const shownInvoiceRef = useRef<Invoice | null>(null);
+  const found = job
+    ? invoices.find((i) =>
+        invoiceIdParam
+          ? i.id === invoiceIdParam
+          : (shownInvoiceIdRef.current != null && i.id === shownInvoiceIdRef.current) ||
+            i.jobId === job.id ||
+            (createdInvoiceIdRef.current != null && i.id === createdInvoiceIdRef.current),
+      )
     : undefined;
+  const invoice = found ?? (job ? (shownInvoiceRef.current ?? undefined) : undefined);
+  if (found) {
+    shownInvoiceIdRef.current = found.id;
+    shownInvoiceRef.current = found;
+  }
   const creatingRef = useRef<string | null>(null);
   // The create's outcome, so this sheet always has something honest to render. It used to
   // return null while `creatingRef` was stamped — and the ref was never cleared, so a create
@@ -1139,16 +1174,27 @@ export function CloseOutModalContent() {
   const [createError, setCreateError] = useState<string | null>(null);
   // Bumped by Retry: clears the guard ref and re-runs the effect below.
   const [createAttempt, setCreateAttempt] = useState(0);
+  // Self-retries burned on the completion race ONLY (see the persisted.then below) — the
+  // user's Retry button resets it, so a genuinely stuck job still gets fresh attempts.
+  const raceRetryRef = useRef(0);
 
   useEffect(() => {
     if (!job || invoice) return;
     // Never raise a bill against a role we have not resolved yet — see roleKnown.
     if (!roleKnown) return;
+    // A FAILED create waits for Retry (which clears this). Without the guard the effect
+    // re-fired the moment the slice rolled the optimistic invoice back, re-running the refused
+    // create forever — `setCreateError(null)` below wiped the error each lap, so the sheet
+    // showed endless skeleton bars and a toast per lap instead of its named error + Retry.
+    // The platform sweep's "stuck skeleton" finding, verbatim.
+    if (createError) return;
     // The visit-fee flow already raised (or is still raising) this job's invoice — never race
     // it with createFromJob, which would CONFLICT outright on a genuinely unpriced estimate
     // and, even when it wouldn't, would mint a SECOND invoice fighting the lead-tied one.
     if (invoiceIdParam) return;
     if (creatingRef.current === job.id) return;
+    // One create per mount, full stop — see createdInvoiceIdRef.
+    if (createdInvoiceIdRef.current) return;
     creatingRef.current = job.id;
     setCreateError(null);
     // The optimistic figure is the BILLED figure. This draw used to carry `jobTotal(job)` — the
@@ -1158,7 +1204,7 @@ export function CloseOutModalContent() {
     // bills with (CreateInvoiceFromJobUseCase), so the number never changes on reconcile.
     // The one client-underivable figure — an estimate's deposit credit — is gated below instead.
     const optimistic = jobPricedTotals(job);
-    const { persisted } = addInvoice(
+    const { invoice: created, persisted } = addInvoice(
       {
         jobId: job.id,
         leadId: job.leadId,
@@ -1183,14 +1229,31 @@ export function CloseOutModalContent() {
     );
     // Never rejects (the slice resolves { ok, error }). Clearing the guard on BOTH outcomes is
     // what makes Retry possible at all.
+    createdInvoiceIdRef.current = created.id;
     void persisted.then(({ ok, error }) => {
       creatingRef.current = null;
-      if (!ok) setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
+      if (ok) return;
+      // The create did NOT stick — release the one-per-mount guard so a retry can run.
+      createdInvoiceIdRef.current = null;
+      // THE TWO RACES THIS SHEET CAN LOSE FOR MILLISECONDS, retried on a short fuse:
+      //  - "job must be complete…": opened straight off "Finish job →", the raise reaches the
+      //    server before the complete write commits. Machine-speed taps hit it every time; a
+      //    fast human on good Wi-Fi eventually will.
+      //  - "an invoice already exists…": a duplicated create loses to its twin, and inside its
+      //    own tx snapshot cannot SEE the winner to return it — the refetch a moment later can.
+      // Anything else (or a race that outlives the retries) surfaces as the named error + Retry.
+      if (/must be complete|already exists/i.test(error ?? "") && raceRetryRef.current < 5) {
+        raceRetryRef.current += 1;
+        setTimeout(() => setCreateAttempt((n) => n + 1), 1_200);
+        return;
+      }
+      setCreateError(error ?? "Couldn't raise the invoice — check your connection and try again.");
     });
-  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface, roleKnown]);
+  }, [job, invoice, lead, addInvoice, invoiceIdParam, createAttempt, surface, roleKnown, createError]);
 
   const retryCreate = useCallback(() => {
     creatingRef.current = null;
+    raceRetryRef.current = 0;
     setCreateError(null);
     setCreateAttempt((n) => n + 1);
   }, []);
@@ -1347,11 +1410,9 @@ export function CloseOutModalContent() {
   async function approvePayment({
     amt,
     method,
-    onFile,
   }: {
     amt: number;
     method: PayMethod;
-    onFile: boolean;
   }): Promise<{ ok: boolean; error?: string; alreadyPaid?: boolean }> {
     if (!invoice) return { ok: false, error: "invoice not found" };
     // The server's answer outranks the store's for the send decision below: a store row
@@ -1384,17 +1445,45 @@ export function CloseOutModalContent() {
     //    `=> void`, so a server refusal (invoice voided, paid concurrently, offline, amount
     //    race) rolled the store back behind an "Approved · $1,000" screen the tech had already
     //    read out to the customer. The slice now resolves the server's real answer.
-    const recorded = await recordPayment(invoice.id, { amt, when: "Just now", method, onFile }, surface);
+    const recorded = await recordPayment(invoice.id, { amt, when: "Just now", method }, surface);
     if (!recorded.ok) {
       return {
         ok: false,
         error: recorded.error ?? "Couldn't record the payment — check your connection and try again.",
       };
     }
-    // A card on file is NOT recorded here. This used to write a hardcoded
-    // { brand: "Visa", last4: "4242" } onto the customer — fabricated payment data shown back as
-    // a real card. Saving a card is Stripe Connect's job; until it exists, record nothing.
     return { ok: true };
+  }
+
+  // ---- charge the card on file (real Stripe charge — never a record) ---------
+  // The slice action holds every rule (no optimistic write, per-attempt key); this only re-runs
+  // the same draft-send ordering approvePayment uses, because the server refuses to charge a
+  // draft and the invoice this sheet raised on mount may still be one.
+  async function chargeCardOnFile(): Promise<{ ok: boolean; error?: string }> {
+    if (!invoice) return { ok: false, error: "invoice not found" };
+    let liveStatus = invoice.status;
+    if (invoice.origin === "db") {
+      try {
+        const fresh = await readInvoice(surface, invoice.id, invoice);
+        if (fresh.status === "paid") {
+          adoptPaidInvoice(fresh);
+          return { ok: true };
+        }
+        liveStatus = fresh.status;
+      } catch {
+        // Unreadable (offline blip) — proceed; the server remains the final guard.
+      }
+    }
+    if (liveStatus === "draft") {
+      const sent = await sendInvoice(invoice.id, surface);
+      if (!sent.ok) {
+        return {
+          ok: false,
+          error: sent.error ?? "Couldn't send the invoice — check your connection and try again.",
+        };
+      }
+    }
+    return chargeOnFileAction(invoice.id, surface);
   }
 
   // ---- a checkout payment landed (card-step poll, or the pre-record check) ---
@@ -1487,6 +1576,7 @@ export function CloseOutModalContent() {
             invoice={invoice}
             lead={lead}
             onApprove={approvePayment}
+            onChargeOnFile={chargeCardOnFile}
             sendInvoice={(id) => sendInvoice(id, surface)}
             surface={surface}
             onCardPaid={adoptPaidInvoice}

@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { companies } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
@@ -60,6 +60,24 @@ export class DrizzleCompanyRepository implements CompanyRepository {
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
+  }
+
+  async findByNames(names: readonly string[]): Promise<Company[]> {
+    // Compare on lower(name) so "Acme Property" and "ACME PROPERTY" are one account. Deduped
+    // first so a chunk repeating a name doesn't inflate the IN list.
+    const wanted = [...new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean))];
+    if (wanted.length === 0) return [];
+    const rows = await this.tx
+      .select()
+      .from(companies)
+      .where(
+        and(
+          eq(companies.orgId, this.orgId),
+          inArray(sql`lower(${companies.name})`, wanted),
+          isNull(companies.deletedAt),
+        ),
+      );
+    return rows.map(toDomain);
   }
 
   async list(page: CursorPage): Promise<Paginated<Company>> {

@@ -33,6 +33,7 @@ import { TapToPayCard } from "./tap-to-pay-card";
 import { QuickbooksCard } from "./quickbooks-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { TimezoneCard } from "./timezone-card";
+import { ImportCard } from "./import-card";
 import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
@@ -76,6 +77,9 @@ function SecWorkspace() {
       <SalesTaxCard />
       <A2pRegistrationCard />
       <TimezoneCard />
+      {/* Last in Workspace: a shop reads this card ONCE, on the day it moves in, and never again.
+          Everything above it is a setting that gets revisited. */}
+      <ImportCard />
     </>
   );
 }

@@ -130,14 +130,55 @@ export function sendInvoiceDocument(invoiceId: string): Promise<{ channel: "sms"
   return trpcVanilla.v1.fieldInvoicing.sendDocument.mutate({ invoiceId });
 }
 
+/**
+ * Charge the customer's card on file — REAL money via Stripe, server-side, for the FULL balance.
+ *
+ * No amount argument, deliberately: both endpoints charge the balance due as the server reads it
+ * under the row lock, so a stale device cannot pick the figure. The idempotency key namespaces
+ * the Stripe attempt (the ledger keys itself on the resulting payment intent), and the caller
+ * mints it per attempt — a retry of the SAME attempt may reuse it safely, a new attempt after a
+ * decline must not (Stripe caches the response, decline included, under the key for 24h).
+ *
+ * A decline rejects with CONFLICT carrying Stripe's own customer-facing sentence — the caller
+ * surfaces it verbatim (userMessage passes CONFLICT through), never as a connection error.
+ */
+export function persistChargeOnFile(
+  surface: InvoiceWriteSurface,
+  args: { invoiceId: string; idempotencyKey: string },
+  prior: Invoice,
+): Promise<Invoice> {
+  return onField(surface)
+    ? trpcVanilla.v1.fieldInvoicing.chargeOnFile
+        .mutate(args)
+        .then((dto) => dtoFieldInvoiceToStore(dto, prior))
+    : trpcVanilla.v1.invoicing.chargeOnFile.mutate(args).then((dto) => dtoInvoiceToStore(dto, prior));
+}
+
 /** Mint the Stripe checkout the customer scans. Charges the FULL balance on both surfaces. */
 export function mintCheckoutSession(
   surface: InvoiceWriteSurface,
   invoiceId: string,
-): Promise<{ url: string }> {
+): Promise<{ url: string; sessionId: string }> {
   return onField(surface)
     ? trpcVanilla.v1.fieldInvoicing.createPayment.mutate({ invoiceId })
     : trpcVanilla.v1.invoicing.createPayment.mutate({ invoiceId });
+}
+
+/**
+ * Settle the session THIS device minted: the server retrieves it from Stripe and, if paid,
+ * records the payment through the same idempotent path as the webhook and the success page.
+ * The QR flow's poll calls this — the customer pays on THEIR phone and closes Stripe's tab,
+ * so neither the webhook (needs configuration) nor the success redirect (needs their browser)
+ * can be the only recorders.
+ */
+export function reconcileCheckout(
+  surface: InvoiceWriteSurface,
+  invoiceId: string,
+  sessionId: string,
+): Promise<{ recorded: boolean }> {
+  return onField(surface)
+    ? trpcVanilla.v1.fieldInvoicing.reconcileCheckout.mutate({ invoiceId, sessionId })
+    : trpcVanilla.v1.invoicing.reconcileCheckout.mutate({ invoiceId, sessionId });
 }
 
 /**

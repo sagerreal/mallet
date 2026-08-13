@@ -1,8 +1,12 @@
 /**
  * features/customers/customers-toolbar.tsx
- * The Customers toolbar — the Active/Archived set toggle + search + Filters +
- * Columns, matching the Jobs toolbar. The toggle picks which SET you're viewing;
- * the Status/Source filters narrow within it. Pure presentational.
+ * The Customers toolbar — the Active/Archived set toggle + search. The toggle picks which SET
+ * you're viewing; the work-group chips beneath it (customers-group-filter) narrow within it.
+ * Pure presentational.
+ *
+ * Filters and Columns are gone. Filters opened a Stage/Source/Worklist panel whose main control
+ * filtered `leads.stage`, a stored word that had decayed to "New customer" on every row; Columns
+ * let you toggle a set that is now fixed. One chip row replaced both.
  */
 
 "use client";
@@ -16,19 +20,12 @@ interface ToolbarProps {
   onArchiveSet: (v: CustomerArchiveSet) => void;
   q: string;
   onQ: (v: string) => void;
-  filtersOpen: boolean;
-  onToggleFilters: () => void;
-  colsOpen: boolean;
-  onToggleCols: () => void;
-  activeFilterCount: number;
   total: number;
   filtered: number;
   /** True while the caller's backing list is on its first load — the count renders as a skeleton. */
   countsLoading?: boolean;
   /** Search input placeholder (differs for People vs Companies). */
   searchPlaceholder?: string;
-  /** Filters/Columns only apply to the People table — hidden for Companies. */
-  showControls?: boolean;
 }
 
 export function CustomersToolbar({
@@ -36,16 +33,10 @@ export function CustomersToolbar({
   onArchiveSet,
   q,
   onQ,
-  filtersOpen,
-  onToggleFilters,
-  colsOpen,
-  onToggleCols,
-  activeFilterCount,
   total,
   filtered,
   countsLoading = false,
-  searchPlaceholder = "Search name, phone, job, email…",
-  showControls = true,
+  searchPlaceholder = "Search name, address, phone, email…",
 }: ToolbarProps) {
   return (
     <div className="toolbar">
@@ -68,25 +59,6 @@ export function CustomersToolbar({
           onChange={(e) => onQ(e.target.value)}
         />
       </div>
-      {showControls && (
-        <>
-          <button
-            className={`btn${filtersOpen || activeFilterCount > 0 ? "" : " ghost"}`}
-            aria-expanded={filtersOpen}
-            onClick={onToggleFilters}
-          >
-            Filters
-            {activeFilterCount > 0 && (
-              <span className="pill amber" style={{ marginLeft: "var(--space-1)" }}>
-                {activeFilterCount}
-              </span>
-            )}
-          </button>
-          <button className="btn ghost cols-btn" aria-expanded={colsOpen} onClick={onToggleCols}>
-            Columns ▾
-          </button>
-        </>
-      )}
       <span className="muted" style={{ marginLeft: "auto" }}>
         {/* countsLoading: the caller's list hasn't hydrated — "0 of 0" would be a false count. */}
         {countsLoading ? (

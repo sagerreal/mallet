@@ -19,15 +19,21 @@ import { DrizzleEstimateDepositReader } from "../infra/drizzle-estimate-deposit-
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
 import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { ManualPaymentGateway } from "../infra/manual-payment-gateway";
+import { DrizzlePaymentProfileStore } from "../infra/drizzle-payment-profile-store";
 import { DraftInvoiceUseCase } from "../app/draft-invoice";
 import { CreateInvoiceFromJobUseCase } from "../app/create-invoice-from-job";
 import { CreatePaymentUseCase } from "../app/create-payment";
+import { ChargeCardOnFileUseCase } from "../app/charge-card-on-file";
+import { RecordCardPaymentUseCase } from "../app/record-card-payment";
 import { SendInvoiceUseCase } from "../app/send-invoice";
 import { RecordPaymentUseCase } from "../app/record-payment";
 import { VoidInvoiceUseCase } from "../app/void-invoice";
 import { ListInvoicesUseCase } from "../app/list-invoices";
 import { UpdateInvoiceMetadataUseCase } from "../app/update-invoice-metadata";
 import { PatchInvoiceLinesUseCase } from "../app/patch-invoice-lines";
+import { reconcileCheckoutSession } from "../app/reconcile-checkout";
+import { getSharedStripeClient } from "@mallet/platform/adapters/stripe/stripe-client";
+import { logger } from "@mallet/shared/observability";
 
 const statusEnum = z.enum(INVOICE_STATUSES as unknown as [InvoiceStatus, ...InvoiceStatus[]]);
 const viewEnum = z.enum(INVOICE_VIEWS);
@@ -562,11 +568,50 @@ export const createInvoiceRouter = () =>
         );
       }),
 
+    /**
+     * Charge the customer's card on file for the FULL balance — real money via Stripe, or a loud
+     * refusal; NEVER a ledger row without a charge behind it (the hazard the old client-side
+     * "record a card payment with onFile: true" path used to be).
+     *
+     * The AMOUNT IS NOT AN INPUT — the server charges the balance due, exactly like createPayment
+     * mints for it. The idempotency key namespaces the STRIPE attempt (invoice + acting user +
+     * client key), so a dropped-answer retry replays the same settled intent and the ledger —
+     * keyed on the pi_… id by RecordCardPaymentUseCase — takes the money exactly once. A decline
+     * comes back as CONFLICT carrying Stripe's own sentence, for the caller to surface verbatim.
+     */
+    chargeOnFile: ownerOrOffice
+      .input(z.object({ invoiceId: z.string().uuid(), idempotencyKey: z.string().min(8).max(200) }))
+      .output(invoiceDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.cardChargeGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        const invoiceId = asInvoiceId(input.invoiceId);
+        const useCase = new ChargeCardOnFileUseCase(
+          repo,
+          new DrizzlePaymentProfileStore(ctx.tx, ctx.principal.orgId),
+          ctx.deps.cardChargeGateway,
+          new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId),
+          new RecordCardPaymentUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids),
+        );
+        const r = orThrow(
+          await useCase.exec({
+            orgId: ctx.principal.orgId,
+            invoiceId,
+            idempotencyKey: `onfile:${ctx.principal.orgId}:${invoiceId}:${ctx.principal.userId}:${input.idempotencyKey}`,
+            // From the principal, never from input — same law as recordPayment's attribution.
+            chargedByUserId: ctx.principal.userId,
+          }),
+        );
+        return toInvoiceDTOWithAuth(r.invoice, ctx.tx, ctx.principal.orgId);
+      }),
+
     // Create a Stripe-hosted payment link for the invoice balance (returns the URL to send the
     // customer). Disabled with PRECONDITION_FAILED when Stripe is not configured.
     createPayment: ownerOrOffice
       .input(idInput)
-      .output(z.object({ url: z.string().url() }))
+      .output(z.object({ url: z.string().url(), sessionId: z.string() }))
       .mutation(async ({ ctx, input }) => {
         if (!ctx.deps.paymentLinkGateway) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
@@ -577,7 +622,56 @@ export const createInvoiceRouter = () =>
         const result = orThrow(
           await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: asInvoiceId(input.invoiceId) }),
         );
-        return { url: result.url };
+        return { url: result.url, sessionId: result.sessionId };
+      }),
+
+    /**
+     * Reconcile a checkout session THIS DEVICE minted — retrieve it from Stripe and, if paid,
+     * record the payment through the same idempotent path as the webhook and the success page.
+     *
+     * WHY A THIRD RECORDER: the webhook needs configuration to exist, and the success page needs
+     * the CUSTOMER's browser to complete the redirect — in the QR flow they pay on their own
+     * phone and close the tab at Stripe's success screen, which is exactly what the platform
+     * sweep did: session `complete/paid` on Stripe, invoice still `sent`, $0 recorded. The open
+     * payment sheet polls this instead of a passive read, so the device showing the QR settles
+     * the books itself. Idempotency keys on the payment_intent id, so whichever recorder lands
+     * second is a no-op.
+     */
+    reconcileCheckout: ownerOrOffice
+      .input(z.object({ invoiceId: z.string().uuid(), sessionId: z.string().min(10).max(200) }))
+      .output(z.object({ recorded: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const config = loadConfig();
+        if (!config.STRIPE_SECRET_KEY) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
+        }
+        const client = getSharedStripeClient(config.STRIPE_SECRET_KEY);
+        const orgId = ctx.principal.orgId;
+        const outcome = await reconcileCheckoutSession(input.sessionId, {
+          retrieveSession: (id) => client.retrieveCheckoutSession(id),
+          recordPayment: async (metaOrgId, invoiceId, amountCents, paymentIntentId) => {
+            // The session's own metadata names the org and invoice it was minted for. An authed
+            // caller may only settle THEIR org's session onto the invoice they named — anything
+            // else is a session id fished out of another tenant.
+            if (metaOrgId !== orgId || invoiceId !== input.invoiceId) {
+              throw new TRPCError({ code: "NOT_FOUND", message: "invoice not found" });
+            }
+            const repo = new DrizzleInvoiceRepository(ctx.tx, orgId);
+            const useCase = new RecordCardPaymentUseCase(repo, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+            orThrow(
+              await useCase.exec({
+                orgId,
+                invoiceId: asInvoiceId(invoiceId),
+                amountCents,
+                paymentIntentId,
+              }),
+            );
+          },
+          // Deposit sessions belong to the QUOTE flow — this endpoint settles invoices only.
+          recordDeposit: async () => false,
+          log: (message, logCtx) => logger.warn(logCtx ?? {}, message),
+        });
+        return { recorded: outcome.recorded };
       }),
 
     get: ownerOrOffice

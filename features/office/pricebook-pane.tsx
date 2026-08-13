@@ -180,8 +180,15 @@ export function PricebookPane() {
                 )}
               </div>
               <span className="sp" />
+              {/* Segment-aware: the button imports whatever the shop is currently looking at,
+                  so it never lands rows in the tab they cannot see. */}
               {canSeeCost && pbSeg === "services" && (
                 <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_SERVICES)}>
+                  Import CSV
+                </button>
+              )}
+              {canSeeCost && pbSeg === "materials" && (
+                <button className="btn sm ghost" onClick={() => openModal(MODAL.IMPORT_MATERIALS)}>
                   Import CSV
                 </button>
               )}

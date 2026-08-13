@@ -314,6 +314,45 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     return Number(rows[0]!.n);
   };
 
+  it("stamps the job's bill onto the field agenda so the card can say Paid without opening the sheet", async () => {
+    const paidJobId = await finishedJobWithBill("paid", 40000);
+    const unbilledJobId = await finishedJobWithBill(null, 0);
+    // The helper leaves jobs.completed_at NULL (its return-trip consumers never list) — myDay's
+    // complete-inside-today window needs the stamp to include finished work at all.
+    await admin`update jobs set completed_at = now() where id in (${paidJobId}, ${unbilledJobId})`;
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+
+    const day = await caller.v1.field.myDay(TODAY);
+    const paidItem = day.items.find((i) => i.id === paidJobId);
+    const unbilledItem = day.items.find((i) => i.id === unbilledJobId);
+    expect(paidItem?.bill).toMatchObject({ status: "paid", amountPaid: { cents: 40000 } });
+    expect(unbilledItem?.bill).toBeNull();
+    // The card's who-is-this-for line — resolved from the same customers read the call bar uses.
+    // It was left null on the field path, so the line never rendered.
+    expect(paidItem?.customerName).toBe("Field Test Customer");
+  });
+
+  it("keeps bill STATUS but nulls the paid AMOUNT for a price-blind tech", async () => {
+    const paidJobId = await finishedJobWithBill("paid", 40000);
+    await admin`update jobs set completed_at = now() where id = ${paidJobId}`;
+    // Upsert — the suite org has no org_settings row until something writes one, and a bare
+    // UPDATE would no-op into a false pass the other way.
+    await admin`
+      insert into org_settings (org_id, tech_sees_price, booking)
+      values (${orgId}, false, '{"services": [], "notServices": "", "serviceFee": 0, "feeCredited": false}'::jsonb)
+      on conflict (org_id) do update set tech_sees_price = false`;
+    try {
+      const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      const day = await caller.v1.field.myDay(TODAY);
+      const item = day.items.find((i) => i.id === paidJobId);
+      // Paid is a FACT about the job; the figure is a price and follows techSeesPrice.
+      expect(item?.bill?.status).toBe("paid");
+      expect(item?.bill?.amountPaid).toBeNull();
+    } finally {
+      await admin`update org_settings set tech_sees_price = true where org_id = ${orgId}`;
+    }
+  });
+
   it("REFUSES the return trip on a finished job whose bill is PAID, and changes nothing", async () => {
     const jobId = await finishedJobWithBill("paid", 40000);
     const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
@@ -479,6 +518,116 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     } finally {
       await admin`delete from jobs where id in (${jobLater!.id}, ${jobEarlier!.id}, ${jobUnplaced!.id})`;
       await admin`delete from users where id = ${orderTechId}`;
+    }
+  });
+
+  // ── v1.field.day — the day pager's read: one named day of the caller's route ──────
+
+  it("day returns exactly the visits dated that day — complete ones kept, other days and unplaced work excluded", async () => {
+    const [dayTech] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${orgId}, ${randomUUID()}, 'daytech@field.test', 'tech')
+      returning id
+    `;
+    const dayTechId = dayTech!.id;
+    // A near date inside the pager bound, phrased from the DB's own clock so the test never
+    // straddles the suite's runtime day.
+    const [dayRow] = await admin<{ day: string }[]>`
+      select to_char(current_date + 2, 'YYYY-MM-DD') as day
+    `;
+    const day = dayRow!.day;
+    const [otherDayRow] = await admin<{ day: string }[]>`
+      select to_char(current_date + 3, 'YYYY-MM-DD') as day
+    `;
+    const otherDay = otherDayRow!.day;
+
+    const seedJob = async (num: string): Promise<string> => {
+      const [row] = await admin<{ id: string }[]>`
+        insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+        values (${orgId}, ${leadId}, ${num}, 'scheduled', 0, ${dayTechId})
+        returning id
+      `;
+      return row!.id;
+    };
+    // Inserted afternoon-first so insert order disagrees with the clock; the worked (complete)
+    // stop must keep its slot at the head of the day.
+    const jobAfternoon = await seedJob("JOB-DAY-PM");
+    const jobWorked = await seedJob("JOB-DAY-DONE");
+    const jobOtherDay = await seedJob("JOB-DAY-OTHER");
+    const jobUnplaced = await seedJob("JOB-DAY-UNPLACED");
+    // A called-off job whose dated visit nobody canceled — Job.cancel() does not touch visits.
+    // The route must not offer it as a stop.
+    const [canceledRow] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-DAY-CANCELED', 'canceled', 0, ${dayTechId})
+      returning id
+    `;
+    const jobCanceled = canceledRow!.id;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobAfternoon}, 'pending', 1, ${day}::date, '14:00')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobWorked}, 'complete', 1, ${day}::date, '08:00')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobOtherDay}, 'pending', 1, ${otherDay}::date, '09:00')
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position)
+      values (${orgId}, ${jobUnplaced}, 'pending', 1)
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${jobCanceled}, 'pending', 1, ${day}::date, '11:00')
+    `;
+
+    try {
+      const caller = appRouter.createCaller(ctxFor(dayTechId, orgId, "tech"));
+      const result = await caller.v1.field.day({ date: day });
+      expect(result.items.map((i) => i.id)).toEqual([jobWorked, jobAfternoon]);
+      // The customers behind the page ride along, same as myDay — the call bar needs a name.
+      expect(result.customers.map((c) => c.id)).toContain(leadId);
+
+      // The same read a day over holds only that day's stop.
+      const other = await caller.v1.field.day({ date: otherDay });
+      expect(other.items.map((i) => i.id)).toEqual([jobOtherDay]);
+    } finally {
+      await admin`delete from jobs where id in (${jobAfternoon}, ${jobWorked}, ${jobOtherDay}, ${jobUnplaced}, ${jobCanceled})`;
+      await admin`delete from users where id = ${dayTechId}`;
+    }
+  });
+
+  it("day refuses a date past the pager bound instead of scanning history", async () => {
+    const caller = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+    await expect(caller.v1.field.day({ date: "2020-01-01" })).rejects.toMatchObject({
+      code: "BAD_REQUEST",
+    });
+  });
+
+  it("day is assignee-scoped: another tech's visit on that day is not my route", async () => {
+    const [dayRow] = await admin<{ day: string }[]>`
+      select to_char(current_date + 2, 'YYYY-MM-DD') as day
+    `;
+    const day = dayRow!.day;
+    // techB holds a visit on the asked day; techA asks.
+    const [job] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, 'JOB-DAY-THEIRS', 'scheduled', 0, ${techBId})
+      returning id
+    `;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start)
+      values (${orgId}, ${job!.id}, 'pending', 1, ${day}::date, '10:00')
+    `;
+    try {
+      const callerA = appRouter.createCaller(ctxFor(techAId, orgId, "tech"));
+      const mine = await callerA.v1.field.day({ date: day });
+      expect(mine.items.map((i) => i.id)).not.toContain(job!.id);
+    } finally {
+      await admin`delete from jobs where id = ${job!.id}`;
     }
   });
 

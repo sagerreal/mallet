@@ -33,12 +33,22 @@ const COPY: ImportModalCopy = {
   skipReason: "no name",
   importLabel: (n) => `Import ${n} service${n === 1 ? "" : "s"}`,
   doneHeadline: (created) => `${created} service${created === 1 ? "" : "s"} added`,
+  // A service that already exists is now PATCHED rather than skipped, so this never fires for
+  // this entity — the done card reports "N updated" instead. Kept for the shared contract.
   dedupedLabel: (n) => `${n} already in your book`,
 };
 
 export function ImportServicesModalContent() {
   const utils = api.useUtils();
   const importMut = api.v1.pricebook.importServices.useMutation();
+  // Names of what the shop already has, so the confirm step can say how many rows OVERWRITE
+  // rather than add. Fetched once when the modal opens; a re-import is rare enough that this
+  // doesn't need to be live.
+  const existing = api.v1.pricebook.service.importNames.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+
+  const existingNames = new Set(existing.data?.names ?? []);
 
   return (
     <ImportModal
@@ -48,7 +58,16 @@ export function ImportServicesModalContent() {
       sendChunk={(rows: BuiltRow[]) =>
         importMut.mutateAsync({ rows: rows as unknown as ServiceImportRow[] })
       }
-      onChunkDone={() => utils.v1.pricebook.service.list.invalidate()}
+      onChunkDone={async () => {
+        await utils.v1.pricebook.service.list.invalidate();
+        // The name set is now stale — a second import in the same session must count against
+        // what exists NOW, not what existed when the modal opened.
+        await utils.v1.pricebook.service.importNames.invalidate();
+      }}
+      // Same rule the server applies: exact name, case-insensitive.
+      countUpdates={(rows) =>
+        rows.filter((r) => existingNames.has(String(r.name ?? "").trim().toLowerCase())).length
+      }
     />
   );
 }

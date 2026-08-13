@@ -29,6 +29,13 @@ export interface ServiceRepository {
     page: CursorPage,
     filter: { search?: string; categoryId?: string | null },
   ): Promise<Paginated<Service>>;
+  /**
+   * Every live service name, unpaginated. For the import confirm step, which has to tell a shop
+   * how many rows will OVERWRITE an existing service before it writes any of them. Names only —
+   * the question is answered by string comparison, and the full DTO for a large book is a lot of
+   * payload for that.
+   */
+  allNames(): Promise<string[]>;
 
   save(service: Service): Promise<void>;
 

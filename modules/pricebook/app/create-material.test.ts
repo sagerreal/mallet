@@ -86,6 +86,10 @@ class FakeMaterialRepository implements MaterialRepository {
     return this.store.get(id) ?? null;
   }
 
+  async allNames(): Promise<string[]> {
+    return [...this.store.values()].map((m) => m.props.name);
+  }
+
   async list(
     _page: CursorPage,
     filter: { search?: string; categoryId?: string | null },

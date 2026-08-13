@@ -1,5 +1,5 @@
 import type { LeadSort } from "../infra/lead-sorts";
-import type { LeadView, LeadScope } from "../infra/lead-views";
+import type { LeadView, LeadScope, LeadGroup } from "../infra/lead-views";
 import type { LeadId, CompanyId, Phone, CursorPage, Paginated } from "@mallet/shared/types";
 import type { Lead, LeadStage } from "./lead";
 
@@ -34,6 +34,8 @@ export interface LeadFilter {
    * board's mutually-exclusive columns, these are questions, and a customer can match both.
    */
   readonly scope?: LeadScope;
+  /** One work group — where this customer's WORK has got to. Mutually exclusive; see LEAD_GROUPS. */
+  readonly group?: LeadGroup;
   readonly stage?: LeadStage;
   readonly unreadOnly?: boolean;
 }
@@ -52,6 +54,15 @@ export interface LeadRepository {
    * the user as "check your connection".
    */
   findByPhone(phone: Phone): Promise<Lead | null>;
+  /**
+   * Live leads whose name matches any of `names`, case-insensitively, in ONE read.
+   *
+   * Exists for bulk import, where a job row names its customer instead of carrying an id. Matching
+   * per row would be an N+1 across a 500-row chunk, so the whole chunk's names are resolved at
+   * once. Returns EVERY match, including duplicates: a name is not a key, and the caller has to be
+   * able to SEE that two customers share one before deciding what to do about it.
+   */
+  findByNames(names: readonly string[]): Promise<Lead[]>;
   list(page: CursorPage, filter?: LeadFilter, sort?: LeadSort, sortDir?: "asc" | "desc"): Promise<Paginated<Lead>>;
 
   /** How many leads match the filter, ignoring pagination. Same predicates as list(). */

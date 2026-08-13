@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { parseCheckoutMetadata, isDepositMetadata } from "./checkout-metadata";
+import type { CaptureCardArgs } from "./capture-card-on-file";
 
 export interface StripeWebhookDeps {
   // Records the settled card payment (org resolved from event metadata) via withTenant + the
@@ -22,6 +23,12 @@ export interface StripeWebhookDeps {
     amountCents: number,
     paymentRef: string,
   ) => Promise<boolean>;
+  /**
+   * Stores the card this payment saved as the customer's card on file (captureCardOnFile). The
+   * implementation NEVER throws — the money above is already recorded, and no card fact may turn
+   * a settled payment into a webhook 500. Optional so existing callers/tests are untouched.
+   */
+  captureCard?: (args: CaptureCardArgs) => Promise<unknown>;
   log: (message: string, ctx?: Record<string, unknown>) => void;
 }
 
@@ -84,6 +91,13 @@ export const processStripeEvent = async (
         amountCents,
       });
     }
+    // The customer paid with THIS card whatever the ledger said about the estimate, so the
+    // card-on-file capture runs either way. Never throws (see the dep contract).
+    await deps.captureCard?.({
+      orgId: metadata.value.orgId,
+      subject: { kind: "deposit", estimateId: metadata.value.estimateId },
+      paymentIntentId,
+    });
     return { status: 200 };
   }
 
@@ -93,5 +107,12 @@ export const processStripeEvent = async (
   }
 
   await deps.record(metadata.value.orgId, metadata.value.invoiceId, amountCents, paymentIntentId);
+  // AFTER the record: money first, card fact second. A record() throw above skips this and the
+  // route answers 500 — Stripe's redelivery retries both halves.
+  await deps.captureCard?.({
+    orgId: metadata.value.orgId,
+    subject: { kind: "payment", invoiceId: metadata.value.invoiceId },
+    paymentIntentId,
+  });
   return { status: 200 };
 };

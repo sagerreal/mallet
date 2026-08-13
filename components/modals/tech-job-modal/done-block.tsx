@@ -48,6 +48,11 @@ export interface DoneBlockProps {
    * False hides "Set a bill & take payment", which would otherwise open a sheet with no builder.
    */
   canSetBill?: boolean;
+  /**
+   * The last charge-on-file refusal, verbatim (Stripe's own decline sentence), shown on the
+   * due+card branch — the card the foot's Charge button belongs to. Null between attempts.
+   */
+  chargeError?: string | null;
 }
 
 // DoneBlock uses a custom comparator — it only reads job.invRequested and job.lines
@@ -58,6 +63,7 @@ export function doneBlockPropsEqual(a: DoneBlockProps, b: DoneBlockProps): boole
     a.onOpenInvoice === b.onOpenInvoice &&
     a.onChargeOnFile === b.onChargeOnFile &&
     a.canSetBill === b.canSetBill &&
+    a.chargeError === b.chargeError &&
     a.lead === b.lead &&
     a.invoice === b.invoice &&
     a.job.invRequested === b.job.invRequested &&
@@ -195,6 +201,7 @@ function DoneBlockFn({
   onOpenCloseOut,
   onOpenInvoice,
   canSetBill = true,
+  chargeError = null,
 }: DoneBlockProps) {
   // a draft invoice may already exist (opened pay then backed out) — that must
   // NOT remove the send-to-office option; due is read off it when present.
@@ -239,11 +246,12 @@ function DoneBlockFn({
   // Due + card on file — the CHARGE lives in the sheet foot; the one quiet peer here is the
   // OTHER way to get paid, not another route out of getting paid.
   //
-  // DEAD FOR A TECHNICIAN BY CONSTRUCTION, and deliberately so: the field customer DTO is
-  // {id, name, phone} only (modules/jobs/api/field-router.ts — "a technician has no business
-  // holding a customer's value"), so `lead.card` is never populated on that surface and this
-  // branch is unreachable there. Techs get QR checkout / cash / check / bank instead. Written down
-  // so nobody later "fixes" the gap by threading a card onto the field DTO.
+  // LIVE FOR AN ASSIGNED TECHNICIAN since the card-on-file build: the field customer DTO now
+  // carries the PRESENTATIONAL card facts (brand/last4/via — modules/jobs/api/field-router.ts),
+  // and the foot's charge runs `v1.fieldInvoicing.chargeOnFile` — a REAL Stripe charge,
+  // assignment-gated server-side, full balance, never a caller amount. `chargeError` is the
+  // decline surface: Stripe's own sentence, shown where the button was tapped (the old silent
+  // fire-and-forget rollback is exactly what a card refusal must never be).
   if (due > 0 && card) {
     return (
       <div className="tjpaid">
@@ -251,6 +259,11 @@ function DoneBlockFn({
           <b>✓ Job done</b>
           <span className="tjpaid-amt fig">{fmt$(due)}</span>
         </div>
+        {chargeError ? (
+          <div className="tjpaid-sub" role="alert" style={{ color: "var(--red)" }}>
+            {chargeError}
+          </div>
+        ) : null}
         <button className="tjpaid-btn2" onClick={onOpenCloseOut}>
           Take payment another way →
         </button>
