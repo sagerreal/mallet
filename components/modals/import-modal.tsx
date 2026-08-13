@@ -13,6 +13,7 @@
 import { useState } from "react";
 import { useCloseModal } from "@/lib/store/app-store";
 import { parseCsv } from "@/lib/import/parse-csv";
+import { importErrorMessage } from "@/lib/import/import-error-message";
 import { autoMap } from "@/lib/import/engine/auto-map";
 import { buildRows } from "@/lib/import/engine/build-rows";
 import type { BuildResult, BuiltRow, ImportDescriptor, MappingConfig } from "@/lib/import/engine/descriptor";
@@ -146,11 +147,9 @@ export function ImportModal({ descriptor, copy, sendChunk, onChunkDone, isPendin
       setPhase("done");
     } catch (err) {
       setProgress({ done, created, updated, deduped, failed }); // persist so a retry RESUMES, not re-sends
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Import stopped partway. Saved rows were kept — click Import to finish the rest.",
-      );
+      // Not err.message raw: a tRPC input rejection carries the serialized Zod issue array as
+      // its message, which is how a blank price cell put a wall of JSON on screen.
+      setError(importErrorMessage(err));
       // Back to the preview, not the mapping: the offset is still valid, so the primary action
       // reads "Resume — N left" and picks up where it stopped.
       setPhase("preview");

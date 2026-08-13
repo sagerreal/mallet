@@ -91,7 +91,11 @@ export class ImportJobsUseCase {
         leadId: row.leadId,
         // Imported work is real work, never a pre-quote scope visit.
         kind: "work",
-        title: null,
+        // The Service column IS the job's name. Passing null here left every imported job
+        // rendering as "Job" (both mappers do `dto.title ?? "Job"`), so a 200-row import produced
+        // 200 identical rows with the service text sitting unread in svc. Derived HERE, before
+        // create-manual-job's normalizeSvcKind nulls svc on an "estimate" row.
+        title: row.svc?.trim() || row.scope?.trim() || null,
         svc: row.svc,
         addr: row.addr,
         phone: null,

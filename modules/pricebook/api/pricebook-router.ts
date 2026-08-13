@@ -115,8 +115,21 @@ const importMaterialRowInput = z.object({
   description: z.string().max(10_000).nullable().optional(),
   code: z.string().max(120).nullable().optional(),
   unitCostCents: z.number().int().nonnegative().optional(),
-  /** Absent → the markup rule derives the price. Present → the material goes manual. */
-  unitPriceCents: z.number().int().nonnegative().optional(),
+  /**
+   * Absent → the markup rule derives the price. Present → the material goes manual.
+   *
+   * `.nullish()`, not `.optional()`: a blank Sell Price cell is legitimate (it MEANS "let the
+   * markup rule decide"), and the import engine renders a blank mapped cell as `null` rather than
+   * by omitting the key. Optional-but-not-nullable therefore rejected the whole 500-row chunk —
+   * every valid row with it — over one empty cell. Normalised back to `undefined` so the
+   * `!== undefined` spreads downstream keep working unchanged.
+   */
+  unitPriceCents: z
+    .number()
+    .int()
+    .nonnegative()
+    .nullish()
+    .transform((v) => v ?? undefined),
   // Not nullable: the column is NOT NULL with an "each" default, so a blank cell means "leave it"
   // rather than "clear it" — there is nothing to clear it to.
   unitOfMeasure: z.string().max(40).optional(),
