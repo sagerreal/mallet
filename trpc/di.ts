@@ -223,6 +223,8 @@ export const getAppDeps = (): AppDeps => {
     photoStorageGateway = new SupabasePhotoStorageGateway(() => getSupabaseAdmin() as never);
   }
 
+  const signupStore = new SignupStore(db);
+
   cached = {
     authProvider: createAuthProvider({
       supabaseUrl: config.NEXT_PUBLIC_SUPABASE_URL,
@@ -231,7 +233,9 @@ export const getAppDeps = (): AppDeps => {
     }),
     apiKeyAuthenticator: createApiKeyAuthenticator(db),
     tokenVerifier: createSupabaseTokenVerifier(config.NEXT_PUBLIC_SUPABASE_URL, config.NEXT_PUBLIC_SUPABASE_ANON_KEY),
-    signupStore: new SignupStore(db),
+    signupStore: signupStore,
+    signupsOpen: config.SIGNUPS_OPEN,
+    inviteGate: signupStore,
     bus: new InMemoryEventBus(),
     qboOauthGateway,
     qboSecretBox,

@@ -65,6 +65,13 @@ export interface AppDeps {
   // an org for a verified-but-unmapped auth user (SECURITY DEFINER seam).
   readonly tokenVerifier: TokenVerifier;
   readonly signupStore: Pick<SignupStore, "createOrgForUser">;
+  // The self-serve signup gate. `signupsOpen` mirrors SIGNUPS_OPEN (absent = CLOSED: Mallet is
+  // invite-only); `inviteGate` answers "does this email hold a pending invite?" — the one
+  // authorization that still provisions while signups are closed. Both optional so the many
+  // router-test stubs that never touch identity.signup don't have to carry them — the router
+  // treats absence as closed, the safe direction.
+  readonly signupsOpen?: boolean;
+  readonly inviteGate?: Pick<SignupStore, "hasPendingInvite">;
   // QuickBooks Online OAuth. null when QBO_CLIENT_ID/SECRET/REDIRECT_URI are unset — the Settings
   // card renders "not configured" and the connect routes 503 rather than half-working.
   readonly qboOauthGateway?: QboOauthGateway | null;

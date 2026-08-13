@@ -32,4 +32,14 @@ export class SignupStore {
     if (!row) throw new Error("app_signup_create_org returned no row");
     return { orgId: row.org_id, role: row.role };
   }
+
+  // Whether a pending invite exists for this email — the authorization that keeps the
+  // invited-joiner path open while self-serve signups are closed. SECURITY DEFINER for the
+  // same reason as the signup fn: the caller has no principal yet, so RLS would hide the row.
+  async hasPendingInvite(email: string): Promise<boolean> {
+    const rows = await withConnectionRetry(() =>
+      this.db.execute(sql`select public.app_has_pending_invite(${email}) as invited`),
+    ) as unknown as { invited: boolean }[];
+    return rows[0]?.invited === true;
+  }
 }

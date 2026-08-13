@@ -44,9 +44,10 @@ export default function LoginPage() {
           {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
+      {/* No "Create account" link: Mallet is invite-only (see /signup). Staff arrive via the
+          invite email; a signup link here would walk them into a closed door. */}
       <div className="auth-links">
         <Link href="/forgot-password">Forgot password?</Link>
-        <Link href="/signup">Create account</Link>
       </div>
     </>
   );
