@@ -147,9 +147,29 @@ Two deliberate calls:
   arrow there would promise a second destination that does not exist. (The mockup showed one on
   done-unbilled; dropped on review.)
 
-The freed column takes **Address**, from `job.addr` — already mapped, no query change. Same swap
-Customers made when it dropped `Latest`: the one fact that differs on every row, and what people in
-the trades actually recall a job by.
+The freed column takes **Address**. Same swap Customers made when it dropped `Latest`: the one fact
+that differs on every row, and what people in the trades actually recall a job by.
+
+**Revised during implementation, after querying the live DB.** `job.addr` alone does not work:
+
+| Summit Plumbing & Drain | count |
+|---|---|
+| live jobs | 1,552 |
+| with `jobs.addr` set | **24** |
+| whose customer has an address | **1,542** |
+
+`jobs.addr` is an *override* — this job is at a different place — not the normal case. A column
+reading it alone would be blank on 98% of rows, which is the identical failure to the Status column
+it replaces. So the cell falls back to the customer's service address, exactly the precedence
+`custPhone` has always used for phone:
+
+```ts
+jobAddr(j, leads) = j.addr || storeLead?.address || j.custAddr || ""
+```
+
+`customerAddr` is added to `jobSummaryDTO` and resolved from the batched lead read the list already
+performs for `customerName` — no extra query. It has to come off the wire for the same reason the
+name does: the store's `leads` collection is paged.
 
 Sorting is unaffected: `SORT_COL_TO_SERVER` never had a `status` entry, and Address gets none — a
 header that does nothing is a dead control, so Address renders as a plain `<th>`.
@@ -205,6 +225,14 @@ The order stays store-first on purpose: a customer renamed in the office updates
 immediately, while the job row's `cust` is a per-read snapshot that is stale until the next refetch.
 The wire value is the fallback that fires for every lead past the leads hydrator's page — which is
 the whole bug.
+
+**Revised during implementation.** `dtoJobToStoreJob` cannot set `cust`: it takes the FULL `jobDTO`,
+which carries no `customerName` — only `jobSummaryDTO` (the list read) does, and giving 19
+`toJobDTO` call sites a lead lookup to populate a field only the list renders is the wrong trade.
+Worse, `mergeIncomingJob` starts from `incoming`, so any write to a job would have blanked `cust` and
+reverted that row to `—` one mutation after the fix landed. A `withResolvedCustomer` guard in
+`jobs-slice.ts` carries both resolved fields forward — the same shape as the `withExecution` guard
+directly below it — and is not a ratchet: a non-empty incoming value always wins.
 
 ## Not changing
 
