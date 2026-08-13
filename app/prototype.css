@@ -1065,6 +1065,27 @@
   .chip{border:1.5px solid var(--line);background:var(--card);border-radius:var(--radius-xl);padding:var(--space-2) var(--space-3);font-size:var(--type-base);font-weight:600;color:var(--ink-2);cursor:pointer;transition:background .12s,border-color .12s,color .12s}
   .chip:hover{border-color:var(--ink-3)}
   .chip.sel{background:var(--green-100);border-color:var(--accent);color:var(--green-900)}
+  /* The FILTER-chip row — Jobs, Customers, Quotes. Anchored and in-flow per the house rule;
+     this is a row on the page, never a popover.
+
+     Neither of these had a rule at all until now. The three filter components have always
+     written `.on`, while the stylesheet only defined `.chip.sel` — so the active chip on the
+     SHIPPED Customers list was pixel-identical to the seven inactive ones, and `.jh-filters`
+     held its row on default inline-button spacing.
+
+     .on AND .sel BOTH STAY — they are different jobs. `.sel` marks a chosen option INSIDE a
+     form (checklist stage, close-out mode, tip amount — four modal surfaces) where the chip row
+     IS the input. `.on` marks the active filter over a list, sits in the same visual band as the
+     Active/Archived segmented control, and takes that control's ink fill because picking one of
+     N is the same idea. Left as `.sel`'s pale fill, one active chip in eight would be told apart
+     by a border alone. Do not "unify" these. */
+  .jh-filters{display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;margin-bottom:var(--space-4)}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:var(--card)}
+  /* The archived SET owns the list, so the filter goes inert rather than vanishing — nothing jumps. */
+  .chip:disabled{opacity:.5;cursor:default}
+  .chip:disabled:hover{border-color:var(--line)}
+  .chip-n{font-variant-numeric:tabular-nums;color:var(--ink-3);font-weight:600}
+  .chip.on .chip-n{color:color-mix(in srgb,var(--card) 62%,transparent)}
   .req{color:var(--red);font-size:var(--type-xs);font-weight:600;display:none;margin-top:var(--space-1)}
 
   /* ---------- disclosure ---------- */
