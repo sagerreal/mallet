@@ -159,15 +159,27 @@ function friendlyError(err: unknown): string {
 
 // ── Main modal ────────────────────────────────────────────────────────────────
 
-export function ThreadModalContent() {
-  const activeModal = useActiveModal();
-  const close = useCloseModal();
-  const leadId = activeModal?.params?.leadId as string | undefined;
-  // Openers on the FIELD shell pass name/phone along (a tech's store has no leads — the
-  // customers hydrator is office-only), so the modal renders from params there and from the
-  // store lead everywhere else. The store lead wins when present: it is live and reconciled.
-  const paramName = activeModal?.params?.leadName as string | undefined;
-  const paramPhone = activeModal?.params?.phone as string | undefined;
+/**
+ * The customer conversation itself, independent of how it is presented.
+ *
+ * Two surfaces render it: the Messages page shows it in its right pane (no overlay at all), and
+ * the drill-in modal shows it when you tap Text from a job or customer sheet. Splitting the body
+ * from the params-reader is what lets one conversation live in both without a second copy.
+ */
+export interface CustomerThreadPaneProps {
+  readonly leadId: string | undefined;
+  /** Passed by field openers, whose store has no leads to look a name/phone up in. */
+  readonly paramName?: string;
+  readonly paramPhone?: string;
+  readonly onClose: () => void;
+}
+
+export function CustomerThreadPane({
+  leadId,
+  paramName,
+  paramPhone,
+  onClose: close,
+}: CustomerThreadPaneProps) {
   const leads = useAppStore((s) => s.leads);
   const updateLead = useAppStore((s) => s.updateLead);
   const clearLeadUnreadLocal = useAppStore((s) => s.clearLeadUnreadLocal);
@@ -354,5 +366,22 @@ export function ThreadModalContent() {
         </>
       )}
     </>
+  );
+}
+
+/**
+ * The drill-in presentation: reads the modal params and renders the pane. Kept so every existing
+ * opener (job sheet, customer sheet, tech job sheet, command bar) is untouched.
+ */
+export function ThreadModalContent() {
+  const activeModal = useActiveModal();
+  const close = useCloseModal();
+  return (
+    <CustomerThreadPane
+      leadId={activeModal?.params?.leadId as string | undefined}
+      paramName={activeModal?.params?.leadName as string | undefined}
+      paramPhone={activeModal?.params?.phone as string | undefined}
+      onClose={close}
+    />
   );
 }

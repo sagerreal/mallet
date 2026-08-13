@@ -84,10 +84,11 @@ beforeEach(() => {
 });
 
 describe("TeamChatModalContent — the thread", () => {
-  it("names the conversation and states that it is internal", () => {
+  it("names the conversation and stamps it INTERNAL, so it cannot be mistaken for a customer text", () => {
     render(<TeamChatModalContent />);
     expect(screen.getByText("Mike Rivera")).toBeTruthy();
-    expect(screen.getByText(/customer never sees this/)).toBeTruthy();
+    expect(screen.getByText("Internal")).toBeTruthy();
+    expect(screen.getByText(/Never seen by a customer/)).toBeTruthy();
   });
 
   it("puts my messages on the right and a teammate's on the left, attributed", () => {

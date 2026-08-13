@@ -1703,6 +1703,54 @@
   .msg-dot{width:8px;height:8px;border-radius:50%;background:var(--red);display:inline-block}
   .msg-snip{color:var(--ink-2);font-size:var(--type-base);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-top:var(--space-2xs)}
   .msg-tm{color:var(--ink-3);font-size:var(--type-sm);white-space:nowrap;font-variant-numeric:tabular-nums}
+
+  /* ── Messages: two panes, and the internal/external distinction ──────────────────────────
+     A customer conversation leaves the building; a team conversation does not. That fact is
+     carried by the PAPER: white card for customers, MANILA for internal — the same work-order
+     stock the hero ticket uses — plus an ink rail so a row reads as internal even in isolation. */
+  .msg-shell{display:grid;grid-template-columns:minmax(0,360px) minmax(0,1fr);gap:var(--space-4);align-items:start}
+  .msg-pane-list{display:flex;flex-direction:column;gap:var(--space-2);min-width:0}
+  /* The mode control hugs its labels; the action sits with it rather than on a row of its own. */
+  /* The people picker's selected chip carries a FILL, not just a tint: picking who to message
+     is the one decision on the panel, and the house's quiet .chip.sel read as a hover state at
+     a glance. Scoped here so every other chip row keeps the standard treatment. */
+  .who-chips{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-3)}
+  .who-chips .chip.sel{background:var(--accent);border-color:var(--accent);color:var(--pri-fg)}
+  .msg-modes{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-1)}
+  .msg-modes .segctl{margin-bottom:0}
+  .msg-modes>.btn{margin-left:auto}
+  .msg-pane-thread{min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;display:flex;flex-direction:column;min-height:520px}
+  .msg-nothread{display:flex;align-items:center;justify-content:center;min-height:520px;padding:var(--space-6)}
+  /* The reading pane's own head/composer are the pane's, so the sheet's negative bleed would
+     tear them out of the card. */
+  .msg-pane-thread .sheet-head{margin:0;padding:var(--space-4) var(--space-5);position:static}
+  .msg-pane-thread .thread{max-height:none;flex:1;margin:0;border:0;border-radius:0}
+  .msg-pane-thread .composer{padding:var(--space-3) var(--space-5) var(--space-5)}
+  .msg-pane-thread .sheet-secrow{padding:0 var(--space-5) var(--space-4)}
+
+  .msg-av{width:38px;height:38px;font-size:var(--type-base);background:var(--manila-2);color:var(--ink-2)}
+  .msg-row.sel{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  /* INTERNAL: manila ground + ink rail + filled avatar. */
+  .msg-row.internal{background:var(--manila);border-color:var(--manila-line);position:relative}
+  .msg-row.internal::before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:var(--ink)}
+  .msg-row.internal .msg-av{background:var(--ink);color:var(--card)}
+  .msg-row.internal.unread{background:var(--manila-2)}
+  .msg-tag{font-size:var(--type-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:var(--space-2xs) var(--space-2);border-radius:var(--radius-pill);border:1px solid currentColor;color:var(--ink);opacity:.7}
+  .msg-badge{background:var(--ink);color:var(--card);font-size:var(--type-xs);font-weight:800;min-width:19px;height:19px;padding:0 var(--space-1);border-radius:var(--radius-pill);display:inline-flex;align-items:center;justify-content:center;font-variant-numeric:tabular-nums}
+  .segctl-n{font-size:var(--type-xs);font-weight:700;opacity:.75;font-variant-numeric:tabular-nums;margin-left:var(--space-1)}
+  /* The internal thread itself: manila, ruled like a work order. */
+  .msg-pane-thread .thread.internal{background:var(--manila);background-image:repeating-linear-gradient(0deg,transparent 0 31px,var(--manila-2) 31px 32px)}
+  .msg-pane-thread .sheet-head.internal{background:var(--manila);border-bottom:1px solid var(--manila-line)}
+  .thread-stamp{font-size:var(--type-xs);font-weight:800;letter-spacing:.1em;text-transform:uppercase;border:1.5px solid var(--ink);color:var(--ink);padding:var(--space-2xs) var(--space-2);border-radius:var(--radius-2xs);display:inline-block}
+
+  /* One pane at a time on a phone: the list owns the screen until a conversation is picked,
+     then the thread does. No overlay, so the back affordance is a real control in the flow. */
+  @media (max-width:900px){
+    .msg-shell{grid-template-columns:1fr}
+    .msg-pane-thread{min-height:0;border:0;border-radius:0;background:transparent}
+    .msg-nothread{display:none}
+    .msg-shell.reading .msg-pane-list{display:none}
+  }
   /* customer-record: editable header + unified notes feed */
   /* The resting title. A heading, not a control — so #237's
      `input,select,textarea{border-color:var(--line-strong)!important}` floor cannot

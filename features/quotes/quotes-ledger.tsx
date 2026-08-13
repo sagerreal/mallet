@@ -116,7 +116,7 @@ export function QuotesLedger() {
                 <button
                   key={f}
                   type="button"
-                  className={`chip${filter === f ? " on" : ""}`}
+                  className={`chip${filter === f ? " sel" : ""}`}
                   onClick={() => setFilter(f)}
                 >
                   {label}
