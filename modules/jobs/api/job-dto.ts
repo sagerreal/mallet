@@ -220,6 +220,15 @@ export const jobSummaryDTO = z.object({
    * which a composite FK makes near-impossible.
    */
   customerName: z.string().nullable(),
+  /**
+   * The CUSTOMER's service address, resolved server-side from the same batched lead read.
+   *
+   * `addr` below is the job's OWN address — an override for work at a different place — and it is
+   * set on 24 of Summit's 1,552 jobs. The customer's address is set on 1,542 of them. A list column
+   * reading `addr` alone would be blank on 98% of rows, which is the same failure as the Status
+   * column it replaced. See jobAddr in features/jobs/jobs-helpers.ts for the precedence.
+   */
+  customerAddr: z.string().nullable(),
   sourceEstimateId: z.string().uuid().nullable(),
   title: z.string().nullable(),
   svc: z.string().nullable(),
@@ -482,13 +491,19 @@ export const autopsyClusterDTO = z.object({
   topMiss: autopsyTopMissDTO.nullable(),
 });
 
-export const toJobSummaryDTO = (job: Job, execution: Execution = emptyExecution, customerName: string | null = null) => {
+export const toJobSummaryDTO = (
+  job: Job,
+  execution: Execution = emptyExecution,
+  customerName: string | null = null,
+  customerAddr: string | null = null,
+) => {
   const p = job.props;
   return {
     id: p.id,
     num: p.num,
     leadId: p.leadId,
     customerName,
+    customerAddr,
     sourceEstimateId: p.sourceEstimateId,
     title: p.title,
     svc: p.svc,

@@ -48,6 +48,22 @@ export function custPhone(j: Job, leads: Lead[]): string {
   return j.phone || leads.find((l) => l.id === j.leadId)?.phone || "";
 }
 
+/**
+ * Where the work is — the job's own address if it has one, else the customer's.
+ *
+ * Same precedence as custPhone above, and for the same reason: `jobs.addr` is an OVERRIDE for work
+ * at a different place, not the normal case. It is set on 24 of Summit's 1,552 jobs; the customer's
+ * service address is set on 1,542. A column reading `addr` alone would be blank on 98% of rows —
+ * the identical failure to the Status column it replaced.
+ *
+ * The store lead comes before `custAddr` for the reason given in custName: the store updates on an
+ * optimistic edit, while custAddr is a per-read snapshot. And custAddr is the link that makes this
+ * work at all past the leads hydrator's page.
+ */
+export function jobAddr(j: Job, leads: Lead[]): string {
+  return j.addr || leads.find((l) => l.id === j.leadId)?.address || j.custAddr || "";
+}
+
 /** Age in days of the job's originating lead (0 if none) — drives the aging rail. */
 export function leadAgeOf(j: Job, leads: Lead[]): number {
   return leads.find((l) => l.id === j.leadId)?.age ?? 0;

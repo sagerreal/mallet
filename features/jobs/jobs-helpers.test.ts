@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { dPlus } from "@/lib/prototype-sample";
 import { mkJob, mkVisit, mkLead, mkTech } from "./test-factories";
-import { jobNextVisit, jobMode, custName, jobsUnscheduled, dayLoad } from "./jobs-helpers";
+import { jobNextVisit, jobMode, custName, jobAddr, jobsUnscheduled, dayLoad } from "./jobs-helpers";
 
 describe("jobNextVisit", () => {
   it("returns null when a job has no placed visits", () => {
@@ -128,5 +128,29 @@ describe("custName — the paginated list's customer column", () => {
 
   it("still falls back to the dash when neither side knows", () => {
     expect(custName(job(), [])).toBe("—");
+  });
+});
+
+describe("jobAddr — where the work is", () => {
+  const job = (over: Record<string, unknown> = {}) =>
+    ({ id: "j1", leadId: "lead-1", addr: "", visits: [], ...over }) as never;
+  const leads = (address: string | null) => [{ id: "lead-1", name: "Ruth", address }] as never;
+
+  it("falls back to the CUSTOMER's address, which is the normal case", () => {
+    // jobs.addr is an override for work at a different place: 24 of Summit's 1,552 jobs have one.
+    // The customer's service address is on 1,542 of them.
+    expect(jobAddr(job(), leads("1147 Alder Ave"))).toBe("1147 Alder Ave");
+  });
+
+  it("lets the job's OWN address win when the work is somewhere else", () => {
+    expect(jobAddr(job({ addr: "22 Depot Rd" }), leads("1147 Alder Ave"))).toBe("22 Depot Rd");
+  });
+
+  it("uses the server-resolved address when the lead is past the leads page", () => {
+    expect(jobAddr(job({ custAddr: "1147 Alder Ave" }), [])).toBe("1147 Alder Ave");
+  });
+
+  it("returns empty when nobody has an address, so the cell can show its own dash", () => {
+    expect(jobAddr(job(), leads(null))).toBe("");
   });
 });

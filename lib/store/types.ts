@@ -429,6 +429,14 @@ export interface Job {
    * still wins when it has one.
    */
   cust?: string;
+  /**
+   * The CUSTOMER's service address, resolved server-side on the list read.
+   *
+   * `addr` below is the JOB's own address — an override for work at a different place — and it is
+   * populated on 24 of Summit's 1,552 jobs. This one is populated on 1,542. See jobAddr in
+   * features/jobs/jobs-helpers.ts for which wins.
+   */
+  custAddr?: string;
   addr: string;
   phone: string;
   status: string;

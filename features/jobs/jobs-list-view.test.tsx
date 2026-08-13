@@ -7,7 +7,7 @@ import type { JobListItem } from "./server-rows";
 import type { Job } from "@/lib/store/types";
 
 // The view reads only leads + techs from the store; the rows come in as props.
-const leads = [mkLead({ id: "l1", name: "Ann Alpha" }), mkLead({ id: "l2", name: "Zed Zulu" })];
+const leads = [mkLead({ id: "l1", name: "Ann Alpha", address: "1147 Alder Ave" }), mkLead({ id: "l2", name: "Zed Zulu" })];
 const techs = [mkTech()];
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: { leads: unknown; techs: unknown }) => unknown) => sel({ leads, techs }),
@@ -124,6 +124,15 @@ describe("JobsListView — the columns themselves", () => {
     renderList(slotRow, { col: "when", dir: "asc" });
     expect(screen.getByRole("columnheader", { name: /address/i })).toBeTruthy();
     expect(screen.getByText("418 Cedar St")).toBeTruthy();
+  });
+
+  it("falls back to the CUSTOMER's address, which is where 98% of rows get one", () => {
+    // The store lead "l1" is Ann Alpha; give her an address and leave the job's own blank.
+    const noOwnAddr: JobListItem[] = [
+      item(mkJob({ id: "c", title: "Drain clearing", leadId: "l1", status: "unscheduled", addr: "" }), "needsSlot"),
+    ];
+    renderList(noOwnAddr, { col: "when", dir: "asc" });
+    expect(screen.getByText("1147 Alder Ave")).toBeTruthy();
   });
 
   it("sends a needs-a-slot row's WHEN cell to the board WITHOUT opening the job", () => {

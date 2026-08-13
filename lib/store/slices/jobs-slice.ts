@@ -725,27 +725,33 @@ function withExecution(prior: Job, incoming: Job): Job {
 }
 
 /**
- * Keep the server-resolved customer name a mutation response does not carry.
+ * Keep the server-resolved customer fields a mutation response does not carry.
  *
- * Only the LIST read resolves it (jobSummaryDTO.customerName); the full jobDTO every mutation
- * returns has no such field, and this merge starts from `incoming`. So without this, any write to
- * a job — reschedule, mark done, add a line — would blank `cust` and the Jobs list would revert
- * that row's customer to "—" for every lead sitting past the leads hydrator's page. Same shape as
- * withExecution below: the incoming DTO is not wrong, it is simply narrower.
+ * Only the LIST read resolves them (jobSummaryDTO.customerName / .customerAddr); the full jobDTO
+ * every mutation returns has no such fields, and this merge starts from `incoming`. So without
+ * this, any write to a job — reschedule, mark done, add a line — would blank them and the Jobs
+ * list would revert that row's Customer and Address to "—" for every lead sitting past the leads
+ * hydrator's page. Same shape as withExecution below: the incoming DTO is not wrong, just narrower.
+ *
+ * Not a ratchet: a non-empty incoming value always wins, so a genuine rename or a moved service
+ * address lands on the next list read.
  */
-function withCustomerName(prior: Job, incoming: Job): Job {
-  return incoming.cust || !prior.cust ? incoming : { ...incoming, cust: prior.cust };
+function withResolvedCustomer(prior: Job, incoming: Job): Job {
+  const cust = incoming.cust || prior.cust;
+  const custAddr = incoming.custAddr || prior.custAddr;
+  if (cust === incoming.cust && custAddr === incoming.custAddr) return incoming;
+  return { ...incoming, cust, custAddr };
 }
 
 /**
  * Compose every snapshot-merge guard (pending visits + recent visit status + recent checklist +
- * recent lines + execution + the customer name). Execution is OUTERMOST so it only fires when
+ * recent lines + execution + the resolved customer fields). Execution is OUTERMOST so it only fires when
  * nothing before it restored the lines. The visit-status guard sits directly on top of the
  * pending-visit one — both speak about `visits`, and the status guard must see the set the
  * pending-create guard settled on. The name guard is independent of all of them.
  */
 function mergeIncomingJob(prior: Job, incoming: Job): Job {
-  return withCustomerName(
+  return withResolvedCustomer(
     prior,
     withExecution(
       prior,

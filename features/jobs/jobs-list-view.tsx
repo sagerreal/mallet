@@ -19,7 +19,7 @@ import Link from "next/link";
 import { useAppStore } from "@/lib/store/app-store";
 import { fmt$ } from "@/lib/format";
 import type { Lead, Tech } from "@/lib/store/types";
-import { custName, leadAgeOf } from "./jobs-helpers";
+import { custName, jobAddr, leadAgeOf } from "./jobs-helpers";
 import { jobTotal } from "./today-derive";
 import { jobWhenLabel, jobCrewTech, type WhenLabel } from "./job-row";
 import type { JobListItem } from "./server-rows";
@@ -43,7 +43,7 @@ function deriveListRows(items: readonly JobListItem[], leads: Lead[], techs: Tec
     cust: custName(job, leads),
     amt: jobTotal(job),
     when: jobWhenLabel(bandKey, job, leadAgeOf(job, leads)),
-    addr: job.addr ?? "",
+    addr: jobAddr(job, leads),
     tech: jobCrewTech(bandKey, job, techs),
   }));
 }
