@@ -7,7 +7,20 @@ const SERVER_URL = "https://app.trymallet.com/api/frontdesk/vapi";
 const make = (t: VapiHttpTransport) =>
   new VapiVoiceRegistrar("vapi_key", SERVER_URL, "AC_test", "twilio_token", "secret", t);
 
-const okTransport = (): VapiHttpTransport => ({ post: vi.fn(async () => ({ status: 201, body: { id: "pn_1" } })) });
+/** A transport that accepts the import. get/patch are present but unused on this path. */
+const okTransport = (): VapiHttpTransport => ({
+  post: vi.fn(async () => ({ status: 201, body: { id: "pn_1" } })),
+  get: vi.fn(async () => ({ status: 200, body: [] })),
+  patch: vi.fn(async () => ({ status: 200, body: {} })),
+});
+
+/** A transport that says "already imported", then hands back the existing row for repair. */
+const dupeTransport = (over: Partial<VapiHttpTransport> = {}): VapiHttpTransport => ({
+  post: vi.fn(async () => ({ status: 409, body: { message: "Number already exists" } })),
+  get: vi.fn(async () => ({ status: 200, body: [{ id: "pn_existing", number: "+17815550123" }] })),
+  patch: vi.fn(async () => ({ status: 200, body: {} })),
+  ...over,
+});
 
 describe("VapiVoiceRegistrar", () => {
   it("imports the number with the shared webhook and NO assistantId", async () => {
@@ -28,28 +41,54 @@ describe("VapiVoiceRegistrar", () => {
     expect(body).not.toHaveProperty("assistantId");
   });
 
-  it("treats an already-imported number as success", async () => {
-    // Provisioning retries. A second import must not report a broken line that is in fact working.
-    const t: VapiHttpTransport = { post: vi.fn(async () => ({ status: 409, body: { message: "Number already exists" } })) };
+  /**
+   * ALREADY IMPORTED IS NOT ALREADY CORRECT.
+   *
+   * This used to return ok() on a duplicate. But "Vapi holds this number" says nothing about
+   * whether it points at the right webhook with the right secret — and BOTH live numbers were
+   * imported by hand in the dashboard with no server secret, so our own webhook rejected every
+   * inbound call 401 before Mallet saw it. Silent, and indistinguishable from the AI not answering.
+   */
+  it("REPAIRS an already-imported number rather than assuming it is configured", async () => {
+    const t = dupeTransport();
     expect(isOk(await make(t).register({ phoneNumber: "+17815550123" }))).toBe(true);
+
+    const [path, body] = (t.patch as ReturnType<typeof vi.fn>).mock.calls[0]!;
+    expect(path).toBe("/phone-number/pn_existing");
+    expect(body).toMatchObject({ server: { url: SERVER_URL, secret: "secret" } });
   });
 
-  it("treats a 400 whose message says duplicate as success too", async () => {
+  it("repairs on a 400 whose message says duplicate too", async () => {
     // Vapi does not always use 409 for this.
-    const t: VapiHttpTransport = {
+    const t = dupeTransport({
       post: vi.fn(async () => ({ status: 400, body: { message: ["number is already in use"] } })),
-    };
+    });
     expect(isOk(await make(t).register({ phoneNumber: "+17815550123" }))).toBe(true);
+    expect((t.patch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(1);
+  });
+
+  it("does not fail provisioning when Vapi will not show us the duplicate", async () => {
+    // It claims the number exists but does not list it. Nothing safe to patch; the line may work.
+    const t = dupeTransport({ get: vi.fn(async () => ({ status: 200, body: [] })) });
+    expect(isOk(await make(t).register({ phoneNumber: "+17815550123" }))).toBe(true);
+    expect((t.patch as ReturnType<typeof vi.fn>).mock.calls).toHaveLength(0);
+  });
+
+  it("reports a failure when the repair itself fails", async () => {
+    const t = dupeTransport({ patch: vi.fn(async () => ({ status: 500, body: { message: "boom" } })) });
+    expect(isOk(await make(t).register({ phoneNumber: "+17815550123" }))).toBe(false);
   });
 
   it("reports a real failure rather than pretending voice works", async () => {
-    const t: VapiHttpTransport = { post: vi.fn(async () => ({ status: 500, body: { message: "boom" } })) };
+    const t = okTransport();
+    t.post = vi.fn(async () => ({ status: 500, body: { message: "boom" } }));
     expect(isOk(await make(t).register({ phoneNumber: "+17815550123" }))).toBe(false);
   });
 
   it("returns an error rather than throwing when the network dies", async () => {
     // Signup calls this transitively; an exception escaping here would fail the signup.
-    const t: VapiHttpTransport = { post: vi.fn(async () => { throw new Error("ECONNRESET"); }) };
+    const t = okTransport();
+    t.post = vi.fn(async () => { throw new Error("ECONNRESET"); });
     expect(isOk(await make(t).register({ phoneNumber: "+17815550123" }))).toBe(false);
   });
 

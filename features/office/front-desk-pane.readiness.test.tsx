@@ -1,32 +1,31 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 
 /**
- * The switch may not turn a front desk on that cannot answer.
+ * The switch may not turn on a front desk that cannot answer — WITHOUT deadlocking the screen.
  *
- * It was a plain checkbox: `setToggle("frontDesk", e.target.checked)` with nothing in the way. One
- * live shop is switched on with no service area — its AI answers real customers on the shop's own
- * number knowing nothing about where it works.
+ * The first cut used `disabled`, and Owen hit the trap within minutes: a disabled control takes no
+ * focus, so clicking it never blurred the service-address field above it. The typed address stayed
+ * an uncommitted draft, readiness never became true, and the switch could never enable. Typing the
+ * missing detail and then reaching for the switch — the entire purpose of this screen — was the one
+ * sequence that could not work. He reloaded, lost the address, and only the radius had saved.
  *
- * Verified here rather than in the browser because the interesting state (unready AND off) needs a
- * shop that does not exist in the shared test database, and manufacturing one by editing live rows
- * is worse than a test.
+ * So: the control stays enabled, the click lands (committing the address on blur), and readiness is
+ * computed from the LIVE store rather than the server's last snapshot.
  */
 interface Store {
   toggles: { frontDesk: boolean };
-  frontDeskReady: boolean;
-  frontDeskMissing: readonly string[];
   booking: Record<string, unknown>;
-  setToggle: () => void;
+  setToggle: (k: string, v: boolean) => void;
 }
 let store: Store;
+const setToggle = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(store),
 }));
 vi.mock("@/features/identity/hooks", () => ({
-  // A shop whose number has landed — the readiness copy must not depend on the number's state.
   useMe: () => ({ data: { twilioNumber: "+15550100" } }),
 }));
 vi.mock("@/lib/trpc/client", () => ({
@@ -35,25 +34,29 @@ vi.mock("@/lib/trpc/client", () => ({
 
 import { FrontDeskPane } from "./front-desk-pane";
 
+const OPEN_HOURS = {
+  wdOpen: 8, wdClose: 17,
+  monOpen: 8, monClose: 17, tueOpen: 8, tueClose: 17, wedOpen: 8, wedClose: 17,
+  thuOpen: 8, thuClose: 17, friOpen: 8, friClose: 17, satOpen: 0, satClose: 0,
+  sunOpen: 0, sunClose: 0,
+};
+const NO_ORIGIN = { cities: "", radiusMi: 25, originAddress: "" };
+
+/** A booking config that is READY unless an override takes something away. */
+const booking = (over: Record<string, unknown> = {}) => ({
+  services: [{ name: "Drain cleaning", lane: "flat", price: 189, triggers: "" }],
+  hours: OPEN_HOURS,
+  area: { cities: "", radiusMi: 25, originAddress: "2100 Rheem Drive, Pleasanton CA" },
+  notServices: "",
+  serviceFee: 0,
+  feeCredited: false,
+  deferKeywords: "",
+  emergencyTransferNumber: null,
+  ...over,
+});
+
 const setup = (over: Partial<Store> = {}) => {
-  store = {
-    toggles: { frontDesk: false },
-    frontDeskReady: true,
-    frontDeskMissing: [],
-    // Enough of BookingCfg for the pane to render — the readiness copy is the subject, not these.
-    booking: {
-      services: [],
-      hours: { wdOpen: 8, wdClose: 17, satOpen: 0, satClose: 0, sunOpen: 0, sunClose: 0 },
-      area: { originAddress: "", radiusMiles: 25 },
-      serviceFee: 0,
-      feeCredited: false,
-      notServices: "",
-      deferKeywords: "",
-      emergencyTransferNumber: null,
-    },
-    setToggle: vi.fn(),
-    ...over,
-  } as Store;
+  store = { toggles: { frontDesk: false }, booking: booking(), setToggle, ...over } as Store;
   render(<FrontDeskPane />);
   return screen.getByLabelText("Front Desk on/off") as HTMLInputElement;
 };
@@ -61,41 +64,54 @@ const setup = (over: Partial<Store> = {}) => {
 beforeEach(() => vi.clearAllMocks());
 
 describe("FrontDeskPane — the readiness gate on the switch", () => {
-  it("disables the switch when the shop is off and not ready", () => {
-    const input = setup({ frontDeskReady: false, frontDeskMissing: ["serviceArea"] });
-    expect(input.disabled).toBe(true);
+  it("NEVER uses `disabled` — that is what deadlocked the screen", () => {
+    // The regression test for Owen's report. A disabled control takes no focus, so the click that
+    // reaches for it cannot blur the address field, and the address is what would have unblocked it.
+    const input = setup({ booking: booking({ area: NO_ORIGIN }) });
+    expect(input.disabled).toBe(false);
+    expect(input.getAttribute("aria-disabled")).toBe("true");
+  });
+
+  it("does not switch on while a detail is missing", () => {
+    const input = setup({ booking: booking({ area: NO_ORIGIN }) });
+    fireEvent.click(input);
+    expect(setToggle).not.toHaveBeenCalled();
   });
 
   it("names the missing piece instead of just refusing", () => {
-    setup({ frontDeskReady: false, frontDeskMissing: ["serviceArea"] });
+    setup({ booking: booking({ area: NO_ORIGIN }) });
     expect(screen.getByText(/Add your service area to turn this on/)).toBeTruthy();
   });
 
+  it("reads the LIVE store, so a just-typed service area counts immediately", () => {
+    // The second half of the bug: readiness came from the server's last settings fetch, so the
+    // screen kept saying "not ready" about a field the user had already filled in.
+    const input = setup({ booking: booking() });
+    expect(input.getAttribute("aria-disabled")).toBe("false");
+    expect(screen.queryByText(/to turn this on/)).toBeNull();
+  });
+
   it("joins several missing pieces into one sentence", () => {
-    setup({ frontDeskReady: false, frontDeskMissing: ["serviceArea", "services"] });
+    setup({ booking: booking({ area: NO_ORIGIN, services: [] }) });
     expect(screen.getByText(/your service area and a bookable service/)).toBeTruthy();
   });
 
   it("says 'Not set up yet' rather than implying calls are being handled", () => {
-    // "Off — calls go to voicemail" would be a lie about a shop that never finished setup.
-    setup({ frontDeskReady: false, frontDeskMissing: ["serviceArea"] });
+    setup({ booking: booking({ area: NO_ORIGIN }) });
     expect(screen.getByText("Not set up yet")).toBeTruthy();
   });
 
-  it("NEVER disables the switch for a shop that is already on but unready", () => {
-    // The live state of two orgs. Disabling here would trap them answering badly with no way to
-    // stop — the one action they most need.
-    const input = setup({
-      toggles: { frontDesk: true },
-      frontDeskReady: false,
-      frontDeskMissing: ["serviceArea"],
-    });
-    expect(input.disabled).toBe(false);
+  it("switches on once every detail is there", () => {
+    const input = setup({ booking: booking() });
+    fireEvent.click(input);
+    expect(setToggle).toHaveBeenCalledWith("frontDesk", true);
   });
 
-  it("leaves the switch alone once the shop is ready", () => {
-    const input = setup({ frontDeskReady: true, frontDeskMissing: [] });
-    expect(input.disabled).toBe(false);
-    expect(screen.queryByText(/to turn this on/)).toBeNull();
+  it("NEVER blocks switching OFF, even for a shop that is on while unready", () => {
+    // Three live orgs are on-and-unready. Blocking here would trap them answering badly.
+    const input = setup({ toggles: { frontDesk: true }, booking: booking({ area: NO_ORIGIN }) });
+    expect(input.getAttribute("aria-disabled")).toBe("false");
+    fireEvent.click(input);
+    expect(setToggle).toHaveBeenCalledWith("frontDesk", false);
   });
 });
