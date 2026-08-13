@@ -22,6 +22,7 @@ import {
   AdvanceReminderUseCase,
   FollowUpPolicy,
   SendNotificationUseCase,
+  resolveOrgNotificationSender,
   DrizzleNotificationRepository,
   DrizzleReminderTargetReader,
   STUB_EXTERNAL_ID,
@@ -220,7 +221,15 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
     }
     const repo = new DrizzleNotificationRepository(ctx.tx, ctx.orgId);
     const reader = new DrizzleReminderTargetReader(ctx.tx, ctx.orgId);
-    const sendUc = new SendNotificationUseCase(repo, ctx.deps.notificationSender, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
+    // Per-org, not the boot-time sender: the agent's reminders are customer-facing texts and go
+    // out from the SHOP's own number and Messaging Service, like every other automated message.
+    const sender = await resolveOrgNotificationSender({
+      tx: ctx.tx,
+      orgId: ctx.orgId,
+      base: ctx.deps.notificationSender,
+      clock: ctx.deps.clock,
+    });
+    const sendUc = new SendNotificationUseCase(repo, sender, ctx.deps.bus, ctx.deps.clock, ctx.deps.ids);
 
     // AdvanceReminder, NOT SendInvoiceNotification. This tool is named "send invoice REMINDER" but
     // called the first-contact path, which sends kind "invoice_sent" with `reminderStage: null`.

@@ -6,6 +6,7 @@ import { Phone, isOk, toPage, type OrgId } from "@mallet/shared/types";
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { isSmsA2pActive } from "@mallet/a2p";
+import { resolveOrgNotificationSender } from "@mallet/notifications";
 import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_STATUSES,
@@ -132,7 +133,12 @@ export const createNotificationRouter = () =>
         }
         const useCase = new SendNotificationUseCase(
           repoFor(ctx),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
@@ -164,7 +170,12 @@ export const createNotificationRouter = () =>
         await assertSmsA2pActive(ctx, input.channel);
         const send = new SendNotificationUseCase(
           repoFor(ctx),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
@@ -198,7 +209,12 @@ export const createNotificationRouter = () =>
         await assertSmsA2pActive(ctx, "sms");
         const send = new SendNotificationUseCase(
           repoFor(ctx),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,

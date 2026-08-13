@@ -61,6 +61,9 @@ vi.mock("@mallet/notifications", () => ({
   AdvanceReminderUseCase: vi.fn(),
   DrizzleNotificationRepository: vi.fn(),
   DrizzleReminderTargetReader: vi.fn(),
+  // The agent's reminders go out on the SHOP's number, resolved per call. The tool only needs a
+  // sender back; which number it carries is OrgSmsNotificationSender's business, tested there.
+  resolveOrgNotificationSender: vi.fn(async () => ({ send: vi.fn() })),
   STUB_EXTERNAL_ID: "stub:logged",
 }));
 vi.mock("@mallet/a2p", () => ({

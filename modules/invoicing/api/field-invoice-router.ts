@@ -8,6 +8,7 @@ import type { Principal } from "@mallet/identity";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { isSmsA2pActive } from "@mallet/a2p";
+import { resolveOrgNotificationSender } from "@mallet/notifications";
 import {
   NOTIFICATION_CHANNELS,
   DrizzleNotificationRepository,
@@ -264,7 +265,12 @@ export const createFieldInvoiceRouter = () =>
 
         const send = new SendNotificationUseCase(
           new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
