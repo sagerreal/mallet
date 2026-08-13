@@ -13,6 +13,8 @@ export interface TeamThreadProps {
   readonly kind: ThreadKind;
   readonly title: string | null;
   readonly dmKey: string | null;
+  /** The job this conversation is about, when it is about one. Unused by v1's UI. */
+  readonly jobId: string | null;
   readonly createdByUserId: UserId;
   readonly lastMessageAt: Date;
   readonly createdAt: Date;
