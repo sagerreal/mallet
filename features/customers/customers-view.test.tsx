@@ -157,3 +157,25 @@ describe("CustomersView — first-run empty state", () => {
     expect(openModal).toHaveBeenCalledWith("import-customers");
   });
 });
+
+describe("CustomersView — the Companies segment", () => {
+  beforeEach(() => {
+    leads = [];
+    custSeg = "people";
+    listState = { total: undefined, isFetched: true, isError: false, isLoading: false, isRefetching: false };
+  });
+
+  it("renders the companies book when the Companies segment is selected", () => {
+    // The button survived a filter refactor that dropped the branch it switched to, so clicking
+    // Companies just highlighted the segment and left you on the People list.
+    custSeg = "biz";
+    render(<CustomersView />);
+    expect(screen.getByTestId("companies")).toBeTruthy();
+  });
+
+  it("renders the people list on the People segment", () => {
+    custSeg = "people";
+    render(<CustomersView />);
+    expect(screen.queryByTestId("companies")).toBeNull();
+  });
+});

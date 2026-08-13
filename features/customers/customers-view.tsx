@@ -112,6 +112,10 @@ export function CustomersView() {
     if (CUSTOMER_COL_TO_SORT[col]) cq.toggleSortCol(col);
   }
 
+  // The Companies segment. bffaffd reworked the filter row and dropped this branch while keeping
+  // the button that switches to it, so Companies became a dead control: it highlighted itself and
+  // left you looking at the People list. Placed after every hook, so hook order is unchanged.
+  if (custSeg === "biz") return <CompaniesView />;
 
   return (
     <div>

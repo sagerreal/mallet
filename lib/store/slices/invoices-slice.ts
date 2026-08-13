@@ -644,10 +644,20 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
         set((s) => ({ invoices: s.invoices.map((i) => (i.id === id ? { ...i, status: "draft" } : i)) }));
         return Promise.resolve({ ok: false, error: NEVER_RAISED_ON_SERVER });
       }
-      // v1.invoicing.draft requires lines >= 1.
+      // v1.invoicing.draft requires lines >= 1 AND a real lead. Nothing has been sent, so the
+      // optimistic flip above has to come back off — without this the sheet kept showing a SENT
+      // invoice no server had ever seen, complete with a Charge button and a running reminder.
+      // A full restore is right here (unlike the send-leg failure below): no server row exists.
       if (!inv.lines.length || !inv.leadId) {
-        // Can't draft without lines or leadId — stay store-local.
-        return Promise.resolve({ ok: false, error: "an invoice needs at least one line" });
+        if (prior) set((s) => ({ invoices: restoreInv(s.invoices, prior) }));
+        // Two different problems had one message, so a complete invoice whose customer was typed
+        // rather than picked was told it needed "at least one line".
+        return Promise.resolve({
+          ok: false,
+          error: !inv.lines.length
+            ? "an invoice needs at least one line"
+            : "pick the customer from the list before sending — this name isn't linked to a customer yet",
+        });
       }
 
       // The two legs (draft, then send) get DIFFERENT rollback behavior on failure — the
@@ -668,7 +678,10 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           id: inv.id,
           leadId: inv.leadId,
           title: inv.title ?? undefined,
-          termsDays: inv.termsDays ?? 7,
+          // 0, not 7 — the sheet renders an unset terms value as "On receipt" and selects that
+          // chip, so defaulting to Net 7 on the wire sent the customer terms the office never
+          // agreed to and never saw.
+          termsDays: inv.termsDays ?? 0,
           lines: inv.lines.map((l) => ({
             description: l.d,
             quantity:    l.q ?? 1,

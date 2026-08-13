@@ -10,7 +10,7 @@ import type { Lead } from "@/lib/store/types";
 import { LEAD_GROUP_LABELS, type LeadGroup } from "@/modules/customers/infra/lead-views";
 import { StagePill, SrcPill } from "@/components/shared/stage-pill";
 import { ALL_COL_DEFS } from "./customers-columns";
-import { fmt$, agoShort } from "@/lib/format";
+import { fmt$, agoShort, fmtPhone } from "@/lib/format";
 import { pressable } from "@/lib/a11y";
 
 
@@ -33,7 +33,9 @@ function LeadCell({ lead, col }: LeadCellProps) {
         </b>
       );
     case "phone":
-      return <>{lead.phone || <span className="muted">—</span>}</>;
+      // The stored value is E.164 (the domain Phone, persisted as phoneE164), so the raw column
+      // read "+15105550199" while every other surface showed "(510) 555-0199".
+      return <>{lead.phone ? fmtPhone(lead.phone) : <span className="muted">—</span>}</>;
     case "source":
       return <SrcPill src={lead.source} />;
     case "stage":
