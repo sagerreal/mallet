@@ -64,7 +64,10 @@ export function useMoneyQuery(state: MoneyQueryState) {
   // Finished work with no invoice — the jobs module already answers this as a scoped view, so the
   // ledger reuses it rather than growing a second definition of "ready to bill".
   const ready = api.v1.jobs.list.useQuery(
-    { view: "needsInvoice", today, limit: READY_CAP },
+    // Search has to ride along here too. Its sibling count below already passed it, so a search
+    // showed a filtered ready-to-bill COUNT above an unfiltered list of ready-to-bill ROWS —
+    // the chip said 1 while the worklist listed every unbilled job in the shop.
+    { view: "needsInvoice", today, limit: READY_CAP, ...(search ? { search } : {}) },
     { refetchOnWindowFocus: true, enabled: wantReady },
   );
 

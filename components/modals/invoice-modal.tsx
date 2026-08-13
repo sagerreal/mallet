@@ -670,7 +670,11 @@ export function InvoiceModalContent() {
   const needsFull = missing || Boolean(invoice?.partial);
   const invQ = api.v1.invoicing.get.useQuery(
     { invoiceId: invoiceId ?? "" },
-    { enabled: Boolean(invoiceId), staleTime: 30_000, refetchOnWindowFocus: false },
+    // Gated on needsFull, NOT on the id. A hand-made draft has a client-authored id and no DB
+    // row, so this fetch 404'd; React Query cached that error, and the moment the invoice was
+    // sent (which demotes the row to partial) the sheet re-read the SAME cached 404 and told the
+    // office "Couldn't load this invoice" about an invoice that had just gone out.
+    { enabled: needsFull, staleTime: 30_000, refetchOnWindowFocus: false },
   );
   useEffect(() => {
     if (!needsFull || !invQ.data) return;

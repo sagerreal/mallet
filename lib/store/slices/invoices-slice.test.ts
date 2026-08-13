@@ -425,6 +425,85 @@ describe("sendInvoice — manual (lead-tied) invoice: exactly one server create,
     expect(sendMutate).toHaveBeenCalledTimes(2);
   });
 
+  it("restores the invoice when there is no customer, instead of leaving it flipped to sent", async () => {
+    // The optimistic flip to "sent" happens before the guard. The guard returned {ok:false} but
+    // never put the invoice back, so the sheet went on showing a SENT invoice that no server had
+    // ever seen — with a "Charge" button and a reminder timer running against nothing.
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1",
+        origin: "manual",
+        jobId: null,
+        leadId: "", // typed a customer name instead of picking one from the list
+        lines: [{ d: "Visit fee", q: 1, r: 89 }],
+        status: "draft",
+      }),
+    ]);
+
+    const result = await s.state.sendInvoice("inv-1");
+
+    expect(result.ok).toBe(false);
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.status).toBe("draft");
+    expect(draftMutate).not.toHaveBeenCalled();
+  });
+
+  it("blames the missing customer, not the lines, when the lines are fine", async () => {
+    // One message covered both guards, so a complete invoice with an unlinked customer was told
+    // it needed "at least one line" — sending whoever hit it looking in the wrong place.
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1",
+        origin: "manual",
+        jobId: null,
+        leadId: "",
+        lines: [{ d: "Visit fee", q: 1, r: 89 }],
+        status: "draft",
+      }),
+    ]);
+
+    const result = await s.state.sendInvoice("inv-1");
+
+    expect(result.error).toMatch(/customer/i);
+    expect(result.error).not.toMatch(/line/i);
+  });
+
+  it("still blames the lines when the lines really are the problem", async () => {
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1", lines: [], status: "draft" }),
+    ]);
+
+    const result = await s.state.sendInvoice("inv-1");
+
+    expect(result.error).toMatch(/line/i);
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.status).toBe("draft");
+  });
+
+  it("sends the terms the sheet is showing — an invoice with no terms set is On receipt, not Net 7", async () => {
+    // The sheet renders (termsDays ?? 0) === 0 as "On receipt" and selects that chip, while the
+    // wire defaulted to 7. The customer got a Net 7 invoice the office never agreed to.
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1",
+        origin: "manual",
+        jobId: null,
+        leadId: "lead-1",
+        lines: [{ d: "Visit fee", q: 1, r: 89 }],
+        status: "draft",
+        termsDays: undefined,
+      }),
+    ]);
+
+    await s.state.sendInvoice("inv-1");
+
+    expect(draftMutate.mock.calls[0]?.[0]).toMatchObject({ termsDays: 0 });
+  });
+
   it("a db-origin invoice's send still resolves ok:true (signature change is additive)", async () => {
     sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
     const s = makeSlice();

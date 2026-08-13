@@ -100,6 +100,16 @@ describe("InvoiceModalContent — the partial-row gate", () => {
     expect(lastQueryOpts?.enabled).toBe(true);
   });
 
+  it("does not fetch a store-local draft the server has never seen", () => {
+    // A hand-made draft carries a client-authored id and no DB row, so v1.invoicing.get 404s.
+    // The sheet fetched anyway; React Query cached that 404, and after the invoice was sent the
+    // now-partial row re-read the SAME cached error and showed "Couldn't load this invoice" —
+    // for an invoice that had, in fact, gone out.
+    mockInvoices = [inv({ origin: "manual", lines: [{ d: "Visit fee", q: 1, r: 89 }] })];
+    render(<InvoiceModalContent />);
+    expect(lastQueryOpts?.enabled).toBe(false);
+  });
+
   it("adopts the full record over a partial row when the fetch lands", () => {
     mockInvoices = [inv({ partial: true })];
     queryState = {
