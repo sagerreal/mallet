@@ -158,12 +158,63 @@ suite("timesheet policy (live RLS)", () => {
     expect(after.submission?.reopenReason).toContain("new hours");
   });
 
-  it("keeps submissions tenant-isolated under RLS", async () => {
-    const [foreignTech] = await admin<{ id: string }[]>`
+  it("persists an edit to a time-off row's length and its author (save() writes the whole row)", async () => {
+    // A fresh tech: the shared `techId` has already SUBMITTED this week earlier in the suite, and
+    // the lock would (correctly) refuse the edit before it reached the repository.
+    const [t4] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role)
-      values (${otherOrgId}, ${randomUUID()}, 'tech@other.test', 'tech') returning id`;
-    const outsider = appRouter.createCaller(ctxFor(foreignTech!.id, otherOrgId, "tech"));
-    const seen = await outsider.v1.timesheets.submissionFor({ weekStart: monday });
+      values (${orgId}, ${randomUUID()}, 'tech4@tspolicy.test', 'tech') returning id`;
+    const techId4 = t4!.id;
+    const tech = appRouter.createCaller(ctxFor(techId4, orgId, "tech"));
+    const created = await tech.v1.timesheets.create({
+      techUserId: techId4, workDate: monday, kind: "vacation", startTime: null, minutes: 480,
+    });
+    const patched = await tech.v1.timesheets.update({ entryId: created.id, minutes: 240 });
+    expect(patched.minutes).toBe(240);
+    // Straight from the database — the DTO could echo the domain object while the UPDATE dropped
+    // the column, which is exactly the bug this proves is gone.
+    const [row] = await admin<{ minutes: number; edited_by_user_id: string | null }[]>`
+      select minutes, edited_by_user_id from time_entries where id = ${created.id}`;
+    expect(row!.minutes).toBe(240);
+    expect(row!.edited_by_user_id).toBe(techId4);
+  });
+
+  it("approves a week containing PAID TIME OFF — a day off is not unfinished hours", async () => {
+    // The bug this pins: a time-off row has no end time BY CONSTRUCTION (the 0153 shape check),
+    // so a kind-blind "unfinished" predicate made every week with PTO permanently unapprovable.
+    const [t3] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${orgId}, ${randomUUID()}, 'tech3@tspolicy.test', 'tech') returning id`;
+    const techId3 = t3!.id;
+    const owner = appRouter.createCaller(ctxFor(ownerId, orgId, "owner"));
+
+    await owner.v1.timesheets.create({
+      techUserId: techId3, workDate: monday, kind: "holiday", startTime: null, minutes: 480,
+    });
+    await owner.v1.timesheets.create({
+      techUserId: techId3, workDate: monday, kind: "shop", startTime: "08:00", endTime: "12:00",
+    });
+
+    const result = await owner.v1.timesheets.approveWeek({ techUserId: techId3, dates: [monday] });
+    // BOTH rows approved: the worked stretch and the paid day off.
+    expect(result.approved).toBe(2);
+    const [approved] = await admin<{ n: string }[]>`
+      select count(*) as n from time_entries
+      where tech_user_id = ${techId3} and status = 'approved' and kind = 'holiday'`;
+    expect(Number(approved!.n)).toBe(1);
+  });
+
+  it("keeps submissions tenant-isolated under RLS", async () => {
+    // An OFFICE caller in the other org, naming org A's technician BY ID — the only shape that
+    // actually exercises isolation. A tech caller is pinned to themselves by the router, so it
+    // would return null even with the org predicate and the 0154 policy deleted.
+    const [foreignOffice] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${otherOrgId}, ${randomUUID()}, 'office@other.test', 'office') returning id`;
+    const outsider = appRouter.createCaller(ctxFor(foreignOffice!.id, otherOrgId, "office"));
+    // techId holds an ACTIVE submission for `monday` (submitted earlier in this suite), so a leak
+    // would return it.
+    const seen = await outsider.v1.timesheets.submissionFor({ weekStart: monday, techUserId: techId });
     expect(seen.submission).toBeNull();
   });
 });
