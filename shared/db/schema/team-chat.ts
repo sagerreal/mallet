@@ -14,6 +14,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { users } from "./users";
+import { jobs } from "./jobs";
 
 /**
  * STAFF messaging — the shop's own people talking to each other. Deliberately a separate
@@ -53,6 +54,18 @@ export const teamThreads = pgTable(
     title: text("title"),
     /** Sorted "&lt;userIdA&gt;:&lt;userIdB&gt;" for a DM; null for a group. One DM per pair per org. */
     dmKey: text("dm_key"),
+    /**
+     * The job this conversation is ABOUT, when it is about one. Nullable and unused by v1's
+     * UI — the column exists now because it is the whole strategic point of chat living in
+     * Mallet rather than in the crew's group text: the thread knows which job it belongs to,
+     * so the photo lands on the record instead of somebody's camera roll.
+     *
+     * Verified Aug 2026: NOBODY in the category ships this. Housecall Pro's "Job Inbox" is a
+     * leads hub and its job notes are text-only and unthreaded; Workiz has an open, upvoted
+     * request for exactly it; FieldPulse comments cannot carry attachments at all. Adding the
+     * column now costs nothing and keeps that door open without a second migration.
+     */
+    jobId: uuid("job_id"),
     createdByUserId: uuid("created_by_user_id").notNull(),
     /** Bumped on every send — the inbox's sort key. */
     lastMessageAt: timestamp("last_message_at", { withTimezone: true }).notNull().defaultNow(),
@@ -69,6 +82,13 @@ export const teamThreads = pgTable(
       columns: [t.orgId, t.createdByUserId],
       foreignColumns: [users.orgId, users.id],
     }),
+    // Tenant-safe job link: a thread can never be about another org's job.
+    foreignKey({
+      name: "team_threads_job_fk",
+      columns: [t.orgId, t.jobId],
+      foreignColumns: [jobs.orgId, jobs.id],
+    }).onDelete("cascade"),
+    index("team_threads_org_job_idx").on(t.orgId, t.jobId),
     // The find-or-create guard. Partial, because groups have no dm_key and Postgres treats
     // NULLs as distinct anyway — this states the intent rather than relying on that.
     uniqueIndex("team_threads_org_dmkey_uidx")
