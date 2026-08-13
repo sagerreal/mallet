@@ -505,10 +505,14 @@ export function TechJobModalContent() {
           <button
             type="button"
             className="sheet-sec"
-            disabled={!lead}
-            title={!lead ? "No linked customer" : undefined}
+            disabled={!job?.leadId}
+            title={!job?.leadId ? "No linked customer" : undefined}
             onClick={() => {
-              if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
+              // The job itself carries the customer's name and phone, so this works on the
+              // tech shell where the leads store is empty (customers hydrator is office-only).
+              if (job?.leadId) {
+                pushModal(MODAL.THREAD, { leadId: job.leadId, leadName: custName, phone: job.phone });
+              }
             }}
           >
             Text

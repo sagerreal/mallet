@@ -76,7 +76,6 @@ export function QuotesLedger() {
           </button>
         </div>
       </div>
-      <p className="sub">Every price you&rsquo;ve put in front of a customer.</p>
 
       {isFirstLoad(listState) ? (
         <ListLoading label="Loading quotes…" />

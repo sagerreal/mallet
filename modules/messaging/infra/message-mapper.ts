@@ -1,4 +1,4 @@
-import { asMessageId, asOrgId, asLeadId } from "@mallet/shared/types";
+import { asMessageId, asOrgId, asLeadId, asUserId } from "@mallet/shared/types";
 import { Message } from "../domain/message";
 import type { MessageDirection, MessageStatus, MessageChannel } from "../domain/message";
 
@@ -12,6 +12,7 @@ interface MessageRow {
   fromNumber: string;
   toNumber: string;
   providerSid: string | null;
+  sentByUserId: string | null;
   status: string;
   errorCode: string | null;
   createdAt: Date;
@@ -29,6 +30,7 @@ export const toDomain = (row: MessageRow): Message => {
     fromNumber: row.fromNumber,
     toNumber: row.toNumber,
     providerSid: row.providerSid,
+    sentByUserId: row.sentByUserId ? asUserId(row.sentByUserId) : null,
     status: row.status as MessageStatus,
     errorCode: row.errorCode ?? null,
     createdAt: row.createdAt,

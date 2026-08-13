@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { leads } from "./leads";
+import { users } from "./users";
 
 // A two-way SMS (or future channel) message scoped to a tenant. Every row carries org_id; RLS
 // isolates by it. leadId is nullable so inbound messages from unknown numbers are never dropped
@@ -33,6 +34,10 @@ export const messages = pgTable(
     toNumber: text("to_number").notNull(),
     // Twilio MessageSid (SM...) — null until confirmed by the API response.
     providerSid: text("provider_sid"),
+    // WHO sent an outbound message — the staffer behind the shared business number. Null for
+    // inbound rows, system sends (reminders, OMW, front desk) and all history before this
+    // column existed. The office reads this as "sent by Dana" on the thread.
+    sentByUserId: uuid("sent_by_user_id"),
     // Tracks Twilio delivery lifecycle. 'queued' → 'sent' → 'delivered' | 'failed' | 'received'.
     status: text("status").notNull().default("queued"),
     // Why a message failed, as the CARRIER reported it (Twilio's numeric code, e.g. "30034" for a
@@ -66,6 +71,13 @@ export const messages = pgTable(
       name: "messages_org_lead_fk",
       columns: [t.orgId, t.leadId],
       foreignColumns: [leads.orgId, leads.id],
+    }),
+    // Tenant-safe sender: the attributed staffer must share this message's org (mirrors
+    // jobs_assignee_fk).
+    foreignKey({
+      name: "messages_org_sender_fk",
+      columns: [t.orgId, t.sentByUserId],
+      foreignColumns: [users.orgId, users.id],
     }),
     // Reject unknown directions and statuses at the storage layer.
     check("messages_direction_check", sql`${t.direction} in ('inbound', 'outbound')`),

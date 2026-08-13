@@ -1,4 +1,4 @@
-import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, LeadId, Result, AppError, Clock, UserId } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { notFound, conflict, err, ok } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
@@ -38,6 +38,12 @@ export interface SendMessageCmd {
   readonly leadId: LeadId;
   readonly leadPhone: string; // E.164 from leads.phone_e164
   readonly body: string;
+  /**
+   * The staffer sending as the business — every interactive send has one (this use case is
+   * only reached through an authenticated principal). Recorded on the row so the thread can
+   * show "sent by Dana" next to the shared business number.
+   */
+  readonly senderUserId: UserId;
   /**
    * The caller's dedupe token. Two sends carrying the same key produce ONE text — the second gets
    * the first one's row back. Absent (an ad-hoc text typed in the inbox), a unique key is
@@ -105,6 +111,7 @@ export class SendMessageUseCase {
     const claim = await this.repo.claimOutbound({
       id,
       leadId: cmd.leadId,
+      sentByUserId: cmd.senderUserId,
       from: cmd.orgTwilioNumber,
       to: cmd.leadPhone,
       body: cmd.body,

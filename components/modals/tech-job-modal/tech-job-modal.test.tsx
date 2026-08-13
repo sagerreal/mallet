@@ -797,7 +797,12 @@ describe("TechJobModalContent — phone controls (office)", () => {
     fireEvent.click(call);
     expect(mockOpenModal).toHaveBeenCalledWith(MODAL.CALL, { leadId: "lead-1" });
     fireEvent.click(text);
-    expect(mockOpenModal).toHaveBeenCalledWith(MODAL.THREAD, { leadId: "lead-1" });
+    // Text now rides the job's own customer fields so it works on the tech shell,
+    // where the leads store is empty (the customers hydrator is office-only).
+    expect(mockOpenModal).toHaveBeenCalledWith(
+      MODAL.THREAD,
+      expect.objectContaining({ leadId: "lead-1", leadName: expect.any(String), phone: expect.anything() }),
+    );
   });
 
   it("Call/Text STAY tappable with no phone on file — the modal handles adding one", () => {

@@ -62,7 +62,6 @@ function MoneyHeader({
           </button>
         </div>
       </div>
-      <div className="sub">Every dollar from done-work to paid.</div>
     </div>
   );
 }

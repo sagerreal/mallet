@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect, vi } from "vitest";
-import { asLeadId, asOrgId } from "@mallet/shared/types";
+import { asLeadId, asOrgId, asUserId } from "@mallet/shared/types";
 import type { LeadId } from "@mallet/shared/types";
 import { ListConversationsUseCase } from "./list-conversations";
 import type { MessageRepository } from "../domain/message-repository";
@@ -74,6 +74,17 @@ describe("ListConversationsUseCase", () => {
     expect(vi.mocked(repo.listConversations)).toHaveBeenCalledOnce();
     const [filter] = vi.mocked(repo.listConversations).mock.calls[0]!;
     expect(filter).toEqual({ leadId: LEAD_ID_A });
+  });
+
+  it("passes the tech scope through — assignedToUserId reaches the repo verbatim", async () => {
+    const repo = makeRepo();
+    const uc = new ListConversationsUseCase(repo);
+    const techId = asUserId("dddddddd-dddd-4ddd-8ddd-dddddddddddd");
+
+    await uc.exec({ assignedToUserId: techId });
+
+    const [filter] = vi.mocked(repo.listConversations).mock.calls[0]!;
+    expect(filter).toEqual({ assignedToUserId: techId });
   });
 
   it("returns whatever the repo resolves without transformation", async () => {

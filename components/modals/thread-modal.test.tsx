@@ -11,27 +11,44 @@ import { ThreadModalContent } from "./thread-modal";
 
 const h = vi.hoisted(() => ({
   leads: [] as { id: string; name: string; phone: string; acts?: unknown[] }[],
+  params: { leadId: "lead-1" } as Record<string, unknown>,
   updateLead: vi.fn(),
+  clearLeadUnreadLocal: vi.fn(),
   sendMutate: vi.fn(() => Promise.resolve()),
+  markReadMutate: vi.fn(() => Promise.resolve({ cleared: true })),
   invalidate: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock("@/lib/store/app-store", () => ({
-  useActiveModal: () => ({ id: "thread", params: { leadId: "lead-1" } }),
+  useActiveModal: () => ({ id: "thread", params: h.params }),
   useCloseModal: () => () => {},
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ leads: h.leads, updateLead: h.updateLead }),
+    selector({ leads: h.leads, updateLead: h.updateLead, clearLeadUnreadLocal: h.clearLeadUnreadLocal }),
 }));
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
-    useUtils: () => ({ v1: { messaging: { listByLead: { invalidate: h.invalidate } } } }),
+    useUtils: () => ({
+      v1: {
+        messaging: {
+          listByLead: { invalidate: h.invalidate },
+          listConversations: { invalidate: h.invalidate },
+        },
+      },
+    }),
     v1: { messaging: { listByLead: { useQuery: () => ({ data: [], isLoading: false }) } } },
   },
 }));
 
 vi.mock("@/lib/trpc/vanilla", () => ({
-  trpcVanilla: { v1: { messaging: { send: { mutate: h.sendMutate } } } },
+  trpcVanilla: {
+    v1: {
+      messaging: {
+        send: { mutate: h.sendMutate },
+        markThreadRead: { mutate: h.markReadMutate },
+      },
+    },
+  },
 }));
 
 const updateLead = h.updateLead;
@@ -39,6 +56,7 @@ const sendMutate = h.sendMutate;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  h.params = { leadId: "lead-1" };
   h.leads = [{ id: "lead-1", name: "Dana Alvarez", phone: "", acts: [] }];
 });
 
@@ -69,5 +87,38 @@ describe("ThreadModalContent — phoneless reachability", () => {
     });
     fireEvent.click(screen.getByText(/^Save/));
     expect(updateLead).toHaveBeenCalledWith("lead-1", { phone: "(925) 555-0100" });
+  });
+});
+
+/**
+ * The tech shell has NO leads store (the customers hydrator is office-only), so the modal
+ * renders from the params the field openers pass — and never shows a save button a tech's
+ * role cannot honour.
+ */
+describe("ThreadModalContent — field shell (no store lead)", () => {
+  it("renders header, phone line, and live composer from params alone", () => {
+    h.leads = [];
+    h.params = { leadId: "lead-1", leadName: "Marcus Reyes", phone: "+15555550123" };
+    render(<ThreadModalContent />);
+    expect(screen.getByText("Marcus Reyes")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Text Marcus…")).toBeTruthy();
+  });
+
+  it("phoneless with no store lead: the ask routes to the office, no dead save control", () => {
+    h.leads = [];
+    h.params = { leadId: "lead-1", leadName: "Marcus Reyes", phone: null };
+    render(<ThreadModalContent />);
+    expect(screen.getByText(/ask the office to add one/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
+  });
+});
+
+describe("ThreadModalContent — read state", () => {
+  it("opening clears unread locally AND through the role-aware endpoint (never customers.update)", () => {
+    h.leads = [{ id: "lead-1", name: "Dana Alvarez", phone: "+15555550123", acts: [] }];
+    render(<ThreadModalContent />);
+    expect(h.clearLeadUnreadLocal).toHaveBeenCalledWith("lead-1");
+    expect(h.markReadMutate).toHaveBeenCalledWith({ leadId: "lead-1" });
+    expect(h.updateLead).not.toHaveBeenCalled();
   });
 });

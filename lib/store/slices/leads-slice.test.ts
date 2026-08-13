@@ -233,6 +233,28 @@ function makeSlice(): { readonly state: LeadsSlice; seedLeads: (leads: Lead[]) =
 // updateLead integration — verify the mutation is called / skipped correctly.
 // ---------------------------------------------------------------------------
 
+describe("clearLeadUnreadLocal", () => {
+  it("clears the dot locally and NEVER calls the network — persistence belongs to markThreadRead", () => {
+    const slice = makeSlice();
+    slice.seedLeads([{ ...makeLead(), unread: true }]);
+
+    slice.state.clearLeadUnreadLocal("lead-111");
+
+    expect(slice.state.leads[0]!.unread).toBe(false);
+    expect(mockMutate).not.toHaveBeenCalled();
+  });
+
+  it("already-read lead is a no-op that keeps the same row reference", () => {
+    const slice = makeSlice();
+    slice.seedLeads([{ ...makeLead(), unread: false }]);
+    const before = slice.state.leads[0];
+
+    slice.state.clearLeadUnreadLocal("lead-111");
+
+    expect(slice.state.leads[0]).toBe(before);
+  });
+});
+
 describe("updateLead integration (with trpcVanilla mock)", () => {
   beforeEach(() => {
     mockMutate.mockReset();

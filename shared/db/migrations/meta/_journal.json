@@ -1072,6 +1072,13 @@
       "when": 1786552556814,
       "tag": "0152_signup_invite_gate",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1786627571900,
+      "tag": "0153_sharp_zodiak",
+      "breakpoints": true
     }
   ]
 }

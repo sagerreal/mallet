@@ -37,6 +37,8 @@ interface MsgRow {
   when: string;
   /** Set when the carrier refused it — see MessageDTO.failure. */
   failure?: MessageDTO["failure"];
+  /** Who sent an outbound message as the business — see MessageDTO.senderName. */
+  senderName?: string | null;
 }
 
 interface SysRow {
@@ -55,6 +57,8 @@ function dtoToRow(msg: MessageDTO): MsgRow {
     text: msg.body,
     when: shortWhen(msg.createdAt),
     failure: msg.failure,
+    // The whole org texts as ONE business number; the name is how anyone tells who spoke.
+    senderName: msg.senderName,
   };
 }
 
@@ -81,17 +85,19 @@ function actToRow(act: LeadNote, i: number): Row | null {
 }
 
 /** One timeline row — a system chip for calls/visits/ai, a bubble for texts. */
-function ThreadRow({ row, lead }: { row: Row; lead: Lead }) {
+function ThreadRow({ row, custName }: { row: Row; custName: string }) {
   if (row.kind === "sys") {
     return <div className="tsys">{row.text}</div>;
   }
 
+  // Outbound: the staffer who sent it ("Dana · 2:14 PM"). Absent attribution (system sends,
+  // rows from before the column existed) shows just the time — never a guessed "You".
   const metaWho =
     row.from === "them"
-      ? `${firstName(lead.name)} · `
-      : row.from === "auto"
-        ? ""
-        : "You · ";
+      ? `${firstName(custName)} · `
+      : row.kind === "msg" && row.senderName
+        ? `${row.senderName} · `
+        : "";
 
   return (
     <div className={`msg ${row.from}`}>
@@ -157,9 +163,17 @@ export function ThreadModalContent() {
   const activeModal = useActiveModal();
   const close = useCloseModal();
   const leadId = activeModal?.params?.leadId as string | undefined;
+  // Openers on the FIELD shell pass name/phone along (a tech's store has no leads — the
+  // customers hydrator is office-only), so the modal renders from params there and from the
+  // store lead everywhere else. The store lead wins when present: it is live and reconciled.
+  const paramName = activeModal?.params?.leadName as string | undefined;
+  const paramPhone = activeModal?.params?.phone as string | undefined;
   const leads = useAppStore((s) => s.leads);
   const updateLead = useAppStore((s) => s.updateLead);
+  const clearLeadUnreadLocal = useAppStore((s) => s.clearLeadUnreadLocal);
   const lead = leads.find((l) => l.id === leadId);
+  const custName = lead?.name ?? paramName ?? "Customer";
+  const phoneOnFile = lead ? (hasPhone(lead) ? lead.phone : null) : ((paramPhone ?? "").trim() || null);
 
   const [draft, setDraft] = useState("");
   const [optimistic, setOptimistic] = useState<OptimisticMsg[]>([]);
@@ -188,10 +202,21 @@ export function ThreadModalContent() {
     },
   );
 
-  // Opening the thread clears the unread flag (prototype: l.unread=false).
+  // Opening the thread clears the unread flag — shared org state, cleared through the
+  // messaging endpoint so techs (who cannot edit leads) clear it the same way the office does.
+  // Local store first so the Customers-list dot dies instantly; server is idempotent.
   useEffect(() => {
-    if (lead?.unread) updateLead(lead.id, { unread: false });
-  }, [lead?.id, lead?.unread, updateLead]);
+    if (!leadId) return;
+    clearLeadUnreadLocal(leadId);
+    trpcVanilla.v1.messaging.markThreadRead
+      .mutate({ leadId })
+      .then(() => utils.v1.messaging.listConversations.invalidate())
+      .catch((err: unknown) => {
+        if (process.env.NODE_ENV !== "production") console.error("[markThreadRead]", err);
+      });
+    // utils is a stable ref from api.useUtils(); leadId is the real dependency.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadId, clearLeadUnreadLocal]);
 
   // Keep the thread pinned to the newest message.
   const rowCount = (thread?.length ?? 0) + optimistic.length;
@@ -200,10 +225,11 @@ export function ThreadModalContent() {
     if (sc) sc.scrollTop = sc.scrollHeight;
   }, [rowCount]);
 
-  if (!lead) return null;
+  if (!leadId) return null;
 
   // Build the combined row list: non-text acts (calls, visits, ai) + fetched SMS thread + optimistic rows.
-  const sysRows: Row[] = (lead.acts ?? [])
+  // A field viewer has no store lead, so no system chips — the SMS thread itself is complete.
+  const sysRows: Row[] = (lead?.acts ?? [])
     .map((act, i) => actToRow(act, i))
     .filter((r): r is Row => r !== null);
 
@@ -222,10 +248,10 @@ export function ThreadModalContent() {
   const allRows: Row[] = [...sysRows, ...msgRows, ...optimisticRows];
 
   async function send() {
-    if (!lead) return;
+    if (!leadId) return;
     // No number on file — the add-phone row above is the way in; don't optimistically
     // append a bubble that will fail server-side.
-    if (!hasPhone(lead)) {
+    if (!phoneOnFile) {
       setSendError("Add a phone number above to text them.");
       return;
     }
@@ -239,10 +265,10 @@ export function ThreadModalContent() {
     setOptimistic((prev) => [...prev, { id: tempId, body: v }]);
 
     try {
-      await trpcVanilla.v1.messaging.send.mutate({ leadId: lead.id, body: v });
+      await trpcVanilla.v1.messaging.send.mutate({ leadId, body: v });
       // Success: drop the optimistic row and let the refetch carry the real message.
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
-      await utils.v1.messaging.listByLead.invalidate({ leadId: lead.id });
+      await utils.v1.messaging.listByLead.invalidate({ leadId });
     } catch (err: unknown) {
       // Rollback optimistic row, restore the draft so the user can retry or edit, show inline error.
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
@@ -254,13 +280,13 @@ export function ThreadModalContent() {
   return (
     <>
       <div className="sheet-head">
-        <h2>{lead.name}</h2>
+        <h2>{custName}</h2>
         <div className="sheet-meta">
           {/* The meta line is the state: the number + transport, or the fact there's no number. */}
           <span>
-            {hasPhone(lead) ? (
+            {phoneOnFile ? (
               <>
-                {lead.phone} · texting from your <b>business number</b> — quote links and
+                {phoneOnFile} · texting from your <b>business number</b> — quote links and
                 reminders land in this same thread, marked ✦
               </>
             ) : (
@@ -270,19 +296,25 @@ export function ThreadModalContent() {
         </div>
       </div>
 
-      {!hasPhone(lead) ? (
+      {!phoneOnFile ? (
         // No number on file — the WHOLE sheet is the add-a-phone ask, in the standard grammar
         // (labeled field + [Cancel][Save & text] foot). The thread panel and composer do not
         // render here: an empty thread under the ask says nothing, and a disabled composer
         // with a dead Send is exactly the dead-control shape the house bans. The optimistic
         // store write flips hasPhone the moment the number saves, and the thread takes over.
-        <PhoneAddInput
-          label="Mobile number"
-          sub="Texts go out from your business number."
-          cta="Save & text"
-          onSave={(phone) => updateLead(lead!.id, { phone })}
-          onCancel={close}
-        />
+        lead ? (
+          <PhoneAddInput
+            label="Mobile number"
+            sub="Texts go out from your business number."
+            cta="Save & text"
+            onSave={(phone) => updateLead(lead.id, { phone })}
+            onCancel={close}
+          />
+        ) : (
+          // Field viewer with no number on file: techs cannot edit the customer record, so the
+          // honest state is the ask routed to someone who can — never a dead save button.
+          <div className="empty-att">No phone number on file — ask the office to add one.</div>
+        )
       ) : (
         <>
           <div className="thread" ref={scrollRef}>
@@ -291,7 +323,7 @@ export function ThreadModalContent() {
                 <div className="thread-empty-sub">Loading…</div>
               </div>
             ) : allRows.length > 0 ? (
-              allRows.map((row) => <ThreadRow key={row.id} row={row} lead={lead} />)
+              allRows.map((row) => <ThreadRow key={row.id} row={row} custName={custName} />)
             ) : (
               <div className="thread-empty">
                 <div className="thread-empty-title">No messages yet</div>
@@ -309,7 +341,7 @@ export function ThreadModalContent() {
           <div className="composer">
             <input
               value={draft}
-              placeholder={`Text ${firstName(lead.name)}…`}
+              placeholder={`Text ${firstName(custName)}…`}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") void send();

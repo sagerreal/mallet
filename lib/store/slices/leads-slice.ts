@@ -201,6 +201,13 @@ export interface LeadsSlice {
    * this one wrote, because the server reads the database and not this store.
    */
   updateLead: (id: string, patch: Partial<Lead>) => Promise<boolean>;
+  /**
+   * Local-only unread clear — no network. The thread modal persists the flag through
+   * v1.messaging.markThreadRead (the role-aware path techs can also use); this action just
+   * makes the Customers-list dot die instantly. Never wired to customers.update on purpose:
+   * that mutation is office-only and a tech's optimistic write would always roll back.
+   */
+  clearLeadUnreadLocal: (id: string) => void;
   moveLeadStage: (id: string, stage: string) => void;
   addLeadNote: (id: string, note: Omit<LeadNote, "id">) => LeadNote;
   removeLeadNote: (id: string, noteId: string) => void;
@@ -301,6 +308,12 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   // in the store only — they have no column in the DB contract.
   // If the patch contains ONLY local-only fields the network call is skipped.
   // ---------------------------------------------------------------------------
+  clearLeadUnreadLocal: (id) => {
+    set((s) => ({
+      leads: s.leads.map((l) => (l.id === id && l.unread ? { ...l, unread: false } : l)),
+    }));
+  },
+
   updateLead: (id, patch) => {
     // 1. Capture only the prior values of the patched keys — surgical rollback
     //    so a concurrent edit to a different field on the same lead is not clobbered.
