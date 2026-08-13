@@ -32,6 +32,14 @@ export function StillOpenBanner({ entry, suggestedEnd, saving, error, onEnd }: S
   // and offer no way to fix it.
   const [picking, setPicking] = useState(suggestedEnd === null);
   const problem = timesProblem(entry.startTime ?? "", chosen);
+  /**
+   * An UNTOUCHED field is not a mistake. With nothing to suggest, `chosen` starts empty and
+   * `timesProblem` answers "set both a start and an end time" — so the banner opened with a red
+   * sentence accusing him of something he had not done yet. The empty field is already visible and
+   * the disabled button already says the rest; the sentence waits until there is something to
+   * correct. (Error prevention: warn about a wrong value, never about an unentered one.)
+   */
+  const shownProblem = chosen === "" ? null : problem;
 
   return (
     <Card className="mh-open">
@@ -65,7 +73,7 @@ export function StillOpenBanner({ entry, suggestedEnd, saving, error, onEnd }: S
               onChange={(e) => setChosen(e.target.value)}
             />
           </Field>
-          {problem !== null ? <p className="mh-err">{problem}</p> : null}
+          {shownProblem !== null ? <p className="mh-err">{shownProblem}</p> : null}
           <div className="mh-acts">
             <Button disabled={problem !== null || saving} onClick={() => onEnd(chosen)}>
               {saving ? "Saving…" : "End my day"}

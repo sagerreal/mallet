@@ -1674,9 +1674,76 @@
   }
   .mh-unreported .muted{font-size:var(--type-sm)}
   .mh-unreported-acts{display:flex;gap:var(--space-2);flex-wrap:wrap}
-  .mh-nav{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-3);margin:var(--space-3) 0}
-  .mh-nav b{font-weight:700}
-  .mh-total{margin-left:auto;color:var(--ink-2);font-size:var(--type-sm);font-variant-numeric:tabular-nums}
+  /* ---------- My hours: the week register ----------
+     The mock's own three parts, in its order: a summary strip, a week pager, then the sheet. Its
+     raw pixel values are snapped to the --space/--type/--radius scale (the linter fails on a raw
+     one), so a few land a step off the mock — 22px gutters become var(--space-6), 14.5px type
+     becomes --type-md. The GRID is not rounded: those column ratios are what make the register
+     read as a register.
+
+     Every number in here is a payroll figure, so digits are tabular everywhere they stack. */
+  .summary{
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);
+    display:grid;grid-template-columns:repeat(3,1fr)
+  }
+  .sum-cell{padding:var(--space-5) var(--space-6);border-left:1px solid var(--line)}
+  .sum-cell:first-child{border-left:0}
+  /* mono kicker, not a sentence — the DAY TOTAL card's label grammar */
+  .sum-lbl{font-family:var(--font-mono);font-size:var(--type-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+  .sum-val{display:flex;align-items:baseline;gap:var(--space-2);margin-top:var(--space-3)}
+  .sum-val .n{font-family:var(--font-mono);font-size:var(--type-3xl);font-weight:700;letter-spacing:-.03em;line-height:1;font-variant-numeric:tabular-nums}
+  .sum-val .u{font-size:var(--type-base);color:var(--ink-3);font-weight:500}
+  /* the card segment strip's 4px language, not a fat progress bar */
+  .sum-bar{height:4px;border-radius:var(--radius-pill);background:var(--line-2);overflow:hidden;margin-top:var(--space-4);max-width:440px}
+  .sum-bar i{display:block;height:100%;background:var(--ink);border-radius:var(--radius-pill);transition:width .3s ease}
+  .sum-sub{font-size:var(--type-sm);color:var(--ink-3);margin-top:var(--space-3)}
+  @media (max-width:640px){
+    .summary{grid-template-columns:1fr}
+    .sum-cell{border-left:0;border-top:1px solid var(--line)}
+    .sum-cell:first-child{border-top:0}
+  }
+
+  .weeknav{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-6) var(--space-2xs) var(--space-3)}
+  .wk-ic{width:38px;height:38px;border:1.5px solid var(--manila-line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);display:grid;place-items:center;cursor:pointer;font-size:var(--type-md)}
+  .wk-ic:hover{border-color:var(--ink-3);color:var(--ink)}
+  .wk-label{line-height:1.15}
+  .wk-word{display:block;font-size:var(--type-xl);font-weight:800;letter-spacing:-.015em}
+  .wk-range{display:block;font-family:var(--font-mono);font-size:var(--type-sm);font-weight:500;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .wk-spacer{flex:1}
+  @media (max-width:700px){.weeknav{flex-wrap:wrap}.wk-spacer{display:none}}
+
+  /* wide register scrolls inside its own container — the page never scrolls sideways */
+  .sheet{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow-sm);overflow-x:auto}
+  .sh-head,.sh-row{
+    display:grid;grid-template-columns:1.25fr 1.4fr 1.4fr 1.4fr 1.4fr 104px 108px;
+    column-gap:var(--space-4);align-items:center;padding:0 var(--space-6);min-width:720px
+  }
+  .sh-head{padding-top:var(--space-2);padding-bottom:var(--space-2);border-bottom:1px solid var(--line);background:var(--paper)}
+  .sh-head span{font-size:var(--type-xs);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+  .sh-entry{border-bottom:1px solid var(--line-2)}
+  .sh-entry:last-child{border-bottom:0}
+  .sh-entry.open{background:var(--paper)}
+  .sh-row{padding-top:var(--space-3);padding-bottom:var(--space-3)}
+  .sh-cell{font-size:var(--type-md);color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .sh-cell.day{font-weight:700;color:var(--ink)}
+  /* an empty clock column: present, and visibly holding nothing */
+  .sh-cell.none{color:var(--ink-3)}
+  .sh-more{display:block;font-size:var(--type-sm);color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .sh-total{font-family:var(--font-mono);font-size:var(--type-md);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  .sh-total .u{font-weight:500;color:var(--ink-3);margin-left:var(--space-1);font-size:var(--type-base)}
+  .sh-acts{display:flex;align-items:center;gap:var(--space-1);justify-content:flex-end}
+  .sh-ico{width:30px;height:30px;border-radius:var(--radius-sm);border:0;background:none;display:grid;place-items:center;color:var(--ink-2);cursor:pointer;flex:0 0 auto}
+  .sh-ico:hover{background:var(--bg);color:var(--ink)}
+  .sh-ico.mut{color:var(--ink-3)}
+  .sh-ico.open{color:var(--ink);transform:rotate(90deg)}
+  .sh-run{font-size:var(--type-sm);font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  .sh-empty{padding:var(--space-6);color:var(--ink-3);font-size:var(--type-md)}
+  /* In the register the reason is a quiet LINE, not a tinted band: `.mh-lock`'s --paper fill made a
+     full-width block inside the card, and on a running row (every crew, every afternoon) that block
+     shouted louder than the shift it belongs to. */
+  .sh-lock{background:none;padding:0;margin:0 var(--space-6) var(--space-3);font-size:var(--type-sm);color:var(--ink-3)}
+  /* the row's parts, IN FLOW under it (the DAY TOTAL expander's grammar, never a popover) */
+  .sh-detail{border-top:1px solid var(--line);background:var(--card);padding:0 var(--space-6) var(--space-3)}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
   .ts-trow{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}

@@ -41,11 +41,11 @@ export interface MyHoursWeekProps {
   readonly onDelete: (entryId: string) => void;
 }
 
-interface RowProps extends Omit<MyHoursWeekProps, "entries" | "weekStartISO"> {
+export interface RowProps extends Omit<MyHoursWeekProps, "entries" | "weekStartISO"> {
   readonly entry: MyHoursEntry;
 }
 
-function EntryRow(props: RowProps) {
+export function EntryRow(props: RowProps) {
   const { entry, today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave, onDelete } = props;
   const lock = editabilityOf(entry, today, myUserId);
   const editing = editingId === entry.id;
