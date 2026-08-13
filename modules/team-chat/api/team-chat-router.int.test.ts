@@ -253,6 +253,27 @@ suite("v1.teamChat (full stack, live RLS)", () => {
     );
   });
 
+  it("reopening a DM you left re-admits you — leaving must not strand the conversation", async () => {
+    // Regression: find-or-create hands back the existing thread, so without a re-admit the
+    // caller got a threadId every subsequent read then refused. Caught in a live browser pass,
+    // not by the unit tests.
+    const dana = appRouter.createCaller(ctxFor(orgAId, danaId));
+    const mike = appRouter.createCaller(ctxFor(orgAId, mikeId));
+    const { threadId } = await dana.v1.teamChat.startDm({ userId: mikeId });
+    await dana.v1.teamChat.send({ threadId, body: "before the exit" });
+
+    await mike.v1.teamChat.leave({ threadId });
+    await expect(mike.v1.teamChat.listMessages({ threadId })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+
+    // Reopening the same DM lets him back in, on the SAME thread, with the history intact.
+    const reopened = await mike.v1.teamChat.startDm({ userId: danaId });
+    expect(reopened.threadId).toBe(threadId);
+    const seen = await mike.v1.teamChat.listMessages({ threadId });
+    expect(seen.map((m) => m.body)).toContain("before the exit");
+  });
+
   it("a DM cannot be turned into a group by adding a third person", async () => {
     const dana = appRouter.createCaller(ctxFor(orgAId, danaId));
     const { threadId } = await dana.v1.teamChat.startDm({ userId: mikeId });

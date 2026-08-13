@@ -36,10 +36,21 @@ export class StartDmUseCase {
     if (existing.length === 0) return err(notFound("that teammate is not in this shop"));
 
     const dmKey = dmKeyFor(cmd.meUserId, cmd.otherUserId);
-    const found = await this.repo.findThreadByDmKey(dmKey);
-    if (found) return ok(found);
-
     const now = this.clock.now();
+    const found = await this.repo.findThreadByDmKey(dmKey);
+    if (found) {
+      // Re-admit anyone who had left. Without this, leaving a DM stranded you: the thread still
+      // exists, so find-or-create hands it straight back — and every read on it then refuses,
+      // because the membership row says you are gone. A DM between two people is not a room you
+      // can be outside of while it is still open to you.
+      const missing: UserId[] = [];
+      for (const userId of [cmd.meUserId, cmd.otherUserId]) {
+        if (!(await this.repo.isMember(found.props.id, userId))) missing.push(userId);
+      }
+      if (missing.length > 0) await this.repo.addMembers(found.props.id, missing, now);
+      return ok(found);
+    }
+
     const thread = TeamThread.create({
       id: this.ids.newId(),
       orgId: cmd.orgId,

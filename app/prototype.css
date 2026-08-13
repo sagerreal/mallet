@@ -1739,6 +1739,13 @@
   .msg{display:flex;flex-direction:column;max-width:78%}
   .msg .bub{padding:var(--space-2) var(--space-3);border-radius:var(--radius-lg);font-size:var(--type-base);line-height:1.45}
   .msg .meta{font-size:var(--type-xs);color:var(--ink-3);margin-top:var(--space-2xs);padding:0 var(--space-1)}
+  /* A photo in a chat bubble. Capped by height so a portrait phone shot cannot push the whole
+     thread off screen, and by max-width so it never escapes the bubble column. */
+  .msg .chat-photo{display:block;max-width:100%;max-height:260px;width:auto;border-radius:var(--radius-md);border:1px solid var(--line);object-fit:cover}
+  /* The loading/failed stand-in: the same footprint, so the bubble does not jump when the
+     photo arrives under someone's thumb. */
+  .msg .chat-photo-ph{width:180px;height:135px;display:flex;align-items:center;justify-content:center;background:var(--manila-2)}
+  .msg.us .chat-photo{margin-left:auto}
   .msg.them{align-self:flex-start}
   .msg.them .bub{background:var(--card);border:1px solid var(--line);border-bottom-left-radius:4px}
   .msg.us{align-self:flex-end;align-items:flex-end}

@@ -12,6 +12,7 @@ import type {
   ThreadMember,
 } from "../domain/team-chat-repository";
 import { threadToDomain, messageToDomain } from "./team-chat-mapper";
+import { displayNameOf } from "../domain/display-name";
 
 /**
  * Staff-chat persistence. Constructed with a tenant-scoped transaction (withTenant already set
@@ -169,7 +170,7 @@ export class DrizzleTeamChatRepository implements TeamChatRepository {
     const membersByThread = new Map<string, ThreadMember[]>();
     for (const m of memberRows) {
       const list = membersByThread.get(m.threadId) ?? [];
-      list.push({ userId: asUserId(m.userId), name: m.name ?? m.email });
+      list.push({ userId: asUserId(m.userId), name: displayNameOf(m.name, m.email) });
       membersByThread.set(m.threadId, list);
     }
 

@@ -40,6 +40,11 @@ export const teamMessageDTO = z.object({
   threadId: z.string().uuid(),
   authorUserId: z.string().uuid(),
   senderName: z.string().nullable(),
+  /**
+   * Whether the VIEWER wrote this. Decided server-side so a bubble never has to know the
+   * caller's own id — the field shell in particular has no roster to compare against.
+   */
+  isMine: z.boolean(),
   body: z.string(),
   attachment: z
     .object({
@@ -54,12 +59,14 @@ export type TeamMessageDTO = z.infer<typeof teamMessageDTO>;
 
 export const toTeamMessageDTO = (
   m: TeamMessage,
+  viewerUserId: string,
   senderNames?: ReadonlyMap<string, string>,
 ): TeamMessageDTO => ({
   id: m.props.id,
   threadId: m.props.threadId,
   authorUserId: m.props.authorUserId,
   senderName: senderNames?.get(m.props.authorUserId) ?? null,
+  isMine: m.props.authorUserId === viewerUserId,
   body: m.props.body,
   attachment: m.props.attachment
     ? {

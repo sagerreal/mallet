@@ -20,6 +20,7 @@ import { AddGroupMembersUseCase, LeaveTeamThreadUseCase } from "../app/manage-me
 import { MAX_GROUP_TITLE, MAX_GROUP_MEMBERS } from "../domain/team-thread";
 import { MAX_CHAT_BODY, MAX_CHAT_FILE_BYTES, CHAT_MEDIA_TYPES } from "../domain/team-message";
 import { teamThreadDTO, toTeamThreadDTO, teamMessageDTO, toTeamMessageDTO } from "./team-chat-dto";
+import { displayNameOf } from "../domain/display-name";
 
 /**
  * Staff chat. EVERY procedure is `anyRole` — a shop's crew talking to each other is not an
@@ -47,7 +48,7 @@ const senderNamesFor = async (
     .select({ id: users.id, name: users.name, email: users.email })
     .from(users)
     .where(and(eq(users.orgId, orgId), inArray(users.id, ids)));
-  return new Map(rows.map((r) => [r.id, r.name ?? r.email]));
+  return new Map(rows.map((r) => [r.id, displayNameOf(r.name, r.email)]));
 };
 
 export const createTeamChatRouter = () =>
@@ -78,7 +79,7 @@ export const createTeamChatRouter = () =>
           .filter((r) => r.id !== ctx.principal.userId)
           .map((r) => ({
             userId: r.id,
-            name: r.name ?? r.email,
+            name: displayNameOf(r.name, r.email),
             role: r.role as "owner" | "office" | "tech",
           }))
           .sort((a, b) => a.name.localeCompare(b.name));
@@ -152,7 +153,7 @@ export const createTeamChatRouter = () =>
           ctx.principal.orgId,
           messages.map((m) => m.props.authorUserId),
         );
-        return messages.map((m) => toTeamMessageDTO(m, names));
+        return messages.map((m) => toTeamMessageDTO(m, ctx.principal.userId, names));
       }),
 
     /** Post to a thread — words, a photo, or both. */
@@ -190,7 +191,7 @@ export const createTeamChatRouter = () =>
         const names = await senderNamesFor(ctx.tx, ctx.principal.orgId, [
           message.props.authorUserId,
         ]);
-        return toTeamMessageDTO(message, names);
+        return toTeamMessageDTO(message, ctx.principal.userId, names);
       }),
 
     /** Move my read cursor. Per-user: opening a group clears only MY badge. */
