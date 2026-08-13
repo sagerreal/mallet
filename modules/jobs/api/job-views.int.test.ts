@@ -84,8 +84,30 @@ suite("jobs scoped views", () => {
     await addJob("V-TODAY3", "scheduled", TODAY);
     await addJob("V-WEEK1", "scheduled", "2026-08-18");   // within 7 days
     await addJob("V-WEEK2", "scheduled", "2026-08-22");   // exactly today+7
-    await addJob("V-OVERDUE", "scheduled", "2026-08-01"); // past -> week, matching today-derive
+    await addJob("V-OVERDUE", "scheduled", "2026-08-01"); // past, outstanding -> LATE
     await addJob("V-LATER1", "scheduled", "2026-09-10");  // beyond the week
+
+    // THE THREE SHAPES `late` MUST NOT SWALLOW.
+    //
+    // A job carrying an overdue trip AND one today belongs on today's run — a day view that omits
+    // work going out today is not a day view — so today outranks late.
+    const both = await addJob("V-BOTH", "scheduled", "2026-08-01");
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status, position)
+      values (${orgId}, ${both}, ${TODAY}, ${crewUserId}, 120, 'pending', 2)`;
+
+    // A finished visit is history. OUTSTANDING excludes it, so this job is back to needing a slot
+    // rather than being reported late forever for a trip that already happened.
+    const [lateDone] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents)
+      values (${orgId}, ${leadId}, 'V-LATEDONE', 'scheduled', 50000) returning id`;
+    await admin`
+      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, duration_minutes, status)
+      values (${orgId}, ${lateDone!.id}, '2026-08-01', ${crewUserId}, 120, 'complete')`;
+
+    // Half-planned: a day was picked and nobody was put on it. PLACED needs both — the board has
+    // no lane to draw a visit for nobody — so this is a slot problem, not a lateness problem.
+    await addJob("V-LATENOCREW", "scheduled", "2026-08-05", { assign: false });
     const billed = await addJob("V-DONE1", "complete", "2026-08-02");
     await addJob("V-UNBILLED1", "complete", "2026-08-03");
     await addJob("V-UNBILLED2", "complete", "2026-08-04");
@@ -160,10 +182,12 @@ suite("jobs scoped views", () => {
   it("counts each view correctly", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const { counts: c } = await caller.v1.jobs.viewCounts({ today: TODAY });
-    // 2 never scheduled + V-FOLLOWUP, whose only dated visit is already finished.
-    expect(c.needsSlot).toBe(3);
-    expect(c.today).toBe(3);
-    expect(c.week).toBe(3);        // 2 within 7 days + 1 overdue
+    // 2 never scheduled, + V-FOLLOWUP and V-LATEDONE (only dated visit already finished),
+    // + V-LATENOCREW (a day but no crew — dated is not placed).
+    expect(c.needsSlot).toBe(5);
+    expect(c.today).toBe(4);       // 3 booked today + V-BOTH, where today outranks its overdue trip
+    expect(c.late).toBe(1);        // V-OVERDUE — it used to be counted inside week
+    expect(c.week).toBe(2);        // the 2 genuinely within 7 days, overdue no longer among them
     expect(c.upcoming).toBe(1);
     // The two 50000-cent unbilled jobs + the SIGNED estimate (priced lines, total_cents 0).
     // The unpriced scoping estimate is NOT money on the floor — it counts as done.
@@ -195,7 +219,7 @@ suite("jobs scoped views", () => {
 
     // And no id appears in two views.
     const seen = new Set<string>();
-    for (const view of ["needsSlot", "today", "week", "upcoming", "needsInvoice", "done", "archived"] as const) {
+    for (const view of ["needsSlot", "late", "today", "week", "upcoming", "needsInvoice", "done", "archived"] as const) {
       const page = await caller.v1.jobs.list({ view, today: TODAY, limit: 50 });
       for (const j of page.items) {
         expect(seen.has(j.id), `${j.num} appears in more than one view`).toBe(false);
@@ -244,7 +268,56 @@ suite("jobs scoped views", () => {
   it("needsSlot means no date placed, not 'no visit row'", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const page = await caller.v1.jobs.list({ view: "needsSlot", today: TODAY, limit: 50 });
-    expect(page.items.map((j) => j.num).sort()).toEqual(["V-FOLLOWUP", "V-SLOT1", "V-SLOT2"]);
+    expect(page.items.map((j) => j.num).sort()).toEqual([
+      "V-FOLLOWUP", "V-LATEDONE", "V-LATENOCREW", "V-SLOT1", "V-SLOT2",
+    ]);
+  });
+
+  /**
+   * LATE — a trip booked onto a past day that has not happened.
+   *
+   * It used to fall into `week`: byWeekEnd is `scheduled_date <= today+7` with no lower bound, so
+   * every past date satisfied it. That was deliberate and documented as a product decision to
+   * revisit; this is the revisit. Overdue work is the most actionable state on the screen and it
+   * was scattered through a 34-row band with no way to ask for it.
+   */
+  it("counts a past-due outstanding visit as late, and keeps it out of This week", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const late = await caller.v1.jobs.list({ view: "late", today: TODAY, limit: 50 });
+    expect(late.items.map((j) => j.num)).toEqual(["V-OVERDUE"]);
+
+    // Membership, not an exact set: a later test seeds V-TWICE into this same org.
+    const week = await caller.v1.jobs.list({ view: "week", today: TODAY, limit: 50 });
+    const weekNums = week.items.map((j) => j.num);
+    expect(weekNums).toContain("V-WEEK1");
+    expect(weekNums).toContain("V-WEEK2");
+    expect(weekNums).not.toContain("V-OVERDUE");
+  });
+
+  it("files a job with BOTH an overdue trip and one today under Today, not Late", async () => {
+    // A day view that omits work going out today is not a day view. The overdue trip is still
+    // named on the row — see jobWhenLabel — but the job belongs on the run.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const today = await caller.v1.jobs.list({ view: "today", today: TODAY, limit: 50 });
+    expect(today.items.map((j) => j.num)).toContain("V-BOTH");
+    const late = await caller.v1.jobs.list({ view: "late", today: TODAY, limit: 50 });
+    expect(late.items.map((j) => j.num)).not.toContain("V-BOTH");
+  });
+
+  it("stops calling an overdue visit late once it is finished", async () => {
+    // A finished visit is history. Without OUTSTANDING, a job whose first trip is done reports
+    // late forever for work that already happened.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const late = await caller.v1.jobs.list({ view: "late", today: TODAY, limit: 50 });
+    expect(late.items.map((j) => j.num)).not.toContain("V-LATEDONE");
+  });
+
+  it("leaves a past-dated visit with no crew in Needs a slot, not Late", async () => {
+    // PLACED is a day AND a crew. A day with nobody on it is a slot problem; calling it late
+    // would name the wrong missing thing and send the dispatcher to the wrong control.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const late = await caller.v1.jobs.list({ view: "late", today: TODAY, limit: 50 });
+    expect(late.items.map((j) => j.num)).not.toContain("V-LATENOCREW");
   });
 
   it("separates finished work by whether it was billed", async () => {
