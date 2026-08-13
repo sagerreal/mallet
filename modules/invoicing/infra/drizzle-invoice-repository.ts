@@ -295,6 +295,45 @@ export class DrizzleInvoiceRepository implements InvoiceRepository {
     };
   }
 
+  /**
+   * Every ledger band counted in ONE query — what the Money screen's chip row reads.
+   *
+   * `count()` answers a single band per call, so six chips meant six round trips. This is the same
+   * shape DrizzleJobRepository.viewCounts uses: one pass over the org's invoices with a
+   * `count(*) filter (where <band>)` per band, sharing `listConds` with the LIST so the number on a
+   * chip and the rows behind it can never come from different definitions.
+   *
+   * `view` is stripped from the base filter deliberately — the bands ARE the breakdown, so a base
+   * that already selected one would return that band's count in its own column and zero everywhere
+   * else. Search and the other predicates stay, because a count that ignores the active search
+   * describes a different list than the one on screen.
+   */
+  async viewCounts(base?: InvoiceFilter): Promise<{ counts: Record<InvoiceView, number> }> {
+    const baseConds = this.listConds({ ...base, view: undefined });
+    const one = (v: InvoiceView) =>
+      sql<number>`count(*) filter (where ${invoiceViewCondition(v)})::int`;
+    const rows = await this.tx
+      .select({
+        draft: one("draft"),
+        over: one("over"),
+        paid: one("paid"),
+        partial: one("partial"),
+        sent: one("sent"),
+      })
+      .from(invoices)
+      .where(and(...baseConds));
+    const r = rows[0];
+    return {
+      counts: {
+        draft: r?.draft ?? 0,
+        over: r?.over ?? 0,
+        paid: r?.paid ?? 0,
+        partial: r?.partial ?? 0,
+        sent: r?.sent ?? 0,
+      },
+    };
+  }
+
   async count(filter?: InvoiceFilter): Promise<number> {
     const rows = await this.tx
       .select({ n: sql<number>`count(*)::int` })

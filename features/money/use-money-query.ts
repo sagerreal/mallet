@@ -81,6 +81,25 @@ export function useMoneyQuery(state: MoneyQueryState) {
   // Unfiltered book size — the honest first-run input.
   const bookTotal = api.v1.invoicing.count.useQuery({}, { refetchOnWindowFocus: false });
 
+  // THE CHIP ROW'S NUMBERS. All five invoice bands in one round trip, and they carry the active
+  // search for the same reason the total does: a count that ignores it describes a different list
+  // than the rows on screen. NOT narrowed by the selected band — the chips must keep showing every
+  // band's size while you stand inside one of them.
+  const bands = api.v1.invoicing.viewCounts.useQuery(
+    { ...(search ? { search } : {}) },
+    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
+  );
+
+  // Ready-to-bill is counted by the JOBS module — it is a finished job with no invoice, not an
+  // invoice — and its count comes from the aggregate rather than from `ready.data.items.length`.
+  // Two reasons: the worklist query is DISABLED whenever an invoice band is selected, so the length
+  // would read 0 while standing in Overdue; and the list is capped at READY_CAP, so past the cap
+  // the length would understate the real number.
+  const readyCount = api.v1.jobs.viewCounts.useQuery(
+    { today, ...(search ? { search } : {}) },
+    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
+  );
+
   const readyJobs = useMemo(
     () => (wantReady ? (ready.data?.items ?? []).map((j) => dtoJobToStoreJob(j as never)) : []),
     [ready.data, wantReady],
@@ -113,6 +132,14 @@ export function useMoneyQuery(state: MoneyQueryState) {
     shown: readyJobs.length + invoiceRows.length,
     total: total.data === undefined ? undefined : (onlyReady ? 0 : total.data.total) + readyJobs.length,
     bookTotal: bookTotal.data?.total,
+    /**
+     * Per-band counts for the chip row. A band is ABSENT while its query is in flight, and the chip
+     * then renders without a number — a 0 that becomes 240 reads as data appearing from nowhere.
+     */
+    bandCounts: {
+      ...(bands.data?.counts ?? {}),
+      ...(readyCount.data ? { ready: readyCount.data.counts.needsInvoice } : {}),
+    },
     isStale: invoices.isPlaceholderData || debouncedSearch !== state.search,
     hasMore: Boolean(invoices.hasNextPage) && !onlyReady,
     loadMore,

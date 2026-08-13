@@ -21,8 +21,9 @@ import {
   deriveArchivedMoneyRows,
   type MoneyRow,
 } from "./money-derive";
-import { MoneyTable, MONEY_COL_ORDER, type MoneyColKey, type MoneyRowCallbacks } from "./money-table";
-import { MoneyToolbar, MoneyColumnsPanel, MoneyFiltersPanel, type MoneySet } from "./money-toolbar";
+import { MoneyTable, type MoneyRowCallbacks } from "./money-table";
+import { MoneyToolbar, type MoneySet } from "./money-toolbar";
+import { MoneyBandFilter, type MoneyBand } from "./money-band-filter";
 import { useMoneyQuery, useMoneyQueryState } from "./use-money-query";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
@@ -97,9 +98,6 @@ export function MoneyLedger() {
   const [moneySet, setMoneySet] = useState<MoneySet>("active");
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [colsOpen, setColsOpen] = useState(false);
-  const [visibleCols, setVisibleCols] = useState<MoneyColKey[]>([...MONEY_COL_ORDER]);
 
   // Armed "charge card on file" — first tap arms, second tap charges.
   const [armedCharge, setArmedCharge] = useState<string | null>(null);
@@ -130,14 +128,6 @@ export function MoneyLedger() {
   // overdue ones among the fifty rows on screen", which on an 847-invoice ledger is a wrong answer
   // presented as a complete one.
   const rows = source;
-  const activeFilterCount = statusFilter ? 1 : 0;
-
-  function toggleCol(key: MoneyColKey) {
-    setVisibleCols((prev) =>
-      prev.includes(key) ? prev.filter((c) => c !== key) : MONEY_COL_ORDER.filter((c) => prev.includes(c) || c === key)
-    );
-  }
-
   function clearFilters() {
     setQ("");
     setStatusFilter("");
@@ -280,17 +270,20 @@ export function MoneyLedger() {
             onMoneySet={switchSet}
             q={q}
             onQ={setQ}
-            filtersOpen={filtersOpen}
-            onToggleFilters={() => setFiltersOpen((v) => !v)}
-            colsOpen={colsOpen}
-            onToggleCols={() => setColsOpen((v) => !v)}
-            activeFilterCount={activeFilterCount}
             shown={rows.length}
             total={money.total ?? source.length}
           />
 
-          {colsOpen && <MoneyColumnsPanel visible={visibleCols} onToggle={toggleCol} />}
-          {filtersOpen && <MoneyFiltersPanel statusFilter={statusFilter} onStatus={setStatusFilter} onClear={clearFilters} />}
+          {/* THE one filter, on the page rather than behind a disclosure. It used to be a Status
+              dropdown carrying no numbers, so "240 invoices are overdue" took two clicks to learn
+              and was invisible until you went looking. Same slot and component shape as the Jobs
+              and Customers lists. */}
+          <MoneyBandFilter
+            band={statusFilter}
+            counts={money.bandCounts}
+            onBand={(b: MoneyBand | null) => setStatusFilter(b ?? "")}
+            disabled={moneySet === "archived"}
+          />
 
           <>
             {chargeError ? (
@@ -301,7 +294,7 @@ export function MoneyLedger() {
                 {chargeError}
               </p>
             ) : null}
-            <MoneyTable rows={rows} visibleCols={visibleCols} armedCharge={armedCharge} cb={cb} emptyState={emptyState} />
+            <MoneyTable rows={rows} armedCharge={armedCharge} cb={cb} emptyState={emptyState} />
           </>
         </>
       )}
