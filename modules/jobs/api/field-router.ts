@@ -11,6 +11,8 @@ import { DrizzleLeadRepository } from "@mallet/customers";
 // jobs↔quoting barrel cycle already exists (infra/drizzle-estimate-reader takes the same path)
 // and resolves fine because both sides bind lazily inside procedure bodies.
 import { RecordFieldSaleUseCase, DrizzleEstimateRepository } from "@mallet/quoting";
+import { DrizzleCrewScheduleRepository } from "@mallet/frontdesk";
+import { OrgSettings } from "@mallet/settings";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId, PricingRates } from "@mallet/shared/types";
 import { DrizzleJobRepository } from "../infra/drizzle-job-repository";
@@ -35,6 +37,7 @@ import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO
 import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 import { byAgenda, byVisitOn } from "./my-day-order";
 import { withinDayPagerBound, DAY_PAGER_BOUND_DAYS } from "./day-window";
+import { standardDayMinutes, weekdayOf } from "./standard-day";
 import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 import { visitToClose } from "./visit-to-close";
 
@@ -410,6 +413,33 @@ export const createFieldRouter = () =>
       const ordered = [...page.items].sort(byAgenda);
       return fieldAgendaPage({ tx: ctx.tx, principal: ctx.principal }, repo, ordered);
     }),
+
+    /**
+     * How long the CALLER's working day is, in minutes — the DAY TOTAL ring's denominator.
+     *
+     * The schedule model the dispatch board and front desk already use answers it: the caller's
+     * own crew_schedules row for that weekday, else the org's default day hours, else null (a
+     * day off draws an empty ring — never a full one). Same date grammar and bound as `day`.
+     */
+    standardDay: anyRole
+      .input(dayInput)
+      .output(z.object({ minutes: z.number().int().positive().nullable() }))
+      .query(async ({ ctx, input }) => {
+        if (!withinDayPagerBound(input.date, ctx.deps.clock.now())) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: `That day is out of reach — the day view covers ${DAY_PAGER_BOUND_DAYS} days either side of today.`,
+          });
+        }
+        const weekday = weekdayOf(input.date);
+        const rows = await new DrizzleCrewScheduleRepository(ctx.tx, ctx.principal.orgId).listForOrg();
+        const mine = rows.find((r) => r.userId === ctx.principal.userId && r.weekday === weekday) ?? null;
+        const settings = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getConfig(
+          ctx.principal.orgId,
+          OrgSettings.defaultBooking,
+        );
+        return { minutes: standardDayMinutes(weekday, mine, settings.props) };
+      }),
 
     /**
      * ONE named day of the caller's route — the day pager's read (My day paging to yesterday or

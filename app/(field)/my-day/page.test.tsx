@@ -42,6 +42,7 @@ let dayQueryState: { data: unknown; isLoading: boolean; isFetched?: boolean; isE
   isLoading: false,
 };
 const dayRefetch = vi.fn();
+let standardDayData: { minutes: number | null } | undefined = { minutes: 480 };
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
@@ -85,6 +86,7 @@ vi.mock("@/lib/trpc/client", () => ({
           },
         },
         day: { useQuery: () => ({ ...dayQueryState, refetch: dayRefetch }) },
+        standardDay: { useQuery: () => ({ data: standardDayData, isLoading: false }) },
       },
     },
   },

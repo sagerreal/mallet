@@ -74,6 +74,13 @@ export default function MyDayPage() {
     { enabled: !viewingToday, staleTime: 300_000, refetchOnWindowFocus: false },
   );
 
+  // How long today's working day IS (crew schedule, else org hours) — the ring's denominator.
+  // The booked visits are the fallback for a shop that never set hours up.
+  const standardDay = api.v1.field.standardDay.useQuery(
+    { date: todayISO() },
+    { enabled: viewingToday, staleTime: 600_000, refetchOnWindowFocus: false },
+  );
+
   // The job sheet reads the STORE (hydrated from today's myDay). A paged day's jobs may not be
   // in it, so adopt them — merge-in, never setJobs, which would wipe today's agenda.
   const adoptJob = useAppStore((s) => s.adoptJob);
@@ -279,12 +286,16 @@ export default function MyDayPage() {
       {viewingToday && hasClock ? (
         <DayClock
           jobs={items}
-          // The DAY TOTAL card's "of Xh scheduled": today's booked load, from the same visits
-          // the cards render. Canceled stops are not load.
-          scheduledMinutes={items
-            .flatMap((j) => j.visits)
-            .filter((v) => v.scheduledDate === todayISO() && v.status !== "canceled")
-            .reduce((n, v) => n + (v.durationMinutes ?? 0), 0)}
+          // The DAY TOTAL card's denominator: the length of this person's working day (their
+          // crew-schedule row, else the org's default hours). A shop that never set hours up
+          // falls back to today's booked visit load, so the ring still means something.
+          scheduledMinutes={
+            standardDay.data?.minutes ??
+            items
+              .flatMap((j) => j.visits)
+              .filter((v) => v.scheduledDate === todayISO() && v.status !== "canceled")
+              .reduce((n, v) => n + (v.durationMinutes ?? 0), 0)
+          }
         />
       ) : null}
       {!viewingToday ? (
