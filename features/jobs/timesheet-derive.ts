@@ -19,6 +19,8 @@ import {
 import { custName } from "./jobs-helpers";
 import {
   TS_KINDS,
+  TS_TIME_OFF_DEFAULT_MINUTES,
+  tsIsTimeOffKind,
   TIMESHEET_PICKER_MIN_HOUR,
   TIMESHEET_PICKER_MAX_HOUR,
   TIME_PICKER_STEP_HOURS,
@@ -53,12 +55,14 @@ export function tsMoney(n: number): number {
   return Math.round((Number(n) || 0) * CENTS) / CENTS;
 }
 
-/** The four kinds that are paid absence rather than recorded work — no punch times at all. */
-export const TS_TIME_OFF_KINDS = ["pto", "vacation", "sick", "holiday"] as const;
-
-/** Is this row paid time off? It carries a LENGTH and no clock stamps. */
+/**
+ * Is this row paid time off? It carries a LENGTH and no clock stamps.
+ *
+ * Delegates to the ONE list of time-off kinds (timesheet-constants.ts). Two lists of the same four
+ * kinds is how a fifth one gets added to a picker and silently keeps creating overtime.
+ */
 export function tsIsTimeOff(e: TimeEntry): boolean {
-  return (TS_TIME_OFF_KINDS as readonly string[]).includes(e.kind);
+  return tsIsTimeOffKind(e.kind);
 }
 
 /**
@@ -186,6 +190,43 @@ export function tsRollup(
   const approved = es.length > 0 && es.every((e) => e.status === "approved");
   // Uncapped, and including paid time off: every paid hour that is not overtime.
   return { paid, reg: tsMoney(paid - ot), ot, approved, count: es.length, rulePhrase: overtimeRulePhrase(policy) };
+}
+
+/**
+ * The times a row gets when the office converts a day off back into worked time. A standard day, so
+ * the row is immediately valid — and plainly wrong-looking if it is wrong, never a silent zero.
+ */
+export const TS_CONVERT_DEFAULT_START = "08:00";
+export const TS_CONVERT_DEFAULT_END = "16:00";
+
+/**
+ * Everything that has to change when the office changes a row's KIND.
+ *
+ * The two shapes are mutually exclusive by database constraint (`time_entries_kind_shape_check`): a
+ * clocked row carries start+end and no minutes, a day off carries minutes and no punch times. So
+ * changing kind ACROSS that boundary has to rewrite the shape in the same breath — sending `kind`
+ * alone would leave the old shape's columns populated, the domain would refuse the write, and the
+ * office would be looking at a control that silently does nothing.
+ *
+ * Pure, and here rather than in the click handler, because this is the rule the database enforces and
+ * it deserves to be read and tested as one.
+ */
+export function tsKindChange(entry: TimeEntry, kind: string): Partial<TimeEntry> {
+  const wasOff = tsIsTimeOffKind(entry.kind);
+  const nowOff = tsIsTimeOffKind(kind);
+  if (nowOff === wasOff) return { kind };
+  if (nowOff) {
+    // Becoming a day off: the punch times go, because there are none to a day nobody worked.
+    return { kind, start: null, end: null, running: false, minutes: TS_TIME_OFF_DEFAULT_MINUTES };
+  }
+  // Becoming worked time: it needs times, and a running flag must not survive the change.
+  return {
+    kind,
+    minutes: null,
+    start: TS_CONVERT_DEFAULT_START,
+    end: TS_CONVERT_DEFAULT_END,
+    running: false,
+  };
 }
 
 /**

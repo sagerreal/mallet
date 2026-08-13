@@ -17,7 +17,14 @@ import {
   tsUnfinishedDays,
   tsUnrecordedDays,
   tsDayLabel,
+  tsKindChange,
 } from "./timesheet-derive";
+import {
+  TS_KINDS,
+  TS_TIME_OFF_KEYS,
+  TS_TIME_OFF_MINUTES,
+  tsMinutesLabel,
+} from "./timesheet-constants";
 
 describe("week math", () => {
   it("tsWeekStart returns the Monday of the containing week", () => {
@@ -387,5 +394,78 @@ describe("paid time off on the office grid", () => {
     // fixing would have changed it. Same kind-blindness the server's approval predicate had.
     expect(tsIsUnfinished(holiday)).toBe(false);
     expect(tsUnfinishedDays([holiday], "3", WEEK)).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE OFFICE ENTERING TIME OFF. With "Techs can edit their own times" defaulting OFF, this grid is
+// the ONLY place in the product a holiday can be recorded — so the kind picker has to offer it, and
+// changing kind has to rewrite the row's SHAPE or the database refuses the write.
+// ---------------------------------------------------------------------------
+
+describe("changing a row's kind", () => {
+  const worked = mkEntry({ id: "w", techId: "3", date: "2026-06-29", start: "08:00", end: "16:00" });
+  const dayOff = mkEntry({
+    id: "o",
+    techId: "3",
+    date: "2026-06-29",
+    kind: "holiday",
+    start: null,
+    end: null,
+    minutes: 480,
+  });
+
+  it("clears the punch times when worked time becomes a day off", () => {
+    // The two shapes are mutually exclusive by constraint. Leaving start/end set would have the
+    // domain refuse the write, and the office would be clicking a control that does nothing.
+    const patch = tsKindChange(worked, "pto");
+    expect(patch).toMatchObject({ kind: "pto", start: null, end: null, minutes: 480, running: false });
+  });
+
+  it("gives a day off real times when it becomes worked time again", () => {
+    const patch = tsKindChange(dayOff, "shop");
+    expect(patch.minutes).toBeNull();
+    expect(patch.start).toBe("08:00");
+    expect(patch.end).toBe("16:00");
+  });
+
+  it("does not disturb the shape when both kinds are clocked", () => {
+    expect(tsKindChange(worked, "travel")).toEqual({ kind: "travel" });
+  });
+
+  it("does not disturb the shape between two time-off kinds", () => {
+    // Holiday → Sick keeps the length he already entered rather than resetting it to a default day.
+    expect(tsKindChange(dayOff, "sick")).toEqual({ kind: "sick" });
+  });
+
+  it("never leaves a running flag set across a conversion", () => {
+    const running = mkEntry({ id: "r", techId: "3", date: "2026-06-29", start: "08:00", end: null, running: true });
+    expect(tsKindChange(running, "vacation").running).toBe(false);
+  });
+
+  it("defaults a new day off to a standard working day, not to zero", () => {
+    // Zero hours of PTO is not a thing anybody means, and it would read as recorded.
+    expect(tsKindChange(worked, "vacation").minutes).toBe(480);
+  });
+});
+
+describe("labels for time off", () => {
+  it("has a label for every time-off kind — a missing one rendered as `undefined` in the grid", () => {
+    for (const kind of TS_TIME_OFF_KEYS) {
+      expect(TS_KINDS[kind]).toBeTruthy();
+    }
+  });
+
+  it("reads a length in hours and half hours", () => {
+    expect(tsMinutesLabel(480)).toBe("8h");
+    expect(tsMinutesLabel(450)).toBe("7h 30m");
+    expect(tsMinutesLabel(30)).toBe("30m");
+  });
+
+  it("offers half-hour steps from 30 minutes to twelve hours", () => {
+    // Half days and a two-and-a-half hour appointment are how time off is actually taken.
+    expect(TS_TIME_OFF_MINUTES[0]).toBe(30);
+    expect(TS_TIME_OFF_MINUTES.at(-1)).toBe(720);
+    expect(TS_TIME_OFF_MINUTES).toContain(240);
   });
 });

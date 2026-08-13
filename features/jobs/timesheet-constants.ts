@@ -8,14 +8,60 @@
  * features/timesheets/overtime.ts.
  */
 
-/** Entry kinds and their labels (order sets the segmented control). */
+/**
+ * Entry kinds and their labels (order sets the segmented control).
+ *
+ * The four TIME-OFF kinds are here too, and they have to be: without them a technician's holiday
+ * rendered its kind pill as `undefined` in the office grid, on the screen where the week is signed.
+ */
 export const TS_KINDS: Record<string, string> = {
   job: "Job",
   travel: "Travel",
   break: "Break",
   shop: "Shop",
+  pto: "PTO",
+  vacation: "Vacation",
+  sick: "Sick",
+  holiday: "Holiday",
 };
+
+/** The kinds recorded by a CLOCK — they carry a start and an end. */
 export const TS_KIND_KEYS = ["job", "travel", "break", "shop"] as const;
+
+/**
+ * The kinds that are paid ABSENCE — a date and a length, no punch times.
+ *
+ * The office is the only place these can be entered on most accounts: "Techs can edit their own
+ * times" defaults OFF (the Housecall Pro model), so if this picker does not offer time off, nobody
+ * in the shop can record a holiday at all.
+ */
+export const TS_TIME_OFF_KEYS = ["pto", "vacation", "sick", "holiday"] as const;
+
+export const tsIsTimeOffKind = (kind: string): boolean =>
+  (TS_TIME_OFF_KEYS as readonly string[]).includes(kind);
+
+/**
+ * Selectable lengths for a day off, in minutes: half-hour steps from 30 minutes to twelve hours.
+ *
+ * HALF-HOUR steps because that is how time off is actually taken and paid — a half day, a two-and-a
+ * half hour dentist appointment. Anything coarser makes the shop record a number that is not what
+ * happened.
+ */
+export const TS_TIME_OFF_MINUTES: readonly number[] = Array.from(
+  { length: 24 },
+  (_, i) => (i + 1) * 30,
+);
+
+/** The default length for a new day off: a standard working day. */
+export const TS_TIME_OFF_DEFAULT_MINUTES = 8 * 60;
+
+/** "8h" / "7h 30m" — how a length reads on a row and in the picker. */
+export function tsMinutesLabel(minutes: number): string {
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  if (!hours) return `${mins}m`;
+  return mins ? `${hours}h ${mins}m` : `${hours}h`;
+}
 
 /**
  * The tag `ApproveWeekUseCase` puts on its refusal when a week still holds hours with no end time
