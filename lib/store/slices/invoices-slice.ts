@@ -81,6 +81,9 @@ export interface InvoiceMetadataPayload {
   termsDays?: number;
   depositPaidCents?: number;
   poNumber?: string | null;
+  /** Discount / tax RATES in basis points — percent × 100, so 8.75% is 875. */
+  discBps?: number;
+  taxBps?: number;
 }
 
 export function buildInvoiceMetadataPayload(
@@ -103,6 +106,15 @@ export function buildInvoiceMetadataPayload(
   }
   if ("depPaid" in patch && patch.depPaid != null) {
     payload.depositPaidCents = Math.round(patch.depPaid * 100); // dollars → cents
+    persistable = true;
+  }
+  // The rates. Stored as PERCENT on the client (the prototype's convention) and sent as basis
+  // points, which is what the column and the domain use. Both ride together because the sheet
+  // edits them in one card, and a 0 is a real value — clearing a discount has to persist, or the
+  // bill keeps the old one.
+  if ("pricing" in patch && patch.pricing != null) {
+    payload.discBps = Math.round((patch.pricing.disc ?? 0) * 100);
+    payload.taxBps = Math.round((patch.pricing.tax ?? 0) * 100);
     persistable = true;
   }
   if ("poNumber" in patch) {
@@ -682,6 +694,12 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
           // chip, so defaulting to Net 7 on the wire sent the customer terms the office never
           // agreed to and never saw.
           termsDays: inv.termsDays ?? 0,
+          // The rates the sheet is showing. Sent as RATES, never as a total: the server derives
+          // the money from them and the lines, so a stale or tampered client total can never
+          // become the bill. Without these the drafted invoice was created with no discount and
+          // no tax, whatever the sheet displayed.
+          discBps: Math.round((inv.pricing?.disc ?? 0) * 100),
+          taxBps: Math.round((inv.pricing?.tax ?? 0) * 100),
           lines: inv.lines.map((l) => ({
             description: l.d,
             quantity:    l.q ?? 1,

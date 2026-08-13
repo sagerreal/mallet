@@ -7,7 +7,7 @@ import type {
   Result,
   ValidationError,
 } from "@mallet/shared/types";
-import { money, addMoney, zeroMoney, validation, ok, err } from "@mallet/shared/types";
+import { money, addMoney, zeroMoney, validation, ok, err, deriveTotals } from "@mallet/shared/types";
 import type { Payment } from "./payment";
 import type { InvoiceLine } from "./invoice-line";
 
@@ -17,6 +17,26 @@ import type { InvoiceLine } from "./invoice-line";
  * two call sites drift apart.
  */
 export const BPS_DENOMINATOR = 10_000;
+
+/**
+ * The money an invoice is worth, given its lines and its own rates.
+ *
+ * ONE chain — deriveTotals — shared with the quote the customer signed and with
+ * create-invoice-from-job. Tax is charged on the TAXABLE lines only, which is a second and
+ * different filter from the subtotal: an exempt line is still billed in full and still in the
+ * total, it just is not in the tax base.
+ */
+function totalsFor(
+  lines: readonly InvoiceLine[],
+  rates: { readonly discBps: number; readonly taxBps: number },
+): { total: Money; tax: Money; discount: Money } {
+  const derived = deriveTotals(
+    money(lines.reduce((sum, l) => sum + l.amount(), 0)),
+    money(lines.reduce((sum, l) => (l.props.taxable ? sum + l.amount() : sum), 0)),
+    { discBps: rates.discBps, taxBps: rates.taxBps, depBps: 0 },
+  );
+  return { total: derived.total, tax: derived.tax, discount: derived.discount };
+}
 
 export type InvoiceStatus = "draft" | "sent" | "partial" | "paid" | "void";
 
@@ -112,6 +132,16 @@ export interface InvoiceMetadataPatch {
    * blank/whitespace-only string) clears it. Trimmed before it reaches Invoice.create.
    */
   readonly poNumber?: string | null;
+  /**
+   * The discount and tax RATES, in basis points. Changing either re-derives total/tax/discount
+   * from the invoice's current lines — a rate that did not change the money owed would be
+   * decoration, which is exactly what these two controls used to be on the invoice sheet.
+   *
+   * Bounds are Invoice.create's (discount 0–10000, tax non-negative), so an out-of-range rate is
+   * refused here rather than silently clamped into somebody's bill.
+   */
+  readonly discBps?: number;
+  readonly taxBps?: number;
 }
 
 const PO_NUMBER_MAX_LEN = 64;
@@ -275,12 +305,26 @@ export class Invoice {
     // Trim poNumber to null when blank — preserve null for "not set". Undefined keeps current.
     const poNumber =
       patch.poNumber === undefined ? this.p.poNumber : (patch.poNumber?.trim() || null);
+    const discBps = patch.discBps ?? this.p.discBps;
+    const taxBps = patch.taxBps ?? this.p.taxBps;
+    // A rate change has to move the money, and it can only be derived where there are lines to
+    // derive it from. A job invoice with no priced lines carries a SNAPSHOT total that no rate can
+    // rebuild (create-invoice-from-job takes the same fallback), so there the rate is recorded for
+    // the document and the total is left exactly as it was rather than recomputed to zero.
+    const rateChanged = discBps !== this.p.discBps || taxBps !== this.p.taxBps;
+    const money_ =
+      rateChanged && this.p.lines.length > 0
+        ? totalsFor(this.p.lines, { discBps, taxBps })
+        : { total: this.p.total, tax: this.p.tax, discount: this.p.discount };
     return Invoice.create({
       ...this.p,
       leadId: patch.leadId ?? this.p.leadId,
       title: patch.title === undefined ? this.p.title : patch.title,
       termsDays: patch.termsDays ?? this.p.termsDays,
       depositPaid: patch.depositPaid ?? this.p.depositPaid,
+      discBps,
+      taxBps,
+      ...money_,
       poNumber,
       updatedAt: now,
     });
@@ -306,8 +350,12 @@ export class Invoice {
     if (this.p.status === "paid" || this.p.status === "void") {
       return err(validation("a paid or void invoice cannot be edited", "status"));
     }
-    const total = lines.reduce((sum, l) => addMoney(sum, l.amount()), zeroMoney);
-    return Invoice.create({ ...this.p, lines, total, updatedAt: now });
+    // Through deriveTotals, NOT a plain sum. The invoice carries its own discBps/taxBps, and a raw
+    // line sum threw both away: editing a line on a job-born invoice re-billed the full
+    // undiscounted amount and left a stale tax figure beside it. That is the same overbill
+    // create-invoice-from-job documents at its own deriveTotals call, one layer down — this is the
+    // second copy of the arithmetic it warned about, so it uses the one function too.
+    return Invoice.create({ ...this.p, lines, ...totalsFor(lines, this.p), updatedAt: now });
   }
 
   get props(): InvoiceProps {

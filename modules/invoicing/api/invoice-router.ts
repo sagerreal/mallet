@@ -201,6 +201,10 @@ const draftInput = z.object({
   leadId: z.string().uuid(),
   title: z.string().optional(),
   termsDays: z.number().int().min(0).optional(),
+  // Rates in basis points, both optional. The server derives the money from them and the lines —
+  // the client never sends a total, so a tampered or stale one cannot become the bill.
+  discBps: z.number().int().min(0).max(10_000).optional(),
+  taxBps: z.number().int().min(0).max(100_000).optional(),
   lines: z.array(lineInput).min(1),
 });
 const idInput = z.object({ invoiceId: z.string().uuid() });
@@ -213,6 +217,10 @@ const updateMetadataInput = z.object({
   // Customer-supplied PO number. Trimmed to null when blank (Invoice.editMetadata); undefined
   // (the field simply absent) leaves the current value untouched.
   poNumber: z.string().max(64).nullable().optional(),
+  // Same rates as draftInput. Sent on their own when the office edits an existing draft's
+  // Discount % or Tax %; the money is re-derived server-side from the invoice's stored lines.
+  discBps: z.number().int().min(0).max(10_000).optional(),
+  taxBps: z.number().int().min(0).max(100_000).optional(),
 });
 const patchLinesInput = z.object({
   invoiceId: z.string().uuid(),
@@ -421,6 +429,8 @@ export const createInvoiceRouter = () =>
           leadId: asLeadId(input.leadId),
           title: input.title ?? null,
           termsDays: input.termsDays ?? 7,
+          discBps: input.discBps,
+          taxBps: input.taxBps,
           lines: input.lines.map((l) => ({
             description: l.description,
             quantity: l.quantity,
@@ -520,6 +530,8 @@ export const createInvoiceRouter = () =>
               termsDays: input.termsDays,
               depositPaidCents: input.depositPaidCents,
               poNumber: input.poNumber,
+              discBps: input.discBps,
+              taxBps: input.taxBps,
             }),
           ),
           ctx.tx,
