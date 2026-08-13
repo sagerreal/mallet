@@ -12,6 +12,8 @@ import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { userMessage } from "@/lib/trpc/error-map";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
@@ -105,6 +107,9 @@ export function MoneyLedger() {
   // fallback — shown above the table. Cleared when a new charge is armed.
   const [chargeError, setChargeError] = useState<string | null>(null);
   const [charging, setCharging] = useState<string | null>(null);
+  // Separate from `charging`: reminding and charging are different single-flight gates on the
+  // same row, and sharing one would let a reminder in flight block the charge button.
+  const [reminding, setReminding] = useState<string | null>(null);
 
   // The ledger is served by the database now. It is a UNION of two things, so it is fetched as
   // two: the ready-to-bill WORKLIST whole (it is short by nature, and if it ever is not, that is
@@ -198,7 +203,23 @@ export function MoneyLedger() {
     onRemind: (id) => {
       const i = money.invoiceRows.find((x) => x.id === id);
       if (!i) return;
-      updateInvoice(id, { fu: { on: true, stage: Math.min((i.fu?.stage ?? 0) + 1, 2) } });
+      // This used to only bump the local follow-up stage, so the row moved to "Reminded" and NO
+      // reminder was ever sent — the one failure mode this screen cannot afford, because the
+      // office then stops chasing an invoice nobody has chased. The stage is written only after
+      // the server confirms the send, and a refusal (the 10DLC gate returns
+      // PRECONDITION_FAILED) is surfaced in the same slot a failed charge uses.
+      if (reminding) return; // single-flight — a second click must not send twice
+      setReminding(id);
+      setChargeError(null);
+      void trpcVanilla.v1.notifications
+        .advanceReminder.mutate({ relatedType: "invoice", relatedId: id })
+        .then(() => {
+          updateInvoice(id, { fu: { on: true, stage: Math.min((i.fu?.stage ?? 0) + 1, 2) } });
+        })
+        .catch((err: unknown) => {
+          setChargeError(userMessage(err, "Couldn't send the reminder — try again."));
+        })
+        .finally(() => setReminding(null));
     },
     onCancelCharge: () => setArmedCharge(null),
     onCharge: (id) => {

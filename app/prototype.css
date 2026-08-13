@@ -361,7 +361,10 @@
   .setwrap{display:flex;gap:var(--space-6);align-items:flex-start;margin-top:var(--space-2)}
   .setnav{flex:0 0 184px;position:sticky;top:8px;display:flex;flex-direction:column;gap:var(--space-1)}
   .setbody{flex:1;min-width:0}
-  @media(max-width:780px){ .setwrap{flex-direction:column;gap:var(--space-3)} .setnav{flex:0 0 auto;position:static;flex-direction:row;flex-wrap:wrap;gap:var(--space-2)} .setnav .navitem{flex:0 0 auto} }
+  /* align-items:stretch, not the base rule's flex-start: stacked children sized to their
+     own content instead of the column width, so Settings → Workspace ran off the right of every
+     phone and there was no horizontal scroll to reach it. */
+  @media(max-width:780px){ .setwrap{flex-direction:column;gap:var(--space-3);align-items:stretch} .setnav{flex:0 0 auto;position:static;flex-direction:row;flex-wrap:wrap;gap:var(--space-2)} .setnav .navitem{flex:0 0 auto} }
 
   h1{font-family:var(--font-display);font-size:var(--type-2xl);font-weight:600;margin-bottom:var(--space-2xs);letter-spacing:-.025em}
   .sub{color:var(--ink-2);font-size:var(--type-base);margin-bottom:var(--space-6)}
