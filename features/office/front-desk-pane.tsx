@@ -14,6 +14,7 @@
 
 import { useState } from "react";
 import { AddressInput } from "@/components/ui/address-input";
+import { DraftNumberInput } from "@/components/shared/draft-number-input";
 import { useAppStore } from "@/lib/store/app-store";
 import type { BookingHours } from "@/lib/store/slices/settings-slice";
 import { useMe } from "@/features/identity/hooks";
@@ -432,9 +433,18 @@ export function FrontDeskPane() {
           <RuleRow k="fee" openRule={openRule} onToggle={toggleRule} label="Service call fee" value={<><span className="mono">${bk.serviceFee}</span>{bk.feeCredited ? " · credited" : ""}</>}>
             <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexWrap: "wrap" }}>
               <span className="muted">$</span>
-              <input type="number" inputMode="decimal" min={0} defaultValue={bk.serviceFee}
-                onChange={(e) => setServiceFee(Number(e.target.value))}
-                style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-md)", background: "var(--card)" }} />
+              {/* onSettle, not onChange: setServiceFee persists the whole booking config, so
+                  parse-on-keystroke wrote $1 then $12 on the way to $125 — navigating away
+                  mid-type left the shop's diagnostic fee at $1 — and clearing the box to retype
+                  stored $0 with no Save, no confirmation and no undo. onCommit keeps the rail's
+                  preview live while typing; only blur reaches the server. */}
+              <DraftNumberInput
+                value={bk.serviceFee}
+                onSettle={setServiceFee}
+                aria-label="Service call fee in dollars"
+                placeholder="0"
+                style={{ width: 110, border: "1.5px solid var(--line)", borderRadius: "var(--radius-md)", padding: "var(--space-3) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-md)", background: "var(--card)" }}
+              />
               <span className="muted" style={{ fontSize: "var(--type-sm)" }}>to come diagnose a repair</span>
             </div>
             <div className="stage-row" style={{ marginTop: "var(--space-3)" }}>

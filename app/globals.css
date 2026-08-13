@@ -32,10 +32,17 @@ h1,
    Declarative crossfade on same-document navigations (Next 16 + the
    viewTransition: true flag in next.config.ts).  These rules are inert in
    browsers that don't support the API — safe to keep even if the config flag
-   is later reverted. */
-@view-transition {
-  navigation: auto;
-}
+   is later reverted.
+
+   NO `@view-transition { navigation: auto }` HERE, deliberately. That at-rule opts into
+   CROSS-document transitions, which is not what this block is for — same-document crossfades come
+   from Next's viewTransition flag and need no opt-in. With it on, a back/forward navigation made
+   Chromium skip the transition ("Transition was skipped") and never un-suppress rendering: the DOM
+   stayed readable while requestAnimationFrame stopped firing and no click was processed, so the
+   whole app froze until a manual reload. It only triggered after a HARD load — which is precisely
+   how the app is re-entered from an OAuth callback, so the freeze sat behind the QuickBooks
+   redirect to /settings?tab=quickbooks and Stripe Connect's return URL.
+   Regression test: e2e/back-nav.spec.ts. */
 
 ::view-transition-old(root),
 ::view-transition-new(root) {

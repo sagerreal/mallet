@@ -16,8 +16,21 @@ import { useState, type CSSProperties } from "react";
 export interface DraftNumberInputProps {
   /** Canonical value from the parent — what renders when the field is not being edited. */
   readonly value: number;
-  /** Parsed (never NaN, floored at 0) on every keystroke. The parent owns any clamping. */
-  readonly onCommit: (n: number) => void;
+  /**
+   * Parsed (never NaN, floored at 0) on every keystroke. The parent owns any clamping.
+   * Optional: a field whose only commit is expensive wants `onSettle` alone, not a noop here.
+   */
+  readonly onCommit?: (n: number) => void;
+  /**
+   * Fired ONCE on blur, for a commit too expensive to do per keystroke — a server write, not a
+   * store update. Typing "125" with a per-keystroke persist wrote $1 and then $12 to the shop's
+   * settings on the way, so navigating away mid-type left the fee at $1.
+   *
+   * Skipped when the field was merely cleared: select-all + delete is an ordinary "let me retype
+   * this" gesture, and treating it as a decision to store 0 gave no undo. A deliberate zero is
+   * still settled — it just has to be typed.
+   */
+  readonly onSettle?: (n: number) => void;
   /** Fixed decimals for the at-rest rendering (e.g. 2 for money). Trimmed naturally when unset. */
   readonly decimals?: number;
   readonly placeholder?: string;
@@ -34,6 +47,7 @@ const parse = (raw: string): number => {
 export function DraftNumberInput({
   value,
   onCommit,
+  onSettle,
   decimals,
   placeholder,
   disabled,
@@ -53,9 +67,17 @@ export function DraftNumberInput({
       onFocus={() => setDraft(atRest)}
       onChange={(ev) => {
         setDraft(ev.target.value);
-        onCommit(parse(ev.target.value));
+        onCommit?.(parse(ev.target.value));
       }}
-      onBlur={() => setDraft(null)}
+      onBlur={() => {
+        // Settle only a real change. A blank draft is a cleared box, not a typed 0 — treating it
+        // as one stored $0 with no undo. And an unchanged value is not worth a server round trip,
+        // so tabbing through the field writes nothing.
+        if (onSettle && draft !== null && draft.trim() !== "" && parse(draft) !== value) {
+          onSettle(parse(draft));
+        }
+        setDraft(null);
+      }}
       style={style}
     />
   );
