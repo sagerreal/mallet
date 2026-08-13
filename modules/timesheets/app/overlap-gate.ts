@@ -50,9 +50,14 @@ export async function overlapGateError(
     return validation("This day has too many rows to check for overlaps — remove some first.", "workDate");
   }
 
+  // Time-off rows occupy no wall-clock window — a half-day of PTO beside an afternoon shift
+  // is legal, so only punched rows can collide.
+  const punched = day.items
+    .map((e) => e.props)
+    .filter((p): p is typeof p & { startTime: string } => p.startTime !== null);
   const clash = findOverlap(
     { id: cand.id, startTime: cand.startTime, endTime: cand.endTime, running: cand.running },
-    day.items.map((e) => e.props),
+    punched,
   );
   return clash === null ? null : validation(overlapRefusal(clash), "startTime");
 }

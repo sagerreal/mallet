@@ -73,6 +73,15 @@ suite("timesheets tRPC router (full stack, live RLS)", () => {
       insert into users (org_id, auth_user_id, email, role, is_field_crew)
       values (${orgAId}, gen_random_uuid(), 'owner@test.test', 'owner', false) returning id`;
     ownerAId = ow!.id;
+
+    // This suite is about the OWNERSHIP boundary — a tech may touch their own rows and nobody
+    // else's — which is orthogonal to whether the shop lets techs hand-edit at all. That policy
+    // now defaults OFF (the HCP model), so the fixture org opts in; the toggle's own behaviour is
+    // proven in timesheet-policy.int.test.ts.
+    await admin`
+      insert into org_settings (org_id, tech_edits_times, booking)
+      values (${orgAId}, true, '{"services": [], "notServices": "", "serviceFee": 0, "feeCredited": false}'::jsonb)
+      on conflict (org_id) do update set tech_edits_times = true`;
   });
 
   afterAll(async () => {

@@ -31,7 +31,7 @@ export function StillOpenBanner({ entry, suggestedEnd, saving, error, onEnd }: S
   // Open by default when there is nothing to accept — otherwise the banner would state a problem
   // and offer no way to fix it.
   const [picking, setPicking] = useState(suggestedEnd === null);
-  const problem = timesProblem(entry.startTime, chosen);
+  const problem = timesProblem(entry.startTime ?? "", chosen);
 
   return (
     <Card className="mh-open">

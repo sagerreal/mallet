@@ -104,6 +104,9 @@ export const bookingCfgDTO = z.object({
 export const fieldTogglesDTO = z.object({
   measurementEstimating: z.boolean(),
   canText: z.boolean(),
+  /** May this technician hand-edit their own hours? A capability flag: the My hours page renders
+   *  read-only (corrections go through the office) when false. */
+  techEditsTimes: z.boolean(),
   /**
    * Does this shop punch a clock? False = a sheet shop: the crew types their week instead, so the
    * field surface hides the clock and leads with adding hours. A capability flag, exactly the kind
@@ -184,6 +187,9 @@ export const orgSettingsDTO = z.object({
   visitRepairMinutes: z.number().int(),
   visitInstallMinutes: z.number().int(),
   timesheetClock: z.boolean(),
+  techEditsTimes: z.boolean(),
+  otWeeklyThresholdMinutes: z.number().int(),
+  otDailyThresholdMinutes: z.number().int().nullable(),
   techSeesPrice: z.boolean(),
   techTexts: z.boolean(),
   frontDesk: z.boolean(),
@@ -434,6 +440,9 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
     visitRepairMinutes: p.visitRepairMinutes,
     visitInstallMinutes: p.visitInstallMinutes,
     timesheetClock: p.timesheetClock,
+    techEditsTimes: p.techEditsTimes,
+    otWeeklyThresholdMinutes: p.otWeeklyThresholdMinutes,
+    otDailyThresholdMinutes: p.otDailyThresholdMinutes,
     techSeesPrice: p.techSeesPrice,
     techTexts: p.techTexts,
     frontDesk: p.frontDesk,

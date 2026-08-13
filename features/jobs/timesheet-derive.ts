@@ -47,7 +47,7 @@ export function tsMoney(n: number): number {
 
 /** Worked hours for one entry. */
 export function tsHours(e: TimeEntry): number {
-  if (!e || !e.end) return 0;
+  if (!e || !e.end || !e.start) return 0;
   const d = timeToH(e.end) - timeToH(e.start);
   return d > 0 ? Math.round(d * CENTS) / CENTS : 0;
 }
@@ -98,7 +98,9 @@ export function tsWeekEntries(entries: TimeEntry[], techId: string, weekDates: s
 export function tsSortEntries(es: TimeEntry[]): TimeEntry[] {
   return es
     .slice()
-    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : timeToH(a.start) - timeToH(b.start)));
+    .sort((a, b) =>
+      a.date < b.date ? -1 : a.date > b.date ? 1 : timeToH(a.start ?? "00:00") - timeToH(b.start ?? "00:00"),
+    );
 }
 
 export interface TsRollup {

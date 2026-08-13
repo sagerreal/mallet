@@ -90,6 +90,7 @@ export function mkEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
   return {
     id: "entry-1",
     techId: "1",
+    minutes: null,
     date: "2026-07-01",
     kind: "job",
     jobId: "1",

@@ -79,14 +79,17 @@ export const buildQboTimeSyncPorts = (): QboTimeSyncPorts => ({
     for (const e of page.items) {
       const p = e.props;
       // Only APPROVED entries are ever pushed — approval is the shop's explicit sign-off, and a
-      // draft could still change.
+      // draft could still change. Time-off kinds never ride TimeActivity: QBO's time entries
+      // are worked (billable) time; PTO belongs to payroll, not the job ledger.
       if (p.status !== "approved") continue;
+      if (p.startTime === null) continue;
       if (!wanted.has(p.workDate)) continue;
       entries.push({
         id: p.id,
         techUserId: p.techUserId,
         workDate: p.workDate,
-        kind: p.kind,
+        // startTime non-null ⇒ clock kind (the shape invariant) — the narrowing TS cannot see.
+        kind: p.kind as "job" | "travel" | "break" | "shop",
         startTime: p.startTime,
         endTime: p.endTime,
         note: p.note,

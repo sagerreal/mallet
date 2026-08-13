@@ -598,11 +598,23 @@ function PendingInvitesList() {
 
 // ---- TeamRolesBlock ---------------------------------------------------------
 
+// Overtime-policy menus. Weekly spans the real range of full-time policies; daily covers the
+// daily-OT states (California's 8 is the common case).
+const OT_WEEKLY_DEFAULT_MINUTES = 2400;
+const OT_WEEKLY_CHOICES = [30, 32, 35, 40, 44, 48, 50] as const;
+const OT_DAILY_CHOICES = [8, 10, 12] as const;
+
 function TeamRolesBlock() {
   const { data, isLoading, isError } = api.v1.identity.members.useQuery();
+  const utils = api.useUtils();
   const setToggle = useAppStore((s) => s.setToggle);
   const techSeesPrice = useAppStore((s) => s.toggles.techSeesPrice);
   const timesheetClock = useAppStore((s) => s.toggles.timesheetClock);
+  const techEditsTimes = useAppStore((s) => s.toggles.techEditsTimes);
+  // The overtime policy is numbers, not a toggle — read from settings, saved via updateConfig.
+  const saveOt = api.v1.settings.updateConfig.useMutation({
+    onSuccess: () => void utils.v1.settings.get.invalidate(),
+  });
   // Same key as SettingsHydrator (deduped) — read purely to know when toggles are real.
   const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
   const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
@@ -673,6 +685,69 @@ function TeamRolesBlock() {
             />
             <i />
           </label>
+        </div>
+
+        <div className="stage-row">
+          <div style={{ flex: 1 }}>
+            <b>Techs can edit their own times</b>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Off, the clock and job taps are the only field writers — corrections go through
+              you. On, techs edit until a week is submitted.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={techEditsTimes}
+              disabled={settingsLoading}
+              onChange={(e) => setToggle("techEditsTimes", e.target.checked)}
+            />
+            <i />
+          </label>
+        </div>
+
+        <div className="stage-row">
+          <div style={{ flex: 1 }}>
+            <b>Overtime after (week)</b>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>Hours past this in a week count as overtime.</div>
+          </div>
+          <div style={{ flex: "0 0 auto", width: 150 }}>
+          <SelectMenu
+            aria-label="Overtime after, per week"
+            value={String(settingsQ.data?.config.otWeeklyThresholdMinutes ?? OT_WEEKLY_DEFAULT_MINUTES)}
+            disabled={settingsLoading || saveOt.isPending}
+            onChange={(v) => saveOt.mutate({ otWeeklyThresholdMinutes: Number(v) })}
+            options={OT_WEEKLY_CHOICES.map((h) => ({ value: String(h * 60), label: `${h} hours` }))}
+            compact
+          />
+          </div>
+        </div>
+
+        <div className="stage-row">
+          <div style={{ flex: 1 }}>
+            <b>Daily overtime after</b>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Some states add a daily rule — California is 8 hours. Off means only the weekly
+              rule applies.
+            </div>
+          </div>
+          <div style={{ flex: "0 0 auto", width: 150 }}>
+          <SelectMenu
+            aria-label="Daily overtime after"
+            value={
+              settingsQ.data?.config.otDailyThresholdMinutes == null
+                ? ""
+                : String(settingsQ.data.config.otDailyThresholdMinutes)
+            }
+            disabled={settingsLoading || saveOt.isPending}
+            onChange={(v) => saveOt.mutate({ otDailyThresholdMinutes: v === "" ? null : Number(v) })}
+            options={[
+              { value: "", label: "Off" },
+              ...OT_DAILY_CHOICES.map((h) => ({ value: String(h * 60), label: `${h} hours` })),
+            ]}
+            compact
+          />
+          </div>
         </div>
       </FoldCard>
     </>

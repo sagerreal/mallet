@@ -18,12 +18,14 @@ export interface TimeEntryRepository {
     jobId: string | null;
     workDate: string;
     kind: string;
-    startTime: string;
+    startTime: string | null;
     endTime: string | null;
+    minutes: number | null;
     note: string;
     src: string;
     status: string;
     running: boolean;
+    editedByUserId: string | null;
   }): Promise<TimeEntry>;
 
   findById(id: TimeEntryId): Promise<TimeEntry | null>;

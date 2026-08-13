@@ -332,6 +332,44 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     expect(paidItem?.customerName).toBe("Field Test Customer");
   });
 
+  it("a JOB tap on a submitted week lands the hours AND reopens the attestation", async () => {
+    // The job taps are the clock too. While only the day-clock path carried the submissions repo,
+    // On my way / Arrived / Done filed hours onto an attested week that still read as attested —
+    // and the submitted-week lock then refused the tech the rows his own tap had created.
+    const [mondayRow] = await admin<{ d: string }[]>`
+      select to_char(date_trunc('week', current_date)::date, 'YYYY-MM-DD') as d`;
+    const thisMonday = mondayRow!.d;
+    const [tapTech] = await admin<{ id: string }[]>`
+      insert into users (org_id, auth_user_id, email, role)
+      values (${orgId}, ${randomUUID()}, 'taptech@field.test', 'tech') returning id`;
+    const tapTechId = tapTech!.id;
+    const [job] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
+      values (${orgId}, ${leadId}, ${"JOB-TAP-" + randomUUID().slice(0, 8)}, 'scheduled', 0, ${tapTechId})
+      returning id`;
+    await admin`
+      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start, assignee_user_id)
+      values (${orgId}, ${job!.id}, 'pending', 1, current_date, '09:00', ${tapTechId})`;
+
+    const caller = appRouter.createCaller(ctxFor(tapTechId, orgId, "tech"));
+    const submitted = await caller.v1.timesheets.submitWeek({ weekStart: thisMonday });
+    expect(submitted.reopenedAt).toBeNull();
+
+    try {
+      // Arrived: opens job time through runVisitClockTap — the path that used to skip the reopen.
+      await caller.v1.field.start({ jobId: job!.id });
+      const after = await caller.v1.timesheets.submissionFor({ weekStart: thisMonday });
+      expect(after.submission?.reopenedAt).not.toBeNull();
+      expect(after.submission?.reopenReason).toContain("new hours");
+    } finally {
+      await admin`delete from time_entries where org_id = ${orgId} and tech_user_id = ${tapTechId}`;
+      await admin`delete from timesheet_submissions where org_id = ${orgId} and tech_user_id = ${tapTechId}`;
+      await admin`delete from job_visits where org_id = ${orgId} and job_id = ${job!.id}`;
+      await admin`delete from jobs where id = ${job!.id}`;
+      await admin`delete from users where id = ${tapTechId}`;
+    }
+  });
+
   it("keeps bill STATUS but nulls the paid AMOUNT for a price-blind tech", async () => {
     const paidJobId = await finishedJobWithBill("paid", 40000);
     await admin`update jobs set completed_at = now() where id = ${paidJobId}`;

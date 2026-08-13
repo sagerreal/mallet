@@ -29,7 +29,10 @@ export class FakeSettingsRepository implements SettingsRepository {
     const r = OrgSettings.create({
       orgId: asOrgId(orgId), trade: "plumbing", markupBps: 3500, taxBps: 0,
       visitScopeMinutes: 30, visitRepairMinutes: 90, visitInstallMinutes: 240,
-      timesheetClock: true, techSeesPrice: true, techTexts: true, frontDesk: true, scopeOn: false,
+      timesheetClock: true,
+  techEditsTimes: false,
+  otWeeklyThresholdMinutes: 2400,
+  otDailyThresholdMinutes: null, techSeesPrice: true, techTexts: true, frontDesk: true, scopeOn: false,
       autoRemind: true,
       measurementEstimating: false,
       timezone: "America/Los_Angeles",

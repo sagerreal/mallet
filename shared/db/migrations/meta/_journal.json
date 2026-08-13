@@ -1093,6 +1093,20 @@
       "when": 1786636447358,
       "tag": "0155_team_chat_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1786638392116,
+      "tag": "0156_elite_mandarin",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1786638393116,
+      "tag": "0157_timesheet_submissions_rls",
+      "breakpoints": true
     }
   ]
 }

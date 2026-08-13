@@ -2,15 +2,29 @@ import type { TimeEntryId, OrgId, UserId, JobId, Result, ValidationError, AppErr
 import { validation, ok, err } from "@mallet/shared/types";
 
 // Allowed enum values — narrowed from text columns in the DB.
-export type TimeEntryKind = "job" | "travel" | "break" | "shop";
+//
+// Two FAMILIES of kind, two shapes of entry. Clock kinds are stretches of a working day and
+// carry punch times; time-off kinds are paid absence and carry only a length in minutes — a
+// PTO day has no clock. The factory below makes a mixed shape unconstructible, mirroring the
+// time_entries_kind_shape_check constraint.
+export type ClockEntryKind = "job" | "travel" | "break" | "shop";
+export type TimeOffKind = "pto" | "vacation" | "sick" | "holiday";
+export type TimeEntryKind = ClockEntryKind | TimeOffKind;
 export type TimeEntrySrc = "manual" | "clock" | "timer";
 export type TimeEntryStatus = "draft" | "approved";
 
-const KINDS: readonly TimeEntryKind[] = ["job", "travel", "break", "shop"];
+const CLOCK_KINDS: readonly ClockEntryKind[] = ["job", "travel", "break", "shop"];
+export const TIME_OFF_KINDS: readonly TimeOffKind[] = ["pto", "vacation", "sick", "holiday"];
+const KINDS: readonly TimeEntryKind[] = [...CLOCK_KINDS, ...TIME_OFF_KINDS];
 const SRCS: readonly TimeEntrySrc[] = ["manual", "clock", "timer"];
 const STATUSES: readonly TimeEntryStatus[] = ["draft", "approved"];
 
+/** A whole day — the ceiling on a single time-off entry (multi-day PTO is one entry per day). */
+const MAX_TIME_OFF_MINUTES = 1440;
+
 const isKind = (v: string): v is TimeEntryKind => KINDS.includes(v as TimeEntryKind);
+export const isTimeOffKind = (v: string): v is TimeOffKind =>
+  TIME_OFF_KINDS.includes(v as TimeOffKind);
 const isSrc = (v: string): v is TimeEntrySrc => SRCS.includes(v as TimeEntrySrc);
 const isStatus = (v: string): v is TimeEntryStatus => STATUSES.includes(v as TimeEntryStatus);
 
@@ -32,13 +46,17 @@ export interface TimeEntryProps {
   readonly jobId: JobId | null;
   readonly workDate: string; // YYYY-MM-DD
   readonly kind: TimeEntryKind;
-  readonly startTime: string; // HH:MM
-  readonly endTime: string | null; // HH:MM or null (running timer)
+  readonly startTime: string | null; // HH:MM; null only on time-off kinds
+  readonly endTime: string | null; // HH:MM or null (running timer / time-off)
+  readonly minutes: number | null; // time-off length; null on clock kinds
   readonly note: string;
   readonly src: TimeEntrySrc;
   readonly status: TimeEntryStatus;
   readonly running: boolean;
   readonly approvedAt: Date | null;
+  /** Who last HAND-edited this row (null = untouched tap-truth). Payroll review needs to tell
+   *  tap-truth from thumb-truth, and whose thumb. */
+  readonly editedByUserId: UserId | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -58,12 +76,38 @@ export class TimeEntry {
     if (!isStatus(props.status)) {
       return err(validation(`invalid status: "${props.status}"`, "status"));
     }
-    if (props.endTime !== null) {
-      const start = toMinutes(props.startTime);
-      const end = toMinutes(props.endTime);
-      if (start === null) {
-        return err(validation(`invalid startTime: "${props.startTime}"`, "startTime"));
+    if (isTimeOffKind(props.kind)) {
+      // Time-off shape: a length, never punch times, never running — there is no clock to a
+      // day off.
+      if (props.startTime !== null || props.endTime !== null) {
+        return err(validation("a time-off entry carries no punch times", "startTime"));
       }
+      if (
+        props.minutes === null ||
+        !Number.isInteger(props.minutes) ||
+        props.minutes < 1 ||
+        props.minutes > MAX_TIME_OFF_MINUTES
+      ) {
+        return err(validation("time-off minutes must be a whole number within one day", "minutes"));
+      }
+      if (props.running) {
+        return err(validation("a time-off entry cannot be running", "running"));
+      }
+      return ok(new TimeEntry(props));
+    }
+    // Clock shape: punch times, never a time-off length.
+    if (props.minutes !== null) {
+      return err(validation("a clocked entry derives its length from its times", "minutes"));
+    }
+    if (props.startTime === null) {
+      return err(validation("a clocked entry needs a start time", "startTime"));
+    }
+    const start = toMinutes(props.startTime);
+    if (start === null) {
+      return err(validation(`invalid startTime: "${props.startTime}"`, "startTime"));
+    }
+    if (props.endTime !== null) {
+      const end = toMinutes(props.endTime);
       if (end === null) {
         return err(validation(`invalid endTime: "${props.endTime}"`, "endTime"));
       }
@@ -74,9 +118,11 @@ export class TimeEntry {
     return ok(new TimeEntry(props));
   }
 
-  // Derive duration in decimal hours when both times are present. Returns null otherwise.
+  // Derive duration in decimal hours. Time-off entries carry it as minutes; clocked entries
+  // derive it from their punch times when both are present. Returns null for a running clock.
   hours(): number | null {
-    if (!this.p.endTime) return null;
+    if (this.p.minutes !== null) return this.p.minutes / 60;
+    if (!this.p.startTime || !this.p.endTime) return null;
     const start = toMinutes(this.p.startTime);
     const end = toMinutes(this.p.endTime);
     if (start === null || end === null) return null;
@@ -88,14 +134,18 @@ export class TimeEntry {
     fields: Partial<
       Pick<
         TimeEntryProps,
-        "jobId" | "workDate" | "kind" | "startTime" | "endTime" | "note" | "src" | "running"
+        "jobId" | "workDate" | "kind" | "startTime" | "endTime" | "minutes" | "note" | "src" | "running"
       >
     >,
     now: Date,
+    editedBy?: UserId,
   ): Result<TimeEntry, AppError> {
     return TimeEntry.create({
       ...this.p,
       ...fields,
+      // A hand edit signs the row; a system write (the clock closing a segment) leaves the
+      // existing trail untouched rather than erasing who last corrected it.
+      editedByUserId: editedBy ?? this.p.editedByUserId,
       updatedAt: now,
     });
   }

@@ -30,12 +30,14 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     jobId: string | null;
     workDate: string;
     kind: string;
-    startTime: string;
+    startTime: string | null;
     endTime: string | null;
+    minutes: number | null;
     note: string;
     src: string;
     status: string;
     running: boolean;
+    editedByUserId: string | null;
   }): Promise<TimeEntry> {
     const rows = await this.tx
       .insert(timeEntries)
@@ -48,6 +50,8 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
         kind: input.kind,
         startTime: input.startTime,
         endTime: input.endTime,
+        minutes: input.minutes,
+        editedByUserId: input.editedByUserId,
         note: input.note,
         src: input.src,
         status: input.status,
@@ -175,6 +179,12 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
         kind: p.kind,
         startTime: p.startTime,
         endTime: p.endTime,
+        // Both of these were missing while create() carried them, so an edit to a time-off row's
+        // LENGTH and every hand-edit signature were silently discarded on update — the row read
+        // back with its old minutes and no author. A partial .set() is how a column becomes
+        // write-once by accident.
+        minutes: p.minutes,
+        editedByUserId: p.editedByUserId,
         note: p.note,
         src: p.src,
         status: p.status,
@@ -219,6 +229,12 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
           eq(timeEntries.status, "draft"),
           isNull(timeEntries.deletedAt),
           // Unfinished either way: the clock is still open, or an end time was never recorded.
+          //
+          // ONLY OF A PUNCHED ROW. A time-off row is REQUIRED to have no end time (the 0153 shape
+          // check), so without this guard every PTO day read as unfinished hours and approval
+          // refused the whole week — telling the office to "finish or remove" a day that is
+          // already complete, and making a week with any time off unapprovable.
+          isNull(timeEntries.minutes),
           or(eq(timeEntries.running, true), isNull(timeEntries.endTime)),
         ),
       );
@@ -241,8 +257,11 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
           // this predicate means even a direct call cannot approve hours with no end: such an entry
           // has no derivable duration, so it would be approved, pushed, and silently rejected by
           // QuickBooks as `entry_not_finished` with nobody told.
+          //
+          // A TIME-OFF row satisfies it a different way: its length lives in `minutes` and it has
+          // no end time by construction, so it is approvable precisely because that column is set.
           eq(timeEntries.running, false),
-          isNotNull(timeEntries.endTime),
+          or(isNotNull(timeEntries.endTime), isNotNull(timeEntries.minutes)),
         ),
       )
       .returning();

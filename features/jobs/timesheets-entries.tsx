@@ -184,7 +184,7 @@ function TsTimePicker({ entry, field, open, onToggle, onPick }: TsTimePickerProp
   // offered. Otherwise stopping a run that began at 3pm by picking 9am would fail with a generic
   // "couldn't update" toast, which tells the office nothing about what it did wrong.
   const opts =
-    field === "end" ? tsTimeOpts().filter((o) => o.h > timeToH(entry.start)) : tsTimeOpts();
+    field === "end" ? tsTimeOpts().filter((o) => o.h > timeToH(entry.start ?? "00:00")) : tsTimeOpts();
   return (
     <>
       {/* No aria-label: the trigger's own text is the current time, which is the most

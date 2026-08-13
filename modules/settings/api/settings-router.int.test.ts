@@ -308,7 +308,13 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     // correctly without it (`settings.get` is ownerOrOffice and always will be). Not money, not a
     // credential, not a permission. The bar for the next one is the same question — would a
     // technician learn something here they could not learn by doing their job?
-    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating", "timesheetClock"]);
+    //
+    // `techEditsTimes` clears the same bar, and answering NO to it would be worse than answering
+    // yes: without it the My hours page cannot know whether to render its editing controls, so a
+    // technician would be shown pencils and Add buttons that the server refuses — a screen that
+    // lies about what it can do. It is a capability, not a secret: the man finds out the first
+    // time he tries to fix a punch.
+    expect(Object.keys(toggles).sort()).toEqual(["canText", "measurementEstimating", "techEditsTimes", "timesheetClock"]);
   });
 
   it("fieldToggles is org-scoped — org B never sees org A's flag", async () => {

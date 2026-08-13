@@ -629,10 +629,11 @@ export interface TimeEntry {
   id: string;
   techId: string;
   date: string; // ISO (YYYY-MM-DD)
-  kind: string; // 'job' | 'travel' | 'break' | 'shop'
+  kind: string; // clock: 'job' | 'travel' | 'break' | 'shop'; time off: 'pto' | 'vacation' | 'sick' | 'holiday'
   jobId: string | null;
-  start: string; // 'HH:MM'
+  start: string | null; // 'HH:MM'; null exactly on time-off kinds
   end: string | null;
+  minutes: number | null; // time-off length; null on clock kinds
   note: string;
   src: string; // 'manual' | 'clock' | 'timer'
   status: string; // 'draft' | 'approved'

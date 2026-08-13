@@ -102,6 +102,9 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         visitRepairMinutes: p.visitRepairMinutes,
         visitInstallMinutes: p.visitInstallMinutes,
         techSeesPrice: p.techSeesPrice,
+        techEditsTimes: p.techEditsTimes,
+        otWeeklyThresholdMinutes: p.otWeeklyThresholdMinutes,
+        otDailyThresholdMinutes: p.otDailyThresholdMinutes,
         techTexts: p.techTexts,
         frontDesk: p.frontDesk,
         scopeOn: p.scopeOn,
@@ -178,6 +181,17 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
   async getOrgName(): Promise<string> {
     const rows = await this.tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, this.orgId)).limit(1);
     return rows[0]?.name ?? "My Business";
+  }
+
+  async getTechEditsTimes(): Promise<boolean> {
+    const rows = await this.tx
+      .select({ techEditsTimes: orgSettings.techEditsTimes })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    // No row yet (settings never opened) → the column's schema default: OFF. The clock and the
+    // visit taps are the field's only writers until the shop opts in.
+    return rows[0]?.techEditsTimes ?? false;
   }
 
   async getTechSeesPrice(): Promise<boolean> {

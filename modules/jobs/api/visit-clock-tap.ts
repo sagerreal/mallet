@@ -4,7 +4,12 @@ import type { Clock, JobId } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import { DrizzleSettingsRepository } from "@mallet/settings";
-import { DrizzleTimeEntryRepository, SetClockStateUseCase, type ClockTap } from "@mallet/timesheets";
+import {
+  DrizzleTimeEntryRepository,
+  DrizzleWeekSubmissionRepository,
+  SetClockStateUseCase,
+  type ClockTap,
+} from "@mallet/timesheets";
 import type { VisitStatus } from "../domain/job";
 
 /**
@@ -124,6 +129,12 @@ export const runVisitClockTap = async (
         ctx.clock,
         ctx.ids,
         timeZone,
+        // THE JOB TAPS ARE THE CLOCK TOO. Without this the day-clock path reopened a submitted
+        // week and this one did not, so On my way / Arrived / Done landed hours on an attested
+        // week that still read as attested — and then the submitted-week lock refused the
+        // technician the very rows his own tap had just created. Same savepoint, so the reopen
+        // and the hours commit or roll back together.
+        new DrizzleWeekSubmissionRepository(savepoint, orgId),
       );
       const result = await useCase.exec(
         // Server time, not a device timestamp: nothing in this request carries one yet, and an

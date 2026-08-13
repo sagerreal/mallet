@@ -81,6 +81,12 @@ const updateConfigInput = z.object({
   visitRepairMinutes: z.number().int().min(0).max(1440).optional(),
   visitInstallMinutes: z.number().int().min(0).max(1440).optional(),
   timesheetClock: z.boolean().optional(),
+  techEditsTimes: z.boolean().optional(),
+  // Bounded at the BOUNDARY as well as in the domain (defense in depth, and the same shape as
+  // the neighbours above): a week holds 10,080 minutes and a day 1,440, so anything outside is a
+  // typo rather than a policy. Zero is refused too — "overtime after 0h" means every hour.
+  otWeeklyThresholdMinutes: z.number().int().min(1).max(10080).optional(),
+  otDailyThresholdMinutes: z.number().int().min(1).max(1440).nullable().optional(),
   techSeesPrice: z.boolean().optional(),
   techTexts: z.boolean().optional(),
   frontDesk: z.boolean().optional(),
