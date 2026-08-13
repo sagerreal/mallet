@@ -88,6 +88,12 @@ const ConfigSchema = z.object({
   // the app boots without it, but the connect flow fail-closes when absent: storing a live refresh
   // token in plaintext is not an acceptable degradation. Mint one with `generateKey()`.
   QBO_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
+  // Self-serve signup. Mallet is INVITE-ONLY while in pilot: with this unset (the default),
+  // identity.signup refuses to provision a fresh org for anyone without a pending org_invites
+  // row — invited staff still join their org. "1" or "true" reopens self-serve org creation.
+  // The Supabase dashboard's "allow new users to sign up" toggle is the companion gate at the
+  // auth layer; reopening signups means flipping BOTH.
+  SIGNUPS_OPEN: z.preprocess((v) => v === "1" || v === "true", z.boolean()),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

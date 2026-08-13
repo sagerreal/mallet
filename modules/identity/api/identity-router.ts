@@ -141,6 +141,21 @@ export const createIdentityRouter = () =>
         }
         const unmapped = ctx.unmapped;
         if (!unmapped) throw new TRPCError({ code: "UNAUTHORIZED", message: "authentication required" });
+        // Invite-only gate. The Supabase anon key is public, so anyone can mint a verified auth
+        // user without ever seeing our signup form — the gate has to hold HERE, not in the UI.
+        // A pending org_invites row is the one authorization that still provisions (the
+        // invited-joiner path is how staff join at all); without it, closed means closed.
+        if (!ctx.deps.signupsOpen) {
+          const invited = (await ctx.deps.inviteGate?.hasPendingInvite(unmapped.email)) === true;
+          if (!invited) {
+            // PRECONDITION_FAILED, not FORBIDDEN: the error map passes this sentence through to
+            // the user, where FORBIDDEN is replaced by fixed role copy that would be a lie here.
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: "Mallet is invite-only right now. Ask your team's owner for an invite.",
+            });
+          }
+        }
         const orgName = input.orgName ?? unmapped.orgNameHint ?? "My business";
         const provisioned = await ctx.deps.signupStore.createOrgForUser({
           authUserId: unmapped.authUserId,

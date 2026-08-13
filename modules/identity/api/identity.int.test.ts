@@ -20,6 +20,10 @@ const stubDeps = {
   apiKeyAuthenticator: { authenticate: async () => null },
   tokenVerifier: { verify: async () => null },
   signupStore: new SignupStore(db),
+  // These tests exercise the fresh-org branch directly; production wires these from
+  // SIGNUPS_OPEN (default false — Mallet is invite-only during the pilot).
+  signupsOpen: true,
+  inviteGate: new SignupStore(db),
   bus: new InMemoryEventBus(),
   clock: systemClock,
   ids: uuidGenerator,
@@ -522,5 +526,51 @@ suite("v1.identity (live RLS)", () => {
     await expect(
       appRouter.createCaller(ctxB).v1.identity.setMemberSkillTags({ userId: techA!.id, skillTags: ["Gas"] }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  /**
+   * The invite-only gate. With signups closed (the production default), a verified auth user
+   * with no pending invite must NOT get a fresh org — the anon key is public, so anyone can
+   * mint an auth user without ever seeing our UI; the gate has to hold here, not in the form.
+   * A pending org_invites row is the one authorization that still opens the door.
+   */
+  describe("invite-only gate (signupsOpen: false)", () => {
+    const closedCtx = (unmapped: VerifiedToken): Context => ({
+      principal: null,
+      unmapped,
+      tx: null,
+      deps: { ...stubDeps, signupsOpen: false } as Context["deps"],
+    });
+
+    it("refuses a fresh org for an uninvited email, and provisions nothing", async () => {
+      const authUserId = randomUUID();
+      const caller = appRouter.createCaller(
+        closedCtx({ authUserId, email: `walkup-${authUserId}@e2e.test`, orgNameHint: "Walk-up Plumbing", name: null }),
+      );
+      await expect(caller.v1.identity.signup({})).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+
+      const rows = await admin`select 1 from users where auth_user_id = ${authUserId}`;
+      expect(rows.length).toBe(0);
+    });
+
+    it("still joins an invited member — the pending invite row IS the authorization", async () => {
+      const ownerAuth = randomUUID();
+      const owner = appRouter.createCaller(
+        unmappedCtx({ authUserId: ownerAuth, email: `own-${ownerAuth}@e2e.test`, orgNameHint: "Gate Test Plumbing", name: null }),
+      );
+      const org = await owner.v1.identity.signup({});
+      createdOrgIds.push(org.orgId);
+
+      const joinerEmail = `join-${randomUUID()}@e2e.test`;
+      await admin`insert into org_invites (org_id, email, role) values (${org.orgId}, ${joinerEmail}, 'tech')`;
+
+      const joinerAuth = randomUUID();
+      const joiner = appRouter.createCaller(
+        closedCtx({ authUserId: joinerAuth, email: joinerEmail, orgNameHint: null, name: null }),
+      );
+      const me = await joiner.v1.identity.signup({});
+      expect(me.orgId).toBe(org.orgId);
+      expect(me.role).toBe("tech");
+    });
   });
 });
