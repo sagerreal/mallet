@@ -83,12 +83,17 @@ export function LeadSheetHeader({ lead }: { lead: Lead }) {
           {lead.stage}
         </span>
         {lead.source && <span>{lead.source}</span>}
+        {/* customer > quote > job > invoice. THE ONLY plural anchor: a customer accumulates quotes,
+            jobs and invoices over years, so these positions carry counts and open a chooser. Two
+            unique indexes make the chain 1:1 downstream, so the other three sheets are singular. */}
+        <Trail kind="customer" id={lead.id} />
       </div>
     </div>
   );
 }
 
 import { STAGE_PILL_CLS } from "@/lib/prototype-sample";
+import { Trail } from "../trail";
 function stagePillCls(stage: string): string {
   return STAGE_PILL_CLS[stage] ?? "ink";
 }

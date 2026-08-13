@@ -56,6 +56,7 @@ import { InvoiceAuthorizationNote } from "@/components/shared/invoice-authorizat
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
+import { Trail } from "./trail";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
 // Single source for the Net-terms/due-date/PO face line (features/invoices).
@@ -808,6 +809,8 @@ export function InvoiceModalContent() {
         <div className="sheet-meta">
           <StatusPill invoice={invoice} />
           <span>{invoice.num}</span>
+          {/* customer > quote > job > invoice. Nothing here named the JOB this bill came from. */}
+          <Trail kind="invoice" id={invoice.id} />
           {invoice.title && invoice.title !== custName ? <span>{invoice.title}</span> : null}
           {phone ? <span>{phone}</span> : null}
           {face ? <span>{face}</span> : null}

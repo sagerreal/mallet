@@ -54,6 +54,9 @@ let mockFullQuery: { data: unknown; isError: boolean; error: null; isLoading?: b
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
+      // The sheet header's record trail. Undefined data renders nothing, which is what these tests
+      // want — they are about the sheet's own body, not the chain.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       messaging: { send: { useMutation: () => idleMutation() } },
       notifications: { send: { useMutation: () => idleMutation() } },
       quoting: {

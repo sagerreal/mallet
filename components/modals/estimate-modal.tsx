@@ -43,6 +43,7 @@ import { SignatureRecord } from "@/components/shared/signature-record";
 import { Field } from "@/components/ui/input";
 import { api } from "@/lib/trpc/client";
 import { ModalLoading } from "./modal-loading";
+import { Trail } from "./trail";
 
 
 const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
@@ -365,7 +366,9 @@ export function EstimateModalContent() {
         <div className="sheet-meta">
           <SoftPill tone={stamp.cls as PillTone}>{stamp.label}</SoftPill>
           <span>{e.num}</span>
-          {lead ? <span>{lead.name}</span> : null}
+          {/* customer > quote > job > invoice. The customer's name was DEAD TEXT here: it named who
+              the quote was for and gave no way to reach them, the job it produced, or the bill. */}
+          <Trail kind="quote" id={e.id} />
           {lead?.phone && lead.phone !== "—" ? <span>{lead.phone}</span> : null}
           {gbbTierLine(e) ? <span>{gbbTierLine(e)}</span> : null}
         </div>

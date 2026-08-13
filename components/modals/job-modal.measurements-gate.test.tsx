@@ -79,6 +79,9 @@ vi.mock("@/lib/trpc/client", () => ({
   api: {
     useUtils: () => ({ v1: { invoicing: { list: { invalidate: vi.fn() } } } }),
     v1: {
+      // The sheet header's record trail. Undefined data renders nothing, which is what these tests
+      // want — they are about the sheet's own body, not the chain.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       invoicing: {
         createFromJob: {
           useMutation: () => ({ mutate: vi.fn(), isPending: false }),

@@ -23,6 +23,9 @@ let queryState: { data: unknown; isError: boolean } = { data: undefined, isError
 let lastQueryOpts: { enabled?: boolean } | undefined;
 
 vi.mock("@/lib/store/app-store", () => ({
+  // The record trail navigates with these. Stubs: these tests assert the sheet's own body.
+  useOpenModal: () => vi.fn(),
+  useCloseModal: () => vi.fn(),
   useActiveModal: () => ({ id: "invoice", params: { invoiceId: "inv-1" } }),
   useCloseModal: () => noop,
   usePushModal: () => noop,
@@ -44,6 +47,9 @@ vi.mock("@/lib/store/app-store", () => ({
 vi.mock("@/lib/trpc/client", () => ({
   api: {
     v1: {
+      // The sheet header's record trail. Undefined data renders nothing, which is what these tests
+      // want — they are about the sheet's own body, not the chain.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       invoicing: {
         get: {
           useQuery: (_input: unknown, opts?: { enabled?: boolean }) => {
