@@ -85,7 +85,7 @@ const ic = {
 export type CardMoney =
   | { kind: "collect"; label: string }
   | { kind: "paid"; label: string }
-  | { kind: "office" };
+  | { kind: "office"; amount: string | null };
 
 interface CircleActProps {
   label: string;
@@ -99,22 +99,33 @@ interface MoneySlotProps {
   money: CardMoney | null;
   isPending: boolean;
   onCollect: (() => void) | null;
+  onReceipt: (() => void) | null;
 }
 
-/** The finished card's money state, on the same foot row as the circles. */
-function MoneySlot({ money, isPending, onCollect }: MoneySlotProps) {
+/** The finished card's money state, on the same foot row as the circles — the mock's grammar:
+ *  Paid keeps its Receipt link, the office chip keeps the figure it was sent with. */
+function MoneySlot({ money, isPending, onCollect, onReceipt }: MoneySlotProps) {
   if (!money) return null;
   if (money.kind === "collect") {
     if (!onCollect) return null;
     return <CircleAct label={money.label} icon={ic.dollar} fill disabled={isPending} onPress={onCollect} />;
   }
-  const chip =
-    money.kind === "paid"
-      ? { label: money.label, color: "var(--ink)", bg: "var(--manila-2)" }
-      : { label: "Sent to the office", color: "var(--ink-2)", bg: "var(--paper)" };
+  if (money.kind === "paid") {
+    return (
+      <span className="mdc-money">
+        <span className="stpill" style={{ color: "var(--ink)", background: "var(--manila-2)" }}>{money.label}</span>
+        {onReceipt ? (
+          <button type="button" className="linklike mdc-receipt" onClick={(e) => { e.stopPropagation(); onReceipt(); }}>
+            Receipt
+          </button>
+        ) : null}
+      </span>
+    );
+  }
   return (
     <span className="mdc-money">
-      <span className="stpill" style={{ color: chip.color, background: chip.bg }}>{chip.label}</span>
+      <span className="stpill" style={{ color: "var(--ink-2)", background: "var(--paper)" }}>Sent to the office</span>
+      {money.amount ? <span className="mdc-money-amt">{money.amount}</span> : null}
     </span>
   );
 }
@@ -154,6 +165,7 @@ export interface JobCardProps {
   /** The finished card's money slot; null renders nothing (live cards, redacted states). */
   money: CardMoney | null;
   onCollect: (() => void) | null;
+  onReceipt: (() => void) | null;
 }
 
 export function JobCard({
@@ -171,6 +183,7 @@ export function JobCard({
   onDone,
   money,
   onCollect,
+  onReceipt,
 }: JobCardProps) {
   // TODAY PRINTS THE TIME ALONE; any other day prints its day above the hour (carried-over work
   // lands at the top of the route, and without the day it reads as this morning's first stop).
@@ -249,7 +262,7 @@ export function JobCard({
             onPress={onDone}
           />
         ) : null}
-        <MoneySlot money={money} isPending={isPending} onCollect={onCollect} />
+        <MoneySlot money={money} isPending={isPending} onCollect={onCollect} onReceipt={onReceipt} />
       </div>
     </div>
   );

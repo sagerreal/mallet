@@ -213,7 +213,8 @@ export default function MyDayPage() {
           label: bill.amountPaid ? `Paid ✓ · ${fmt$(bill.amountPaid.cents / 100)}` : "Paid ✓",
         };
       if (bill?.status === "void") return null;
-      if (job.invRequested) return { kind: "office" };
+      if (job.invRequested)
+        return { kind: "office", amount: job.total ? fmt$(job.total.cents / 100) : null };
       // Due = the job's figure less what the ledger already took — both redaction-aligned
       // (a price-blind tech gets both as null and a plain label).
       const dueCents = job.total ? Math.max(0, job.total.cents - (bill?.amountPaid?.cents ?? 0)) : null;
@@ -261,6 +262,7 @@ export default function MyDayPage() {
         onDone={viewingToday && card.step < 3 ? done : null}
         money={money}
         onCollect={money?.kind === "collect" ? () => pushModal(MODAL.CLOSE_OUT, { jobId: job.id, from: "field-job" }) : null}
+        onReceipt={money?.kind === "paid" ? () => pushModal(MODAL.CLOSE_OUT, { jobId: job.id, from: "field-job" }) : null}
       />
     );
   }
@@ -274,7 +276,17 @@ export default function MyDayPage() {
           loading state must not blank the row that says whether he is being paid. A sheet shop
           has no punch clock — its crew type their week on My hours instead, so the control hides
           entirely rather than sitting inert. */}
-      {viewingToday && hasClock ? <DayClock jobs={items} /> : null}
+      {viewingToday && hasClock ? (
+        <DayClock
+          jobs={items}
+          // The DAY TOTAL card's "of Xh scheduled": today's booked load, from the same visits
+          // the cards render. Canceled stops are not load.
+          scheduledMinutes={items
+            .flatMap((j) => j.visits)
+            .filter((v) => v.scheduledDate === todayISO() && v.status !== "canceled")
+            .reduce((n, v) => n + (v.durationMinutes ?? 0), 0)}
+        />
+      ) : null}
       {!viewingToday ? (
         <DaySummaryCard
           dateISO={viewDate}

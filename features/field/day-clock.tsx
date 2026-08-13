@@ -51,6 +51,39 @@ interface DayClockProps {
   /** Today's assigned jobs, for labelling job segments. A segment on a job that is no longer on
    *  the agenda (reassigned) simply reads "Job" — never a wrong name. */
   jobs?: readonly DayClockJob[];
+  /** The day's booked load in minutes (today's visit durations, summed by the page) — the
+   *  "of 7h 45m scheduled" line and the ring's denominator. 0 hides the line. */
+  scheduledMinutes?: number;
+}
+
+/** "4h 0m" — the DAY TOTAL card's figure grammar (the mock's, not the segment panel's H:MM). */
+const figureLabel = (hours: number): string => {
+  const mins = Math.round(hours * 60);
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+};
+
+/** The worked-vs-booked donut. Pure SVG, no dependency; masked from the visual net (it grows). */
+const RING_R = 42;
+const RING_CIRC = 2 * Math.PI * RING_R;
+function ClockRing({ fraction }: { fraction: number }) {
+  const clamped = Math.min(Math.max(fraction, 0), 1);
+  return (
+    <svg className="clock-ring" width="106" height="106" viewBox="0 0 106 106" aria-hidden data-dynamic>
+      <circle cx="53" cy="53" r={RING_R} fill="none" stroke="var(--line-2)" strokeWidth="10" />
+      <circle
+        cx="53"
+        cy="53"
+        r={RING_R}
+        fill="none"
+        stroke="var(--ink)"
+        strokeWidth="10"
+        strokeLinecap="round"
+        strokeDasharray={RING_CIRC}
+        strokeDashoffset={RING_CIRC * (1 - clamped)}
+        transform="rotate(-90 53 53)"
+      />
+    </svg>
+  );
 }
 
 /**
@@ -232,7 +265,7 @@ function useClockTap() {
  * as "Worked today", and two figures on one card that disagree are worse than one being absent —
  * which is why it stays absent until the day's rows land rather than falling back to the old one.
  */
-function ClockSentence({ view, workedHours }: { view: DayClockView; workedHours: number | null }) {
+function ClockSentence({ view }: { view: DayClockView }) {
   return (
     <>
       <b
@@ -251,24 +284,11 @@ function ClockSentence({ view, workedHours }: { view: DayClockView; workedHours:
           {view.since}
         </span>
       ) : null}
-      {workedHours !== null ? (
-        <span
-          className="clock-elapsed"
-          // Genuinely live: masked out of the visual baseline, which would otherwise fail on
-          // every run as the total grows. See dynamicRegions in e2e/helpers/ui.ts.
-          data-dynamic
-          // Announced on its own, not as part of the sentence: a screen reader should not
-          // re-read "On the clock since 8:14p" every minute.
-          aria-live="off"
-        >
-          {hoursClock(workedHours)}
-        </span>
-      ) : null}
     </>
   );
 }
 
-export function DayClock({ jobs = [] }: DayClockProps) {
+export function DayClock({ jobs = [], scheduledMinutes = 0 }: DayClockProps) {
   const now = useTickingNow();
   const [dayOpen, setDayOpen] = useState(false);
   const open = api.v1.timesheets.open.useQuery(undefined, {
@@ -307,33 +327,55 @@ export function DayClock({ jobs = [] }: DayClockProps) {
   // control, and before the first punch there is genuinely nothing to read.
   const hasDay = day !== null && day.segments.length > 0;
 
-  const stateSentence = <ClockSentence view={view} workedHours={hasDay ? day.workedHours : null} />;
+  const workedHours = hasDay ? day.workedHours : 0;
+  const scheduledHours = scheduledMinutes / 60;
+
+  // The mock's DAY TOTAL block: the big figure, what the day holds, and the state sentence.
+  // A REFUSED hours read shows "—", never a confident zero — on the one card whose job is
+  // telling a man he is being paid, "we could not ask" must not read as "you have not worked".
+  const figures = (
+    <>
+      {/* Genuinely live: masked out of the visual baseline, which would otherwise fail on
+          every run as the total grows. Announced on its own, not as part of the sentence. */}
+      <span className="clock-elapsed" data-dynamic aria-live="off">
+        {dayFailed ? "—" : figureLabel(workedHours)}
+      </span>
+      {scheduledMinutes > 0 && !dayFailed ? (
+        <span className="clock-of">of {figureLabel(scheduledHours)} scheduled</span>
+      ) : null}
+      <span className="clock-state">
+        <ClockSentence view={view} />
+      </span>
+    </>
+  );
 
   return (
     <ClockCard>
-      <div className="clock-head">
-        {/* One live region for the whole state sentence, so a state change is announced as the
+      <div className="mdp-kicker">Day total</div>
+      <div className="clock-head clockface">
+        {/* Worked against booked. Denominator absent (or the read refused) → an empty track,
+            never a full ring claiming a day with nothing scheduled is done. */}
+        <ClockRing fraction={scheduledHours > 0 && !dayFailed ? workedHours / scheduledHours : 0} />
+        {/* One live region for the whole block, so a state change is announced as the
             sentence it is rather than as two unrelated fragments. */}
         <div className="clock-meta" aria-live="polite">
           {hasDay ? (
-            // The sentence and the total ARE the trigger — one large target, and the actions stay
-            // outside it so a button never nests inside a button (WCAG nested-interactive).
+            // The figures ARE the trigger — one large target, and the actions stay outside it
+            // so a button never nests inside a button (WCAG nested-interactive).
             <button
               type="button"
               className="clock-open"
               aria-expanded={dayOpen}
               onClick={() => setDayOpen((v) => !v)}
             >
-              {/* The sentence stacks (state / since / total); the caret sits beside the stack, not
-                  under it — .clock-elapsed is display:block, so an inline sibling would wrap. */}
-              <span className="clock-open-t">{stateSentence}</span>
+              <span className="clock-open-t">{figures}</span>
               <span className="clock-caret" aria-hidden="true">
                 ›
               </span>
               <span className="sr-only">{dayOpen ? " Hide today's hours" : " Show today's hours"}</span>
             </button>
           ) : (
-            stateSentence
+            figures
           )}
         </div>
         <div className="clock-acts">
