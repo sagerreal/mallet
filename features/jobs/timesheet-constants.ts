@@ -1,7 +1,11 @@
 /**
  * features/jobs/timesheet-constants.ts
- * Domain + picker constants for timesheets. FULL_TIME_HOURS_PER_WEEK is a real
- * payroll rule (regular-vs-overtime split) — named so it's never a bare 40.
+ * Domain + picker constants for timesheets.
+ *
+ * The overtime threshold used to live here as a constant. It is not a constant — it is per-shop
+ * CONFIG, because state law inverts (federal is weekly-only, California adds a daily rule), and a
+ * national product cannot compile one in. It lives on org_settings and is applied by
+ * features/timesheets/overtime.ts.
  */
 
 /** Entry kinds and their labels (order sets the segmented control). */
@@ -12,9 +16,6 @@ export const TS_KINDS: Record<string, string> = {
   shop: "Shop",
 };
 export const TS_KIND_KEYS = ["job", "travel", "break", "shop"] as const;
-
-/** Hours past this in a week count as overtime. */
-export const FULL_TIME_HOURS_PER_WEEK = 40;
 
 /**
  * The tag `ApproveWeekUseCase` puts on its refusal when a week still holds hours with no end time

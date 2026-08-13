@@ -5,7 +5,7 @@
  * The shop's overtime rule, for the surface that computes a technician's own overtime.
  *
  * WHY THIS EXISTS. My hours had the federal weekly-40 threshold compiled in
- * (`FULL_TIME_HOURS_PER_WEEK`), which is right in most states and wrong in the one the pilot shop
+ * compiled in, which is right in most states and wrong in the one the pilot shop
  * works in: California pays overtime past EIGHT HOURS IN A DAY, so four ten-hour days are eight
  * overtime hours that a weekly-only rule reports as none. Understating overtime on the screen whose
  * job is telling a man what he earned is the worst direction for that error to run.
@@ -38,13 +38,9 @@ import { createContext, useContext, type ReactNode } from "react";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import type { OvertimePolicySeed } from "@/lib/field-toggles-seed";
-import type { OvertimePolicy } from "@/features/field/hours-sheet-derive";
+import { FEDERAL_OVERTIME_POLICY, type OvertimePolicy } from "@/features/timesheets/overtime";
 
-/** The federal floor: overtime past forty hours in a week, no daily rule. */
-export const FEDERAL_OVERTIME_POLICY: OvertimePolicy = {
-  weeklyThresholdMinutes: 40 * 60,
-  dailyThresholdMinutes: null,
-};
+export { FEDERAL_OVERTIME_POLICY };
 
 const OvertimePolicyContext = createContext<OvertimePolicySeed | null>(null);
 

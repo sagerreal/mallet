@@ -18,7 +18,6 @@ import {
   tsUnrecordedDays,
   tsDayLabel,
 } from "./timesheet-derive";
-import { FULL_TIME_HOURS_PER_WEEK } from "./timesheet-constants";
 
 describe("week math", () => {
   it("tsWeekStart returns the Monday of the containing week", () => {
@@ -73,14 +72,14 @@ describe("tsRollup — the 40h overtime split", () => {
     expect(r.ot).toBe(0);
   });
 
-  it("splits hours past the full-time line into overtime", () => {
+  it("splits hours past the shop's weekly line into overtime", () => {
     const entries = Array.from({ length: 6 }, (_, i) =>
       mkEntry({ id: `e${i + 1}`, techId: "3", date: tsAddDays("2026-06-29", i), start: "08:00", end: "16:00" })
     ); // 6 × 8 = 48h
-    const r = tsRollup(entries, "3", week);
+    const r = tsRollup(entries, "3", week, { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null });
     expect(r.paid).toBe(48);
-    expect(r.reg).toBe(FULL_TIME_HOURS_PER_WEEK);
-    expect(r.ot).toBe(48 - FULL_TIME_HOURS_PER_WEEK);
+    expect(r.reg).toBe(40);
+    expect(r.ot).toBe(8);
   });
 
   it("is approved only when every entry is approved", () => {
@@ -286,5 +285,107 @@ describe("tsDayShort", () => {
   it("does not slip to the previous day in a UTC-negative timezone", () => {
     // Parsed at noon for exactly this reason — midnight would land on the 21st west of UTC.
     expect(tsDayShort("2026-07-22")).toContain("22");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE OFFICE'S OVERTIME. This grid is where a week is approved and pushed to QuickBooks, and it
+// computed overtime from a compiled-in forty while the technician's own screen computed it from the
+// shop's configured rule. Three separate wrong answers came out of that, and each one is below.
+// ---------------------------------------------------------------------------
+
+describe("the office rollup obeys the shop's overtime rule", () => {
+  const WEEK = tsWeekDates("2026-06-29");
+  const CALIFORNIA = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: 480 };
+  const FEDERAL = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null };
+
+  /** n days of `hours` each, starting Monday. */
+  const days = (n: number, hours: number) =>
+    Array.from({ length: n }, (_, i) =>
+      mkEntry({
+        id: `d${i}`,
+        techId: "3",
+        date: tsAddDays("2026-06-29", i),
+        start: "07:00",
+        end: `${String(7 + hours).padStart(2, "0")}:00`,
+      }),
+    );
+
+  it("catches the daily overtime a weekly-only rule cannot see", () => {
+    // Four ten-hour days: 40 hours worked, so a weekly-40 rule reports nothing — and in California
+    // the man is owed EIGHT hours. This is the figure the office was signing off wrong.
+    const r = tsRollup(days(4, 10), "3", WEEK, CALIFORNIA);
+    expect(r.paid).toBe(40);
+    expect(r.ot).toBe(8);
+    expect(r.reg).toBe(32);
+  });
+
+  it("never counts the same hour twice when both thresholds are crossed", () => {
+    // Five ten-hour days: 10h daily overage, and 50 is also ten past forty — the SAME ten hours.
+    const r = tsRollup(days(5, 10), "3", WEEK, CALIFORNIA);
+    expect(r.ot).toBe(10);
+    expect(r.reg).toBe(40);
+  });
+
+  it("still gets a federal week right", () => {
+    const r = tsRollup(days(6, 8), "3", WEEK, FEDERAL);
+    expect(r.paid).toBe(48);
+    expect(r.ot).toBe(8);
+    expect(r.reg).toBe(40);
+  });
+
+  it("defaults to the federal floor when no rule is passed", () => {
+    // The parameter is optional so every existing caller keeps working; the default is the law where
+    // no state rule applies, never a blank.
+    expect(tsRollup(days(6, 8), "3", WEEK).ot).toBe(8);
+  });
+
+  it("names the rule it used, so the approver can defend the figure", () => {
+    expect(tsRollup([], "3", WEEK, CALIFORNIA).rulePhrase).toBe("past 8h a day or 40h this week");
+    expect(tsRollup([], "3", WEEK, FEDERAL).rulePhrase).toBe("past 40h this week");
+  });
+});
+
+describe("paid time off on the office grid", () => {
+  const WEEK = tsWeekDates("2026-06-29");
+  const FEDERAL = { weeklyThresholdMinutes: 2400, dailyThresholdMinutes: null };
+  const holiday = mkEntry({
+    id: "hol",
+    techId: "3",
+    date: "2026-07-04",
+    kind: "holiday",
+    start: null,
+    end: null,
+    minutes: 480,
+  });
+  /** Monday to Friday, eight hours each — a full forty WORKED. */
+  const fullWeek = Array.from({ length: 5 }, (_, i) =>
+    mkEntry({ id: `w${i}`, techId: "3", date: tsAddDays("2026-06-29", i), start: "08:00", end: "16:00" }),
+  );
+
+  it("counts a day off's hours at all — they used to total ZERO here", () => {
+    // A time-off row carries a LENGTH and no punch times, and the start/end subtraction returned
+    // nothing for it: eight paid hours invisible on the screen that approves the week.
+    expect(tsHours(holiday)).toBe(8);
+    expect(tsPaid(holiday)).toBe(8);
+  });
+
+  it("does not let a paid holiday create overtime", () => {
+    // 40 worked + 8 holiday = 48 PAID, and nobody worked a 41st hour.
+    const r = tsRollup([...fullWeek, holiday], "3", WEEK, FEDERAL);
+    expect(r.paid).toBe(48);
+    expect(r.ot).toBe(0);
+  });
+
+  it("reports regular UNCAPPED, because 48 is what the shop is about to pay", () => {
+    const r = tsRollup([...fullWeek, holiday], "3", WEEK, FEDERAL);
+    expect(r.reg).toBe(48);
+  });
+
+  it("never calls a day off 'unfinished' — it has no end time by construction", () => {
+    // The bare `!end` test named every holiday as a day the office had to go fix, and no amount of
+    // fixing would have changed it. Same kind-blindness the server's approval predicate had.
+    expect(tsIsUnfinished(holiday)).toBe(false);
+    expect(tsUnfinishedDays([holiday], "3", WEEK)).toEqual([]);
   });
 });

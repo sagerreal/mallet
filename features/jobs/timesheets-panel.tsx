@@ -14,6 +14,7 @@ import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { useTimesheetsWeek } from "@/features/timesheets/use-timesheets-week";
+import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import type { TimeEntry } from "@/lib/store/types";
@@ -72,6 +73,13 @@ export function TimesheetsPanel() {
   const jobs = useAppStore((s) => s.jobs);
   const leads = useAppStore((s) => s.leads);
   const timeEntries = useAppStore((s) => s.timeEntries);
+  /**
+   * The shop's overtime rule — the SAME read the technician's own screen uses, deliberately. This
+   * grid computed a compiled-in weekly forty while My hours computed the configured rule, so a
+   * California week could read differently on the two screens, and this is the one that gets
+   * approved and pushed to QuickBooks.
+   */
+  const overtimePolicy = useOvertimePolicy();
   const addTimeEntry = useAppStore((s) => s.addTimeEntry);
   const updateTimeEntry = useAppStore((s) => s.updateTimeEntry);
   const deleteTimeEntry = useAppStore((s) => s.deleteTimeEntry);
@@ -344,7 +352,7 @@ export function TimesheetsPanel() {
 
       {selTech &&
         (() => {
-          const rollup = tsRollup(timeEntries, selTech.id, weekDates);
+          const rollup = tsRollup(timeEntries, selTech.id, weekDates, overtimePolicy);
           const es = tsWeekEntries(timeEntries, selTech.id, weekDates);
           return (
             <TsTechWeekCard
