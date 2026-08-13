@@ -43,10 +43,17 @@ export interface MyHoursWeekProps {
 
 export interface RowProps extends Omit<MyHoursWeekProps, "entries" | "weekStartISO"> {
   readonly entry: MyHoursEntry;
+  /**
+   * Draw the kind as a pill as well as in the label. False inside the register's parts list, where
+   * the two together read "Job Job" — the label is the click target and has to stay, so the pill is
+   * the one that goes.
+   */
+  readonly showKind?: boolean;
 }
 
 export function EntryRow(props: RowProps) {
   const { entry, today, myUserId, editingId, saving, saveError, suggestEndFor, onEdit, onSave, onDelete } = props;
+  const showKind = props.showKind ?? true;
   const lock = editabilityOf(entry, today, myUserId);
   const editing = editingId === entry.id;
   // Inside an expanded run the kind is worth showing again: it is the only thing distinguishing
@@ -69,7 +76,11 @@ export function EntryRow(props: RowProps) {
         className={`ts-e${entry.status === "approved" ? " appr" : ""}${editing ? " editing" : ""}${lock.editable ? " rowclick" : ""}`}
         onClick={lock.editable ? () => onEdit(editing ? null : entry.id) : undefined}
       >
-        <span className={`ts-kind${entry.kind === "job" ? " job" : ""}`}>{kind}</span>
+        {showKind ? (
+          <span className={`ts-kind${entry.kind === "job" ? " job" : ""}`}>{kind}</span>
+        ) : (
+          <span />
+        )}
         {lock.editable ? (
           <button
             type="button"

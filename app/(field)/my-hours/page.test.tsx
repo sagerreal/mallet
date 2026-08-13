@@ -39,6 +39,7 @@ let removeMutate: ReturnType<typeof vi.fn>;
 let updateError: { message: string } | null;
 let meUserId: string | undefined;
 let unreportedQuery: { data?: { items: unknown[] }; refetch: () => void };
+let visitStampsQuery: { data?: { items: unknown[] } };
 /** The shop's overtime rule, as the field surface reads it. Federal unless a test says otherwise. */
 let overtimePolicy: { weeklyThresholdMinutes: number; dailyThresholdMinutes: number | null } = {
   weeklyThresholdMinutes: 2400,
@@ -68,6 +69,10 @@ vi.mock("@/lib/trpc/client", () => ({
         // Days with visits stamped and no hours sent in. Its own query because the whole point is
         // days with NO rows — there is nothing in `list` to derive it from.
         unreportedDays: { useQuery: () => unreportedQuery },
+        // What the week was SPENT ON — the visit taps, for the attribution panel under each shift.
+        // A separate read from `list` on purpose: the clock and the job taps are different records
+        // and do not have to agree.
+        visitStamps: { useQuery: () => visitStampsQuery },
         update: {
           useMutation: () => ({ mutate: updateMutate, error: updateError, isPending: false }),
         },
@@ -101,6 +106,7 @@ beforeEach(() => {
   removeMutate = vi.fn();
   updateError = null;
   unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
+  visitStampsQuery = { data: { items: [] } };
   meUserId = ME;
   withEntries([]);
 });
@@ -389,6 +395,7 @@ describe("My hours — the overtime figure obeys the shop's rule", () => {
     meUserId = ME;
     updateError = null;
     unreportedQuery = { data: { items: [] }, refetch: vi.fn() };
+    visitStampsQuery = { data: { items: [] } };
     listQuery = {
       data: { items: tenHourWeek(), nextCursor: null },
       isFetched: true,

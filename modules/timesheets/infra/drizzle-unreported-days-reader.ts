@@ -26,9 +26,16 @@ export interface UnreportedDay {
   readonly date: string;
   /** Visits stamped to them that day. */
   readonly visits: number;
-  /** Earliest activity, HH:MM, device-local as recorded. Null when only a date is known. */
-  readonly firstAt: string | null;
-  readonly lastAt: string | null;
+  /**
+   * Earliest activity as an ISO INSTANT. Null when only a date is known.
+   *
+   * WAS `to_char(..., 'HH24:MI')`, which renders in the DATABASE session's timezone — UTC. So this
+   * card told a California technician he had worked "first 4:05a, last 4:56a" on a day he worked
+   * nine to five, and the Add button offered to WRITE those hours. Wrong hours in payroll, not a
+   * cosmetic slip. The instant is the fact; the device renders the wall clock.
+   */
+  readonly firstStampAt: string | null;
+  readonly lastStampAt: string | null;
 }
 
 /**
@@ -59,15 +66,15 @@ export class DrizzleUnreportedDaysReader {
       user_id: string;
       day: string;
       visits: string;
-      first_at: string | null;
-      last_at: string | null;
+      first_at: Date | null;
+      last_at: Date | null;
     }>(sql`
       SELECT
         v.assignee_user_id                                   AS user_id,
         ${sql.raw(VISIT_DAY)}                                          AS day,
         count(*)                                             AS visits,
-        to_char(min(coalesce(v.enroute_at, v.started_at)), 'HH24:MI') AS first_at,
-        to_char(max(coalesce(v.completed_at, v.started_at)), 'HH24:MI') AS last_at
+        min(coalesce(v.enroute_at, v.started_at))             AS first_at,
+        max(coalesce(v.completed_at, v.started_at))           AS last_at
       FROM job_visits v
       WHERE v.org_id = ${this.orgId}
         AND v.assignee_user_id IS NOT NULL
@@ -96,8 +103,8 @@ export class DrizzleUnreportedDaysReader {
       userId: r.user_id,
       date: r.day,
       visits: Number(r.visits),
-      firstAt: r.first_at,
-      lastAt: r.last_at,
+      firstStampAt: r.first_at ? new Date(r.first_at).toISOString() : null,
+      lastStampAt: r.last_at ? new Date(r.last_at).toISOString() : null,
     }));
   }
 }

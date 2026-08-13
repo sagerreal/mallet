@@ -1791,6 +1791,24 @@
   .sh-lock{background:none;padding:0;margin:0 var(--space-6) var(--space-3);font-size:var(--type-sm);color:var(--ink-3)}
   /* the row's parts, IN FLOW under it (the DAY TOTAL expander's grammar, never a popover) */
   .sh-detail{border-top:1px solid var(--line);background:var(--card);padding:0 var(--space-6) var(--space-3)}
+  /* what the shift was SPENT ON — job attribution. Narrower columns than the register above it,
+     because this is a detail of one row rather than a second register. */
+  .shd-head,.shd-row{display:grid;grid-template-columns:1fr 120px 120px 96px;column-gap:var(--space-4);align-items:center}
+  .shd-head{padding:var(--space-3) 0 var(--space-2)}
+  .shd-head span{font-size:var(--type-xs);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+  .shd-row{padding:var(--space-2) 0;border-top:1px solid var(--line-2)}
+  .shd-who b{display:block;font-size:var(--type-md);font-weight:700}
+  .shd-cust{display:block;font-size:var(--type-sm);color:var(--ink-3);margin-top:var(--space-2xs)}
+  .shd-t{font-size:var(--type-base);color:var(--ink-2);font-variant-numeric:tabular-nums}
+  .shd-d{font-family:var(--font-mono);font-size:var(--type-base);font-weight:700;font-variant-numeric:tabular-nums}
+  .shd-d .u{font-size:var(--type-sm);color:var(--ink-3);font-weight:500;margin-left:var(--space-2xs)}
+  /* a visit nobody stamped: stated, never rendered as a zero */
+  .shd-un{font-family:var(--font-inter),sans-serif;font-size:var(--type-sm);font-weight:600;color:var(--amber)}
+  .shd-none{font-size:var(--type-base);color:var(--ink-3);padding:var(--space-3) 0 var(--space-2)}
+  .shd-foot{display:flex;flex-wrap:wrap;gap:var(--space-1) var(--space-3);padding:var(--space-3) 0 var(--space-1);border-top:1px solid var(--line-2)}
+  .shd-sum{font-size:var(--type-base);font-weight:700;font-variant-numeric:tabular-nums}
+  /* the difference between the shift and its jobs, EXPLAINED — never balanced into a row */
+  .shd-gap{font-size:var(--type-sm);color:var(--ink-3)}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
   .ts-trow{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}
