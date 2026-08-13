@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Tap to Pay on iPhone. Granted for team 6SMLK52FUJ on 2026-08-13 (Case-ID 21574646) with the
+	  DEVELOPMENT DISTRIBUTION restriction: this builds and runs on registered test devices only.
+	  Shipping publicly needs Apple to lift that restriction after reviewing three flow videos and
+	  the completed App Review Requirements Checklist.
+
+	  The provisioning profile must carry the same entitlement or the app fails to launch on device
+	  with a vague signing error — the profile has to be regenerated after the grant, an existing
+	  one does not gain it.
+	-->
+	<key>com.apple.developer.proximity-reader.payment.acceptance</key>
+	<true/>
+</dict>
+</plist>
