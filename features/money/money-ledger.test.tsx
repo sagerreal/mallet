@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen, fireEvent, within, waitFor } from "@testing-library/react";
 
 interface Store {
   invoices: unknown[];
@@ -24,6 +24,7 @@ let moneyState = {
 };
 const openModal = vi.fn();
 const push = vi.fn();
+const updateInvoice = vi.fn();
 const addInvoice = vi.fn(() => ({ invoice: { id: "inv-1" }, persisted: Promise.resolve({ ok: true }) }));
 
 vi.mock("@/lib/store/app-store", () => ({
@@ -48,7 +49,20 @@ vi.mock("./use-money-query", () => ({
   useMoneyQueryState: () => ({ search: "", setSearch: vi.fn(), clear: vi.fn() }),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
-vi.mock("./money-table", () => ({ MoneyTable: () => <div data-testid="table" />, MONEY_COL_ORDER: ["num"] }));
+const advanceReminder = vi.fn();
+vi.mock("@/lib/trpc/vanilla", () => ({
+  trpcVanilla: { v1: { notifications: { advanceReminder: { mutate: (i: unknown) => advanceReminder(i) } } } },
+}));
+// The row callbacks are captured so a test can invoke one directly — the table itself is stubbed,
+// but what the ledger DOES when a row's action fires is this file's business.
+let lastCallbacks: { onRemind: (id: string) => void } | undefined;
+vi.mock("./money-table", () => ({
+  MoneyTable: (props: { cb?: { onRemind: (id: string) => void } }) => {
+    lastCallbacks = props.cb;
+    return <div data-testid="table" />;
+  },
+  MONEY_COL_ORDER: ["num"],
+}));
 vi.mock("./money-toolbar", () => ({ MoneyToolbar: () => <div data-testid="toolbar" /> }));
 // A marker carrying its props: this file proves the chip row reaches the page UNCONDITIONALLY
 // (it used to need the Filters disclosure open) and is handed the live band.
@@ -61,7 +75,7 @@ vi.mock("./money-band-filter", () => ({
 import { MoneyLedger } from "./money-ledger";
 
 const store = (invoices: unknown[]): Store => ({
-  invoices, jobs: [], leads: [], addInvoice, recordPayment: vi.fn(), updateInvoice: vi.fn(),
+  invoices, jobs: [], leads: [], addInvoice, recordPayment: vi.fn(), updateInvoice,
   // The header's Auto-remind switch reads the org toggle now — it was useState(true), a control
   // that promised reminder texts and wrote nowhere.
   toggles: { techSeesPrice: true, frontDesk: true, autoRemind: true, measurementEstimating: false },
@@ -146,5 +160,44 @@ describe("MoneyLedger — the filter is on the page, not behind a button", () =>
     render(<MoneyLedger />);
     const before = screen.getByTestId("bandfilter");
     expect(before.getAttribute("data-disabled")).toBe("false");
+  });
+});
+
+describe("MoneyLedger — Remind actually sends", () => {
+  beforeEach(() => {
+    advanceReminder.mockReset();
+    advanceReminder.mockResolvedValue({ id: "n1" });
+    updateInvoice.mockReset();
+    lastCallbacks = undefined;
+  });
+
+  it("sends the reminder before marking the row reminded", async () => {
+    // Remind used to only bump the local follow-up stage: the row moved to "Reminded" and no
+    // reminder was ever sent, so the office stopped chasing an invoice nobody had chased.
+    moneyState.invoiceRows = [
+      { id: "inv-1", num: "INV-1001", leadId: "lead-1", cust: "Priya", status: "sent",
+        total: 685, depPaid: 0, payments: [], lines: [], age: 9, archived: false, fu: { on: true, stage: 0 } },
+    ];
+    render(<MoneyLedger />);
+
+    lastCallbacks?.onRemind("inv-1");
+    await waitFor(() => expect(advanceReminder).toHaveBeenCalledWith({ relatedType: "invoice", relatedId: "inv-1" }));
+    await waitFor(() =>
+      expect(updateInvoice).toHaveBeenCalledWith("inv-1", { fu: { on: true, stage: 1 } }),
+    );
+  });
+
+  it("does not claim the reminder was sent when the server refuses it", async () => {
+    // The 10DLC gate returns PRECONDITION_FAILED for an org whose campaign isn't active.
+    advanceReminder.mockRejectedValue(new Error("This shop can't text yet."));
+    moneyState.invoiceRows = [
+      { id: "inv-1", num: "INV-1001", leadId: "lead-1", cust: "Priya", status: "sent",
+        total: 685, depPaid: 0, payments: [], lines: [], age: 9, archived: false, fu: { on: true, stage: 0 } },
+    ];
+    render(<MoneyLedger />);
+
+    lastCallbacks?.onRemind("inv-1");
+    await waitFor(() => expect(advanceReminder).toHaveBeenCalled());
+    expect(updateInvoice).not.toHaveBeenCalled();
   });
 });
