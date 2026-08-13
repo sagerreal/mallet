@@ -73,6 +73,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       jobId: null,
       start: TS_DEFAULT_START,
       end: TS_DEFAULT_END,
+      minutes: null,
       note: "",
       src: "manual",
       status: "draft",
@@ -89,7 +90,8 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
         techUserId: techId,
         workDate: date,
         kind: entry.kind as "job" | "travel" | "break" | "shop",
-        startTime: entry.start,
+        // The office grid creates punched rows only — start is the literal above.
+        startTime: TS_DEFAULT_START,
         endTime: entry.end ?? undefined,
         note: entry.note,
         src: entry.src as "manual" | "clock" | "timer",
@@ -128,7 +130,7 @@ export const createTimesheetsSlice: StateCreator<TimesheetsSlice, [], [], Timesh
       entryId: id,
     };
     if ("date" in patch) mutationInput.workDate = patch.date;
-    if ("start" in patch && patch.start !== undefined) mutationInput.startTime = patch.start;
+    if ("start" in patch && patch.start != null) mutationInput.startTime = patch.start;
     if ("end" in patch) mutationInput.endTime = patch.end ?? null;
     if ("kind" in patch && patch.kind !== undefined) {
       mutationInput.kind = patch.kind as "job" | "travel" | "break" | "shop";

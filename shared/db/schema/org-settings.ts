@@ -49,6 +49,21 @@ export const orgSettings = pgTable(
      * Defaults true: every existing shop keeps the clock it already has.
      */
     timesheetClock: boolean("timesheet_clock").notNull().default(true),
+    /**
+     * Whether technicians may hand-edit their own time entries (the Jobber model). Defaults
+     * FALSE — the HCP model: the clock and the visit taps are the field's only writers, and
+     * corrections go through the office. A timesheet a tech can silently rewrite is not a
+     * record. Secure by default; the shop opts in.
+     */
+    techEditsTimes: boolean("tech_edits_times").notNull().default(false),
+    /**
+     * The org's overtime policy — CONFIG, never code. State rules differ (federal weekly-40;
+     * California adds daily-8), so the shop sets its own: weekly threshold in minutes (default
+     * 2400 = 40h) and an optional daily threshold in minutes (null = no daily OT rule). An hour
+     * never counts toward both; the summary math takes daily first.
+     */
+    otWeeklyThresholdMinutes: integer("ot_weekly_threshold_minutes").notNull().default(2400),
+    otDailyThresholdMinutes: integer("ot_daily_threshold_minutes"),
     techSeesPrice: boolean("tech_sees_price").notNull().default(true),
     techTexts: boolean("tech_texts").notNull().default(true),
     // Defaults OFF. It used to default true, which handed every new shop a phone number pointed at

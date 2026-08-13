@@ -120,7 +120,7 @@ function EntryRow(props: RowProps) {
         <MyHoursTimeEditor
           kind={entry.kind as EntryKind}
           jobId={entry.jobId ?? null}
-          startTime={entry.startTime}
+          startTime={entry.startTime ?? ""}
           endTime={entry.endTime ?? suggested ?? ""}
           suggestedEnd={suggested}
           saving={saving}

@@ -58,17 +58,20 @@ export class UpdateTimeEntryUseCase {
     if (!patched.ok) return patched;
 
     // One person cannot be two places at once — the same gate as create, run against the day
-    // the row is landing ON (workDate may itself be the patch). The row never clashes with itself.
+    // the row is landing ON (workDate may itself be the patch). The row never clashes with
+    // itself. Time-off rows occupy no wall-clock window, so only punched rows face the gate.
     const p = patched.value.props;
-    const gate = await overlapGateError(this.entries, {
-      id: p.id,
-      techUserId: p.techUserId,
-      workDate: p.workDate,
-      startTime: p.startTime,
-      endTime: p.endTime,
-      running: p.running,
-    });
-    if (gate !== null) return err(gate);
+    if (p.startTime !== null) {
+      const gate = await overlapGateError(this.entries, {
+        id: p.id,
+        techUserId: p.techUserId,
+        workDate: p.workDate,
+        startTime: p.startTime,
+        endTime: p.endTime,
+        running: p.running,
+      });
+      if (gate !== null) return err(gate);
+    }
 
     await this.entries.save(patched.value);
 

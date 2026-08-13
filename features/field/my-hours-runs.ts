@@ -37,6 +37,8 @@ export interface HoursRun {
   readonly entries: readonly MyHoursEntry[];
 }
 
+type PunchedEntry = MyHoursEntry & { startTime: string };
+
 const labelFor = (paid: boolean): string => (paid ? "Worked" : "Break");
 
 /**
@@ -57,9 +59,12 @@ const continues = (prev: MyHoursEntry, next: MyHoursEntry): boolean =>
  */
 export function runsForDay(entries: readonly MyHoursEntry[]): HoursRun[] {
   const sorted = sortByStart(entries);
-  const runs: MyHoursEntry[][] = [];
+  const runs: PunchedEntry[][] = [];
 
-  for (const entry of sorted) {
+  // Time-off rows are not stretches of a day — they carry no times and cannot join a run.
+  // The sheet renders them as their own kind of row, never here.
+  const punched = sorted.filter((e): e is PunchedEntry => e.startTime !== null);
+  for (const entry of punched) {
     const open = runs[runs.length - 1];
     const last = open?.[open.length - 1];
     // A running row ends its run: nothing can follow a stretch with no end.

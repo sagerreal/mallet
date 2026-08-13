@@ -321,7 +321,14 @@ export function DayClock({ jobs = [], scheduledMinutes = 0 }: DayClockProps) {
     );
   }
 
-  const view = predicted ?? dayClockView(open.data?.open, todayISO());
+  // The open row is always clock-shaped (a running time-off entry is unconstructible) —
+  // narrow the wire type at this one seam instead of widening the view.
+  const openRow = open.data?.open;
+  const openView =
+    openRow && openRow.startTime !== null
+      ? { kind: openRow.kind as "job" | "travel" | "break" | "shop", workDate: openRow.workDate, startTime: openRow.startTime }
+      : null;
+  const view = predicted ?? dayClockView(openView, todayISO());
   const actions = DAY_CLOCK_ACTIONS[view.state];
   // A day worth opening. No rows today = no toggle: an expander onto an empty panel is a dead
   // control, and before the first punch there is genuinely nothing to read.

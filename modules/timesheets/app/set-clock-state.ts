@@ -22,6 +22,7 @@ import {
   type ClockPlan,
   type ClockTap,
   type OpenEntry,
+  type ClockState,
 } from "../domain/clock";
 import {
   toWallClock,
@@ -127,7 +128,9 @@ const startInstantOf = (entry: TimeEntry): Date => entry.props.createdAt;
 
 const toOpenEntry = (entry: TimeEntry): OpenEntry => ({
   id: entry.props.id,
-  kind: entry.props.kind,
+  // A running time-off entry is unconstructible (domain + DB shape check), so an OPEN row's
+  // kind is always a clock kind — the narrowing TS cannot see.
+  kind: entry.props.kind as ClockState,
   jobId: entry.props.jobId,
   startedAt: startInstantOf(entry),
 });

@@ -32,6 +32,10 @@ export const KIND_LABELS: Record<MyHoursEntry["kind"], string> = {
   job: "Job",
   travel: "Travel",
   break: "Break",
+  pto: "PTO",
+  vacation: "Vacation",
+  sick: "Sick",
+  holiday: "Holiday",
   shop: "Shop",
 };
 
@@ -65,9 +69,13 @@ export function clockLabel(hhmm: string | null): string {
   return hhmm ? timeLabelShort(timeToH(hhmm)) : "—";
 }
 
-/** Recorded length in decimal hours. A running row has no end yet, so it counts as nothing. */
+/** Recorded length in decimal hours. A running row has no end yet, so it counts as nothing;
+ *  a time-off row carries its length directly — there are no punch times to a day off. */
 export function entryHours(entry: MyHoursEntry): number {
-  if (!entry.endTime) return 0;
+  // Loose null check on purpose: older callers/fixtures may omit the key entirely, and an
+  // absent length must read as "clocked row", never as NaN time off.
+  if (entry.minutes != null) return entry.minutes / 60;
+  if (!entry.endTime || !entry.startTime) return 0;
   return Math.max(0, timeToH(entry.endTime) - timeToH(entry.startTime));
 }
 
@@ -100,9 +108,10 @@ export function weekEntries(
   return entries.filter((e) => days.has(e.workDate));
 }
 
-/** The entries of one day, oldest start first — the order the day actually happened in. */
+/** The entries of one day, oldest start first — the order the day actually happened in.
+ *  Time-off rows have no start; they read first, before the day's punches. */
 export function sortByStart(entries: readonly MyHoursEntry[]): MyHoursEntry[] {
-  return [...entries].sort((a, b) => a.startTime.localeCompare(b.startTime));
+  return [...entries].sort((a, b) => (a.startTime ?? "").localeCompare(b.startTime ?? ""));
 }
 
 export interface WeekRollup {

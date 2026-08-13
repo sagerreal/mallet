@@ -774,6 +774,7 @@ export function dtoToTimeEntry(dto: TimeEntryDTO): TimeEntry {
     jobId: dto.jobId,
     start: dto.startTime,
     end: dto.endTime,
+    minutes: dto.minutes,
     note: dto.note,
     src: dto.src,
     status: dto.status,

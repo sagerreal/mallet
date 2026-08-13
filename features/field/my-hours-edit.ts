@@ -145,7 +145,7 @@ export function suggestEndTime(
   const candidates = dayEntries
     .filter((e) => e.id !== running.id && e.workDate === running.workDate)
     .map((e) => e.endTime)
-    .filter((end): end is string => end !== null && end > running.startTime);
+    .filter((end): end is string => end !== null && running.startTime !== null && end > running.startTime);
   if (candidates.length === 0) return null;
   return candidates.reduce((latest, end) => (end > latest ? end : latest));
 }
@@ -194,6 +194,7 @@ export function isStaleOpenEntry(entry: MyHoursEntry, now: Date): boolean {
  * served; it is only used to decide whether to show a prompt, never to compute pay.
  */
 function startedInstantOf(entry: MyHoursEntry): number | null {
+  if (entry.startTime === null) return null;
   const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(entry.workDate);
   const time = /^(\d{2}):(\d{2})/.exec(entry.startTime);
   if (!parts || !time) return null;

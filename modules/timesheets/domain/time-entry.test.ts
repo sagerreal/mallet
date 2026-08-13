@@ -11,15 +11,21 @@ const baseProps = (overrides: Partial<TimeEntryProps> = {}): TimeEntryProps => (
   kind: "job",
   startTime: "08:00",
   endTime: "10:00",
+  minutes: null,
   note: "",
   src: "manual",
   status: "draft",
   running: false,
   approvedAt: null,
+  editedByUserId: null,
   createdAt: new Date("2026-07-07T08:00:00Z"),
   updatedAt: new Date("2026-07-07T08:00:00Z"),
   ...overrides,
 });
+
+/** A valid PTO-family entry: a date and a length, no punch times. */
+const offProps = (overrides: Partial<TimeEntryProps> = {}): TimeEntryProps =>
+  baseProps({ kind: "pto", startTime: null, endTime: null, minutes: 480, ...overrides });
 
 const unwrap = (r: ReturnType<typeof TimeEntry.create>): TimeEntry => {
   if (!isOk(r)) throw new Error(`expected ok, got ${JSON.stringify(r.error)}`);
@@ -153,5 +159,81 @@ describe("TimeEntry.patch()", () => {
     const entry = unwrap(TimeEntry.create(baseProps({ startTime: "08:00", endTime: "10:00" })));
     const result = entry.patch({ endTime: "07:00" }, now);
     expect(result.ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// TIME-OFF KINDS. The kind decides the SHAPE: clock kinds carry punch times and never
+// minutes; time-off kinds carry minutes and never punch times — an entry that mixes the
+// two shapes is corruption and must be impossible to construct.
+// ---------------------------------------------------------------------------
+
+describe("TimeEntry.create — time-off kinds", () => {
+  const now = new Date("2026-07-08T12:00:00Z");
+  it("accepts each time-off kind with a date and minutes only", () => {
+    for (const kind of ["pto", "vacation", "sick", "holiday"] as const) {
+      const r = TimeEntry.create(offProps({ kind }));
+      expect(isOk(r)).toBe(true);
+    }
+  });
+
+  it("rejects a time-off entry carrying punch times", () => {
+    expect(TimeEntry.create(offProps({ startTime: "08:00" })).ok).toBe(false);
+    expect(TimeEntry.create(offProps({ endTime: "16:00" })).ok).toBe(false);
+  });
+
+  it("rejects a time-off entry with no minutes, zero minutes, or more than a day", () => {
+    expect(TimeEntry.create(offProps({ minutes: null })).ok).toBe(false);
+    expect(TimeEntry.create(offProps({ minutes: 0 })).ok).toBe(false);
+    expect(TimeEntry.create(offProps({ minutes: 1441 })).ok).toBe(false);
+    expect(TimeEntry.create(offProps({ minutes: 7.5 })).ok).toBe(false);
+  });
+
+  it("rejects a RUNNING time-off entry — there is no clock to a day off", () => {
+    expect(TimeEntry.create(offProps({ running: true })).ok).toBe(false);
+  });
+
+  it("rejects a clock-kind entry carrying minutes", () => {
+    expect(TimeEntry.create(baseProps({ minutes: 60 })).ok).toBe(false);
+  });
+
+  it("rejects a clock-kind entry with no startTime", () => {
+    expect(TimeEntry.create(baseProps({ startTime: null })).ok).toBe(false);
+  });
+
+  it("derives hours from minutes for a time-off entry", () => {
+    const entry = unwrap(TimeEntry.create(offProps({ minutes: 450 })));
+    expect(entry.hours()).toBe(7.5);
+  });
+
+  it("patches a time-off entry's length under the same invariants", () => {
+    const entry = unwrap(TimeEntry.create(offProps()));
+    const good = entry.patch({ minutes: 240 }, now);
+    expect(isOk(good)).toBe(true);
+    const bad = entry.patch({ minutes: 0 }, now);
+    expect(bad.ok).toBe(false);
+  });
+});
+
+describe("TimeEntry — the hand-edit trail", () => {
+  const now = new Date("2026-07-08T12:00:00Z");
+  it("records who edited via patch's editedBy", () => {
+    const entry = unwrap(TimeEntry.create(baseProps()));
+    const edited = entry.patch(
+      { note: "corrected" },
+      now,
+      asUserId("44444444-4444-4444-4444-444444444444"),
+    );
+    expect(isOk(edited)).toBe(true);
+    if (isOk(edited)) {
+      expect(edited.value.props.editedByUserId).toBe("44444444-4444-4444-4444-444444444444");
+    }
+  });
+
+  it("leaves the trail untouched when no editor is given (system writes)", () => {
+    const entry = unwrap(TimeEntry.create(baseProps()));
+    const patched = entry.patch({ note: "clock write" }, now);
+    expect(isOk(patched)).toBe(true);
+    if (isOk(patched)) expect(patched.value.props.editedByUserId).toBeNull();
   });
 });

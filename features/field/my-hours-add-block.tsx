@@ -18,7 +18,9 @@ import { editWindowDates, timesProblem } from "./my-hours-edit";
 import type { AddBlockInput } from "./use-my-hours-writes";
 import { SelectMenu } from "@/components/ui/select-menu";
 
-type Kind = MyHoursEntry["kind"];
+// The add block types PUNCHED rows only — time off has its own entry path (a kind, a day and
+// a length; no times), so the clock kinds are the whole menu here.
+type Kind = "job" | "travel" | "break" | "shop";
 
 const KINDS: readonly Kind[] = ["job", "travel", "shop", "break"];
 

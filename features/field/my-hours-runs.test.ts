@@ -14,6 +14,7 @@ const entry = (over: Partial<MyHoursEntry> = {}): MyHoursEntry => ({
   kind: "shop",
   startTime: "08:00",
   endTime: "12:00",
+  minutes: null,
   note: "",
   src: "clock",
   status: "draft",

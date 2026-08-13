@@ -35,6 +35,7 @@ const entry = (over: Partial<TimeEntry>): TimeEntry => ({
   jobId: null,
   start: "08:00",
   end: "16:00",
+  minutes: null,
   note: "",
   src: "clock",
   status: "draft",
