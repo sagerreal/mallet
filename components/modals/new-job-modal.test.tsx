@@ -630,10 +630,14 @@ describe("NewJobModalContent — checklist wiring", () => {
     }));
   });
 
-  it("offers BOTH pools, labeled — scoping and before-you-leave — and none attaches without a pick", async () => {
+  it("offers every saved checklist in one flat list, and none attaches without a pick", async () => {
+    // There is one kind of checklist now. The picker used to split into "Scoping" and "Before you
+    // leave" groups, but the stage never survived attachment — a job stores {name, items} with no
+    // stage — so the split labelled a difference the product never acted on.
     storeChecklists = [
       { id: "chk-j", name: "Drain close-out", trade: "Custom", stage: "job", match: [],
         items: [{ id: "j1", text: "Water back on", type: "check", required: true, position: 0 }] },
+      // Deliberately a LEGACY scope row: with one of each, the old code rendered group headers.
       { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "scope", match: [],
         items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }] },
     ];
@@ -645,13 +649,12 @@ describe("NewJobModalContent — checklist wiring", () => {
     });
 
     render(<NewJobModalContent />);
-    // With no Type chip there is no stage to filter by — the ONE row offers both pools,
-    // grouped under their own labels so the office's intent lives in the pick.
     fireEvent.click(screen.getByText("Checklist"));
-    expect(screen.getByText("Scoping")).toBeTruthy();
-    expect(screen.getByText("Before you leave")).toBeTruthy();
     expect(screen.getByText("Repipe walkthrough")).toBeTruthy();
     expect(screen.getByText("Drain close-out")).toBeTruthy();
+    // No group headers — there are no groups.
+    expect(screen.queryByText("Scoping")).toBeNull();
+    expect(screen.queryByText("Before you leave")).toBeNull();
 
     // Create WITHOUT picking → no checklist attach.
     fireEvent.change(titleInput(), { target: { value: "plain estimate" } });
@@ -660,7 +663,9 @@ describe("NewJobModalContent — checklist wiring", () => {
     expect(updateJob).not.toHaveBeenCalled();
   });
 
-  it("hides the group labels when only one pool has templates", () => {
+  it("still offers a checklist left on the retired scope stage", () => {
+    // Nothing can create one any more, but a shop that made one before the stages were collapsed
+    // must not find it silently missing from the picker.
     storeChecklists = [
       { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "scope", match: [],
         items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }] },
@@ -668,16 +673,13 @@ describe("NewJobModalContent — checklist wiring", () => {
     render(<NewJobModalContent />);
     fireEvent.click(screen.getByText("Checklist"));
     expect(screen.getByText("Repipe walkthrough")).toBeTruthy();
-    // One pool → the group headers would label nothing apart from itself.
-    expect(screen.queryByText("Scoping")).toBeNull();
-    expect(screen.queryByText("Before you leave")).toBeNull();
   });
 
   it("an unpriced job with a picked scoping checklist attaches it to the created job", async () => {
     storeChecklists = [
       { id: "chk-j", name: "Drain close-out", trade: "Custom", stage: "job", match: [],
         items: [{ id: "j1", text: "Water back on", type: "check", required: true, position: 0 }] },
-      { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "scope", match: [],
+      { id: "chk-s", name: "Repipe walkthrough", trade: "Custom", stage: "job", match: [],
         items: [{ id: "s1", text: "Measure the run", type: "check", required: true, position: 0 }] },
     ];
     const persistedLead = { id: "lead-43", name: "Scoped Customer" };

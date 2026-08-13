@@ -88,11 +88,9 @@ export function NewJobModalContent() {
   const adoptLead = useAppStore((s) => s.adoptLead);
   const checklists = useAppStore((s) => s.checklists);
 
-  // Saved before-you-leave checklists feed the picker (hydrated from the DB).
-  const jobChecklists = checklists.filter((c) => c.stage === "job");
-  // The office's "scope it THIS way" list — ServiceTitan runs the same mechanic as job-type
-  // forms; the stage existed in the domain from day one and nothing ever offered it.
-  const scopeChecklists = checklists.filter((c) => c.stage === "scope");
+  // Saved checklists feed the picker (hydrated from the DB). NOT filtered by stage: there is one
+  // kind of checklist now, and a list left on the retired "scope" stage must still be pickable.
+  const savedChecklists = checklists;
 
   // Only live (non-archived) leads feed the customer picker (prototype liveLeads()).
   const liveLeads = leads.filter((l) => !l.archived);
@@ -674,10 +672,9 @@ export function NewJobModalContent() {
             </div>
           </DisclosureRow>
 
-          {/* BOTH pools, labeled — with no Type chip there is no stage to filter by, and the
-              office's intent lives in which list they pick: a scoping list makes a walkthrough
-              happen a particular way; a before-you-leave list gates booked work's closeout.
-              The group labels render only when both pools actually have templates. */}
+          {/* ONE pool. The picker used to split into "Scoping" and "Before you leave", but the
+              stage never survived attachment — a job stores {name, items} with no stage — so the
+              split labelled a distinction nothing downstream acted on. */}
           {(
             <DisclosureRow
               label="Checklist"
@@ -694,37 +691,18 @@ export function NewJobModalContent() {
                   <span className="njchk-dot">✓</span>
                   <span style={{ flex: 1 }}>No checklist</span>
                 </button>
-                {(
-                  [
-                    ["Scoping", scopeChecklists],
-                    ["Before you leave", jobChecklists],
-                  ] as const
-                ).map(([groupLabel, pool]) =>
-                  pool.length === 0 ? null : (
-                    <div key={groupLabel}>
-                      {scopeChecklists.length > 0 && jobChecklists.length > 0 && (
-                        <div
-                          className="muted"
-                          style={{ fontSize: "var(--type-sm)", fontWeight: 700, margin: "var(--space-2) 0 var(--space-1)" }}
-                        >
-                          {groupLabel}
-                        </div>
-                      )}
-                      {pool.map((c) => (
-                        <button
-                          key={c.id}
-                          type="button"
-                          className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
-                          onClick={() => pickChecklist(c.id)}
-                        >
-                          <span className="njchk-dot">✓</span>
-                          <span style={{ flex: 1 }}>{c.name}</span>
-                          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
-                        </button>
-                      ))}
-                    </div>
-                  ),
-                )}
+                {savedChecklists.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    className={`njchk-row${chkTpl === c.id ? " sel" : ""}`}
+                    onClick={() => pickChecklist(c.id)}
+                  >
+                    <span className="njchk-dot">✓</span>
+                    <span style={{ flex: 1 }}>{c.name}</span>
+                    <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{c.items.length} items</span>
+                  </button>
+                ))}
               </div>
 
               <button
