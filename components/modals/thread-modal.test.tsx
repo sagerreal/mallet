@@ -23,7 +23,15 @@ vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "thread", params: h.params }),
   useCloseModal: () => () => {},
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ leads: h.leads, updateLead: h.updateLead, clearLeadUnreadLocal: h.clearLeadUnreadLocal }),
+    // a2pStatus is what useSmsGate reads to decide whether Send is blocked. `active` here so the
+    // thread's own tests exercise a shop that CAN text; the blocked shape is covered in
+    // features/a2p/use-sms-ready.test.tsx and sms-blocked.test.tsx.
+    selector({
+      leads: h.leads,
+      updateLead: h.updateLead,
+      clearLeadUnreadLocal: h.clearLeadUnreadLocal,
+      a2pStatus: { status: "active", canText: true, needsInput: false, failureReason: null },
+    }),
 }));
 
 vi.mock("@/lib/trpc/client", () => ({

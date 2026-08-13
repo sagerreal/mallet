@@ -155,7 +155,7 @@ function BoardColumnView({
               key={item.key}
               item={item}
               smsReady={gate.ready}
-              smsBlockedReason={gate.reason ?? undefined}
+              smsBlockedReason={gate.note ?? undefined}
               onOpen={onOpen}
               ctx={ctx}
               send={item.ok ? cardSendOf(sends, item.key, item.ok.key) : undefined}

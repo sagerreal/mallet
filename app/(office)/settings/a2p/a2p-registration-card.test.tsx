@@ -45,7 +45,12 @@ describe("A2pRegistrationCard — four-state matrix", () => {
   it("pending (e.g. profile_pending): shows the quiet 'being approved' status line, no CTA", () => {
     a2pStatus = { status: "profile_pending", canText: false, needsInput: false, failureReason: null };
     render(<A2pRegistrationCard />);
-    expect(screen.getByText(/being approved.*same day/i)).toBeTruthy();
+    expect(screen.getByText(/being approved/i)).toBeTruthy();
+    // The card promised "usually same day" for months. No shop has had that: 5–7 business days is
+    // the 10DLC norm and Mallet's own campaign took weeks. A timescale you miss on the very first
+    // shop costs more trust than giving none.
+    expect(screen.queryByText(/same day/i)).toBeNull();
+    expect(screen.getByText(/5–7 business days/i)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /set up texting/i })).toBeNull();
     expect(screen.queryByRole("button", { name: /try again/i })).toBeNull();
     expect(screen.queryByText(/texting active/i)).toBeNull();

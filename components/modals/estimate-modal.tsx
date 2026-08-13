@@ -44,6 +44,8 @@ import { Field } from "@/components/ui/input";
 import { api } from "@/lib/trpc/client";
 import { ModalLoading } from "./modal-loading";
 import { Trail } from "./trail";
+import { useSmsGate } from "@/features/a2p/use-sms-ready";
+import { SmsNote } from "@/features/a2p/sms-blocked";
 
 
 const STATUS_STAMP: Record<string, { cls: string; label: string }> = {
@@ -116,8 +118,11 @@ export function EstimateModalContent() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [destError, setDestError] = useState<string | null>(null);
 
+  // Text-channel only: 10DLC governs SMS, never email.
+  const smsGate = useSmsGate();
   const messagingSend = api.v1.messaging.send.useMutation();
   const notificationsSend = api.v1.notifications.send.useMutation();
+  const textBlocked = sendChannel === "text" && !smsGate.ready;
   const clearChangeRequestMutation = api.v1.quoting.clearChangeRequest.useMutation();
 
   const estId = activeModal?.params?.estId as string | undefined;
@@ -250,6 +255,10 @@ export function EstimateModalContent() {
   }
 
   async function confirmSend() {
+    // Defense in depth behind the blocked button: sending by text on a shop whose campaign isn't
+    // active marks the estimate sent and then fails delivery, so the pipeline says the customer
+    // was quoted and the customer heard nothing.
+    if (textBlocked) return;
     if (!validateDest()) return;
     commitDest();
 
@@ -572,6 +581,11 @@ export function EstimateModalContent() {
             </div>
           )}
 
+          {/* Why the text channel is blocked, if it is. Sits with the destination field rather
+              than under the button: this is a fact about the shop, and it is true before anyone
+              reaches for Send. */}
+          {textBlocked && <SmsNote gate={smsGate} />}
+
           {/* Inline delivery error */}
           {sendError && (
             <div style={{ marginTop: "var(--space-2)", fontSize: "var(--type-base)", color: "var(--red)" }}>
@@ -623,10 +637,21 @@ export function EstimateModalContent() {
               >
                 Cancel
               </button>
+              {/* The carrier gate applies to the TEXT channel only — email is unaffected by
+                  10DLC, and a quote that can still go by email must not be blocked wholesale.
+                  Blocked rather than disabled, so the control keeps its place and its focus. */}
               <button
                 className="sheet-pri"
                 style={{ flex: 2, width: "auto" }}
-                onClick={confirmSend}
+                aria-disabled={textBlocked ? true : undefined}
+                onClick={(ev) => {
+                  if (textBlocked) {
+                    ev.preventDefault();
+                    ev.stopPropagation();
+                    return;
+                  }
+                  void confirmSend();
+                }}
                 disabled={isSending}
               >
                 {isSending

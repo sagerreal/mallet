@@ -140,6 +140,21 @@ export function SendBlock({
 
   function send(e: React.MouseEvent) {
     e.stopPropagation();
+    /**
+     * THE GUARD THAT HAS TO COME FIRST.
+     *
+     * Everything below this line is optimistic: it appends the note, advances the record, stamps
+     * "✓ Sent 2:14pm" and dismisses the card, and only THEN calls the server. On a shop without an
+     * active 10DLC campaign the server refuses, and the owner watches a text they never sent get
+     * ticked off and the card come back. Refusing here means the queue never claims it.
+     *
+     * `aria-disabled` is a label, not a behaviour — the click still arrives — so this is the only
+     * thing actually stopping the send.
+     */
+    if (blockedReason) {
+      e.preventDefault();
+      return;
+    }
     const body = text.trim();
     if (item) {
       if (ledger) {
@@ -199,12 +214,15 @@ export function SendBlock({
         <div className="cardghost">{text}</div>
       )}
       <div className="cardacts">
+        {/* BLOCKED, NOT DISABLED, and the reason is never a `title`. A tooltip does not exist on
+            the phone half of this audience, and `disabled` drops the control out of the tab order
+            so a screen reader gets silence where a sighted owner gets an explanation. The reason
+            renders as a line under the row instead — see the .sms-note below. */}
         <Button
           variant="approve"
           size="sm"
+          aria-disabled={blockedReason ? true : undefined}
           onClick={send}
-          disabled={Boolean(blockedReason)}
-          title={blockedReason}
         >
           Send
         </Button>
@@ -228,6 +246,9 @@ export function SendBlock({
           </Button>
         )}
       </div>
+      {/* One clause, no call to action — the app-wide banner owns the fix. `status` rather than
+          `alert`: this is a standing condition of the shop, not something that just went wrong. */}
+      {blockedReason && <p role="status" className="sms-note">{blockedReason}</p>}
     </div>
   );
 }

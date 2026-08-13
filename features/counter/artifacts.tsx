@@ -12,6 +12,8 @@ import { useEffect, useRef, useState } from "react";
 import { fmt$ } from "@/lib/format";
 import { useAnimatedNumber } from "@/features/home/use-animated-number";
 import { clockNow } from "@/features/home/send";
+import { useSmsGate } from "@/features/a2p/use-sms-ready";
+import { SmsNote } from "@/features/a2p/sms-blocked";
 import type { AiPendingItem, Artifact, Gate, OpenRef, SentMark, Suggestion } from "./types";
 
 interface Handlers {
@@ -39,6 +41,9 @@ export function GateBlock({
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState(gate.text);
   const first = gate.kind === "ok-item" ? gate.item.lead.name.split(" ")[0] : gate.leadFirst;
+  const smsGate = useSmsGate();
+  /** Which gates put a real text on the wire. `quote-send` moves a record and writes a note. */
+  const sendsSms = gate.kind === "ok-item" || gate.kind === "plain-text";
 
   if (sent) {
     const secs = Math.max(0, Math.ceil((sent.expiresAt - Date.now()) / 1000));
@@ -75,7 +80,24 @@ export function GateBlock({
         <div className="ct-ghost">{text}</div>
       )}
       <div className="ct-actions">
-        <button className="btn sm approve" onClick={() => onSend(gate, text)}>
+        {/* The bar's Send is as optimistic as the board's: commitGate appends the note, dismisses
+            the item and stamps "sent" before the request leaves. Unlike the board it also
+            swallowed the refusal (`.catch(revert)` with nothing reported), so an unregistered shop
+            watched a text tick off and the card come back with no reason given anywhere.
+            `quote-send` is exempt — it only moves the estimate's status and writes a note; no SMS
+            is dispatched for it (see commitGate). */}
+        <button
+          className="btn sm approve"
+          aria-disabled={sendsSms && !smsGate.ready ? true : undefined}
+          onClick={(e) => {
+            if (sendsSms && !smsGate.ready) {
+              e.preventDefault();
+              e.stopPropagation();
+              return;
+            }
+            onSend(gate, text);
+          }}
+        >
           Send
         </button>
         <button className="btn sm ghost" onClick={() => setEditing((v) => !v)}>
@@ -83,6 +105,7 @@ export function GateBlock({
         </button>
         {extraAction}
       </div>
+      {sendsSms && <SmsNote gate={smsGate} />}
     </div>
   );
 }
