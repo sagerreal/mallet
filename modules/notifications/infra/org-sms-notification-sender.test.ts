@@ -66,8 +66,12 @@ describe("OrgSmsNotificationSender", () => {
    * DAY ONE. A2P vetting runs 5-7 business days and can run weeks. A shop that signed up this
    * morning still has to be able to invoice, remind and receipt — so its automated texts ride the
    * platform's shared line until its own number exists, exactly as Jobber's pool does.
+   *
+   * The resolver picks WHICH sender arrives here (own line, else the shared line, else nothing);
+   * this asserts what happens once nothing is left — the stub, so `assertDelivered` still refuses
+   * to claim a delivery that never happened.
    */
-  it("falls back to the shared platform line when the shop has no number yet", async () => {
+  it("falls back to the composed sender when no SMS identity is available at all", async () => {
     const base = recorder("base");
     const s = new OrgSmsNotificationSender(base.sender, null);
     const result = await s.send(cmd());
