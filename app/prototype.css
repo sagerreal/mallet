@@ -1386,7 +1386,7 @@
   /* The composer's room-controls row. "+ Add a room" is disabled until a customer is picked, and
      `disabled` alone is INVISIBLE on a .btn — there is deliberately no global .btn:disabled rule
      (it would move every existing visual baseline), so each surface scopes its own, exactly as
-     .mh-acts and .md-acts do. Without this the row sat next to a correctly-dimmed "Scan room"
+     .mh-acts does. Without this the row sat next to a correctly-dimmed "Scan room"
      with a full-strength button beside it that did nothing: a dead control by look. */
   .msp-rooms .btn:disabled{opacity:.55;cursor:not-allowed}
   .msp-rooms .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
@@ -1597,7 +1597,6 @@
   .mh-acts .btn:disabled{opacity:.55;cursor:not-allowed}
   /* Same treatment for My day's action row. Without it `disabled` was invisible here: the button
      looked live while the write was in flight, which is exactly how one press became six. */
-  .md-acts .btn:disabled{opacity:.55;cursor:not-allowed}
   .mh-acts .btn:disabled:hover{background:var(--card);border-color:var(--manila-line);transform:none;box-shadow:none}
   .mh-err{color:var(--red);font-size:var(--type-base);margin-top:var(--space-2)}
   .mh-lock{font-size:var(--type-xs);color:var(--ink-2);background:var(--paper);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);margin-top:var(--space-2xs)}
@@ -2031,22 +2030,12 @@
   .njbi{display:flex;align-items:center;gap:var(--space-2);font-size:var(--type-base);padding:var(--space-2) 0;border-bottom:1px solid var(--line-2)}
   .njbi:last-of-type{border-bottom:none}
   /* My Day — clean route stops (tap card to open; contact icons + one primary action) */
-  .md-stop{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-1);border-bottom:1px solid var(--line-2);cursor:pointer;border-radius:var(--radius-sm)}
-  .md-stop:last-child{border-bottom:none}
-  .md-stop:hover{background:var(--manila-2)}
-  .md-time{flex:0 0 64px;font-family:var(--font-mono);font-size:var(--type-sm);font-weight:700;color:var(--ink);padding-top:var(--space-2xs);letter-spacing:-.02em}
   /* The DAY, above the time, on any row that is not today. My day carries all open work plus what
      was finished today and sorts earliest-first, so a job carried over from yesterday lands at the
      TOP — without this the first row read as this morning's first stop. Quieter than the time
      beneath it: the hour is what you act on, the day is what disambiguates it. */
   .md-day{display:block;font-size:var(--type-xs);font-weight:700;color:var(--ink-2);letter-spacing:0}
   .md-hh{display:block}
-  .md-body{flex:1;min-width:0}
-  .md-line1{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
-  .md-line1 b{font-size:var(--type-md)}
-  .md-type{font-family:var(--font-mono);font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3)}
-  .md-sub{color:var(--ink-2);font-size:var(--type-base);margin:var(--space-1) 0 var(--space-3)}
-  .md-acts{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
   .hrs-ask{display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-2);padding:var(--space-2) var(--space-3);background:var(--manila);border:1px solid var(--manila-line);border-radius:var(--radius-sm);flex-wrap:wrap}
   .hrs-ask .lbl{font-size:var(--type-base);font-weight:600;color:var(--ink)}
   .hrs-step{width:26px;height:26px;border:1px solid var(--line);background:var(--card);border-radius:var(--radius-sm);font-size:var(--type-md);line-height:1;cursor:pointer;color:var(--ink)}
@@ -2264,8 +2253,6 @@
   #tourCoach h4{font-size:var(--type-md);margin:var(--space-1) 0 var(--space-1)}
   #tourCoach p{font-size:var(--type-base);color:var(--ink-3);line-height:1.5;margin:0}
   #tourCoach .tc-row{display:flex;justify-content:space-between;align-items:center;gap:var(--space-2);margin-top:var(--space-3)}
-  .agenda .ag{display:flex;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line)}
-  .agtime{font-weight:800;font-size:var(--type-base);min-width:58px;color:var(--ink-2);font-variant-numeric:tabular-nums}
   .stpill{font-family:var(--font-mono);font-size:var(--type-xs);font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:var(--space-1) var(--space-2);border-radius:var(--radius-xs);border:1.4px solid currentColor;white-space:nowrap}
   .lockcard{border:1.5px dashed var(--line);border-radius:var(--radius);padding:var(--space-3) var(--space-4);background:var(--paper);opacity:.92}
   .lockcard h4{font-size:var(--type-base);margin-bottom:var(--space-1)}
@@ -2379,9 +2366,6 @@
     /* My Day field view — glove-friendly touch targets */
     .md-ic{width:46px;height:46px}
     .md-ic svg{width:19px;height:19px}
-    .md-acts .btn{min-height:46px;font-size:var(--type-md);padding:0 var(--space-4)}
-    .md-acts{gap:var(--space-3);margin-top:var(--space-1)}
-    .md-stop{padding:var(--space-4) var(--space-2xs)}
     .kpis{grid-template-columns:1fr 1fr;gap:var(--space-3)}
     .kpi .val{font-size:var(--type-xl)}
     .row2{grid-template-columns:1fr}
@@ -2626,7 +2610,7 @@
      getting a system text menu instead of the tap reads as the app being broken.
      Deliberately scoped to chrome only — customer names, phone numbers and addresses
      stay long-pressable, because copying them is real work. */
-  button,[role=button],a,.navitem,.navsub,.mtab,.md-stop,.kcard,.morerow{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;touch-action:manipulation}
+  button,[role=button],a,.navitem,.navsub,.mtab,.kcard,.morerow{-webkit-tap-highlight-color:transparent;-webkit-touch-callout:none;touch-action:manipulation}
 
   /* Buttons: press pushes IN (reverses .btn.primary:hover's translateY(-1px) lift).
      .btn already carries transition: transform .1s — the release rebound is free. */
@@ -2641,7 +2625,6 @@
   .mtab:active{transform:scale(.92);opacity:.6}
 
   /* Rows/cards: tint + barely-there compress. */
-  .md-stop:active,.kcard:active{background:var(--manila-2);transform:scale(.995)}
 
   /* Both segmented-control variants (.segctl button.on / .seg button[aria-pressed]). */
   .segctl button:active,.seg button:active{background:var(--manila-2)}
@@ -2693,7 +2676,7 @@
 
   /* Skeleton primitives (P3 wires these in place of "Loading…" text). Manila-toned so
      skeletons read as the paper theme. Rule: a skeleton keeps the exact box metrics of the
-     row it becomes — zero layout shift on data arrival. .sk-row mirrors .md-stop. */
+     row it becomes — zero layout shift on data arrival. .sk-row mirrors the old agenda row. */
   @keyframes skpulse{0%,100%{opacity:.55}50%{opacity:1}}
   .sk{background:var(--manila-2);border-radius:var(--radius-sm);animation:skpulse 1.2s ease-in-out infinite}
   .sk-row{display:flex;gap:var(--space-4);padding:var(--space-4) var(--space-1);border-bottom:1px solid var(--line-2)}
