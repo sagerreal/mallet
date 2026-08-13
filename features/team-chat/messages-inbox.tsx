@@ -216,7 +216,7 @@ function CustomerList({
             <span className="javatar msg-av">{initialsOf(c.leadName)}</span>
             <div className="msg-main">
               <div className="msg-nm">
-                {c.leadName}
+                <span className="msg-nmtxt">{c.leadName}</span>
                 {c.unread ? <span className="msg-dot" /> : null}
               </div>
               <div className="msg-snip">
@@ -288,8 +288,8 @@ function TeamList({
                 </span>
                 <div className="msg-main">
                   <div className="msg-nm">
-                    {name}
-                    <span className="msg-tag">{t.kind === "group" ? `Team · ${t.members.length}` : "Team"}</span>
+                    <span className="msg-nmtxt">{name}</span>
+                    <span className="msg-tag">Team</span>
                     {unread ? <span className="msg-badge">{t.unreadCount}</span> : null}
                   </div>
                   <div className="msg-snip">{previewOf(t, meUserId)}</div>

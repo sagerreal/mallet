@@ -129,11 +129,13 @@ export function TeamChatPane({
     setOptimistic((prev) => [...prev, { id: tempId, body, previewUrl: null }]);
     try {
       await trpcVanilla.v1.teamChat.send.mutate({ threadId: tid, body });
+      // Wait for the refetch to LAND before dropping the optimistic bubble. Dropping it first
+      // leaves a window where the server list has not arrived yet and the message the person
+      // just sent visibly disappears, then reappears a beat later.
+      await utils.v1.teamChat.listMessages.invalidate({ threadId: tid });
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
-      await Promise.all([
-        utils.v1.teamChat.listMessages.invalidate({ threadId: tid }),
-        utils.v1.teamChat.listThreads.invalidate(),
-      ]);
+      // The inbox row's preview and ordering can catch up on its own time.
+      void utils.v1.teamChat.listThreads.invalidate();
     } catch (err: unknown) {
       // Restore the draft so the words are not lost, and say why.
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
@@ -160,12 +162,12 @@ export function TeamChatPane({
     try {
       const attachment = await uploadChatPhoto(tid, file);
       await trpcVanilla.v1.teamChat.send.mutate({ threadId: tid, body: caption, attachment });
+      // Same ordering as send(): the real row must be in hand before the preview goes, or the
+      // photo blinks out of the thread.
+      await utils.v1.teamChat.listMessages.invalidate({ threadId: tid });
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
       URL.revokeObjectURL(previewUrl);
-      await Promise.all([
-        utils.v1.teamChat.listMessages.invalidate({ threadId: tid }),
-        utils.v1.teamChat.listThreads.invalidate(),
-      ]);
+      void utils.v1.teamChat.listThreads.invalidate();
     } catch (err: unknown) {
       setOptimistic((prev) => prev.filter((o) => o.id !== tempId));
       URL.revokeObjectURL(previewUrl);
