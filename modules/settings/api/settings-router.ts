@@ -55,6 +55,10 @@ import {
   connectStatusDTO,
   beginOnboardingResultDTO,
 } from "./settings-dto";
+import { logger } from "@mallet/shared/observability";
+// Reading the org's own business line — the number the front desk answers on. Imported from the
+// calls module rather than duplicated: orgs.twilioNumber has one reader and this is it.
+import { DrizzleOrgLineReader } from "@mallet/calls";
 
 // Shared response for remove/archive operations.
 const okDTO = z.object({ ok: z.boolean() });
@@ -219,7 +223,42 @@ export const createSettingsRouter = () =>
             },
             ctx.principal.orgId,
           );
-        return toOrgSettingsDTO(orThrow(result));
+        const saved = orThrow(result);
+
+        // SELF-HEAL THE VOICE WIRING when the desk is switched on.
+        //
+        // Registering a number with Vapi happens once, at provisioning time. While VAPI_API_KEY was
+        // unset in production that step silently self-disabled, so numbers were bought and left
+        // pointing at Twilio's "not configured" recording — three orgs are in that state. Setting
+        // the key fixes every FUTURE signup and nothing already sold.
+        //
+        // A one-off back-fill script would clear today's three and leave the same hole for anything
+        // provisioned during any future outage. Doing it HERE means a line repairs itself the moment
+        // somebody tries to use it, forever. The port is required to be idempotent (see
+        // VoiceRegistrar), and Vapi answers 409 for a number it already holds, so the common case —
+        // an already-wired line — costs one cheap call that changes nothing.
+        //
+        // NEVER FAILS THE SAVE. The settings write has already committed and is what the user asked
+        // for; a Vapi outage must not read as "your settings did not save". It is logged instead,
+        // and fd:check surfaces the unwired state.
+        if (input.frontDesk === true && ctx.deps.voiceRegistrar) {
+          try {
+            const line = await new DrizzleOrgLineReader(ctx.tx, ctx.principal.orgId).businessNumber();
+            if (line) {
+              const reg = await ctx.deps.voiceRegistrar.register({ phoneNumber: String(line) });
+              if (!reg.ok) {
+                logger.error({ orgId: ctx.principal.orgId }, "settings.frontdesk.voice_register_failed");
+              }
+            }
+          } catch (error) {
+            logger.error(
+              { orgId: ctx.principal.orgId, err: error instanceof Error ? error.message : String(error) },
+              "settings.frontdesk.voice_register_threw",
+            );
+          }
+        }
+
+        return toOrgSettingsDTO(saved);
       }),
 
     // Patch brand identity fields (name → orgs.name, brand_* → org_settings).

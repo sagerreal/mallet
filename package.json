@@ -32,7 +32,9 @@
     "test:modals": "E2E_VISUAL=1 playwright test e2e/visual-modals.spec.ts",
     "test:modals:update": "E2E_VISUAL=1 playwright test e2e/visual-modals.spec.ts --update-snapshots",
     "test:a11y": "playwright test e2e/a11y.spec.ts",
-    "test:keyboard": "playwright test e2e/keyboard.spec.ts"
+    "test:keyboard": "playwright test e2e/keyboard.spec.ts",
+    "fd:check": "node --env-file=.env.local scripts/frontdesk-check.mjs",
+    "fd:register": "node --env-file=.env.local scripts/frontdesk-register-numbers.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.0",
