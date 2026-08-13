@@ -29,6 +29,7 @@ import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
+import { TapToPayCard } from "./tap-to-pay-card";
 import { QuickbooksCard } from "./quickbooks-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { TimezoneCard } from "./timezone-card";
@@ -826,7 +827,14 @@ export default function SettingsPage() {
     { k: "workspace" as SetTab, label: "Workspace",  body: <SecWorkspace /> },
     { k: "team"      as SetTab, label: "Team",       body: <SecTeam /> },
     { k: "channels"  as SetTab, label: "Channels",   body: <SecChannels /> },
-    { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: <PaymentsCard /> },
+    { k: "payments"  as SetTab, label: "Payments",   ownerOnly: true, body: (
+      <>
+        <PaymentsCard />
+        {/* Directly beneath Connect onboarding: Apple 3.4 wants the way to enable Tap to Pay at
+            the end of merchant onboarding, and 3.6 wants it reachable outside checkout. */}
+        <TapToPayCard />
+      </>
+    ) },
     // ?tab=quickbooks must keep working verbatim — the OAuth callback redirects to it server-side.
     { k: "quickbooks" as SetTab, label: "QuickBooks", ownerOnly: true, body: <QuickbooksCard /> },
     { k: "you" as SetTab, label: "You", body: <SecYou /> },

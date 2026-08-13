@@ -41,6 +41,14 @@ const REASON: Record<TapToPayAvailability["status"], string> = {
     "This iPhone can't take Tap to Pay — it needs a newer iPhone on a current iOS.",
 };
 
+/**
+ * Apple 3.8.1: a user who may not accept the Terms & Conditions is told who can, rather than
+ * being left with a control that refuses. Owner/office accept on the shop's behalf; a technician
+ * never does — the terms bind the business, not the person holding the phone.
+ */
+export const TAP_TO_PAY_UNAUTHORIZED =
+  "Ask an owner or the office to turn on Tap to Pay — only they can accept Apple's terms.";
+
 /** The exact sentence a given availability shows. The one place any caller or test reads it. */
 export function tapToPayReason(availability: TapToPayAvailability): string {
   return REASON[availability.status];
@@ -48,9 +56,14 @@ export function tapToPayReason(availability: TapToPayAvailability): string {
 
 export interface TapToPayUnavailableProps {
   availability: TapToPayAvailability;
+  /**
+   * The device is fine but THIS viewer may not accept Apple's terms (3.8). A distinct sentence
+   * from every device reason: the shop can have Tap to Pay, this person cannot switch it on.
+   */
+  unauthorized?: boolean;
 }
 
-export function TapToPayUnavailable({ availability }: TapToPayUnavailableProps) {
+export function TapToPayUnavailable({ availability, unauthorized = false }: TapToPayUnavailableProps) {
   const reasonId = useId();
   return (
     <>
@@ -59,7 +72,7 @@ export function TapToPayUnavailable({ availability }: TapToPayUnavailableProps) 
         <span>tap their card on this phone</span>
       </button>
       <p className="scanwhy" id={reasonId}>
-        {tapToPayReason(availability)}
+        {unauthorized ? TAP_TO_PAY_UNAUTHORIZED : tapToPayReason(availability)}
       </p>
     </>
   );

@@ -35,6 +35,16 @@ const PLUGIN_NAME = "MalletTapToPay";
  */
 export interface TapToPayPlugin {
   available(): Promise<{ available: boolean; reason?: string }>;
+  /**
+   * Has this shop accepted Apple's Tap to Pay Terms & Conditions?
+   *
+   * Apple 1.6: "For the status of whether a merchant has accepted Tap to Pay on iPhones,
+   * retrieve it from Apple instead of storing it in a local variable in your app." So this is
+   * asked of the SDK every time it is needed and NEVER persisted — not in org_settings, not in
+   * the store, not in a ref. A cached yes survives a merchant revoking acceptance on another
+   * device and would put a live reader in front of terms nobody currently accepts.
+   */
+  termsAccepted(): Promise<{ accepted: boolean }>;
 }
 
 /** The named native plugin, or null on the web / before the bridge is injected. */
@@ -165,4 +175,54 @@ export function useTapToPayAvailability(): TapToPayAvailability {
   }, []);
 
   return availability;
+}
+
+/**
+ * Whether the shop has accepted Apple's terms — asked of the SDK, never cached (1.6).
+ *
+ * `null` means "not answerable here": no bridge, no plugin, or the probe failed. Callers treat
+ * null as not-enabled, which routes a tap into the T&C flow rather than into a reader that would
+ * refuse — the safe direction under 5.3.
+ */
+export async function tapToPayTermsAccepted(): Promise<boolean | null> {
+  const plugin = tapToPayPlugin();
+  if (!plugin?.termsAccepted) return null;
+  try {
+    const { accepted } = await plugin.termsAccepted();
+    return accepted;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The live terms-acceptance answer for a component.
+ *
+ * Re-asks on every mount and whenever the app returns to the foreground: acceptance can change
+ * on another device or be revoked in iOS Settings, and 1.6 exists precisely because a remembered
+ * answer goes stale silently.
+ */
+export function useTapToPayTermsAccepted(): boolean {
+  const [accepted, setAccepted] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const ask = () => {
+      void tapToPayTermsAccepted().then((result) => {
+        if (!cancelled) setAccepted(result === true);
+      });
+    };
+    ask();
+    // Foreground is when acceptance most plausibly changed — the merchant was just in Settings.
+    const onVisible = () => {
+      if (document.visibilityState === "visible") ask();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      cancelled = true;
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, []);
+
+  return accepted;
 }
