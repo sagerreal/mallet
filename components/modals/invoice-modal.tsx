@@ -86,6 +86,15 @@ function invPhone(invoice: Invoice, leads: Lead[]): string {
   return lead?.phone || invoice.phone || "";
 }
 
+/**
+ * A typed percentage, bounded. The server refuses a discount over 100% (Invoice.create bounds
+ * discBps at 10000), and an unbounded discount inverted the bill on screen before it got there.
+ * Tax has no natural 100% ceiling but a runaway one is a typo, not a rate.
+ */
+const MAX_TAX_PCT = 100;
+const clampPct = (raw: string, max: number): number =>
+  Math.min(max, Math.max(0, Number(raw) || 0));
+
 /** pricingSummary — the reveal-head "— …" hint (prototype pricingSummary). */
 function pricingSummary(p: { disc?: number; tax?: number }, depPaid: number): string {
   const bits: string[] = [];
@@ -197,8 +206,11 @@ function EditBlock({
     lines.map((l) => ({ q: l.q || 1, r: l.r || 0, d: l.d, opt: false })),
     p
   );
-  // What was actually charged, as recorded when the invoice was raised.
+  // What was actually charged, as recorded when the invoice was raised. Both come from the server
+  // rather than from calcQuote over the lines: an invoice raised from a quote carries the agreed
+  // total with no lines at all, so a line-derived figure renders $0.00 under a four-figure total.
   const recordedTax = invoice.tax ?? 0;
+  const recordedDisc = invoice.disc ?? 0;
   const cost = lines.reduce((s, l) => s + (l.q || 1) * (l.c || 0), 0);
   const margin = (invoice.total || 0) - cost;
   const td = invoice.termsDays;
@@ -362,16 +374,21 @@ function EditBlock({
           line-derived tax renders $0.00 under a four-figure total. Subtotal is derived the same
           way (total − tax) so the three numbers always add up on screen. */}
       <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-3)", paddingTop: "var(--space-2)" }}>
-        {p.disc || recordedTax > 0 ? (
+        {recordedDisc > 0 || recordedTax > 0 ? (
           <div style={ROLLUP_ROW}>
             <span>Subtotal</span>
-            <span>{fmt$((invoice.total || 0) - recordedTax)}</span>
+            {/* total + discount − tax, so this is the GROSS line sum. It used to be total − tax,
+                which is the post-discount NET — printed above a discount row that then took the
+                same money off a second time, so the column never reached the stated Total. */}
+            <span>{fmt$((invoice.total || 0) + recordedDisc - recordedTax)}</span>
           </div>
         ) : null}
-        {p.disc ? (
+        {recordedDisc > 0 ? (
           <div style={ROLLUP_ROW}>
             <span>Discount {p.disc}%</span>
-            <span style={{ color: "var(--red)" }}>−{fmt$(m.disc)}</span>
+            {/* The amount the SERVER recorded, not calcQuote over the lines: an invoice raised
+                from a quote carries the agreed total with no lines at all. */}
+            <span style={{ color: "var(--red)" }}>−{fmt$(recordedDisc)}</span>
           </div>
         ) : null}
         {recordedTax > 0 ? (
@@ -491,9 +508,13 @@ function EditBlock({
                 type="number"
                 inputMode="decimal"
                 min={0}
+                max={100}
                 defaultValue={p.disc || ""}
                 placeholder="0"
-                onChange={(e) => onSetPricing({ disc: Math.max(0, Number(e.target.value) || 0) })}
+                // onBlur, not onChange. These now reach the SERVER and re-derive the bill, so
+                // per-keystroke would write 8, then 8.7, then 8.75 — three recomputes, and a
+                // half-typed rate left behind by anyone who navigates mid-edit.
+                onBlur={(e) => onSetPricing({ disc: clampPct(e.target.value, 100) })}
               />
             </Field>
             <Field label="Tax %" style={{ flex: 1, minWidth: 90, margin: "0" }}>
@@ -504,7 +525,7 @@ function EditBlock({
                 step={0.25}
                 defaultValue={p.tax || ""}
                 placeholder="0"
-                onChange={(e) => onSetPricing({ tax: Math.max(0, Number(e.target.value) || 0) })}
+                onBlur={(e) => onSetPricing({ tax: clampPct(e.target.value, MAX_TAX_PCT) })}
               />
             </Field>
             <Field label="Deposit paid $" style={{ flex: 1, minWidth: 110, margin: "0" }}>

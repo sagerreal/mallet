@@ -147,6 +147,85 @@ suite("invoicing tRPC router (full money loop, live RLS)", () => {
     expect(reloaded.depositPaid.cents).toBe(25_000);
   });
 
+  it("drafts with a discount and tax, and the money reaches the database", async () => {
+    // The sheet showed Discount % and Tax % and sent neither, so the customer was billed the full
+    // undiscounted sum and a shop that typed its sales-tax rate ate the tax.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId,
+      title: "Rated",
+      discBps: 1_000,
+      taxBps: 875,
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+
+    expect(draft.discBps).toBe(1_000);
+    expect(draft.discount.cents).toBe(10_000);
+    expect(draft.taxBps).toBe(875);
+    expect(draft.tax.cents).toBe(7_875); // 8.75% of the discounted $900, not of $1000
+    expect(draft.total.cents).toBe(97_875);
+
+    const reloaded = await caller.v1.invoicing.get({ invoiceId: draft.id });
+    expect(reloaded.total.cents).toBe(97_875);
+    expect(reloaded.tax.cents).toBe(7_875);
+    expect(reloaded.discount.cents).toBe(10_000);
+  });
+
+  it("updateMetadata re-derives the bill when the rate changes", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId,
+      title: "Rate change",
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+    expect(draft.total.cents).toBe(100_000);
+
+    const updated = await caller.v1.invoicing.updateMetadata({
+      invoiceId: draft.id,
+      discBps: 2_000,
+    });
+
+    expect(updated.discount.cents).toBe(20_000);
+    expect(updated.total.cents).toBe(80_000);
+
+    const reloaded = await caller.v1.invoicing.get({ invoiceId: draft.id });
+    expect(reloaded.total.cents).toBe(80_000);
+  });
+
+  it("patchLines keeps the invoice's discount instead of re-billing the gross", async () => {
+    // editLines recomputed the total as a plain line sum, so editing a line on a discounted
+    // invoice silently charged the full undiscounted amount.
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const draft = await caller.v1.invoicing.draft({
+      leadId: leadAId,
+      title: "Line edit",
+      discBps: 1_000,
+      lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+    });
+    expect(draft.total.cents).toBe(90_000);
+
+    const patched = await caller.v1.invoicing.patchLines({
+      invoiceId: draft.id,
+      lines: [{ description: "Labor", quantity: 1, rateCents: 200_000 }],
+    });
+
+    expect(patched.discount.cents).toBe(20_000);
+    expect(patched.total.cents).toBe(180_000); // not the gross 200000
+  });
+
+  it("refuses a discount over 100%", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.invoicing.draft({
+        leadId: leadAId,
+        title: "Bad rate",
+        discBps: 15_000,
+        lines: [{ description: "Labor", quantity: 1, rateCents: 100_000 }],
+      }),
+    ).rejects.toThrow();
+  });
+
   it("updateMetadata edits a SENT invoice too", async () => {
     const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const draft = await caller.v1.invoicing.draft({

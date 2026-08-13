@@ -269,6 +269,77 @@ describe("Invoice.editMetadata", () => {
     if (!res.ok) expect(res.error.field).toBe("poNumber");
   });
 
+  it("re-derives the money when the discount rate changes", () => {
+    // The rate is not decoration: changing it has to change what the customer is asked for, from
+    // the same lines, through the same chain.
+    const lineR = InvoiceLine.create({
+      id: "00000000-0000-0000-0000-000000000001",
+      sourceJobLineId: null,
+      description: "Work",
+      quantity: 1,
+      rate: money(100_000),
+      cost: money(0),
+      position: 0,
+    });
+    if (!lineR.ok) throw new Error(lineR.error.message);
+
+    const res = build("draft", { lines: [lineR.value], total: money(100_000) }).editMetadata(
+      { discBps: 1_000 },
+      now,
+    );
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.discBps).toBe(1_000);
+      expect(res.value.props.discount).toBe(10_000);
+      expect(res.value.props.total).toBe(90_000);
+    }
+  });
+
+  it("re-derives the money when the tax rate changes", () => {
+    const lineR = InvoiceLine.create({
+      id: "00000000-0000-0000-0000-000000000001",
+      sourceJobLineId: null,
+      description: "Work",
+      quantity: 1,
+      rate: money(100_000),
+      cost: money(0),
+      position: 0,
+    });
+    if (!lineR.ok) throw new Error(lineR.error.message);
+
+    const res = build("draft", { lines: [lineR.value], total: money(100_000) }).editMetadata(
+      { taxBps: 875 },
+      now,
+    );
+
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.taxBps).toBe(875);
+      expect(res.value.props.tax).toBe(8_750);
+      expect(res.value.props.total).toBe(108_750);
+    }
+  });
+
+  it("refuses a discount over 100%", () => {
+    const res = build("draft").editMetadata({ discBps: 15_000 }, now);
+    expect(res.ok).toBe(false);
+  });
+
+  it("leaves a lineless invoice's snapshot total alone", () => {
+    // A job invoice with no priced lines carries a snapshot total that no rate can re-derive —
+    // the same fallback create-invoice-from-job takes. The rate is still recorded.
+    const res = build("draft", { lines: [], total: money(100_000) }).editMetadata(
+      { taxBps: 875 },
+      now,
+    );
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.taxBps).toBe(875);
+      expect(res.value.props.total).toBe(100_000);
+    }
+  });
+
   it("accepts a poNumber at exactly 64 characters", () => {
     const res = build("draft").editMetadata({ poNumber: "x".repeat(64) }, now);
     expect(res.ok).toBe(true);
@@ -321,6 +392,97 @@ describe("Invoice.editLines", () => {
       expect(res.value.props.lines).toHaveLength(2);
       expect(res.value.props.total).toBe(45_000); // 2*20000 + 1*5000
       expect(res.value.props.updatedAt.toISOString()).toBe(now.toISOString());
+    }
+  });
+
+  // The invoice's OWN rates have to survive a line edit. editLines recomputed the total as a plain
+  // line sum, so editing a job-born invoice that carried a discount silently re-billed the full
+  // undiscounted amount — the exact overbill create-invoice-from-job documents at its deriveTotals
+  // call, reintroduced one layer down.
+  const withRates = (discBps: number, taxBps: number) => {
+    const r = Invoice.create({
+      id: asInvoiceId("11111111-1111-1111-1111-111111111111"),
+      orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+      num: "INV-902",
+      sourceJobId: null,
+      leadId: asLeadId("33333333-3333-3333-3333-333333333333"),
+      title: "T",
+      status: "draft",
+      total: money(0),
+      taxBps,
+      discBps,
+      depositPaid: money(0),
+      amountPaid: money(0),
+      payments: [],
+      lines: [],
+      termsDays: 7,
+      sentAt: null,
+      dueAt: null,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+      updatedAt: new Date("2026-07-01T00:00:00Z"),
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+
+  it("applies the invoice's discount when recomputing after a line edit", () => {
+    const res = withRates(1_000, 0).editLines([line(100_000, 1, 0)], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.discount).toBe(10_000); // 10% of $1000
+      expect(res.value.props.total).toBe(90_000);
+    }
+  });
+
+  it("applies the invoice's tax when recomputing after a line edit", () => {
+    const res = withRates(0, 875).editLines([line(100_000, 1, 0)], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.tax).toBe(8_750); // 8.75%
+      expect(res.value.props.total).toBe(108_750); // tax is PART of the total
+    }
+  });
+
+  it("taxes the discounted base, not the gross, on a line edit", () => {
+    // discount -> net -> tax -> total, the one chain in deriveTotals.
+    const res = withRates(1_000, 1_000).editLines([line(100_000, 1, 0)], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.discount).toBe(10_000);
+      expect(res.value.props.tax).toBe(9_000); // 10% of the $900 net, not of $1000
+      expect(res.value.props.total).toBe(99_000);
+    }
+  });
+
+  it("taxes only the taxable lines", () => {
+    const taxableLine = line(100_000, 1, 0);
+    const exemptR = InvoiceLine.create({
+      id: "00000000-0000-0000-0000-000000000002",
+      sourceJobLineId: null,
+      description: "Permit",
+      quantity: 1,
+      rate: money(50_000),
+      cost: money(0),
+      taxable: false,
+      position: 1,
+    });
+    if (!exemptR.ok) throw new Error(exemptR.error.message);
+
+    const res = withRates(0, 1_000).editLines([taxableLine, exemptR.value], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.tax).toBe(10_000); // 10% of the taxable $1000 only
+      expect(res.value.props.total).toBe(160_000); // both lines billed in full, plus that tax
+    }
+  });
+
+  it("still sums plainly when the invoice carries no rates", () => {
+    const res = withRates(0, 0).editLines([line(20_000, 2, 0), line(5_000, 1, 1)], now);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.value.props.total).toBe(45_000);
+      expect(res.value.props.tax).toBe(0);
+      expect(res.value.props.discount).toBe(0);
     }
   });
 

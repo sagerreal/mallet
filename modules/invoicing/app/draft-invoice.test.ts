@@ -190,6 +190,76 @@ describe("DraftInvoiceUseCase – branch coverage", () => {
     expect(bus.recorded.filter((e) => e.name === "invoice.drafted")).toHaveLength(1);
   });
 
+  it("applies a discount rate to the drafted total", async () => {
+    // The invoice sheet's Discount % used to change the number on screen and nothing else — the
+    // customer was billed the full undiscounted sum.
+    const result = await useCase.exec({
+      ...baseCmd(),
+      lines: [{ description: "Work", quantity: 1, rateCents: 100_000, costCents: 0, taxable: true }],
+      discBps: 1_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.props.discBps).toBe(1_000);
+      expect(result.value.props.discount).toBe(10_000);
+      expect(result.value.props.total).toBe(90_000);
+    }
+  });
+
+  it("applies a tax rate to the drafted total", async () => {
+    const result = await useCase.exec({
+      ...baseCmd(),
+      lines: [{ description: "Work", quantity: 1, rateCents: 100_000, costCents: 0, taxable: true }],
+      taxBps: 875,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.props.taxBps).toBe(875);
+      expect(result.value.props.tax).toBe(8_750);
+      expect(result.value.props.total).toBe(108_750); // tax is PART of the total
+    }
+  });
+
+  it("taxes only the taxable lines, and taxes them after the discount", async () => {
+    const result = await useCase.exec({
+      ...baseCmd(),
+      lines: [
+        { description: "Labour", quantity: 1, rateCents: 100_000, costCents: 0, taxable: true },
+        { description: "Permit", quantity: 1, rateCents: 50_000, costCents: 0, taxable: false },
+      ],
+      discBps: 1_000,
+      taxBps: 1_000,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.props.discount).toBe(15_000); // 10% of the whole $1500 subtotal
+      expect(result.value.props.tax).toBe(9_000); // 10% of the discounted taxable $900
+      expect(result.value.props.total).toBe(144_000); // 1500 - 150 + 90
+    }
+  });
+
+  it("refuses a discount over 100% rather than inverting the bill", async () => {
+    const result = await useCase.exec({ ...baseCmd(), discBps: 15_000 });
+    expect(result.ok).toBe(false);
+  });
+
+  it("still totals the plain line sum when no rates are given", async () => {
+    const result = await useCase.exec({
+      ...baseCmd(),
+      lines: [{ description: "Work", quantity: 2, rateCents: 20_000, costCents: 0, taxable: true }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.props.total).toBe(40_000);
+      expect(result.value.props.tax).toBe(0);
+      expect(result.value.props.discount).toBe(0);
+    }
+  });
+
   it("preserves a client-authored id so the store's optimistic id matches the persisted row", async () => {
     const clientId = asInvoiceId("99999999-9999-4999-8999-999999999999");
     const result = await useCase.exec({ ...baseCmd(), id: clientId });

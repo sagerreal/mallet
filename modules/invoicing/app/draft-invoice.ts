@@ -1,5 +1,5 @@
 import type { OrgId, LeadId, JobId, InvoiceId, Money, Result, AppError, Clock } from "@mallet/shared/types";
-import { asInvoiceId, money, zeroMoney, addMoney, validation, conflict, ok, err, isOk } from "@mallet/shared/types";
+import { asInvoiceId, money, zeroMoney, addMoney, validation, conflict, ok, err, isOk, deriveTotals } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Invoice } from "../domain/invoice";
 import { InvoiceLine } from "../domain/invoice-line";
@@ -33,6 +33,18 @@ export interface DraftInvoiceCommand {
    * See InvoiceProps.scopeJobId.
    */
   readonly scopeJobId?: JobId | null;
+  /**
+   * Discount and tax RATES in basis points, both optional and 0 by default — a hand-drafted
+   * invoice usually has neither.
+   *
+   * They are rates, not amounts: the money is derived here through deriveTotals, the same chain
+   * the quote the customer signed used and the same one create-invoice-from-job rebuilds a job's
+   * bill with. The office sheet showed both controls and sent neither, so a discount was displayed
+   * and the customer was billed the full amount, and a shop that typed its sales-tax rate ate the
+   * tax.
+   */
+  readonly discBps?: number;
+  readonly taxBps?: number;
 }
 
 // A standalone/manual invoice (no source job). Total is the sum of its line amounts.
@@ -66,7 +78,15 @@ export class DraftInvoiceUseCase {
       if (!isOk(line)) return line;
       built.push(line.value);
     }
-    const total: Money = built.reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
+    // discount -> net -> tax -> total, each step rounded to whole cents. NOT a plain line sum:
+    // tax is part of the total and the discount comes off before it, and the tax base is the
+    // TAXABLE lines only — an exempt line is still billed in full, it is just not taxed.
+    const rates = { discBps: cmd.discBps ?? 0, taxBps: cmd.taxBps ?? 0, depBps: 0 };
+    const derived = deriveTotals(
+      money(built.reduce((sum, line) => sum + line.amount(), 0)),
+      money(built.reduce((sum, line) => (line.props.taxable ? sum + line.amount() : sum), 0)),
+      rates,
+    );
 
     const now = this.clock.now();
     const num = await this.repo.nextNumber();
@@ -79,7 +99,11 @@ export class DraftInvoiceUseCase {
       leadId: cmd.leadId,
       title: cmd.title,
       status: "draft",
-      total,
+      total: derived.total,
+      taxBps: rates.taxBps,
+      tax: derived.tax,
+      discBps: rates.discBps,
+      discount: derived.discount,
       depositPaid: zeroMoney,
       amountPaid: zeroMoney,
       payments: [],

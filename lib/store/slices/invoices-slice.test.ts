@@ -504,6 +504,43 @@ describe("sendInvoice — manual (lead-tied) invoice: exactly one server create,
     expect(draftMutate.mock.calls[0]?.[0]).toMatchObject({ termsDays: 0 });
   });
 
+  it("drafts with the discount and tax the sheet is showing", async () => {
+    // The rates lived only in the store, so an invoice drafted at send time was created with
+    // neither — the customer received a bill with no discount applied and no tax charged.
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({
+        id: "inv-1",
+        origin: "manual",
+        jobId: null,
+        leadId: "lead-1",
+        lines: [{ d: "Work", q: 1, r: 1000 }],
+        status: "draft",
+        pricing: { disc: 10, tax: 8.75 },
+      }),
+    ]);
+
+    await s.state.sendInvoice("inv-1");
+
+    expect(draftMutate.mock.calls[0]?.[0]).toMatchObject({ discBps: 1_000, taxBps: 875 });
+  });
+
+  it("drafts with no rates when the sheet set none", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1",
+        lines: [{ d: "Work", q: 1, r: 1000 }], status: "draft" }),
+    ]);
+
+    await s.state.sendInvoice("inv-1");
+
+    expect(draftMutate.mock.calls[0]?.[0]).toMatchObject({ discBps: 0, taxBps: 0 });
+  });
+
   it("a db-origin invoice's send still resolves ok:true (signature change is additive)", async () => {
     sendMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "sent" }));
     const s = makeSlice();

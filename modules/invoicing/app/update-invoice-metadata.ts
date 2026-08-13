@@ -13,6 +13,9 @@ export interface UpdateInvoiceMetadataCommand {
   readonly depositPaidCents?: number;
   /** Customer-supplied PO number. Undefined = keep current; null/blank clears it (see Invoice.editMetadata). */
   readonly poNumber?: string | null;
+  /** Discount / tax RATES in bps. Changing either re-derives the money from the current lines. */
+  readonly discBps?: number;
+  readonly taxBps?: number;
 }
 
 // Edit header metadata on an open (draft|sent|partial) invoice. Frozen once paid/void
@@ -36,6 +39,8 @@ export class UpdateInvoiceMetadataUseCase {
         termsDays: cmd.termsDays,
         depositPaid: cmd.depositPaidCents === undefined ? undefined : money(cmd.depositPaidCents),
         poNumber: cmd.poNumber,
+        discBps: cmd.discBps,
+        taxBps: cmd.taxBps,
       },
       now,
     );
