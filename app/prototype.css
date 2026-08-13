@@ -491,6 +491,18 @@
   .otab.on{color:var(--ink);font-weight:700}
   .otab.on::after{content:"";position:absolute;left:10px;right:10px;bottom:-1.5px;height:2.5px;border-radius:var(--radius-2xs);background:var(--ink)}
   .otab .oct{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3);background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-2)}
+  /* PAGE-LEVEL tabs (the Office switcher). The shared .otab above is 13px — SMALLER than the 15px
+     body copy beneath it — with no ground of its own, sitting 40px above a 64px hero figure. A shop
+     owner opened /dashboard and never saw the row at all.
+     Size alone does not fix it: photographed at 17px against the untouched hero, the bar still
+     disappears under a blur. It was losing a contrast fight, not a legibility one, so .herofig comes
+     down to meet it (see there). Scoped to this modifier because .otabs is shared with the tech job
+     sheet and the timesheets panel, neither of which competes with a hero. */
+  .otabs-page{gap:var(--space-3);margin-bottom:var(--space-6)}
+  .otabs-page .otab{font-size:var(--type-lg);padding:var(--space-3) var(--space-3) var(--space-4)}
+  /* Inset matches the tab's own horizontal padding, so the rule spans the label exactly. */
+  .otabs-page .otab.on::after{left:var(--space-3);right:var(--space-3);height:3px}
+  .otabs-page .otab .oct{font-size:var(--type-sm)}
   /* SHEET tabs (the tech job sheet's Job · Quote): the two halves of one decision, so they split
      the width evenly and centre their labels instead of huddling at the left edge. A pair of
      small left-aligned words does not read as a choice at arm's length in a van, and half a
@@ -626,6 +638,11 @@
   .svccard-h{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2) var(--space-4);border-bottom:1px solid var(--line-2);background:color-mix(in srgb,var(--paper) 45%,transparent)}
   .svccard-h b{font-size:var(--type-base);font-weight:800}
   .svccard-h .m{font-family:var(--font-mono);font-size:var(--type-xs);color:var(--ink-3)}
+  /* Inside a SELECTED segment the ground goes to --ink, and this muted grey stayed put — 3.35:1
+     against near-black, the one axe violation left on /dashboard?tab=pricebook. `.segctl button.on`
+     already sets the right colour on the button; the count just has to stop overriding it.
+     Opacity keeps it subordinate to its label, matching the .segctl-n idiom. */
+  .svccard-h .segctl button.on .m{color:inherit;opacity:.75}
   .svccard-h .sp{flex:1}
   .svccard button:focus-visible{outline:2px solid color-mix(in srgb,var(--accent) 60%,transparent);outline-offset:-2px}
   /* Common region: the rules rail sits on the card surface like its Services
@@ -1426,7 +1443,11 @@
   .qa-dur b{color:var(--ink);font-weight:650}
   .qa-dur .linklike{font-size:var(--type-base)}
   /* ---- Handoff home: the figure that drains ---- */
-  .herofig{font-family:var(--font-mono);font-size:clamp(40px,6vw,64px);font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--manila-ink);font-variant-numeric:tabular-nums;margin-top:var(--space-3)}
+  /* Was clamp(40px,6vw,64px) — 64px on a laptop, 4.9x the page's own tab bar 40px above it, which
+     is why nobody saw those tabs. Still the largest thing in the card and by far the loudest figure
+     on the page; it just stops being louder than the navigation. Mobile is unchanged (the 760px
+     rule below already pins this to --type-3xl, which is now also the clamp floor). */
+  .herofig{font-family:var(--font-mono);font-size:clamp(var(--type-3xl),3.4vw,var(--type-4xl));font-weight:700;letter-spacing:-.03em;line-height:1.05;color:var(--manila-ink);font-variant-numeric:tabular-nums;margin-top:var(--space-3)}
   /* the ONLY amber on the page — one accent, one meaning: this tap moves money */
   .btn.approve{background:var(--amber);border-color:var(--amber);color:#FFF9EE;font-weight:700}
   .btn.approve:hover{filter:brightness(1.08)}
@@ -2896,6 +2917,14 @@
     .otabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
     .otabs::-webkit-scrollbar{display:none}
     .otab{white-space:nowrap;flex-shrink:0}
+    /* The PAGE tab bar wraps on a phone instead of scrolling. Measured on a 390px viewport, the
+       four Office tabs need 414px at the ORIGINAL 13px — so "Checklists" was already off-screen
+       before this bar was touched, behind a scroller whose bar is hidden two lines above. Nothing
+       said there was more to the right. Wrapping shows all four at once, which is the entire point
+       of the change; 15px keeps them at body size rather than the 17px the desktop uses. */
+    .otabs-page{overflow-x:visible;flex-wrap:wrap;row-gap:0;gap:var(--space-2);margin-bottom:var(--space-5)}
+    .otabs-page .otab{font-size:var(--type-md);padding:var(--space-2) var(--space-2) var(--space-3)}
+    .otabs-page .otab.on::after{left:var(--space-2);right:var(--space-2)}
     .panel-head{flex-wrap:wrap;row-gap:var(--space-3)}
     .panel-head-ctrls{flex:1 1 100%;flex-wrap:wrap}
     .panel-head-ctrls input{flex:1 1 100%}

@@ -70,7 +70,9 @@ export default function OfficePage() {
 
   return (
     <div>
-      <div className="otabs" role="tablist" aria-label="Office">
+      {/* otabs-page: this is the page's own navigation, not a panel's — it has to hold its own
+          against the hero below it. See the modifier in prototype.css. */}
+      <div className="otabs otabs-page" role="tablist" aria-label="Office">
         <button className={tab === "today" ? "otab on" : "otab"} role="tab" aria-selected={tab === "today"} onClick={() => switchTab("today")}>
           Today
         </button>
