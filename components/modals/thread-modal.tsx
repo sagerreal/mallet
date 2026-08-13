@@ -298,8 +298,7 @@ export function CustomerThreadPane({
           <span>
             {phoneOnFile ? (
               <>
-                {phoneOnFile} · texting from your <b>business number</b> — quote links and
-                reminders land in this same thread, marked ✦
+                {phoneOnFile} · sends from your <b>business number</b>
               </>
             ) : (
               "No phone number yet"
