@@ -43,17 +43,30 @@ function friendlyError(err: unknown): string {
   return "Couldn't send — try again.";
 }
 
-export function TeamChatModalContent() {
-  const activeModal = useActiveModal();
-  const close = useCloseModal();
-  const threadId = activeModal?.params?.threadId as string | undefined;
-  // The list row passes the name and people through, so the header renders on the field shell
-  // too — a tech's store holds no roster to look them up in.
-  const title = (activeModal?.params?.title as string | undefined) ?? "Conversation";
-  const subtitle = activeModal?.params?.subtitle as string | undefined;
+/**
+ * The staff conversation itself, independent of how it is presented — the Messages page renders
+ * it in its right pane, the modal renders it as a drill-in. The row supplies the name and people
+ * because the field shell has no roster to look them up in.
+ */
+export interface TeamChatPaneProps {
+  readonly threadId: string | undefined;
+  readonly title?: string;
+  readonly subtitle?: string;
+  readonly kind?: string;
+  readonly onClose: () => void;
+}
+
+export function TeamChatPane({
+  threadId,
+  title: titleProp,
+  subtitle,
+  kind,
+  onClose: close,
+}: TeamChatPaneProps) {
+  const title = titleProp ?? "Conversation";
   // Only a GROUP can be left. Leaving a 1:1 is not a thing a person means to do — and the
   // conversation reopens the moment either of you messages the other anyway.
-  const isGroup = activeModal?.params?.kind === "group";
+  const isGroup = kind === "group";
 
   const [draft, setDraft] = useState("");
   const [optimistic, setOptimistic] = useState<Optimistic[]>([]);
@@ -175,14 +188,17 @@ export function TeamChatModalContent() {
 
   return (
     <>
-      <div className="sheet-head">
+      {/* Manila ground + a stamp: an internal conversation must be unmistakable mid-scroll,
+          not only when you read the subtitle. */}
+      <div className="sheet-head internal">
         <h2>{title}</h2>
         <div className="sheet-meta">
-          <span>{subtitle ?? "Internal — the customer never sees this"}</span>
+          <span className="thread-stamp">Internal</span>
+          <span>{subtitle ?? "Never seen by a customer"}</span>
         </div>
       </div>
 
-      <div className="thread" ref={scrollRef}>
+      <div className="thread internal" ref={scrollRef}>
         {isLoading ? (
           <div className="thread-empty">
             <div className="thread-empty-sub">Loading…</div>
@@ -275,5 +291,20 @@ export function TeamChatModalContent() {
         </div>
       ) : null}
     </>
+  );
+}
+
+/** The drill-in presentation: reads the modal params and renders the pane. */
+export function TeamChatModalContent() {
+  const activeModal = useActiveModal();
+  const close = useCloseModal();
+  return (
+    <TeamChatPane
+      threadId={activeModal?.params?.threadId as string | undefined}
+      title={activeModal?.params?.title as string | undefined}
+      subtitle={activeModal?.params?.subtitle as string | undefined}
+      kind={activeModal?.params?.kind as string | undefined}
+      onClose={close}
+    />
   );
 }

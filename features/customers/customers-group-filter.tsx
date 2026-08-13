@@ -34,7 +34,7 @@ export function CustomersGroupFilter({ group, counts, onGroup, disabled = false 
     <div className="jh-filters" role="group" aria-label="Filter customers by where their work is">
       <button
         type="button"
-        className={`chip${group === null ? " on" : ""}`}
+        className={`chip${group === null ? " sel" : ""}`}
         aria-pressed={group === null}
         disabled={disabled}
         onClick={() => onGroup(null)}
@@ -48,7 +48,7 @@ export function CustomersGroupFilter({ group, counts, onGroup, disabled = false 
           <button
             key={g}
             type="button"
-            className={`chip${group === g ? " on" : ""}`}
+            className={`chip${group === g ? " sel" : ""}`}
             aria-pressed={group === g}
             disabled={disabled}
             onClick={() => onGroup(group === g ? null : g)}

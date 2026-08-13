@@ -1,40 +1,19 @@
 "use client";
 
 /**
- * Messages page — pixel-faithful port of the prototype's vMessages() + aiPhone().
+ * Messages page.
  *
- * Layout:
- *   1. Pinned "Artie" crew card (unchanged — separate AI-logging surface).
- *   2. Customer Inbox powered by v1.messaging.listConversations (live DB).
- *
- * Clicking a customer row opens the existing ThreadModal for that leadId.
+ *   1. The pinned "Artie" card (a separate AI-logging surface, unchanged).
+ *   2. MessagesInbox — one two-pane inbox holding BOTH kinds of conversation:
+ *      customers (owner/office, over the business number) and team (every role,
+ *      internal). The list and the thread live side by side; nothing overlays.
  */
 
 import { useState } from "react";
-import { useOpenModal } from "@/lib/store/app-store";
-import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
-import { shortWhen } from "@/lib/format";
-import { hasPhone, ADD_PHONE_TITLE } from "@/lib/phone";
 import { useMe } from "@/features/identity/hooks";
-import { inboxQueryOptions } from "@/features/field/inbox-query-options";
-import { TeamInbox } from "@/features/team-chat/team-inbox";
-
-function leadInitials(name: string): string {
-  return (name ?? "?")
-    .split(/\s+/)
-    .map((w: string) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
-
-/** One-line snippet: outbound messages are prefixed with "You: ". */
-function snippet(body: string, direction: "inbound" | "outbound"): string {
-  const prefix = direction === "outbound" ? "You: " : "";
-  const full = prefix + body;
-  return full.length > 72 ? full.slice(0, 72) + "…" : full;
-}
+import { pressable } from "@/lib/a11y";
+import { MessagesInbox } from "@/features/team-chat/messages-inbox";
 
 // ============================================================================
 // AI Phone mock (what a tech sees texting Artie from their own phone)
@@ -183,143 +162,21 @@ function AiPhone({ onBack }: AiPhoneProps) {
 }
 
 // ============================================================================
-// Customer conversation row
-// ============================================================================
-
-interface ConversationRowProps {
-  leadId: string;
-  leadName: string;
-  /** null = no number on file — the thread can't send, so the row disables. */
-  phone: string | null;
-  lastBody: string;
-  lastDirection: "inbound" | "outbound";
-  lastAt: string;
-  unread: boolean;
-  onClick: () => void;
-}
-
-function ConversationRow({
-  leadName,
-  phone,
-  lastBody,
-  lastDirection,
-  lastAt,
-  unread,
-  onClick,
-}: ConversationRowProps) {
-  // Field surface: disabled + title only (the lead modal is not reachable here).
-  const disabled = !hasPhone({ phone });
-  return (
-    <div
-      className={`msg-row${unread ? " unread" : ""}`}
-      aria-disabled={disabled || undefined}
-      title={disabled ? ADD_PHONE_TITLE : undefined}
-      style={disabled ? { opacity: 0.55, cursor: "default" } : undefined}
-      onClick={disabled ? undefined : onClick}
-    >
-      <span
-        className="javatar"
-        style={{
-          width: 38,
-          height: 38,
-          fontSize: "var(--type-base)",
-          background: "var(--manila-2)",
-          color: "var(--ink-2)",
-        }}
-      >
-        {leadInitials(leadName)}
-      </span>
-      <div className="msg-main">
-        <div className="msg-nm">
-          {leadName}
-          {unread ? <span className="msg-dot" /> : null}
-        </div>
-        <div className="msg-snip">{snippet(lastBody, lastDirection)}</div>
-      </div>
-      <span className="msg-tm">{shortWhen(lastAt)}</span>
-    </div>
-  );
-}
-
-// ============================================================================
-// Customer Inbox — live from v1.messaging.listConversations
-// ============================================================================
-
-function CustomerInbox() {
-  const openModal = useOpenModal();
-
-  // An inbox that never refetches is a screenshot. There is no realtime channel for messages, so
-  // without a poll a tech watching this list would not see a customer's text arrive. staleTime
-  // and the poll interval are one constant — see inbox-query-options for why.
-  const { data: conversations, isLoading } =
-    api.v1.messaging.listConversations.useQuery(undefined, inboxQueryOptions);
-
-  if (isLoading) {
-    return (
-      <div>
-        {[0, 1, 2].map((i) => (
-          <div key={i} className="sk-row">
-            <div className="sk" style={{ width: 38, height: 38, borderRadius: "50%", flexShrink: 0 }} />
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: "var(--space-2)", justifyContent: "center" }}>
-              <div className="sk" style={{ width: "60%", height: 14 }} />
-              <div className="sk" style={{ width: "40%", height: 12 }} />
-            </div>
-          </div>
-        ))}
-      </div>
-    );
-  }
-
-  if (!conversations || conversations.length === 0) {
-    return (
-      <div className="empty-att">
-        No customer messages yet — they&apos;ll appear here when a customer
-        texts your business number.
-      </div>
-    );
-  }
-
-  return (
-    <>
-      {conversations.map((c) => (
-        <ConversationRow
-          key={c.leadId}
-          leadId={c.leadId}
-          leadName={c.leadName}
-          phone={c.phone}
-          lastBody={c.lastBody}
-          lastDirection={c.lastDirection}
-          lastAt={c.lastAt}
-          unread={c.unread}
-          onClick={() =>
-            openModal(MODAL.THREAD, {
-              leadId: c.leadId,
-              // The tech shell has no leads store (customers hydrator is office-only) — the
-              // modal renders the header and phone gate from these.
-              leadName: c.leadName,
-              phone: c.phone,
-            })
-          }
-        />
-      ))}
-    </>
-  );
-}
-
-// ============================================================================
-// Artie pinned card — visible to all roles
+// Page
 // ============================================================================
 
 interface MalletAiCardProps {
   onClick: () => void;
 }
 
+/** The pinned Artie row — a separate AI-logging surface, not a conversation. */
 function MalletAiCard({ onClick }: MalletAiCardProps) {
   return (
     <div
       className="msg-row"
       style={{ borderColor: "var(--ink)" }}
       onClick={onClick}
+      {...pressable(onClick)}
     >
       <span
         className="javatar"
@@ -344,10 +201,6 @@ function MalletAiCard({ onClick }: MalletAiCardProps) {
   );
 }
 
-// ============================================================================
-// Page
-// ============================================================================
-
 export default function MessagesPage() {
   const [aiOpen, setAiOpen] = useState(false);
   const { data: me, isLoading: meLoading } = useMe();
@@ -369,14 +222,12 @@ export default function MessagesPage() {
         {/* Artie row — pinned first, visible to all roles */}
         <MalletAiCard onClick={() => setAiOpen(true)} />
 
-        {/* Customer inbox — only for owner/office once role is confirmed */}
-        {canSeeInbox && <CustomerInbox />}
-
-        {/* Staff conversations — EVERY role. Customer texts are owner/office only
-            (v1.messaging is ownerOrOffice), so before this a tech's Messages tab
-            was the Artie card and nothing else. */}
-        <TeamInbox meUserId={me?.userId} />
       </div>
+
+      {/* One inbox, two kinds of conversation. Customer texts stay owner/office
+          (v1.messaging is ownerOrOffice); team conversations are every role, so a
+          tech opens straight onto the side they can actually use. */}
+      <MessagesInbox canSeeCustomers={canSeeInbox} meUserId={me?.userId} />
     </>
   );
 }
