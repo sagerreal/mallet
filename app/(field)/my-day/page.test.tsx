@@ -667,6 +667,21 @@ describe("My day — the finished card's money slot", () => {
     expect(screen.queryByText("Sent to the office")).toBeNull();
   });
 
+  it("keeps the Receipt link beside Paid — the close-out is the receipt surface", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: { cents: 41200, currency: "USD" } } }));
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Receipt" }));
+    expect(pushModal).toHaveBeenCalledWith(MODAL.CLOSE_OUT, { jobId: "job-1", from: "field-job" });
+    expect(openModal).not.toHaveBeenCalled();
+  });
+
+  it("shows the figure the office was sent with beside the office chip", () => {
+    withJob(finishedJob({ total: { cents: 26850, currency: "USD" }, bill: null, invRequested: true }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Sent to the office")).toBeTruthy();
+    expect(screen.getByText("$269")).toBeTruthy();
+  });
+
   it("offers no money on a finished STOP whose JOB still has a trip to run", () => {
     // Visit done, job open (the return-trip shape): the close-out would refuse an open job,
     // so the card must not offer what the sheet will bounce.

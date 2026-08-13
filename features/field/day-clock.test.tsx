@@ -170,11 +170,11 @@ describe("DayClock — the three states", () => {
     listQuery = dayRows(morning());
     render(<DayClock />);
     // shop 0:48 + the running job 0:20. The unpaid break is not in it.
-    expect(screen.getByText("1:08")).toBeTruthy();
+    expect(screen.getByText("1h 8m")).toBeTruthy();
     act(() => {
       vi.advanceTimersByTime(60_000);
     });
-    expect(screen.getByText("1:09")).toBeTruthy();
+    expect(screen.getByText("1h 9m")).toBeTruthy();
   });
 
   it("keeps the day total out of the visual baseline", () => {
@@ -183,11 +183,14 @@ describe("DayClock — the three states", () => {
     expect(container.querySelector(".clock-elapsed")?.hasAttribute("data-dynamic")).toBe(true);
   });
 
-  it("shows no total, and no expander, before the first punch of the day", () => {
+  it("shows an honest zero, and no expander, before the first punch of the day", () => {
+    // The DAY TOTAL face always draws its figure — an empty day IS 0h 0m (the read answered).
+    // The expander stays gated: an expander onto an empty panel is a dead control.
     openQuery = loaded(null);
     const { container } = render(<DayClock />);
-    expect(container.querySelector(".clock-elapsed")).toBeNull();
+    expect(screen.getByText("0h 0m")).toBeTruthy();
     expect(screen.queryByRole("button", { expanded: false })).toBeNull();
+    expect(container.querySelector(".clock-open")).toBeNull();
   });
 
   it("on break: names the break start and offers only the way out", () => {
@@ -460,14 +463,15 @@ describe("DayClock — a refused hours read", () => {
     expect(screen.getByRole("button", { name: "Retrying…" })).toBeTruthy();
   });
 
-  // The tell that this is NOT the empty-day render: an empty day draws neither, and drew nothing
-  // else either — which is the whole finding.
-  it("draws no total and no expander, because neither is known", () => {
+  // The tell that this is NOT the empty-day render: an empty day shows 0h 0m; a refused read
+  // shows a dash — "we could not ask" must never read as "you have not worked".
+  it("draws a dash for the total, and no expander, because neither is known", () => {
     openQuery = loaded(serverEntry());
     listQuery = dayFailed(vi.fn());
     const { container } = render(<DayClock />);
 
-    expect(container.querySelector(".clock-elapsed")).toBeNull();
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(screen.queryByText("0h 0m")).toBeNull();
     expect(container.querySelector(".clock-open")).toBeNull();
     expect(container.querySelector(".clock-day")).toBeNull();
   });
