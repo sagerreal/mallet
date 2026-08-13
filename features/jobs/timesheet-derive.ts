@@ -1,16 +1,24 @@
 /**
  * features/jobs/timesheet-derive.ts
- * Pure timesheet math + labels (week math, worked/paid hours, weekly rollup,
- * row labels, picker options). No React, no store — unit-testable; the payroll
- * rules (paid-hours, the 40h overtime split) live here as the single source.
+ * Pure timesheet math + labels (week math, worked/paid hours, weekly rollup, row labels, picker
+ * options). No React, no store — unit-testable.
+ *
+ * The PAID-HOURS policy (break is the only unpaid kind) lives here. The OVERTIME rule does not: it
+ * is shared with the technician's own My hours screen (features/timesheets/overtime.ts), because
+ * this grid and that screen must never state different overtime for the same week.
  */
 
 import type { Job, Lead, TimeEntry } from "@/lib/store/types";
 import { timeToH, hToTime } from "@/lib/time";
+import {
+  overtimeSplit,
+  overtimeRulePhrase,
+  FEDERAL_OVERTIME_POLICY,
+  type OvertimePolicy,
+} from "@/features/timesheets/overtime";
 import { custName } from "./jobs-helpers";
 import {
   TS_KINDS,
-  FULL_TIME_HOURS_PER_WEEK,
   TIMESHEET_PICKER_MIN_HOUR,
   TIMESHEET_PICKER_MAX_HOUR,
   TIME_PICKER_STEP_HOURS,
@@ -45,9 +53,26 @@ export function tsMoney(n: number): number {
   return Math.round((Number(n) || 0) * CENTS) / CENTS;
 }
 
-/** Worked hours for one entry. */
+/** The four kinds that are paid absence rather than recorded work — no punch times at all. */
+export const TS_TIME_OFF_KINDS = ["pto", "vacation", "sick", "holiday"] as const;
+
+/** Is this row paid time off? It carries a LENGTH and no clock stamps. */
+export function tsIsTimeOff(e: TimeEntry): boolean {
+  return (TS_TIME_OFF_KINDS as readonly string[]).includes(e.kind);
+}
+
+/**
+ * Recorded length for one entry, in hours.
+ *
+ * A TIME-OFF row carries its length directly — there are no punch times to a day off, so the
+ * start/end subtraction below returns nothing for it. Without this branch a technician's holiday
+ * totalled ZERO on the office grid: eight paid hours invisible on the screen where the week is
+ * approved and pushed to QuickBooks.
+ */
 export function tsHours(e: TimeEntry): number {
-  if (!e || !e.end || !e.start) return 0;
+  if (!e) return 0;
+  if (e.minutes != null) return Math.round((e.minutes / 60) * CENTS) / CENTS;
+  if (!e.end || !e.start) return 0;
   const d = timeToH(e.end) - timeToH(e.start);
   return d > 0 ? Math.round(d * CENTS) / CENTS : 0;
 }
@@ -57,12 +82,23 @@ export function tsPaid(e: TimeEntry): number {
   return e.kind === "break" ? 0 : tsHours(e);
 }
 
+/** Paid hours that were actually WORKED — the only hours that can create overtime. */
+export function tsWorked(e: TimeEntry): number {
+  return tsIsTimeOff(e) ? 0 : tsPaid(e);
+}
+
 /**
  * An entry nobody has ended: the clock is still running on it, or an end time was never recorded.
  * Either way it has no duration, so it totals as zero and cannot be signed for — which is why the
  * server refuses to approve a week containing one (ApproveWeekUseCase, tagged UNFINISHED_DAYS).
+ *
+ * TIME OFF IS NEVER UNFINISHED. A day off has no end time by construction, so the bare `!e.end`
+ * test called every holiday an unfinished day: the grid warned the office to go fix a row that was
+ * already complete, and named a day nobody could finish. Same kind-blindness the server's approval
+ * predicate had before #457 — fixed there, and this is its mirror on the client.
  */
 export function tsIsUnfinished(e: TimeEntry): boolean {
+  if (tsIsTimeOff(e)) return false;
   return e.running === true || !e.end;
 }
 
@@ -109,16 +145,47 @@ export interface TsRollup {
   ot: number;
   approved: boolean;
   count: number;
+  /** Names the overtime rule these figures were computed with — it differs by state. */
+  rulePhrase: string;
 }
 
-/** Weekly rollup — HOURS only, payroll computes pay. */
-export function tsRollup(entries: TimeEntry[], techId: string, weekDates: string[]): TsRollup {
+/**
+ * Weekly rollup — HOURS only, payroll computes pay.
+ *
+ * THE OVERTIME FIGURE OBEYS THE SHOP'S RULE. This function used to cap regular at a compiled-in
+ * forty and call everything past it overtime, which was wrong three ways on the one screen where
+ * hours are approved and pushed to QuickBooks:
+ *
+ *   - a daily-overtime state (California pays past EIGHT HOURS IN A DAY) got no daily overtime at
+ *     all, so four ten-hour days reported zero where the man was owed eight hours;
+ *   - PAID TIME OFF pushed people into overtime. It is paid but not worked, so it cannot: 40 worked
+ *     plus an 8-hour holiday reported 8h of overtime that nobody had earned;
+ *   - REGULAR was capped at the threshold, which states a SMALLER number than the shop is about to
+ *     pay. That same 48-hour week showed 40 regular.
+ *
+ * The arithmetic is shared with the technician's own screen (features/timesheets/overtime.ts) so the
+ * figure a man reads and the figure his employer approves cannot disagree.
+ */
+export function tsRollup(
+  entries: TimeEntry[],
+  techId: string,
+  weekDates: string[],
+  policy: OvertimePolicy = FEDERAL_OVERTIME_POLICY,
+): TsRollup {
   const es = tsWeekEntries(entries, techId, weekDates);
   const paid = tsMoney(es.reduce((s, e) => s + tsPaid(e), 0));
-  const reg = Math.min(paid, FULL_TIME_HOURS_PER_WEEK);
-  const ot = tsMoney(Math.max(0, paid - FULL_TIME_HOURS_PER_WEEK));
+
+  // Overtime is per-DAY then per-week, and only WORKED hours are eligible.
+  const workedByDate = new Map<string, number>();
+  for (const e of es) {
+    const worked = tsWorked(e);
+    if (worked > 0) workedByDate.set(e.date, (workedByDate.get(e.date) ?? 0) + worked);
+  }
+  const ot = tsMoney(overtimeSplit([...workedByDate.values()], policy).total);
+
   const approved = es.length > 0 && es.every((e) => e.status === "approved");
-  return { paid, reg, ot, approved, count: es.length };
+  // Uncapped, and including paid time off: every paid hour that is not overtime.
+  return { paid, reg: tsMoney(paid - ot), ot, approved, count: es.length, rulePhrase: overtimeRulePhrase(policy) };
 }
 
 /**

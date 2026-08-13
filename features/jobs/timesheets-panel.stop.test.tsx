@@ -38,6 +38,10 @@ vi.mock("@/lib/trpc/client", () => ({
         count: { useQuery: () => ({ isFetched: true, isError: false, data: { total: 1 } }) },
         unreportedDays: { useQuery: () => ({ data: { items: [] } }) },
       },
+      // The grid computes overtime from the shop's own rule now (useOvertimePolicy), so it reads the
+      // one anyRole settings window. Undefined data = the hook's federal fallback, which is what
+      // these tests' fixtures assume.
+      settings: { fieldToggles: { useQuery: () => ({ data: undefined }) } },
     },
   },
 }));

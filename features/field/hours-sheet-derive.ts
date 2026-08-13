@@ -16,8 +16,17 @@
  */
 
 import { entryHours, isPaidKind, paidHours, sortByStart, type MyHoursEntry } from "./my-hours-derive";
+import {
+  overtimeSplit,
+  overtimeRulePhrase,
+  type OvertimePolicy,
+} from "@/features/timesheets/overtime";
 
 export type { MyHoursEntry };
+// Re-exported so this module stays the one import My hours needs; the rule itself is shared with
+// the office grid and lives in features/timesheets/overtime.ts.
+export { overtimeSplit, overtimeRulePhrase };
+export type { OvertimePolicy, OvertimeSplit } from "@/features/timesheets/overtime";
 
 /** The four kinds that are paid absence rather than recorded work. */
 export const TIME_OFF_KINDS = ["pto", "vacation", "sick", "holiday"] as const;
@@ -26,19 +35,6 @@ export type TimeOffKind = (typeof TIME_OFF_KINDS)[number];
 const isTimeOff = (kind: string): kind is TimeOffKind =>
   (TIME_OFF_KINDS as readonly string[]).includes(kind);
 
-const MINUTES_PER_HOUR = 60;
-
-/**
- * The shop's overtime rule, in minutes — CONFIG, never code, because state law inverts. Federal
- * is weekly-only; California adds a daily threshold. `dailyThresholdMinutes: null` means the shop
- * has no daily rule.
- */
-export interface OvertimePolicy {
-  readonly weeklyThresholdMinutes: number;
-  readonly dailyThresholdMinutes: number | null;
-}
-
-/** A pause inside a shift. `endTime` is null only while the break itself is still open. */
 export interface SheetBreak {
   readonly startTime: string;
   readonly endTime: string | null;
@@ -159,49 +155,6 @@ export function offRows(entries: readonly MyHoursEntry[]): OffRow[] {
       entry,
     }))
     .sort((a, b) => (a.workDate < b.workDate ? -1 : a.workDate > b.workDate ? 1 : 0));
-}
-
-export interface OvertimeSplit {
-  readonly daily: number;
-  readonly weekly: number;
-  readonly total: number;
-}
-
-/**
- * Split a week's worked hours into daily and weekly overtime WITHOUT counting an hour twice.
- *
- * The standard method, and the one a daily-overtime state requires: each day's hours past the
- * daily threshold are daily overtime, and only the STRAIGHT-TIME portion of each day (its hours
- * up to the threshold) is then tested against the weekly threshold. Five ten-hour days in
- * California are 10h of daily overtime and zero weekly — 50 hours is ten past forty, but those
- * are the same ten hours, and adding them again would pay the overage twice.
- *
- * Time off never reaches this function: it is paid but not worked, so it cannot create overtime.
- */
-export function overtimeSplit(
-  hoursPerDay: readonly number[],
-  policy: OvertimePolicy,
-): OvertimeSplit {
-  const dailyLimit =
-    policy.dailyThresholdMinutes === null ? null : policy.dailyThresholdMinutes / MINUTES_PER_HOUR;
-  const weeklyLimit = policy.weeklyThresholdMinutes / MINUTES_PER_HOUR;
-
-  let daily = 0;
-  let straightTime = 0;
-  for (const hours of hoursPerDay) {
-    const overDay = dailyLimit === null ? 0 : Math.max(0, hours - dailyLimit);
-    daily += overDay;
-    straightTime += hours - overDay;
-  }
-  const weekly = Math.max(0, straightTime - weeklyLimit);
-  return { daily, weekly, total: daily + weekly };
-}
-
-/** The rule in force, for the summary cell — a figure nobody can derive is a figure nobody trusts. */
-export function overtimeRulePhrase(policy: OvertimePolicy): string {
-  const weekly = policy.weeklyThresholdMinutes / MINUTES_PER_HOUR;
-  if (policy.dailyThresholdMinutes === null) return `past ${weekly}h this week`;
-  return `past ${policy.dailyThresholdMinutes / MINUTES_PER_HOUR}h a day or ${weekly}h this week`;
 }
 
 export interface MissingWorkdaysArgs {

@@ -106,6 +106,9 @@ function TsWeekMetrics({ rollup }: { rollup: TsRollup }) {
       <div className="ot">
         <div className="l">Overtime</div>
         <div className="n">{rollup.ot.toFixed(2)} h</div>
+        {/* The rule, under the figure it produced. It differs by state, and this is the number the
+            office signs for — an overtime total nobody can derive is one nobody can defend. */}
+        <div className="ts-rule">{rollup.rulePhrase}</div>
       </div>
     </div>
   );
