@@ -1,10 +1,11 @@
 import type { Result, AppError, Clock } from "@mallet/shared/types";
-import { ok, Phone } from "@mallet/shared/types";
+import { ok, err, precondition, Phone } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import type { Geocoder } from "@mallet/frontdesk";
 import type { OrgSettings, OrgSettingsProps } from "../domain/org-settings";
 import type { SettingsRepository } from "../domain/settings-repository";
 import { defaultBooking } from "./default-booking";
+import { frontDeskReadiness, type FrontDeskGap } from "../domain/front-desk-readiness";
 
 // Fields the caller may change — orgId and timestamps are server-owned and not patchable.
 // originLat/originLng are also NOT client-supplied: they are derived here by geocoding the
@@ -46,6 +47,20 @@ function normalizeBooking(cmd: UpdateConfigCommand): UpdateConfigCommand {
  * defensively catch anyway). The Geocoder is optional; when absent, the address is saved without
  * geocoding (lat/lng cleared) — used by callers that don't wire a geocoder.
  */
+/** What a shop still owes the front desk, in the words the Settings screen uses. */
+const GAP_WORDS: Record<FrontDeskGap, string> = {
+  hours: "your opening hours",
+  serviceArea: "your service area",
+  services: "at least one bookable service",
+};
+
+/** "your service area" / "your service area and one bookable service" — never a bare key. */
+function gapSentence(missing: readonly FrontDeskGap[]): string {
+  const words = missing.map((m) => GAP_WORDS[m]);
+  if (words.length <= 1) return words[0] ?? "the missing details";
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
 export class UpdateConfigUseCase {
   constructor(
     private readonly repo: SettingsRepository,
@@ -62,6 +77,32 @@ export class UpdateConfigUseCase {
 
     const patched = current.patch({ ...normalizeBooking(cmd), ...originPatch }, this.clock.now());
     if (!patched.ok) return patched;
+
+    // THE FRONT DESK CANNOT BE SWITCHED ON UNREADY.
+    //
+    // frontDeskReadiness has existed since the front_desk default was flipped to false, and it was
+    // never called anywhere — so the toggle was a plain checkbox and the rule it encodes was a
+    // comment. One live shop is switched ON with no service area configured: its AI answers real
+    // customers on the shop's own number knowing nothing about where it works. That is the exact
+    // state the function was written to prevent.
+    //
+    // Gated on the OFF -> ON TRANSITION only, and judged on the RESULTING settings.
+    //
+    // Resulting, not incoming, so one save that supplies the missing piece AND flips the switch is
+    // allowed — the shop should not have to save twice. Transition, not state, because a shop that
+    // is ALREADY on while unready (one live org is) must still be able to edit its tax rate: gating
+    // every save would trap it answering badly with no way to change anything but the switch.
+    // Switching OFF is never gated either, for the same reason.
+    const readiness = frontDeskReadiness(patched.value.props);
+    const turningOn = !current.props.frontDesk && patched.value.props.frontDesk;
+    if (turningOn && !readiness.ready) {
+      return err(
+        precondition(
+          `The front desk can't answer yet — add ${gapSentence(readiness.missing)} first.`,
+        ),
+      );
+    }
+
     await this.repo.saveConfig(patched.value);
     logger.info({ orgId }, "settings.config.updated");
     return ok(patched.value);

@@ -293,6 +293,8 @@ describe("settings-slice persistence", () => {
       markup: 40,
       taxRate: 8.75,
       trade: "hvac",
+      frontDeskReady: true,
+      frontDeskMissing: [],
       toggles: { techSeesPrice: false, timesheetClock: false, techEditsTimes: false, frontDesk: false, autoRemind: false, measurementEstimating: "off" as const },
     };
     store.get().setSettings(snap);

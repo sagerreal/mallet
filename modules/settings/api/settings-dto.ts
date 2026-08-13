@@ -3,6 +3,7 @@ import { Phone } from "@mallet/shared/types";
 import type { SettingsSnapshot } from "../app/get-settings";
 import type { PricebookItem, LaborRate, JobTerm, LeadSource } from "../domain/settings-repository";
 import type { OrgSettings } from "../domain/org-settings";
+import { frontDeskReadiness } from "../domain/front-desk-readiness";
 import {
   INVOICE_FOOTER_MAX,
   PAY_INSTRUCTIONS_MAX,
@@ -209,6 +210,15 @@ export const orgSettingsDTO = z.object({
   techSeesPrice: z.boolean(),
   techTexts: z.boolean(),
   frontDesk: z.boolean(),
+  /**
+   * Whether the front desk MAY be switched on, and what is still missing if not.
+   *
+   * Derived, never stored — computed from this same settings row. It rides the DTO so the toggle
+   * can say WHICH detail is missing instead of the server refusing a save the screen let you
+   * attempt. Absent readiness is why one live shop sits switched on with no service area.
+   */
+  frontDeskReady: z.boolean(),
+  frontDeskMissing: z.array(z.enum(["hours", "serviceArea", "services"])),
   scopeOn: z.boolean(),
   autoRemind: z.boolean(),
   measurementEstimating: z.boolean(),
@@ -462,6 +472,8 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
     techSeesPrice: p.techSeesPrice,
     techTexts: p.techTexts,
     frontDesk: p.frontDesk,
+    frontDeskReady: frontDeskReadiness(p).ready,
+    frontDeskMissing: [...frontDeskReadiness(p).missing],
     scopeOn: p.scopeOn,
     autoRemind: p.autoRemind,
     measurementEstimating: p.measurementEstimating,
