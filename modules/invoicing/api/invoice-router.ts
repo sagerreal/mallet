@@ -735,6 +735,26 @@ export const createInvoiceRouter = () =>
         return repo.totals();
       }),
 
+    /**
+     * Every ledger band's count in ONE round trip — the Money chip row's numbers.
+     *
+     * `count` below answers a single band per call, so a six-chip row would have meant six
+     * requests. Shares the LIST's predicates, so a chip can never promise a number the list
+     * cannot produce. `search` rides along because a count that ignores the active search
+     * describes a different list than the rows beneath it.
+     */
+    viewCounts: ownerOrOffice
+      .input(
+        z.object({
+          search: z.string().trim().min(1).max(200).optional(),
+        }),
+      )
+      .output(z.object({ counts: z.record(z.enum(INVOICE_VIEWS), z.number().int()) }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
+        return repo.viewCounts({ search: input.search });
+      }),
+
     /** The TRUE number of invoices matching a filter — shares list()'s predicates. */
     count: ownerOrOffice
       .input(

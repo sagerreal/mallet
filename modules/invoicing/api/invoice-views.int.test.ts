@@ -111,6 +111,50 @@ suite("invoice ledger views", () => {
     expect(seen.size).toBe(total!.n);
   });
 
+  /**
+   * The chip row's numbers, all five bands in ONE round trip.
+   *
+   * The Money screen's filter was a dropdown carrying no counts, so the only way to learn there
+   * were 240 overdue invoices was to pick "Overdue" and read the total. `count` answers one band
+   * per call; this answers all of them at once, the way jobs.viewCounts already does.
+   */
+  it("counts every band in one query, and the counts sum to the ledger", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const { counts } = await caller.v1.invoicing.viewCounts({});
+
+    expect(counts.draft).toBe(2);
+    expect(counts.over).toBe(2);      // LV-OVER1 + LV-OVER2 (overdue beats part-paid)
+    expect(counts.partial).toBe(1);
+    expect(counts.sent).toBe(2);      // future due date, and no due date at all
+    expect(counts.paid).toBe(2);      // settled, whatever the status column says
+
+    const [total] = await admin<{ n: number }[]>`
+      select count(*)::int n from invoices where org_id = ${orgId} and deleted_at is null`;
+    const summed = Object.values(counts).reduce((a, b) => a + b, 0);
+    expect(summed).toBe(total!.n);
+  });
+
+  it("agrees with count() band for band — one predicate, not two", async () => {
+    // The counts and the rows must come from the same definition, or the chip promises a number
+    // the list cannot produce.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const { counts } = await caller.v1.invoicing.viewCounts({});
+    for (const view of INVOICE_VIEWS) {
+      const one = await caller.v1.invoicing.count({ view });
+      expect(one.total, `${view} disagrees`).toBe(counts[view]);
+    }
+  });
+
+  it("recounts under a search, so the chips describe the list on screen", async () => {
+    // A count that ignores the search reports the whole book while the rows below it are a slice —
+    // the same bug the Jobs list had, where the header read "50 of 1528" on a filtered page.
+    const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
+    const { counts } = await caller.v1.invoicing.viewCounts({ search: "LV-DRAFT" });
+    expect(counts.draft).toBe(2);
+    expect(counts.over).toBe(0);
+    expect(counts.paid).toBe(0);
+  });
+
   it("bands the rows the way the screen does — one rule, two languages", async () => {
     const caller = appRouter.createCaller(ctxFor(orgId, "owner"));
     const all = await caller.v1.invoicing.list({ limit: 100 });
