@@ -20,6 +20,7 @@ const summary = (over: Partial<Parameters<typeof HoursSummary>[0]> = {}) =>
       weeklyThresholdHours={40}
       rulePhrase="past 40h this week"
       missingDays={[]}
+      canEditOwnTimes
       {...over}
     />,
   );
@@ -83,6 +84,13 @@ describe("the missing-days cell", () => {
     expect(text).toContain("Jun 30");
     expect(text).toContain("Jul 2");
     expect(text).toContain("add the hours or tell the office");
+  });
+
+  it("does not offer to add hours on a shop that keeps changes with the office", () => {
+    summary({ missingDays: ["2026-06-30"], canEditOwnTimes: false });
+    const text = cell("Days missing hours").textContent ?? "";
+    expect(text).toContain("tell the office");
+    expect(text).not.toContain("add the hours");
   });
 
   it("counts one day as a day, not as days", () => {
