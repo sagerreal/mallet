@@ -23,7 +23,16 @@ const stubAuth: AuthProvider = {
   },
 };
 
-const ctxFor = (orgId: string, role: Role): Context => ({
+/** Numbers the front desk asked to have wired, per test. Reset in each case that reads it. */
+const registered: string[] = [];
+const spyRegistrar = {
+  register: async ({ phoneNumber }: { phoneNumber: string }) => {
+    registered.push(phoneNumber);
+    return { ok: true as const, value: undefined };
+  },
+};
+
+const ctxFor = (orgId: string, role: Role, withRegistrar = false): Context => ({
   principal: { userId: asUserId(randomUUID()), orgId: asOrgId(orgId), role } satisfies Principal,
   unmapped: null,
   tx: null,
@@ -41,6 +50,7 @@ const ctxFor = (orgId: string, role: Role): Context => ({
         throw new Error("unused in this test");
       },
     },
+    ...(withRegistrar ? { voiceRegistrar: spyRegistrar } : {}),
   },
 });
 
@@ -593,6 +603,55 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       await expect(callerTech.v1.settings.payments.status()).rejects.toMatchObject({
         code: "FORBIDDEN",
       });
+    });
+  });
+
+  /**
+   * A LINE THAT WAS NEVER WIRED REPAIRS ITSELF when the shop switches the desk on.
+   *
+   * Registration runs once, at provisioning. While VAPI_API_KEY was unset in production that step
+   * silently self-disabled, so numbers were bought and left on Twilio's "not configured" recording.
+   * Setting the key fixes future signups and nothing already sold — a one-off back-fill would clear
+   * today's three and leave the same hole after any future outage, so the repair lives here.
+   */
+  describe("switching the front desk on wires the number", () => {
+    it("asks the registrar for the org's own line", async () => {
+      registered.length = 0;
+      await admin`update orgs set twilio_number = '+15550001111' where id = ${orgAId}`;
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner", true));
+
+      // A row that passes frontDeskReadiness, then the switch.
+      await caller.v1.settings.updateConfig({
+        serviceOriginAddress: "02189",
+        booking: {
+          services: [{ name: "Drain cleaning", lane: "flat", price: 189, triggers: "" }],
+          notServices: "",
+          serviceFee: 0,
+          feeCredited: false,
+        },
+      });
+      await caller.v1.settings.updateConfig({ frontDesk: true });
+
+      expect(registered).toEqual(["+15550001111"]);
+      await admin`update orgs set twilio_number = null where id = ${orgAId}`;
+    });
+
+    it("does not call the registrar on an unrelated save", async () => {
+      // Every settings write would otherwise hit Vapi — a cost and a dependency for editing a tax rate.
+      registered.length = 0;
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner", true));
+      await caller.v1.settings.updateConfig({ taxBps: 625 });
+      expect(registered).toEqual([]);
+    });
+
+    it("saves the settings even when the org owns no number yet", async () => {
+      // Provisioning can lag signup; the switch must not fail because the line has not landed.
+      registered.length = 0;
+      await admin`update orgs set twilio_number = null where id = ${orgAId}`;
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner", true));
+      const cfg = await caller.v1.settings.updateConfig({ frontDesk: true });
+      expect(cfg.frontDesk).toBe(true);
+      expect(registered).toEqual([]);
     });
   });
 });
