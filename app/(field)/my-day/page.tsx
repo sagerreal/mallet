@@ -300,7 +300,7 @@ export default function MyDayPage() {
       {(viewingToday ? isLoading : pagedDay.isLoading) ? (
         // The skeleton is the CARD's own shape — title line, address line, the circle row — so
         // content arrival replaces it without a jump.
-        <>
+        <div className="mdc-rail">
           {[0, 1].map((i) => (
             <div key={i} className="card mdc" style={{ cursor: "default" }}>
               <div className="sk" style={{ width: "55%", height: 16 }} />
@@ -312,7 +312,7 @@ export default function MyDayPage() {
               </div>
             </div>
           ))}
-        </>
+        </div>
       ) : (viewingToday ? loadFailed : shouldShowLoadFailed({ isFetched: pagedDay.isFetched, isError: pagedDay.isError, count: items.length })) ? (
         <div className="card agenda">
           <LoadFailed
@@ -339,7 +339,7 @@ export default function MyDayPage() {
                 <h2 className="mdc-sec">{viewingToday ? "Upcoming" : dayOffset < 0 ? "Not finished" : "Scheduled"}</h2>
               ) : null}
               {upcoming.length > 0 ? (
-                upcoming.map(renderCard)
+                <div className="mdc-rail">{upcoming.map(renderCard)}</div>
               ) : viewingToday ? (
                 <div className="card mdc" style={{ cursor: "default" }}>
                   <div className="empty-att">Nothing left on the route — nice work.</div>
@@ -348,7 +348,7 @@ export default function MyDayPage() {
               {finished.length > 0 ? (
                 <>
                   <h2 className="mdc-sec">{viewingToday ? "Finished today" : "Finished"}</h2>
-                  {finished.map(renderCard)}
+                  <div className="mdc-rail">{finished.map(renderCard)}</div>
                 </>
               ) : null}
             </>

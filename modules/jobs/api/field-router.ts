@@ -360,6 +360,11 @@ const fieldAgendaPage = async (
   const seesPrice = isTech
     ? await new DrizzleSettingsRepository(view.tx, view.principal.orgId).getTechSeesPrice()
     : true;
+  // The customers are loaded ANYWAY (the call bar needs them) — resolving each job's
+  // customerName from the same read costs nothing. It was left null here, so the card's
+  // who-is-this-for line silently never rendered on the field surface.
+  const customers = await loadCustomersFor(view.tx, view.principal.orgId, ordered);
+  const nameByLead = new Map(customers.map((c) => [c.id, c.name]));
   const billDTO = (bill: JobBillSummary | undefined) =>
     bill
       ? {
@@ -374,15 +379,13 @@ const fieldAgendaPage = async (
       : null;
   const items = ordered.map((j) => {
     const dto = {
-      ...toJobSummaryDTO(j, executionByJob.get(j.props.id)),
+      ...toJobSummaryDTO(j, executionByJob.get(j.props.id), nameByLead.get(j.props.leadId) ?? null),
       bill: billDTO(billByJob.get(j.props.id)),
     };
     return isTech ? redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) : dto;
   });
-  // The customers on THESE jobs, and no others — the technician's reach is their own work.
-  // Without this the field shell has no name or number for anyone, which is why its Call
-  // control could not work: the call bar renders the customer, and had nothing to render.
-  const customers = await loadCustomersFor(view.tx, view.principal.orgId, ordered);
+  // The customers ride the response too — the technician's reach is their own work, and the
+  // field shell's Call control renders from this list.
   return { items, customers };
 };
 
