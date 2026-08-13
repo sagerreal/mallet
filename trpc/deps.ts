@@ -1,4 +1,5 @@
 import type { AuthProvider, ApiKeyVerifier, TokenVerifier, SignupStore } from "@mallet/identity";
+import type { ChatFileGateway } from "@mallet/team-chat";
 import type { PaymentLinkGateway, TerminalGateway, CardChargeGateway } from "@mallet/invoicing";
 import type { ConnectGateway } from "@mallet/settings";
 import type { PhotoStorageGateway } from "@mallet/jobs";
@@ -71,6 +72,10 @@ export interface AppDeps {
   // router-test stubs that never touch identity.signup don't have to carry them — the router
   // treats absence as closed, the safe direction.
   readonly signupsOpen?: boolean;
+  // Staff-chat attachment storage (Supabase Storage, team-files bucket). null when the Storage
+  // env is unavailable — attachment upload/view then answer PRECONDITION_FAILED rather than
+  // half-working, exactly like photoStorageGateway.
+  readonly chatFileGateway?: ChatFileGateway | null;
   readonly inviteGate?: Pick<SignupStore, "hasPendingInvite">;
   // QuickBooks Online OAuth. null when QBO_CLIENT_ID/SECRET/REDIRECT_URI are unset — the Settings
   // card renders "not configured" and the connect routes 503 rather than half-working.

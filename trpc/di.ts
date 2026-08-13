@@ -31,6 +31,7 @@ import type { PaymentLinkGateway, TerminalGateway, CardChargeGateway } from "@ma
 import type { ConnectGateway } from "@mallet/settings";
 import { SupabasePhotoStorageGateway } from "@mallet/jobs";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { SupabaseChatFileGateway } from "@mallet/team-chat";
 import type { PhotoStorageGateway } from "@mallet/jobs";
 import type { NotificationSender, NotificationChannel } from "@mallet/notifications";
 import type { LlmClient } from "@mallet/ai";
@@ -234,6 +235,10 @@ export const getAppDeps = (): AppDeps => {
     apiKeyAuthenticator: createApiKeyAuthenticator(db),
     tokenVerifier: createSupabaseTokenVerifier(config.NEXT_PUBLIC_SUPABASE_URL, config.NEXT_PUBLIC_SUPABASE_ANON_KEY),
     signupStore: signupStore,
+    // Same self-disable posture as photoStorageGateway: bound lazily, null without Storage env.
+    chatFileGateway: photoStorageGateway
+      ? new SupabaseChatFileGateway(() => getSupabaseAdmin() as never)
+      : null,
     signupsOpen: config.SIGNUPS_OPEN,
     inviteGate: signupStore,
     bus: new InMemoryEventBus(),

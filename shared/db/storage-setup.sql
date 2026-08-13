@@ -55,4 +55,40 @@ create policy job_photos_insert on storage.objects
     and (storage.foldername(name))[1] = storage.job_photo_org()::text
   );
 
+-- ── team-files: staff-chat attachments ────────────────────────────────────────────────────────
+-- Same tenant model as job-photos (first path segment IS the org id), with two differences that
+-- matter:
+--
+--   1. This bucket sets file_size_limit and allowed_mime_types. job-photos sets NEITHER, so
+--      nothing there stops a 50MB upload except the browser's own downscale — storage is the
+--      only layer that can refuse bytes it was never told to accept, so it does here.
+--   2. Reads are served by SHORT-LIVED SIGNED URLs minted server-side (see
+--      SupabaseChatFileGateway.createViewUrl) after the caller's THREAD membership is checked in
+--      the application layer. The select policy below is the tenant floor beneath that, not the
+--      privacy boundary: storage RLS can see the org claim in the JWT but knows nothing about
+--      which conversations a person belongs to.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('team-files', 'team-files', false, 10485760, array['image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update
+  set file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists team_files_read on storage.objects;
+create policy team_files_read on storage.objects
+  for select
+  to authenticated
+  using (
+    bucket_id = 'team-files'
+    and (storage.foldername(name))[1] = storage.job_photo_org()::text
+  );
+
+drop policy if exists team_files_insert on storage.objects;
+create policy team_files_insert on storage.objects
+  for insert
+  to authenticated
+  with check (
+    bucket_id = 'team-files'
+    and (storage.foldername(name))[1] = storage.job_photo_org()::text
+  );
+
 reset role;
