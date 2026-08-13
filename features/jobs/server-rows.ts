@@ -79,15 +79,33 @@ export type JobListRow = RouterOutputs["v1"]["jobs"]["list"]["items"][number];
  * missing silently. completedAt is no longer in this set: the summary now carries it (the field
  * agenda's Finished bucket sorts on it), so the row's own value flows through.
  */
-const asStoreJob = (row: JobListRow) =>
-  dtoJobToStoreJob({
+const asStoreJob = (row: JobListRow): Job => ({
+  ...dtoJobToStoreJob({
     scheduledEnd: null,
     startedAt: null,
     canceledAt: null,
     enrouteAt: null,
     cancelReason: null,
     ...row,
-  } as unknown as JobDTO);
+  } as unknown as JobDTO),
+  // THE SERVER-RESOLVED CUSTOMER FIELDS, CARRIED ACROSS BY HAND.
+  //
+  // `dtoJobToStoreJob` is written for the full jobDTO, which carries neither of these, so it drops
+  // them — right for its own nineteen callers, wrong here. This adapter is the only place the
+  // SUMMARY shape exists, and the summary is the only shape the server resolves them onto (see the
+  // batched findByIds in jobs.list, which exists precisely so the list does not have to join).
+  //
+  // Dropped, the list falls back to joining against the store's `leads` collection — which is
+  // paged the same way jobs are — so every customer past that page renders "—", and the ones
+  // inside it pop in as the leads hydrator lands. That is the bug the wire has been carrying the
+  // answer to all along.
+  //
+  // `undefined`, never "": custName reads `lead?.name ?? j.cust ?? "—"` and jobAddr chains `||`
+  // through to the job's own address. An empty string is a value to `??` and would print a blank
+  // cell where the dash belongs.
+  cust: row.customerName ?? undefined,
+  custAddr: row.customerAddr ?? undefined,
+});
 
 /**
  * The page, in server order, each row tagged with the band its labels come from.

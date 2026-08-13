@@ -179,6 +179,34 @@ describe("serverPageToRows", () => {
     );
     expect(r.rows.map((x) => x.bandKey)).toEqual(["needsSlot", "needsSlot"]);
   });
+
+  /**
+   * The list's whole reason for reading server-side. `dtoJobToStoreJob` is written for the FULL
+   * jobDTO, which carries neither of these fields, so it drops them — correctly, for its own
+   * callers. This adapter is the one place the SUMMARY shape exists, and the summary is the only
+   * shape the server resolves them onto. Losing them here sends the list back to joining against
+   * the store's `leads` collection, which is paged, so every customer past that page prints "—".
+   */
+  describe("the server-resolved customer fields", () => {
+    it("carries the customer's name onto the row", () => {
+      const r = serverPageToRows([dto({ customerName: "Ed Okafor" })], "today");
+      expect(r.rows[0]!.job.cust).toBe("Ed Okafor");
+    });
+
+    it("carries the customer's service address onto the row", () => {
+      const r = serverPageToRows([dto({ customerAddr: "1850 Geary Rd, Concord, CA" })], "today");
+      expect(r.rows[0]!.job.custAddr).toBe("1850 Geary Rd, Concord, CA");
+    });
+
+    it("leaves both undefined — never '' — when the server resolved neither", () => {
+      // custName reads `lead?.name ?? j.cust ?? "—"`. An empty string is a VALUE to `??`, so
+      // mapping absence to "" would print a blank cell where "—" belongs, and jobAddr would stop
+      // falling through to the job's own address.
+      const r = serverPageToRows([dto({ customerName: null, customerAddr: null })], "today");
+      expect(r.rows[0]!.job.cust).toBeUndefined();
+      expect(r.rows[0]!.job.custAddr).toBeUndefined();
+    });
+  });
 });
 
 describe("SORT_COL_TO_SERVER", () => {
