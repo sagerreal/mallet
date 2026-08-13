@@ -141,3 +141,19 @@ describe("toStoreJob terminal status wins over visit-placement recalc", () => {
     expect(job.status).toBe("done");
   });
 });
+
+// ---------------------------------------------------------------------------
+// toStoreJob — the customer name the server already sent
+// ---------------------------------------------------------------------------
+
+describe("toStoreJob carries the server-resolved customer name", () => {
+  it("keeps customerName as cust, so a lead past the leads page still names its customer", () => {
+    const job = toStoreJob({ ...baseSummaryDto, customerName: "Ruth Whitaker" } as never);
+    expect(job.cust).toBe("Ruth Whitaker");
+  });
+
+  it("falls back to empty when the join found nothing", () => {
+    const job = toStoreJob({ ...baseSummaryDto, customerName: null } as never);
+    expect(job.cust).toBe("");
+  });
+});

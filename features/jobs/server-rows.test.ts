@@ -70,6 +70,62 @@ describe("serverPageToRows", () => {
     expect(key("needsInvoice")).toBe("doneUnbilled");
     expect(key("done")).toBe("done");
     expect(key("archived")).toBe("archived");
+    expect(key("late")).toBe("late");
+  });
+
+  /**
+   * The All view's per-row band is the ONLY place a row's band is not simply the selected chip, so
+   * it is the only place `late` can be got wrong visibly — it renders as a rust date instead of a
+   * plain one. These mirror viewCondition's rule clause for clause. (Mocked today: 2026-07-01.)
+   */
+  describe("late, in a mixed list", () => {
+    it("derives late for an open job whose placed visit is dated before today", () => {
+      const r = serverPageToRows(
+        [dto({ id: "a", status: "scheduled", visits: [visit({ scheduledDate: "2026-06-28" })] } as never)],
+        null,
+      );
+      expect(r.rows[0]!.bandKey).toBe("late");
+    });
+
+    it("prefers today over late when the job has both", () => {
+      // Same ranking as the server: a day view that omits work going out today is not a day view.
+      const r = serverPageToRows(
+        [dto({
+          id: "a",
+          status: "scheduled",
+          visits: [
+            visit({ id: "v1", scheduledDate: "2026-06-28" }),
+            visit({ id: "v2", scheduledDate: "2026-07-01", position: 1 }),
+          ],
+        } as never)],
+        null,
+      );
+      expect(r.rows[0]!.bandKey).toBe("today");
+    });
+
+    it("stops calling a past visit late once it is finished", () => {
+      const r = serverPageToRows(
+        [dto({
+          id: "a",
+          status: "scheduled",
+          visits: [visit({ scheduledDate: "2026-06-28", status: "complete" })],
+        } as never)],
+        null,
+      );
+      expect(r.rows[0]!.bandKey).not.toBe("late");
+    });
+
+    it("leaves a past-dated visit with no crew out of late — it needs a slot", () => {
+      const r = serverPageToRows(
+        [dto({
+          id: "a",
+          status: "scheduled",
+          visits: [visit({ scheduledDate: "2026-06-28", assigneeUserId: null })],
+        } as never)],
+        null,
+      );
+      expect(r.rows[0]!.bandKey).toBe("needsSlot");
+    });
   });
 
   it("returns no rows for an empty page", () => {

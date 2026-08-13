@@ -13,6 +13,8 @@
  * table. Not tabs — Jobber has none here — and no grouped sections, which they are explicitly
  * retiring on their own schedule list.
  *
+ * That one filter is now VISIBLE rather than behind a disclosure. See JobsViewFilter.
+ *
  * The labels stay Owen's ("Needs a slot", not "Unscheduled"). The pattern was worth borrowing; the
  * vocabulary was not.
  */
@@ -26,9 +28,8 @@ import { useJobsSort } from "./use-jobs-sort";
 import { JobsListView } from "./jobs-list-view";
 import { CallbackAutopsyCard } from "./callback-autopsy-card";
 import { JobsToolbar } from "./jobs-toolbar";
-import { JobsColumns } from "./jobs-columns";
 import { JobsViewFilter } from "./jobs-view-filter";
-import { DEFAULT_JOB_COLS, JOB_COL_ORDER, type JobColKey, type JobsArchiveSet } from "./jobs-list-config";
+import { type JobsArchiveSet } from "./jobs-list-config";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 import { useJobsQuery, useJobsQueryState } from "./use-jobs-query";
@@ -64,9 +65,6 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const { sort, setSort } = useJobsSort();
 
   const [archiveSet, setArchiveSet] = useState<JobsArchiveSet>("active");
-  const [colsOpen, setColsOpen] = useState(false);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [visibleCols, setVisibleCols] = useState<JobColKey[]>([...DEFAULT_JOB_COLS]);
 
   const q = useJobsQueryState();
 
@@ -104,12 +102,6 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   // whichever rows the browser happens to be holding.
   const shownTrucks = useAnimatedNumber(Math.round((list.counts?.todayCents ?? 0) / 100));
 
-  function toggleCol(key: JobColKey) {
-    setVisibleCols((prev) =>
-      prev.includes(key) ? prev.filter((c) => c !== key) : JOB_COL_ORDER.filter((c) => prev.includes(c) || c === key),
-    );
-  }
-
   function clearFilters() {
     q.clear();
     setArchiveSet("active");
@@ -125,7 +117,6 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const loadFailed = shouldShowLoadFailed({ isFetched: list.isFetched, isError: list.isError, count: total ?? 0 });
   // Cold load only — a filter change keeps previous rows on screen instead of the loader.
   const loading = list.isLoading && list.rows.length === 0 && !list.isFetched;
-  const activeFilterCount = (q.view ? 1 : 0) + (archiveSet === "archived" ? 1 : 0);
 
   return (
     <div className="jh-wrap">
@@ -181,26 +172,20 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
             onArchiveSet={setArchiveSet}
             q={q.search}
             onQ={q.setSearch}
-            filtersOpen={filtersOpen}
-            onToggleFilters={() => setFiltersOpen((o) => !o)}
-            colsOpen={colsOpen}
-            onToggleCols={() => setColsOpen((o) => !o)}
-            activeFilterCount={activeFilterCount}
             total={total ?? 0}
             shown={list.shown}
           />
 
-          {colsOpen && <JobsColumns visible={visibleCols} onToggle={toggleCol} />}
-
-          {filtersOpen && (
-            <JobsViewFilter
-              view={q.view}
-              counts={list.counts?.counts}
-              onView={q.setView}
-              onClear={clearFilters}
-              disabled={archiveSet === "archived"}
-            />
-          )}
+          {/* THE one filter, rendered unconditionally. It used to sit behind a Filters disclosure
+              while the list defaults to view="today", so the screen arrived filtered with nothing
+              on it naming the filter and the toolbar read "20 of 20" on a ~1,500-job book. Same
+              slot and the same component shape as the Customers list. */}
+          <JobsViewFilter
+            view={q.view}
+            counts={list.counts?.counts}
+            onView={q.setView}
+            disabled={archiveSet === "archived"}
+          />
 
           {list.rows.length === 0 ? (
             <div className="empty-att" style={{ padding: "var(--space-6) 0" }}>
@@ -216,13 +201,7 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
             </div>
           ) : (
             <>
-              <JobsListView
-                items={rows}
-                sort={sort}
-                onSort={setSort}
-                onOpenJob={onOpenJob}
-                visibleCols={visibleCols}
-              />
+              <JobsListView items={rows} sort={sort} onSort={setSort} onOpenJob={onOpenJob} />
 
               {/* Load-more, not infinite scroll: someone scanning a list wants to reach the bottom
                   of it, and an auto-loading list has no bottom. */}

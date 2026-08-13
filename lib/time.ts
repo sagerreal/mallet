@@ -36,6 +36,26 @@ export function colLabel(iso: string): string {
 }
 
 /**
+ * Signed calendar days between two ISO DATES — positive when `to` is later.
+ *
+ * Noon-anchored on both sides, which is the whole point: `new Date("2026-06-28")` is UTC midnight,
+ * and west of Greenwich that lands on the 27th local, so a naive diff is off by one for half the
+ * world. Anchoring at noon also survives a DST boundary, where the local day is 23 or 25 hours.
+ *
+ * Takes both dates rather than reading the clock, so callers stay testable and the caller decides
+ * whose "today" this is (the Jobs list uses the dispatcher's browser day — see job-views.ts).
+ * `lib/clock.ts`'s daysSince answers a related question for ISO TIMESTAMPS; task-dates.ts carries
+ * a private copy of this arithmetic for due-date labels. Worth collapsing into this one day.
+ */
+export function daysBetweenISO(from: string, to: string): number {
+  const noon = (iso: string) => new Date(iso + "T12:00:00").getTime();
+  const a = noon(from);
+  const b = noon(to);
+  if (isNaN(a) || isNaN(b)) return 0;
+  return Math.round((b - a) / 86_400_000);
+}
+
+/**
  * ISO date → a SPECIFIC date label: "Today", "May 8", or "May 8, 2025" across a year boundary.
  * A bare weekday is week-scale vocabulary — printed over an arbitrary date it lies: a stale
  * May 8 row read "Fri 11a" on the Jobs list, indistinguishable from the coming Friday.

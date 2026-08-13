@@ -491,6 +491,16 @@ describe("dtoJobToStoreJob svc mapping", () => {
   });
 });
 
+describe("dtoJobToStoreJob and the customer name", () => {
+  it("sets no cust — the full jobDTO does not carry one", () => {
+    // Only the LIST read resolves customerName. A mutation response is narrower, and claiming a
+    // name here would mean inventing one. mergeIncomingJob carries the hydrated name forward
+    // instead (see jobs-slice) — that is what stops a reschedule blanking the customer column.
+    const job = dtoJobToStoreJob(baseJobDto as never);
+    expect(job.cust).toBeUndefined();
+  });
+});
+
 // ---------------------------------------------------------------------------
 // dtoJobToStoreJob — sourceEstimateId threading
 // ---------------------------------------------------------------------------

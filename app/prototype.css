@@ -906,10 +906,16 @@
   .jl-when{font-family:var(--font-mono);font-size:var(--type-sm);color:var(--jink2);font-variant-numeric:tabular-nums;white-space:nowrap}
   .jl-when.live{color:var(--jamber);font-weight:700}
   .jl-when .jh-ldot{margin-right:var(--space-1)}
-  .jst{display:inline-flex;align-items:center;gap:var(--space-1);border-radius:var(--radius-xl);padding:var(--space-1) var(--space-3);font-size:var(--type-sm);font-weight:600;white-space:nowrap}
-  .jst .d{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
-  .jst-amber{background:#F2EAD9;color:var(--jamber)} .jst-amber .d{background:var(--jamber)}
-  .jst-neutral{background:#EFEADF;color:var(--jink2);border:1px solid var(--jline)} .jst-neutral .d{background:var(--jink3)}
+  /* The WHEN cell carries the BAND since the Status column was retired. Amber stays rationed to
+     the two money-leak states (plus .live above); LATE takes --jrust, the far end of the ledger
+     palette's own sand -> amber -> rust aging rail, because it reads hotter than amber and that is
+     right for the one band already costing you the customer. */
+  .jl-when.slot{color:var(--jamber);font-weight:700;text-decoration:underline;
+    text-decoration-color:color-mix(in srgb,var(--jamber) 35%,transparent);text-underline-offset:3px}
+  .jl-when.slot:hover{text-decoration-color:var(--jamber)}
+  .jl-when.late{color:var(--jrust);font-weight:700}
+  .jl-when.unbilled{color:var(--jamber);font-weight:700}
+  .jl-addr{font-size:var(--type-base);color:var(--jink2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
   /* ---- Customers "Grouped" view — stage-banded sheet (standard app palette) ---- */
   .cg-sheet{background:var(--card);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
   .cg-colhead{display:grid;grid-template-columns:26px 1fr auto 88px;gap:var(--space-3);padding:var(--space-3) var(--space-4) var(--space-2);border-bottom:1px solid var(--line);font-size:var(--type-xs);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
@@ -1065,6 +1071,27 @@
   .chip{border:1.5px solid var(--line);background:var(--card);border-radius:var(--radius-xl);padding:var(--space-2) var(--space-3);font-size:var(--type-base);font-weight:600;color:var(--ink-2);cursor:pointer;transition:background .12s,border-color .12s,color .12s}
   .chip:hover{border-color:var(--ink-3)}
   .chip.sel{background:var(--green-100);border-color:var(--accent);color:var(--green-900)}
+  /* The FILTER-chip row — Jobs, Customers, Quotes. Anchored and in-flow per the house rule;
+     this is a row on the page, never a popover.
+
+     Neither of these had a rule at all until now. The three filter components have always
+     written `.on`, while the stylesheet only defined `.chip.sel` — so the active chip on the
+     SHIPPED Customers list was pixel-identical to the seven inactive ones, and `.jh-filters`
+     held its row on default inline-button spacing.
+
+     .on AND .sel BOTH STAY — they are different jobs. `.sel` marks a chosen option INSIDE a
+     form (checklist stage, close-out mode, tip amount — four modal surfaces) where the chip row
+     IS the input. `.on` marks the active filter over a list, sits in the same visual band as the
+     Active/Archived segmented control, and takes that control's ink fill because picking one of
+     N is the same idea. Left as `.sel`'s pale fill, one active chip in eight would be told apart
+     by a border alone. Do not "unify" these. */
+  .jh-filters{display:flex;flex-wrap:wrap;gap:var(--space-2);align-items:center;margin-bottom:var(--space-4)}
+  .chip.on{background:var(--ink);border-color:var(--ink);color:var(--card)}
+  /* The archived SET owns the list, so the filter goes inert rather than vanishing — nothing jumps. */
+  .chip:disabled{opacity:.5;cursor:default}
+  .chip:disabled:hover{border-color:var(--line)}
+  .chip-n{font-variant-numeric:tabular-nums;color:var(--ink-3);font-weight:600}
+  .chip.on .chip-n{color:color-mix(in srgb,var(--card) 62%,transparent)}
   .req{color:var(--red);font-size:var(--type-xs);font-weight:600;display:none;margin-top:var(--space-1)}
 
   /* ---------- disclosure ---------- */

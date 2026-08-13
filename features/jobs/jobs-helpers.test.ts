@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { dPlus } from "@/lib/prototype-sample";
 import { mkJob, mkVisit, mkLead, mkTech } from "./test-factories";
-import { jobNextVisit, jobMode, custName, jobsUnscheduled, dayLoad } from "./jobs-helpers";
+import { jobNextVisit, jobMode, custName, jobAddr, jobsUnscheduled, dayLoad } from "./jobs-helpers";
 
 describe("jobNextVisit", () => {
   it("returns null when a job has no placed visits", () => {
@@ -106,5 +106,51 @@ describe("boardItemsFor — the block's title", () => {
     const items = boardItemsFor(jobs, [], "t1", "2026-08-11");
     expect(items).toHaveLength(1);
     expect(items[0]?.title).toBe("Water heater swap");
+  });
+});
+
+describe("custName — the paginated list's customer column", () => {
+  const job = (over: Record<string, unknown> = {}) =>
+    ({ id: "j1", leadId: "lead-past-the-page", visits: [], ...over }) as never;
+
+  it("uses the server-resolved name when the lead is not in the store", () => {
+    // THE BUG: three of twenty rows on a real shop's screen read "—" because their leads sat past
+    // the leads hydrator's page. The name was on the wire the whole time.
+    expect(custName(job({ cust: "Ruth Whitaker" }), [])).toBe("Ruth Whitaker");
+  });
+
+  it("prefers the STORE lead, so an office rename shows immediately", () => {
+    // cust is a per-read snapshot and stays stale until the next refetch; the store updates on the
+    // optimistic write.
+    const leads = [{ id: "lead-past-the-page", name: "Ruth Whitaker-Doyle" }] as never;
+    expect(custName(job({ cust: "Ruth Whitaker" }), leads)).toBe("Ruth Whitaker-Doyle");
+  });
+
+  it("still falls back to the dash when neither side knows", () => {
+    expect(custName(job(), [])).toBe("—");
+  });
+});
+
+describe("jobAddr — where the work is", () => {
+  const job = (over: Record<string, unknown> = {}) =>
+    ({ id: "j1", leadId: "lead-1", addr: "", visits: [], ...over }) as never;
+  const leads = (address: string | null) => [{ id: "lead-1", name: "Ruth", address }] as never;
+
+  it("falls back to the CUSTOMER's address, which is the normal case", () => {
+    // jobs.addr is an override for work at a different place: 24 of Summit's 1,552 jobs have one.
+    // The customer's service address is on 1,542 of them.
+    expect(jobAddr(job(), leads("1147 Alder Ave"))).toBe("1147 Alder Ave");
+  });
+
+  it("lets the job's OWN address win when the work is somewhere else", () => {
+    expect(jobAddr(job({ addr: "22 Depot Rd" }), leads("1147 Alder Ave"))).toBe("22 Depot Rd");
+  });
+
+  it("uses the server-resolved address when the lead is past the leads page", () => {
+    expect(jobAddr(job({ custAddr: "1147 Alder Ave" }), [])).toBe("1147 Alder Ave");
+  });
+
+  it("returns empty when nobody has an address, so the cell can show its own dash", () => {
+    expect(jobAddr(job(), leads(null))).toBe("");
   });
 });

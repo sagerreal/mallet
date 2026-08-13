@@ -1,4 +1,4 @@
-import { and, eq, exists, gt, gte, isNull, lte, ne, not, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, gt, gte, isNull, lt, lte, ne, not, notInArray, or, sql, type SQL } from "drizzle-orm";
 import { jobs, jobVisits, jobLines, invoices } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 
@@ -22,12 +22,13 @@ import type { TenantTx } from "@mallet/shared/db/tx";
  * Not a security surface: the worst a forged date does is show you a different day of your own
  * jobs, which you can already see.
  */
-export const JOB_VIEWS = ["needsSlot", "today", "week", "upcoming", "needsInvoice", "done", "archived"] as const;
+export const JOB_VIEWS = ["needsSlot", "late", "today", "week", "upcoming", "needsInvoice", "done", "archived"] as const;
 export type JobView = (typeof JOB_VIEWS)[number];
 
 /** Labels, matching the bands the screen already shows. */
 export const JOB_VIEW_LABELS: Record<JobView, string> = {
   needsSlot: "Needs a slot",
+  late: "Late",
   today: "Today",
   week: "This week",
   upcoming: "Upcoming",
@@ -190,9 +191,16 @@ const settled = (tx: TenantTx): SQL => or(invoiceExists(tx), unpricedEstimate(tx
  * That property came free with the grouped list and is the one most easily lost in SQL: `week`
  * has to exclude today explicitly, or this afternoon's job is counted in both bands.
  *
- * Overdue work (a placed visit in the past) lands in `week`, matching today-derive: it filters on
- * `daysOut(...) <= 7`, which a negative number satisfies. Preserved deliberately — changing where
- * overdue work appears is a product decision, not a side effect of moving the query.
+ * Overdue work has its own band (`late`) as of 2026-08-13. It used to land in `week`, matching
+ * today-derive's `daysOut(...) <= 7`, which a negative number satisfies — preserved at the time
+ * because changing where overdue work appears is a product decision rather than a side effect of
+ * moving the query. That decision has now been made: see `onLate` below.
+ *
+ * DISPLAY ORDER IS NOT PREDICATE ORDER. The chips read
+ * `Needs a slot · Late · Today · This week · Upcoming · Done, not billed · Done` — the two stuck
+ * states lead, and the time run stays contiguous because a dispatcher reads it as a sequence.
+ * Exclusivity resolves in a different order: needsSlot → today → late → week → upcoming →
+ * needsInvoice → done → archived.
  */
 export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL => {
   const open = notInArray(jobs.status, [...TERMINAL]);
@@ -205,6 +213,19 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
   // with nobody assigned to it is not work that is going out today.
   const onToday = visitWhere(tx, and(OUTSTANDING, eq(jobVisits.scheduledDate, p.today)) as SQL);
   const byWeekEnd = visitWhere(tx, and(OUTSTANDING, lte(jobVisits.scheduledDate, weekEnd)) as SQL);
+  // OVERDUE — a trip booked onto a past day that has not happened.
+  //
+  // This used to be swallowed by `week`: byWeekEnd is `<= today+7` with NO lower bound, so every
+  // past date satisfied it. That was deliberate, and the comment above said moving it was a
+  // product decision rather than a side effect of the query. This is that decision — overdue work
+  // is the most actionable state on the screen and it was scattered through the week band with no
+  // way to ask for it.
+  //
+  // OUTSTANDING, not merely dated: a finished visit is history, so a job whose first trip is done
+  // must not report late forever for work that already happened. And PLACED means a day AND a
+  // crew — a past day with nobody on it is a SLOT problem, and calling it late would name the
+  // wrong missing thing.
+  const onLate = visitWhere(tx, and(OUTSTANDING, lt(jobVisits.scheduledDate, p.today)) as SQL);
 
   switch (view) {
     case "needsSlot":
@@ -212,11 +233,18 @@ export const viewCondition = (view: JobView, tx: TenantTx, p: ViewParams): SQL =
       // both the job nobody has scheduled yet and the job whose remaining visit is a follow-up
       // booked from the field with no date on it.
       return and(open, sql`NOT ${visitWhere(tx, OUTSTANDING)}`) as SQL;
+    case "late":
+      // TODAY OUTRANKS LATE. A job carrying an overdue trip AND one today belongs on today's run
+      // — a day view that omits work going out today is not a day view. The overdue trip is still
+      // named on the row (jobWhenLabel), so nothing is hidden by the ranking.
+      return and(open, onLate, sql`NOT ${onToday}`) as SQL;
     case "today":
       return and(open, onToday) as SQL;
     case "week":
-      // Anything due on or before today+7 that is not already in Today. Includes overdue.
-      return and(open, byWeekEnd, sql`NOT ${onToday}`) as SQL;
+      // Anything due on or before today+7 that is neither today's nor overdue. The late exclusion
+      // is load-bearing: byWeekEnd has no lower bound, so without it the same job satisfies both
+      // and the counts stop summing to the book.
+      return and(open, byWeekEnd, sql`NOT ${onToday}`, sql`NOT ${onLate}`) as SQL;
     case "upcoming":
       return and(
         open,

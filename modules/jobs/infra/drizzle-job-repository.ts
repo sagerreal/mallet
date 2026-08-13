@@ -325,6 +325,7 @@ export class DrizzleJobRepository implements JobRepository {
     const rows = await this.tx
       .select({
         needsSlot: one("needsSlot"),
+        late: one("late"),
         today: one("today"),
         week: one("week"),
         upcoming: one("upcoming"),
@@ -350,6 +351,7 @@ export class DrizzleJobRepository implements JobRepository {
       needsInvoiceCents: r?.needsInvoiceCents ?? 0,
       counts: {
       needsSlot: r?.needsSlot ?? 0,
+      late: r?.late ?? 0,
       today: r?.today ?? 0,
       week: r?.week ?? 0,
       upcoming: r?.upcoming ?? 0,

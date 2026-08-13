@@ -36,12 +36,32 @@ export function liveJobs(jobs: Job[]): Job[] {
 }
 
 export function custName(j: Job, leads: Lead[]): string {
+  // STORE LEAD FIRST, on purpose: a customer renamed in the office updates the store immediately,
+  // while `cust` is a per-read snapshot that stays stale until the next refetch. The wire value is
+  // the fallback — and it is the link that was never populated, which is why a paginated Jobs list
+  // printed "—" for every job whose lead sat past the leads hydrator's page.
   const lead = leads.find((l) => l.id === j.leadId);
-  return lead?.name ?? (j as { cust?: string }).cust ?? "—";
+  return lead?.name ?? j.cust ?? "—";
 }
 
 export function custPhone(j: Job, leads: Lead[]): string {
   return j.phone || leads.find((l) => l.id === j.leadId)?.phone || "";
+}
+
+/**
+ * Where the work is — the job's own address if it has one, else the customer's.
+ *
+ * Same precedence as custPhone above, and for the same reason: `jobs.addr` is an OVERRIDE for work
+ * at a different place, not the normal case. It is set on 24 of Summit's 1,552 jobs; the customer's
+ * service address is set on 1,542. A column reading `addr` alone would be blank on 98% of rows —
+ * the identical failure to the Status column it replaced.
+ *
+ * The store lead comes before `custAddr` for the reason given in custName: the store updates on an
+ * optimistic edit, while custAddr is a per-read snapshot. And custAddr is the link that makes this
+ * work at all past the leads hydrator's page.
+ */
+export function jobAddr(j: Job, leads: Lead[]): string {
+  return j.addr || leads.find((l) => l.id === j.leadId)?.address || j.custAddr || "";
 }
 
 /** Age in days of the job's originating lead (0 if none) — drives the aging rail. */
@@ -75,6 +95,26 @@ export function jobNextVisit(j: Job): Visit | null {
 export function jobDatedUnassignedVisit(j: Job): Visit | null {
   const half = (j.visits ?? []).filter(isVisitDatedUnassigned);
   return half.length ? ([...half].sort(byDateStart)[0] as Visit) : null;
+}
+
+/**
+ * The OLDEST trip that was booked onto a past day and has not happened — what "late" measures.
+ *
+ * Deliberately not `jobNextVisit`. That answers "which visit does this row talk about" and, with
+ * nothing in the future, falls back to the LATEST placed visit — including a finished one. A job
+ * can easily carry a completed visit dated after the one still owed (a return trip run out of
+ * order, a follow-up booked before the original closed), and reading that one reports the wrong
+ * day and a far smaller number than the truth.
+ *
+ * Oldest, not newest, among the overdue: the trip that has been waiting longest is the one the
+ * customer is counting. Mirrors `onLate` in modules/jobs/infra/job-views.ts.
+ */
+export function jobOldestOverdueVisit(j: Job): Visit | null {
+  const today = todayISO();
+  const overdue = (j.visits ?? []).filter(
+    (v) => v.status !== "done" && isVisitPlaced(v) && (v.date ?? "") < today,
+  );
+  return overdue.length ? ([...overdue].sort(byDateStart)[0] as Visit) : null;
 }
 
 export function jobsUnscheduled(jobs: Job[]): Job[] {

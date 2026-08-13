@@ -51,14 +51,19 @@ vi.mock("./jobs-toolbar", () => ({
     </div>
   ),
 }));
-vi.mock("./jobs-view-filter", () => ({ JobsViewFilter: () => <div /> }));
+// Rendered as a marker carrying its props: this file's job is to prove the chip row reaches the
+// page UNCONDITIONALLY (it used to need the Filters disclosure open) and gets the live view.
+vi.mock("./jobs-view-filter", () => ({
+  JobsViewFilter: ({ view, disabled }: { view: string | null; disabled?: boolean }) => (
+    <div data-testid="viewfilter" data-view={view ?? ""} data-disabled={String(Boolean(disabled))} />
+  ),
+}));
 // The row adapter has its own tests; here the fixture rows are bare ids, so it is stubbed to keep
 // this file about the screen's BRANCHING (first run / loading / failed / list) and nothing else.
 vi.mock("./server-rows", () => ({
   serverPageToRows: (rows: unknown[]) => ({ rows: rows.map((job) => ({ job, bandKey: "today" })), jobs: rows }),
   SORT_COL_TO_SERVER: { when: "scheduled", amount: "amount", customer: null },
 }));
-vi.mock("./jobs-columns", () => ({ JobsColumns: () => <div /> }));
 
 import { JobsHome } from "./jobs-home";
 
@@ -157,5 +162,30 @@ describe("JobsHome — the Active/Archived toggle actually filters", () => {
     setup();
     expect(lastQueryArgs.view).toBe("done");
     expect(lastQueryArgs.activeOnly).toBe(false);
+  });
+});
+
+describe("JobsHome — the filter is on the page, not behind a button", () => {
+  beforeEach(() => { listState = list([{ id: "j1" }]); queryState = freshQueryState({ view: "today" }); vi.clearAllMocks(); });
+
+  it("renders the chip row without anything being opened first", () => {
+    // THE BUG. The row lived behind a Filters disclosure while the list DEFAULTS to view="today",
+    // so the screen arrived filtered with nothing on it naming the filter — the only tell was an
+    // amber "1" on a collapsed button — and the toolbar read "20 of 20" on a ~1,500-job book.
+    setup();
+    expect(screen.getByTestId("viewfilter")).toBeTruthy();
+  });
+
+  it("hands the chip row the live view, so the default filter is visible", () => {
+    setup();
+    expect(screen.getByTestId("viewfilter").getAttribute("data-view")).toBe("today");
+  });
+
+  it("goes inert rather than vanishing on the Archived tab, so nothing below it jumps", () => {
+    setup();
+    fireEvent.click(screen.getByText("toggle-set"));
+    const f = screen.getByTestId("viewfilter");
+    expect(f).toBeTruthy();
+    expect(f.getAttribute("data-disabled")).toBe("true");
   });
 });

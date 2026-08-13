@@ -37,7 +37,8 @@ suite("jobs list rows carry money and a customer name", () => {
     const [o] = await admin<{ id: string }[]>`
       insert into orgs (name) values ('AmountCol ' || gen_random_uuid()) returning id`;
     const [l] = await admin<{ id: string }[]>`
-      insert into leads (org_id, name) values (${o!.id}, 'Ortiz Plumbing') returning id`;
+      insert into leads (org_id, name, address)
+      values (${o!.id}, 'Ortiz Plumbing', '1147 Alder Ave') returning id`;
     const [j] = await admin<{ id: string }[]>`
       insert into jobs (org_id, lead_id, num, status, total_cents)
       values (${o!.id}, ${l!.id}, 'AMT-1', 'scheduled', 0) returning id`;
@@ -56,6 +57,12 @@ suite("jobs list rows carry money and a customer name", () => {
     expect(first?.rate?.cents).toBe(22500);
     // ...and the customer name comes from the server, not a store lookup that may not have it.
     expect(row.customerName).toBe("Ortiz Plumbing");
+    // The ADDRESS column rides the same batched lead read. It has to come off the wire for the
+    // same reason the name does — the store's leads collection is paged — and it has to be the
+    // CUSTOMER's address, because jobs.addr is an override set on 24 of Summit's 1,552 jobs while
+    // the customer's is set on 1,542. A column reading jobs.addr alone is blank on 98% of rows.
+    expect(row.customerAddr).toBe("1147 Alder Ave");
+    expect(row.addr).toBeNull();
 
     await admin`delete from orgs where id = ${o!.id}`;
     await admin.end({ timeout: 5 });

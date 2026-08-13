@@ -423,6 +423,12 @@ export const createJobRouter = () =>
           [...new Set(page.items.map((j) => j.props.leadId))],
         );
         const nameById = new Map<string, string>(names.map((l) => [String(l.props.id), l.props.name]));
+        // The same read already carries the service address, so the ADDRESS column costs no extra
+        // query. It needs resolving server-side for the same reason the name does: the store's
+        // leads collection is paged, so a client-side join blanks every row past the first page.
+        const addrById = new Map<string, string | null>(
+          names.map((l) => [String(l.props.id), l.props.address ?? null]),
+        );
 
         // Execution data for the whole page in one batched read. Without it toJobSummaryDTO
         // returns empty lines[], and the list's Amount column reads jobTotal() — which SUMS THE
@@ -432,7 +438,12 @@ export const createJobRouter = () =>
         const execution = await repo.listExecutionForJobs(page.items.map((j) => j.props.id));
         return {
           items: page.items.map((j) =>
-            toJobSummaryDTO(j, execution.get(j.props.id), nameById.get(j.props.leadId) ?? null),
+            toJobSummaryDTO(
+              j,
+              execution.get(j.props.id),
+              nameById.get(j.props.leadId) ?? null,
+              addrById.get(j.props.leadId) ?? null,
+            ),
           ),
           nextCursor: page.nextCursor,
         };
