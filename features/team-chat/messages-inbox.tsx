@@ -134,6 +134,13 @@ export function MessagesInbox({ canSeeCustomers, meUserId }: MessagesInboxProps)
       </div>
 
       <div className="msg-pane-thread">
+        {selected !== null ? (
+          // The thread covers the screen on a phone, so it needs its own way back. Hidden on a
+          // desktop, where the list never went anywhere.
+          <button type="button" className="msg-back" onClick={() => setSelected(null)}>
+            ‹ All conversations
+          </button>
+        ) : null}
         {selected === null ? (
           // Desktop only — on a phone the list occupies the screen until something is picked.
           <div className="msg-nothread">

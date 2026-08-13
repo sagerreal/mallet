@@ -1708,27 +1708,37 @@
      A customer conversation leaves the building; a team conversation does not. That fact is
      carried by the PAPER: white card for customers, MANILA for internal — the same work-order
      stock the hero ticket uses — plus an ink rail so a row reads as internal even in isolation. */
-  .msg-shell{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:var(--space-4);align-items:stretch}
-  .msg-pane-list{display:flex;flex-direction:column;gap:var(--space-2);min-width:0}
+  /* Messages FILLS the work area rather than growing the document.
+     `main` is the desktop scroll container, so a long conversation list used to make the whole
+     page tall and push the composer hundreds of pixels below the fold — you had to scroll past
+     thirty customers to type a reply. Now the page itself does not scroll: the list scrolls, the
+     thread scrolls, and the composer stays where a thumb expects it. */
+  main:has(.msg-shell){display:flex;flex-direction:column;overflow:hidden}
+  main:has(.msg-shell)>h1{flex:0 0 auto}
+  .msg-shell{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:var(--space-4);align-items:stretch;flex:1;min-height:0}
+  .msg-pane-list{display:flex;flex-direction:column;gap:var(--space-2);min-width:0;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding-right:var(--space-1)}
   /* The mode control hugs its labels; the action sits with it rather than on a row of its own. */
   /* The people picker's selected chip carries a FILL, not just a tint: picking who to message
      is the one decision on the panel, and the house's quiet .chip.sel read as a hover state at
      a glance. Scoped here so every other chip row keeps the standard treatment. */
   .who-chips{display:flex;flex-wrap:wrap;gap:var(--space-2);margin-bottom:var(--space-3)}
   .who-chips .chip.sel{background:var(--accent);border-color:var(--accent);color:var(--pri-fg)}
-  .msg-modes{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-1)}
+  /* The mode control stays put while the list under it scrolls. */
+  .msg-modes{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-1);position:sticky;top:0;z-index:2;background:var(--bg);padding-bottom:var(--space-2)}
   .msg-modes .segctl{margin-bottom:0}
   .msg-modes>.btn{margin-left:auto}
-  .msg-pane-thread{min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;display:flex;flex-direction:column;min-height:520px}
-  .msg-nothread{display:flex;align-items:center;justify-content:center;min-height:520px;padding:var(--space-6)}
+  .msg-pane-thread{min-width:0;border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;display:flex;flex-direction:column;min-height:0}
+  .msg-nothread{display:flex;flex:1;align-items:center;justify-content:center;padding:var(--space-6)}
+  /* Only a phone needs this: there the thread covers the list. */
+  .msg-back{display:none;flex:0 0 auto;width:100%;text-align:left;padding:var(--space-3) var(--space-5);font-size:var(--type-base);font-weight:650;color:var(--ink-2);background:var(--card);border-bottom:1px solid var(--line);cursor:pointer;font-family:inherit;min-height:44px}
   /* The reading pane's own head/composer are the pane's, so the sheet's negative bleed would
      tear them out of the card. */
-  .msg-pane-thread .sheet-head{margin:0;padding:var(--space-4) var(--space-5);position:static;border-bottom:1px solid var(--line)}
+  .msg-pane-thread .sheet-head{margin:0;padding:var(--space-4) var(--space-5);position:static;border-bottom:1px solid var(--line);flex:0 0 auto}
   .msg-pane-thread .sheet-head h2{font-size:var(--type-xl);padding-right:0}
   /* The subtitle is a fact about the conversation, not a paragraph — one line, and it may ellipsis. */
   .msg-pane-thread .sheet-meta{gap:var(--space-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .msg-pane-thread .thread{max-height:none;flex:1;margin:0;border:0;border-radius:0;padding:var(--space-5)}
-  .msg-pane-thread .composer{padding:var(--space-3) var(--space-5) var(--space-5)}
+  .msg-pane-thread .thread{max-height:none;flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;margin:0;border:0;border-radius:0;padding:var(--space-5)}
+  .msg-pane-thread .composer{padding:var(--space-3) var(--space-5) var(--space-5);flex:0 0 auto;border-top:1px solid var(--line);background:var(--card)}
   .msg-pane-thread .sheet-secrow{padding:0 var(--space-5) var(--space-4)}
 
   .msg-av{width:38px;height:38px;font-size:var(--type-base);background:var(--manila-2);color:var(--ink)}
@@ -1749,10 +1759,30 @@
   /* One pane at a time on a phone: the list owns the screen until a conversation is picked,
      then the thread does. No overlay, so the back affordance is a real control in the flow. */
   @media (max-width:900px){
-    .msg-shell{grid-template-columns:1fr}
-    .msg-pane-thread{min-height:0;border:0;border-radius:0;background:transparent}
+    /* On a phone the DOCUMENT scrolls (main is overflow:visible here), so the desktop
+       fill-the-work-area rules must be undone or the panes collapse to nothing. */
+    main:has(.msg-shell){display:block;overflow:visible}
+    .msg-shell{grid-template-columns:1fr;flex:none;min-height:0}
+    .msg-pane-list{overflow:visible;min-height:0}
+    .msg-modes{position:static;padding-bottom:0}
     .msg-nothread{display:none}
+    /* Nothing picked: the list IS the screen, so the empty reading pane must not leave a
+       stray rule under it. */
+    .msg-shell:not(.reading) .msg-pane-thread{display:none}
+    /* One pane at a time: the list owns the screen until a conversation is picked, then the
+       conversation does — pinned to the viewport so the composer is on screen, not below a
+       thread that could be a thousand messages long. */
     .msg-shell.reading .msg-pane-list{display:none}
+    .msg-shell.reading .msg-pane-thread{
+      position:fixed;left:0;right:0;top:calc(54px + var(--safe-t));
+      /* Clear BOTH pieces of fixed bottom chrome — the tab bar and the command line above it.
+         132px is the same clearance `main` reserves on mobile, so the composer lands just above
+         them rather than underneath. */
+      bottom:calc(132px + var(--safe-b));
+      z-index:40;border:0;border-radius:0;background:var(--card);
+    }
+    .msg-shell.reading .msg-pane-thread .composer{padding-bottom:var(--space-4)}
+    .msg-back{display:block}
   }
   /* customer-record: editable header + unified notes feed */
   /* The resting title. A heading, not a control — so #237's
