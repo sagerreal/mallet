@@ -59,13 +59,20 @@ class FakeSubmissions implements WeekSubmissionRepository {
   }
 }
 
-const entriesWithOpen = (open: boolean): TimeEntryRepository =>
-  ({ findOpenForTech: async () => (open ? ({} as never) : null) }) as unknown as TimeEntryRepository;
+const entriesWithOpen = (open: boolean | string): TimeEntryRepository =>
+  ({
+    // The open row's WORK DATE matters now: a day still on the clock blocks the week it belongs to
+    // and no other. `open` may be a boolean (inside the week under test) or an explicit date.
+    findOpenForTech: async () =>
+      open === false || open === null
+        ? null
+        : ({ props: { workDate: open === true ? "2026-08-12" : open } } as never),
+  }) as unknown as TimeEntryRepository;
 
 const clock = { now: () => new Date("2026-08-15T09:00:00Z") };
 const ids = { newId: () => "44444444-4444-4444-4444-444444444444" };
 
-const useCase = (repo: FakeSubmissions, open = false) =>
+const useCase = (repo: FakeSubmissions, open: boolean | string = false) =>
   new SubmitWeekUseCase(repo, entriesWithOpen(open), clock, ids);
 
 describe("SubmitWeekUseCase", () => {
@@ -81,6 +88,15 @@ describe("SubmitWeekUseCase", () => {
     const r = await useCase(repo, true).exec({ techUserId: TECH, weekStart: WEEK }, ORG);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.message).toContain("End the day");
+  });
+
+  it("ALLOWS submitting a finished week while today is still on the clock", async () => {
+    // The ordinary Monday morning: last week is done, he is already working. A technician has at
+    // most one open row — the day he is standing in — so a global "is anything running" check
+    // refused this every time, naming a week that had nothing open in it.
+    const repo = new FakeSubmissions();
+    const r = await useCase(repo, "2026-08-17").exec({ techUserId: TECH, weekStart: WEEK }, ORG);
+    expect(isOk(r), "a running day in a LATER week blocked an earlier week's attestation").toBe(true);
   });
 
   it("is idempotent: a replayed submit returns the standing attestation unchanged", async () => {

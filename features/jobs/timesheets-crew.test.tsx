@@ -14,6 +14,7 @@ function renderCard(over: Partial<TsTechWeekCardProps> = {}) {
   const props: TsTechWeekCardProps = {
     tech: TECH,
     rollup: tsRollup(entries, TECH.id, WEEK),
+    submittedAt: null,
     entries,
     jobs: [],
     leads: [mkLead({ id: "l1", name: "Dave Chen" })],
@@ -152,5 +153,35 @@ describe("a day with jobs but no hours", () => {
 
     expect(screen.queryByText("No hours recorded")).toBeNull();
     expect(screen.getByText("No entries this week.")).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE THIRD STATE. This card could tell APPROVED from not-approved and nothing else, so an approver
+// could not distinguish a week the technician considers finished from one he is still filling in.
+// Approving the second kind is how somebody gets paid for four days of a five-day week.
+// ---------------------------------------------------------------------------
+
+describe("whether the week has been signed off", () => {
+  it("says when he submitted it", () => {
+    renderCard({ submittedAt: "2026-07-03T21:14:00.000Z" });
+    expect(screen.getByText(/^Submitted ·/)).toBeTruthy();
+  });
+
+  it("says NOT submitted rather than leaving a blank the approver has to interpret", () => {
+    // A blank is indistinguishable from a card that failed to load the fact, and this is the fact
+    // the approver is deciding on.
+    renderCard({ submittedAt: null });
+    expect(screen.getByText("Not submitted yet")).toBeTruthy();
+  });
+
+  it("drops the submitted chip once the week is approved — approval supersedes it", () => {
+    renderCard({
+      entries: [mkEntry({ id: "a", techId: TECH.id, date: "2026-06-29", status: "approved" })],
+      submittedAt: "2026-07-03T21:14:00.000Z",
+    });
+    expect(screen.getByText("✓ Approved")).toBeTruthy();
+    expect(screen.queryByText(/^Submitted ·/)).toBeNull();
+    expect(screen.queryByText("Not submitted yet")).toBeNull();
   });
 });

@@ -30,6 +30,9 @@ vi.mock("@/lib/trpc/client", () => ({
         count: { useQuery: () => ({ ...q, data: { total: everTotal } }) },
         // Days with visits stamped and no hours sent in — the approver's exceptions strip.
         unreportedDays: { useQuery: () => ({ data: { items: [] } }) },
+        // Has the tech signed this week off? The card shows the third state between draft and
+        // approved; null = not submitted, which is what these fixtures assume.
+        submissionFor: { useQuery: () => ({ data: { submission: null } }) },
       },
       // The grid computes overtime from the shop's own rule now (useOvertimePolicy), so it reads the
       // one anyRole settings window. Undefined data = the hook's federal fallback, which is what

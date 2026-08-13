@@ -43,6 +43,8 @@ import { UnreportedDayCard } from "@/features/field/unreported-day-card";
 import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
 import { useTechEditsTimes } from "@/features/settings/use-tech-edits-times";
+import { useWeekSubmission } from "@/features/field/use-week-submission";
+import { HoursSubmit } from "@/features/field/hours-submit";
 import { weekSummary, type OvertimePolicy } from "@/features/field/hours-sheet-derive";
 import { StillOpenBanner } from "@/features/field/my-hours-still-open";
 import { AddBlockForm } from "@/features/field/my-hours-add-block";
@@ -161,6 +163,14 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
   );
   const stamps = stampsQ.data?.items ?? [];
 
+  /**
+   * His own sign-off for the week on show. Submitting LOCKS the week — the server has refused edits
+   * to a submitted week since #457 — so the register has to read this before it draws a pencil, or
+   * it is offering a correction the server will reject.
+   */
+  const submission = useWeekSubmission(weekStartISO, Boolean(myUserId) && canEditOwnTimes);
+  const weekLocked = submission.submitted;
+
   return (
     <>
       {openEntry !== null ? (
@@ -185,8 +195,22 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         thisWeekISO={weekStart(today)}
         onNav={(weeks) => setWeekStartISO((prev) => addDaysISO(prev, weeks * DAYS_PER_WEEK))}
         onThisWeek={() => setWeekStartISO(weekStart(today))}
-        actions={addButton}
+        actions={
+          <>
+            {weekLocked ? null : addButton}
+            <HoursSubmit
+              state={submission}
+              canSubmit={canEditOwnTimes}
+              empty={weekEntries(entries, weekStartISO).length === 0}
+            />
+          </>
+        }
       />
+      {canEditOwnTimes && weekLocked ? (
+        <p className="mh-officeonly">
+          You submitted this week. The office has it now — ask them if something needs changing.
+        </p>
+      ) : null}
       {canEditOwnTimes ? null : (
         <p className="mh-officeonly">
           Your shop keeps timesheet changes with the office. Anything that looks wrong here — tell
@@ -212,7 +236,7 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
       <HoursSheet
         entries={weekEntries(entries, weekStartISO)}
         stamps={stamps}
-        canEditOwnTimes={canEditOwnTimes}
+        canEditOwnTimes={canEditOwnTimes && !weekLocked}
         today={today}
         myUserId={myUserId}
         editingId={editingId}
