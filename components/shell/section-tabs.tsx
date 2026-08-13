@@ -58,10 +58,12 @@ export function SectionTabs() {
     ];
   } else if (inJobs) {
     tabs = [
-      { href: "/jobs", label: "Jobs", active: !tab || (tab !== "schedule" && tab !== "timesheets" && tab !== "checklists"), count: jobsCount },
+      { href: "/jobs", label: "Jobs", active: !tab || (tab !== "schedule" && tab !== "timesheets"), count: jobsCount },
       { href: "/jobs?tab=schedule", label: "Schedule", active: tab === "schedule", count: unscheduled },
       { href: "/jobs?tab=timesheets", label: "Timesheets", active: tab === "timesheets" },
-      { href: "/jobs?tab=checklists", label: "Checklists", active: tab === "checklists" },
+      // No Checklists tab: checklists moved to the Office page in Jul 2026, and /jobs redirects
+      // ?tab=checklists straight to /dashboard. Left in the Jobs row it was a tab that threw you
+      // out of the section and could never show as active.
     ];
   }
 

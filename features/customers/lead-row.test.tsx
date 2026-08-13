@@ -30,3 +30,33 @@ describe("LeadRow — archived restore (moved from the retired Settings Archive 
     expect(screen.queryByRole("button", { name: /Restore/ })).toBeNull();
   });
 });
+
+describe("LeadRow — the phone cell", () => {
+  const withPhone = (phone: string) =>
+    render(
+      <table><tbody>
+        <LeadRow
+          lead={{ ...lead, phone } as unknown as Lead}
+          visibleCols={["phone"]}
+          onOpen={vi.fn()}
+        />
+      </tbody></table>,
+    );
+
+  it("formats the stored E.164 number the way every other surface does", () => {
+    // The column rendered lead.phone raw, so the list showed "+15105550199" while the customer
+    // sheet, the job sheet and the thread header all showed "(510) 555-0199".
+    withPhone("+15105550199");
+    expect(screen.getByText("(510) 555-0199")).toBeTruthy();
+  });
+
+  it("leaves an unparseable number alone rather than mangling it", () => {
+    withPhone("ext. 4021");
+    expect(screen.getByText("ext. 4021")).toBeTruthy();
+  });
+
+  it("still shows the em dash when there is no number", () => {
+    withPhone("");
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+});
