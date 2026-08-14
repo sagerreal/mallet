@@ -13,6 +13,7 @@ import { useRouter } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { useTimesheetsWeek } from "@/features/timesheets/use-timesheets-week";
 import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
 import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
@@ -129,7 +130,9 @@ export function TimesheetsPanel() {
   const [gridMode, setGridMode] = useState<TsGridMode>("daily");
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
   const [batchBusy, setBatchBusy] = useState(false);
-  const [batchResult, setBatchResult] = useState<{ approved: number; held: string[] } | null>(null);
+  const [batchResult, setBatchResult] = useState<
+    { approved: number; held: string[] } | { sentBack: number; notSubmitted: string[] } | null
+  >(null);
   // The days the server refused to approve over. Cleared whenever the view moves, so a stale
   // refusal can never sit above a week it doesn't describe.
   const [unfinishedDays, setUnfinishedDays] = useState<readonly string[] | null>(null);
@@ -288,6 +291,33 @@ export function TimesheetsPanel() {
     // Only the refused stay ticked: the approved ones have nothing left to do, and leaving them
     // selected invites a second press that would report zero and read as a failure.
     setSelectedIds(new Set(ids.filter((id) => held.includes(techById(techs, id)?.name ?? ""))));
+  }
+
+  /**
+   * Hand the ticked weeks back to their technicians, with one reason.
+   *
+   * The server refuses a week that was never submitted — there is no sign-off to retract — so those
+   * come back as skips and are named, exactly like the approve path. One reason covers the batch:
+   * an approver sending five weeks back is looking at one problem across them.
+   */
+  async function handleRequestChanges(reason: string) {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBatchBusy(true);
+    let sent = 0;
+    const skipped: string[] = [];
+    for (const id of ids) {
+      try {
+        await trpcVanilla.v1.timesheets.requestChanges.mutate({ techUserId: id, weekStart, reason });
+        sent += 1;
+      } catch {
+        skipped.push(techById(techs, id)?.name ?? "Crew");
+      }
+    }
+    setBatchBusy(false);
+    setBatchResult({ sentBack: sent, notSubmitted: skipped });
+    setSelectedIds(new Set());
+    void submissionsQ.refetch();
   }
 
   function handleSelectRow(techId: string, checked: boolean) {
@@ -469,6 +499,8 @@ export function TimesheetsPanel() {
         count={selectedIds.size}
         busy={batchBusy}
         onApprove={() => void handleBatchApprove()}
+        onRequestChanges={(reason) => void handleRequestChanges(reason)}
+        canRequestChanges={crewRows.some((r) => selectedIds.has(r.techId) && r.status === "submitted")}
         onClear={() => {
           setSelectedIds(new Set());
           setBatchResult(null);

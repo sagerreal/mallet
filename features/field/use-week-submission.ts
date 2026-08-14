@@ -28,6 +28,13 @@ export interface WeekSubmissionState {
   readonly submitted: boolean;
   /** When he submitted it, ISO. Null when he has not. */
   readonly submittedAt: string | null;
+  /**
+   * Why the office handed this week back, when they did.
+   *
+   * Without it a returned week is indistinguishable from one he never submitted — the Submit button
+   * simply reappears and he is left to work out what changed. The reason IS the request.
+   */
+  readonly changesRequested: string | null;
   /** True while the read is still in flight — the button waits rather than guessing. */
   readonly loading: boolean;
   readonly submitting: boolean;
@@ -55,6 +62,10 @@ export function useWeekSubmission(weekStartISO: string, enabled: boolean): WeekS
   return {
     submitted: submission !== null && submission.reopenedAt === null,
     submittedAt: submission?.submittedAt ?? null,
+    // Only while it is actually reopened: once he resubmits, the reason is history and showing it
+    // above a week he has just signed off again reads as an outstanding complaint.
+    changesRequested:
+      submission !== null && submission.reopenedAt !== null ? submission.reopenReason : null,
     loading: !query.isFetched,
     submitting: mutation.isPending,
     error: mutation.error?.message ?? null,
