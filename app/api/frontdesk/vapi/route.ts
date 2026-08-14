@@ -17,8 +17,7 @@ import {
   DrizzleNotificationRepository,
   type NotificationSender,
 } from "@mallet/notifications";
-import { isSmsA2pActive } from "@mallet/a2p";
-import { resolveOrgNotificationSender } from "@mallet/notifications";
+import { resolveOrgNotificationSender, canSendAutomatedSms } from "@mallet/notifications";
 import { getAppDeps } from "@/trpc/di";
 import {
   DrizzleOnCallReader,
@@ -290,7 +289,7 @@ const handleEndOfCall = async (
 // the booking confirmation writes an observable notifications row); its repo + bus are tx-scoped,
 // while the underlying channel sender is request-independent and passed in (degrades to a logging
 // stub only when the comms channel itself is unconfigured — see resolveOrgNotificationSender). The
-// org's 10DLC status (isSmsA2pActive) is read fresh per call from the SAME tx/orgId, so the voice
+// whether any registered line exists (canSendAutomatedSms) is read fresh per call from the SAME tx/orgId, so the voice
 // tool's one background SMS (the booking confirmation) can skip-not-throw when the org isn't
 // A2P-active yet — see booking-confirmation.ts. Every DB port is tenant-tx-scoped so nothing
 // reaches drizzle outside withTenant.
@@ -322,7 +321,7 @@ const buildVoiceToolDeps = (
       systemClock,
       uuidGenerator,
     ),
-    isSmsA2pActive: () => isSmsA2pActive(tx, orgId),
+    canSendAutomatedSms: () => canSendAutomatedSms(tx, orgId),
     bus,
     clock: systemClock,
     ids: uuidGenerator,

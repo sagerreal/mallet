@@ -57,7 +57,12 @@ export interface VoiceToolDeps {
   // one background SMS this module fires (the booking confirmation) reads this, to skip-not-throw
   // when the org can't legally text yet. Bound to this call's tx/orgId by the composition root
   // (app/api/frontdesk/vapi/route.ts), never re-derived from model-supplied input.
-  readonly isSmsA2pActive: () => Promise<boolean>;
+  /**
+   * Can this shop send an automated text at all — its own line if registered, Mallet's shared line
+   * until then. Was `canSendAutomatedSms`, which asked only about the shop's OWN campaign and so
+   * silently dropped a brand-new shop's booking confirmation that the shared line could have sent.
+   */
+  readonly canSendAutomatedSms: () => Promise<boolean>;
   readonly bus: EventBus;
   readonly clock: Clock;
   readonly ids: IdGenerator;

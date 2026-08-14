@@ -332,7 +332,7 @@ const buildDeps = (args: {
     geocoder: over.geocoder ?? inertGeocoder(),
     pricebookPrices: over.pricebookPrices,
     sendNotification: sms.useCase,
-    isSmsA2pActive: async () => over.smsA2pActive ?? true,
+    canSendAutomatedSms: async () => over.smsA2pActive ?? true,
     bus,
     clock: CLOCK,
     ids,

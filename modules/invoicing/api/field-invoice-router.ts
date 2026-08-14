@@ -7,8 +7,7 @@ import type { OrgId, InvoiceId } from "@mallet/shared/types";
 import type { Principal } from "@mallet/identity";
 import { DrizzleLeadRepository } from "@mallet/customers";
 import { DrizzleSettingsRepository } from "@mallet/settings";
-import { isSmsA2pActive } from "@mallet/a2p";
-import { resolveOrgNotificationSender } from "@mallet/notifications";
+import { resolveOrgNotificationSender, canSendAutomatedSms } from "@mallet/notifications";
 import {
   NOTIFICATION_CHANNELS,
   DrizzleNotificationRepository,
@@ -258,10 +257,14 @@ export const createFieldInvoiceRouter = () =>
           orThrow(await new SendInvoiceUseCase(repo, ctx.deps.bus, ctx.deps.clock).exec({ invoiceId }));
         }
 
-        // Whether this shop may text at all right now. Passed in rather than gated on: an org
-        // without an active 10DLC campaign falls back to EMAIL here instead of failing, which is
-        // the difference between "the customer got their receipt" and "nothing happened".
-        const smsAllowed = await isSmsA2pActive(ctx.tx, ctx.principal.orgId);
+        // Whether a text can go out at all — the shop's own line if it has one, Mallet's shared
+        // line until then. Passed in rather than gated on: with no line at all this falls back to
+        // EMAIL instead of failing, which is the difference between "the customer got their
+        // receipt" and "nothing happened".
+        //
+        // Was `isSmsA2pActive`, which asked whether THIS SHOP's campaign was live and so sent a
+        // brand-new shop's receipts by email even when Mallet's shared line could have texted them.
+        const smsAllowed = await canSendAutomatedSms(ctx.tx, ctx.principal.orgId);
 
         const send = new SendNotificationUseCase(
           new DrizzleNotificationRepository(ctx.tx, ctx.principal.orgId),

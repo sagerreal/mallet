@@ -43,7 +43,12 @@ describe("SmsSetupBanner", () => {
   it("explains and links when the shop has not registered", () => {
     state.a2pStatus = view({ status: "not_started", needsInput: true });
     render(<SmsSetupBanner />);
-    expect(screen.getByText(/Quotes, reminders and invoices can go by email/)).toBeTruthy();
+    // Names what still works. Reminders and receipts DO send — on Mallet's shared line — so the
+    // thing actually missing is the back-and-forth, and the copy has to say that and not the
+    // reverse (it briefly claimed those went by email, which stopped being true the day the shared
+    // line landed).
+    expect(screen.getByText(/Reminders and receipts still send/)).toBeTruthy();
+    expect(screen.getByText(/can't message customers back and forth/)).toBeTruthy();
     const link = screen.getByRole("link", { name: SMS_SETUP_LABEL });
     expect(link.getAttribute("href")).toBe(SMS_SETTINGS_HREF);
   });

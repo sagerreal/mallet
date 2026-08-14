@@ -88,7 +88,7 @@ const fakeDeps: VoiceToolDeps = {
   availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; }, async readCrewSchedules() { return []; }, async readSameDayCrewLoads() { return []; } },
   geocoder: inertGeocoder(),
   sendNotification: inertSendNotification(),
-  isSmsA2pActive: async () => true,
+  canSendAutomatedSms: async () => true,
   bus: { async emit() {} },
   clock: { now: () => new Date("2026-07-14T00:00:00Z") },
   ids: { newId: () => "id-1" },

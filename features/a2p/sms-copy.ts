@@ -17,10 +17,18 @@
 /** Still fetching. States the wait, promises nothing, blames nobody. */
 export const SMS_CHECKING_NOTE = "Checking texting setup…";
 
-/** No registration row at all — the owner or office has a task. */
+/**
+ * No registration row at all — the owner or office has a task.
+ *
+ * WHAT IS AND IS NOT LOST. Reminders, receipts and booking confirmations still send: they ride
+ * Mallet's shared line until the shop has its own. What needs the shop's OWN number is the
+ * back-and-forth — a shared line belongs to no shop, so a customer's reply has no thread to land
+ * in. Saying "quotes, reminders and invoices can go by email until it is" was true for one day and
+ * is now simply wrong; those go by TEXT.
+ */
 export const SMS_NOT_SET_UP_NOTE = "Texting isn't set up yet.";
 export const SMS_NOT_SET_UP_DETAIL =
-  "Texting isn't set up yet. Quotes, reminders and invoices can go by email until it is.";
+  "Texting isn't set up yet. Reminders and receipts still send, but you can't message customers back and forth until it is.";
 
 /**
  * Submitted, waiting on the carrier. NOBODY has a task here, which is the whole reason this
@@ -32,15 +40,19 @@ export const SMS_NOT_SET_UP_DETAIL =
  */
 export const SMS_PENDING_NOTE = "Texting is being approved.";
 export const SMS_PENDING_DETAIL =
-  "Texting is being approved. Usually 5–7 business days — it switches on by itself.";
+  "Texting is being approved. Usually 5–7 business days — it switches on by itself. Reminders and receipts send in the meantime.";
 
 /** The carrier refused. The reason is theirs and is shown verbatim when we have one. */
 export const SMS_FAILED_NOTE = "Texting was rejected.";
 export const SMS_FAILED_FALLBACK_DETAIL =
   "Texting was rejected. Open Settings for what the carrier said.";
 
-/** The one sentence the field gets, true in every state where texting cannot send. */
-export const SMS_FIELD_NOTE = "This shop can't send texts yet. The office sets that up.";
+/**
+ * The one sentence the field gets, true in every state where the shop cannot message a customer.
+ * Says "message", not "send texts": automated messages DO go out on the shared line — what the
+ * technician cannot do is hold a conversation.
+ */
+export const SMS_FIELD_NOTE = "This shop can't message customers yet. The office sets that up.";
 
 /**
  * Where the fix lives. The hash targets the Texting card's own anchor rather than dropping the

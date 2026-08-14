@@ -68,7 +68,7 @@ const buildDeps = (tx: TenantTx, org: OrgId): VoiceToolDeps => {
       systemClock,
       uuidGenerator,
     ),
-    isSmsA2pActive: async () => true,
+    canSendAutomatedSms: async () => true,
     bus,
     clock: systemClock,
     ids: uuidGenerator,

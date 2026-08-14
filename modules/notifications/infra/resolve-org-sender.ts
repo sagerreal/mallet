@@ -1,13 +1,12 @@
 import "server-only";
 import { loadConfig } from "@mallet/shared/config";
-import { readOrgSmsIdentity } from "@mallet/a2p";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { Clock, OrgId } from "@mallet/shared/types";
 import type { NotificationSender } from "../domain/notification-sender";
 import { LoggingNotificationSender } from "./logging-notification-sender";
 import { TwilioSmsSender } from "./twilio-sms-sender";
 import { OrgSmsNotificationSender } from "./org-sms-notification-sender";
-import { pickSmsIdentity } from "./sms-identity";
+import { resolveSmsIdentity } from "./resolve-sms-identity";
 
 /**
  * modules/notifications/infra/resolve-org-sender.ts
@@ -40,33 +39,24 @@ export const resolveOrgNotificationSender = async (args: {
   const base = args.base ?? new LoggingNotificationSender(args.clock);
   const config = loadConfig();
 
-  // No Twilio at all on this server: leave the composed sender alone so SMS degrades to the
-  // logging stub exactly as it did before, and `assertDelivered` still refuses to claim delivery.
-  if (!config.TWILIO_ACCOUNT_SID || !config.TWILIO_AUTH_TOKEN) return base;
+  // The SAME read the gates use (resolveSmsIdentity), so "may this send" and "send it from what"
+  // can never disagree — the disagreement is what made the shared line unreachable.
+  // Null means nothing to send from at all: SMS then degrades to the logging stub exactly as
+  // before, and `assertDelivered` still refuses to claim a delivery that never happened.
+  const identity = await resolveSmsIdentity(args.tx, args.orgId);
+  if (!identity || !config.TWILIO_ACCOUNT_SID || !config.TWILIO_AUTH_TOKEN) {
+    return new OrgSmsNotificationSender(base, null);
+  }
 
-  const org = await readOrgSmsIdentity(args.tx, args.orgId);
-
-  // The shop's own line once it has one, the shared platform line until then. See pickSmsIdentity
-  // for why a number with no Messaging Service does not count as an identity at all.
-  const identity = pickSmsIdentity(
-    { fromNumber: org?.fromNumber, messagingServiceSid: org?.messagingServiceSid },
-    {
-      fromNumber: config.MALLET_SHARED_SMS_NUMBER,
-      messagingServiceSid: config.MALLET_SHARED_SMS_MESSAGING_SERVICE_SID,
-    },
+  const smsSender = new TwilioSmsSender(
+    config.TWILIO_ACCOUNT_SID,
+    config.TWILIO_AUTH_TOKEN,
+    identity.fromNumber,
+    args.clock,
+    undefined,
+    config.PUBLIC_APP_URL,
+    identity.messagingServiceSid,
   );
-
-  const smsSender = identity
-    ? new TwilioSmsSender(
-        config.TWILIO_ACCOUNT_SID,
-        config.TWILIO_AUTH_TOKEN,
-        identity.fromNumber,
-        args.clock,
-        undefined,
-        config.PUBLIC_APP_URL,
-        identity.messagingServiceSid,
-      )
-    : null;
 
   return new OrgSmsNotificationSender(base, smsSender);
 };
