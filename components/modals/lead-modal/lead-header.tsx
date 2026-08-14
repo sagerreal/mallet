@@ -10,7 +10,8 @@
  * it gave the modal no title, and #237's control-border floor
  * (`input…{border-color:var(--line-strong)!important}`) painted a box around it —
  * mounting the input only while editing keeps that floor honest: the thing is
- * bounded exactly when it IS a control.
+ * bounded exactly when it IS a control. That behaviour now lives in
+ * EditableSheetTitle, shared with the job sheet.
  */
 
 "use client";
@@ -18,61 +19,23 @@
 import { useState, useEffect, useRef } from "react";
 import type { Lead } from "@/lib/store/types";
 import { useAppStore } from "@/lib/store/app-store";
+import { EditableSheetTitle } from "../editable-sheet-title";
 
 export function LeadSheetHeader({ lead }: { lead: Lead }) {
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const [nameVal, setNameVal] = useState(lead.name);
-  const [editingName, setEditingName] = useState(false);
-  const nameRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setNameVal(lead.name);
-    setEditingName(false);
-  }, [lead.id, lead.name]);
-
-  useEffect(() => {
-    if (editingName) nameRef.current?.focus();
-  }, [editingName]);
-
-  function saveName() {
-    const trimmed = nameVal.trim();
-    if (trimmed && trimmed !== lead.name) {
-      updateLead(lead.id, { name: trimmed });
-    }
-    setEditingName(false);
-  }
-
   return (
     <div className="sheet-head">
-      {editingName ? (
-        <input
-          ref={nameRef}
-          className="lead-name"
-          value={nameVal}
-          onChange={(e) => setNameVal(e.target.value)}
-          onBlur={saveName}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
-            if (e.key === "Escape") {
-              setNameVal(lead.name);
-              setEditingName(false);
-            }
-          }}
-          aria-label="Customer name"
-        />
-      ) : (
-        <h2 className="lead-title">
-          <button
-            type="button"
-            className="lead-title-edit"
-            onClick={() => setEditingName(true)}
-            aria-label={`${lead.name} — rename`}
-          >
-            {lead.name}
-          </button>
-        </h2>
-      )}
+      {/* The same tap-to-rename heading the job sheet uses. A blank name is refused here — a
+          customer with no name is unfindable — and EditableSheetTitle puts the old one back. */}
+      <EditableSheetTitle
+        value={lead.name}
+        display={lead.name}
+        onCommit={(name) => {
+          if (name) updateLead(lead.id, { name });
+        }}
+        label="Customer name"
+      />
       {/* One constant-weight meta line: stage + source. The phone number does NOT
           live here — it had two homes (header meta when filled, quiet row when
           empty), which left nowhere obvious to edit it. The Phone row below is its
