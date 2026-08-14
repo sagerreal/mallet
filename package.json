@@ -23,6 +23,7 @@
     "db:rls-proof": "node --env-file=.env.local scripts/rls-proof.mjs",
     "db:verify": "node --env-file=.env.local scripts/db-verify.mjs",
     "db:studio": "drizzle-kit studio",
+    "seed:painting-demo": "node --env-file=.env.local scripts/seed-painting-demo.mjs",
     "seed:e2e": "node --env-file=.env.local scripts/seed-e2e.mjs",
     "seed:e2e:empty": "node --env-file=.env.local scripts/seed-e2e.mjs --empty-org",
     "seed:e2e:reset-passwords": "node --env-file=.env.local scripts/seed-e2e.mjs --reset-passwords",
