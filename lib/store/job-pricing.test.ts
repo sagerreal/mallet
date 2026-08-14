@@ -109,6 +109,19 @@ describe("fractional quantities", () => {
     expect(t.subtotal).toBe(3702);
   });
 
+  it("rounds each line on its own extension, not the sum", () => {
+    // Two halves that each round UP. Rounding the summed extensions instead would land a cent
+    // lower, and the wire rounds per line — invoice-line.ts extends one line at a time.
+    const job = {
+      lines: [
+        { d: "A", q: 1.5, r: 1609.97 },  // 241495.5 → 241496
+        { d: "B", q: 0.5, r: 100.01 },   //   5000.5 →   5001
+      ],
+      pricing: undefined,
+    };
+    expect(jobPricedTotals(job as never).subtotal).toBe(246_497);
+  });
+
   it("survives a line whose quantity and rate are both fractional", () => {
     expect(() => jobPricedTotals({ lines: [{ id: "l", d: "Pipe", q: 2.75, r: 3.33, c: 0 }] as never }))
       .not.toThrow();

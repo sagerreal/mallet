@@ -474,7 +474,8 @@ export function TechJobModalContent() {
           <span className="nav">Navigate →</span>
         </button>
       ) : (
-        <div className="muted" style={{ fontSize: "var(--type-base)", margin: "var(--space-3) 0 var(--space-1)" }}>
+        // A footnote, not a paragraph: it is the absence of a fact, sitting above every fact.
+        <div className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2) 0 var(--space-1)" }}>
           No address on this job yet.
         </div>
       )}
