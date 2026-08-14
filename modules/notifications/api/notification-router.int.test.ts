@@ -30,7 +30,7 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
   let admin: Sql;
   let orgAId = "";
   let orgBId = "";
-  let orgCId = ""; // A2P-inactive org (no registration row) — dedicated to the 10DLC gate tests below.
+  let orgCId = ""; // no registration AND no number — dedicated to the "no line at all" gate tests.
   let leadAId = "";
   let agedInvoiceId = "";
   let orgCInvoiceId = "";
@@ -52,11 +52,18 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
       values (${orgAId}, 'INV-AGED', ${leadAId}, 'sent', 100000, now() - interval '5 days') returning id`;
     agedInvoiceId = inv!.id;
 
-    // Org A is A2P-active so the "channel is unconfigured" test below exercises the delivery
-    // (assertDelivered) guard it's named for, not the 10DLC gate — a org with no registration row
-    // reads as inactive and would mask the intended assertion (same masking class the messaging
-    // router's fixture had).
-    await admin`insert into a2p_registrations (org_id, status) values (${orgAId}, 'active')`;
+    // Org A can send: it owns a number AND its campaign carries a Messaging Service. BOTH halves
+    // are required and the fixture used to supply neither — it inserted `status = 'active'` alone,
+    // a state that cannot occur in production (registration refuses to start without a provisioned
+    // number, and the campaign attaches to a service; verified on live data: of the active
+    // campaigns, zero lack either). The old gate only read `status`, so the gap never showed. The
+    // gate now asks whether there is a LINE to send from, and an org with no line has none.
+    //
+    // Why org A must be sendable at all: the "channel is unconfigured" test below is named for the
+    // delivery (assertDelivered) guard, and a shop that cannot text would fail earlier and mask it.
+    await admin`update orgs set twilio_number = '+15550000001' where id = ${orgAId}`;
+    await admin`insert into a2p_registrations (org_id, status, messaging_service_sid)
+                values (${orgAId}, 'active', 'MG-int-test')`;
 
     // Org C stays A2P-inactive (no registration row at all) — the dedicated fixture for proving
     // SMS is blocked and email is unaffected. Lead has BOTH contact fields so sendInvoiceReminder
@@ -91,11 +98,16 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
     expect(listed.items.some((n) => n.relatedId === agedInvoiceId && n.reminderStage === null)).toBe(false);
   });
 
-  // ── 10DLC / A2P compliance gate ───────────────────────────────────────────────
-  // Org C has no a2p_registrations row at all (reads as inactive). SMS must be blocked before
-  // any notification/sender work runs; email is untouched by the 10DLC rule.
+  // ── the automated-send gate ───────────────────────────────────────────────────
+  // Org C has no registration row AND no number of its own. It is blocked here because THIS TEST
+  // ENVIRONMENT configures no shared line either (MALLET_SHARED_SMS_* unset) — so there is no line
+  // anywhere, which is the only remaining reason to refuse.
+  //
+  // NOT because its own campaign is inactive. That was the old rule, and it made the shared line
+  // unreachable for exactly the shops it exists to serve. With a shared line configured, this same
+  // org sends. Email is untouched either way — 10DLC governs text messages only.
 
-  it("send blocks SMS for an org whose A2P campaign isn't active", async () => {
+  it("send blocks SMS when there is no line to send from at all", async () => {
     const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
     await expect(
       caller.v1.notifications.send({
@@ -105,7 +117,7 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
         body: "hello",
         idempotencyKey: `a2p-gate-sms-${randomUUID()}`,
       }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("10DLC") });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("isn't available") });
 
     // No row was recorded — the gate fires before the use-case ever claims the idempotency key.
     const listed = await caller.v1.notifications.list({ limit: 50 });
@@ -115,7 +127,7 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
   it("send does not block email for an org whose A2P campaign isn't active", async () => {
     const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
     // Passes the a2p gate (email is unaffected) and reaches the existing delivery-truth guard
-    // (no real email sender configured in this test env) — proves the 10DLC rule never fires
+    // (no real email sender configured in this test env) — proves the SMS gate never fires
     // for this channel.
     await expect(
       caller.v1.notifications.send({
@@ -128,11 +140,11 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
     ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("not configured") });
   });
 
-  it("sendInvoiceReminder blocks SMS for an org whose A2P campaign isn't active", async () => {
+  it("sendInvoiceReminder blocks SMS when there is no line to send from at all", async () => {
     const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
     await expect(
       caller.v1.notifications.sendInvoiceReminder({ invoiceId: orgCInvoiceId, channel: "sms" }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("10DLC") });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("isn't available") });
 
     const listed = await caller.v1.notifications.list({ limit: 50 });
     expect(listed.items.some((n) => n.relatedId === orgCInvoiceId)).toBe(false);
@@ -147,12 +159,12 @@ suite("notifications tRPC router (full stack, live RLS)", () => {
 
   it("advanceReminder blocks an org whose A2P campaign isn't active", async () => {
     // Org C's invoice isn't aged, so without the gate this would resolve to `null` (nothing due)
-    // rather than reject — a rejection here can only come from the 10DLC guard firing before the
+    // rather than reject — a rejection here can only come from the SMS gate firing before the
     // use-case (and its reminder-stage read) ever runs.
     const caller = appRouter.createCaller(ctxFor(orgCId, "owner"));
     await expect(
       caller.v1.notifications.advanceReminder({ relatedType: "invoice", relatedId: orgCInvoiceId }),
-    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("10DLC") });
+    ).rejects.toMatchObject({ code: "PRECONDITION_FAILED", message: expect.stringContaining("isn't available") });
 
     const listed = await caller.v1.notifications.list({ limit: 50 });
     expect(listed.items.some((n) => n.relatedId === orgCInvoiceId)).toBe(false);
