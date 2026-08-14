@@ -60,11 +60,13 @@ export const ROUTES: readonly RouteDef[] = [
   { path: "/money", name: "money", audience: "office", mobile: true },
   { path: "/composer", name: "composer", audience: "office" },
   { path: "/messages", name: "messages", audience: "office" },
-  { path: "/settings", name: "settings-workspace", audience: "office" },
+  // The four tabs as they stand. `?tab=payments` and `?tab=quickbooks` still RESOLVE (they are
+  // permanent aliases onto Integrations — Stripe and QuickBooks send shops back to them), but they
+  // photograph the same tab, so the net shoots each surface once under its own name.
+  { path: "/settings", name: "settings-company", audience: "office" },
   { path: "/settings?tab=team", name: "settings-team", audience: "office" },
-  { path: "/settings?tab=channels", name: "settings-channels", audience: "office" },
-  { path: "/settings?tab=payments", name: "settings-payments", audience: "office" },
-  { path: "/settings?tab=quickbooks", name: "settings-quickbooks", audience: "office" },
+  { path: "/settings?tab=integrations", name: "settings-integrations", audience: "office" },
+  { path: "/settings?tab=you", name: "settings-you", audience: "office" },
   { path: "/account", name: "account", audience: "office" },
   { path: "/more", name: "more", audience: "office", mobile: true },
 

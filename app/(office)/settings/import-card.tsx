@@ -18,6 +18,7 @@ import { useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { ModalId } from "@/lib/store/modal-ids";
 import { FoldCard } from "./fold-card";
+import { MarkImport } from "./setting-marks";
 
 interface ImportEntity {
   readonly key: string;
@@ -95,7 +96,7 @@ export function ImportCard() {
   };
 
   return (
-    <FoldCard title="Import" summary="Bring your data across">
+    <FoldCard title="Import" mark={<MarkImport />} summary="Bring your data across">
       <p
         className="muted"
         style={{ fontSize: "var(--type-base)", margin: "0 0 var(--space-4)", lineHeight: 1.5 }}

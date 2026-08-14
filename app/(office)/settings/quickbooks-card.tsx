@@ -16,6 +16,7 @@ import { api } from "@/lib/trpc/client";
 import { FoldCard } from "./fold-card";
 import { QuickbooksSetup } from "./quickbooks-setup";
 import { QuickbooksActivity } from "./quickbooks-activity";
+import { MarkQuickBooks } from "./setting-marks";
 
 type Outcome = "connected" | "failed" | "denied";
 
@@ -73,7 +74,7 @@ export function QuickbooksCard() {
         : "Not connected";
 
   return (
-    <FoldCard title="QuickBooks" summary={summary} defaultOpen>
+    <FoldCard title="QuickBooks" mark={<MarkQuickBooks />} summary={summary} defaultOpen>
       <p style={{ fontSize: "var(--type-base)", color: "var(--ink-2)", margin: "0 0 var(--space-4)" }}>
         Connect QuickBooks Online so approved crew hours go straight over instead of being typed in
         again before payroll.
