@@ -38,6 +38,7 @@ import { useRoomScanAvailability } from "@/lib/native/room-scan";
 import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unavailable";
 import { measurementSurfacesVisible } from "@/lib/measurement-gate";
 import { useMeasurementGate } from "@/features/settings/measurement-gate-provider";
+import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
@@ -250,6 +251,10 @@ export interface QuoteTabProps {
 export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps) {
   const setVisitNotes = useAppStore((s) => s.setVisitNotes);
   const measurementGate = useMeasurementGate();
+  // Seeds the store for this job and gives the row its count. Same hook the room card uses, so the
+  // number here and the list in there can never disagree.
+  useJobRooms(measurementSurfacesVisible(measurementGate) ? job.id : null);
+  const roomCount = useAppStore((s) => s.roomsByJob[job.id]?.length ?? 0);
   const pushModal = usePushModal();
   const close = useCloseModal();
   const scan = useRoomScanAvailability();
@@ -291,6 +296,7 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
   const [scopeOpenSignal, setScopeOpenSignal] = useState(0);
   // The Scope row's accordion — controlled so "Send scope" with nothing written can open it.
   const [scopeRowOpen, setScopeRowOpen] = useState(false);
+  const [roomsRowOpen, setRoomsRowOpen] = useState(false);
 
   // `committed` is listed on its own: a booked job on a price-redacted device reads null
   // rates, so `quoted` (which sums them) misses it and the tab would offer an editable draft
@@ -379,6 +385,39 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
               only matters to the send-to-office path above it. This chooser is now the ONLY
               home of scope UI — the builder and a committed job are money only. */}
           <div style={{ marginTop: "var(--space-4)" }}>
+            {/* MEASURE COMES FIRST for a shop that measures. It used to live INSIDE the Photos row,
+                which put the one thing a painter opens this tab to do two taps deep behind a label
+                that reads like a camera feature. On a measuring shop the scan IS how the quote gets
+                built, so it sits above Scope and carries its own count. */}
+            {measurementSurfacesVisible(measurementGate) && (
+              <SheetRow
+                label="Rooms measured"
+                value={roomCount > 0 ? String(roomCount) : "Scan"}
+                valueIsHint={roomCount === 0}
+                expandable
+                open={roomsRowOpen}
+                onOpenChange={setRoomsRowOpen}
+              >
+                {roomCount > 0 && (
+                  <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-2)" }}>
+                    {roomCount === 1 ? "1 room measured" : `${roomCount} rooms measured`} — open the
+                    price to see what they came to.
+                  </p>
+                )}
+                {scanBlocker === null ? (
+                  <button
+                    type="button"
+                    className="btn sm scanbtn"
+                    onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
+                  >
+                    {roomCount > 0 ? "Scan another room" : "Scan a room"}
+                  </button>
+                ) : (
+                  <ScanUnavailable blocker={scanBlocker} label="Scan a room" />
+                )}
+              </SheetRow>
+            )}
+
             <SheetRow
               label="Scope"
               value={(scopeVisit?.scopeNotes ?? "").trim() ? "written" : "Add"}
@@ -401,21 +440,6 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
               expandable
             >
               <ScopePhotos job={job} disabled={readOnly} />
-              {measurementSurfacesVisible(measurementGate) && (
-                <div style={{ marginTop: "var(--space-3)" }}>
-                  {scanBlocker === null ? (
-                    <button
-                      type="button"
-                      className="btn sm scanbtn"
-                      onClick={() => pushModal(MODAL.ROOM_CARD, { jobId: job.id, mode: "scan" })}
-                    >
-                      Scan a room
-                    </button>
-                  ) : (
-                    <ScanUnavailable blocker={scanBlocker} label="Scan a room" />
-                  )}
-                </div>
-              )}
             </SheetRow>
           </div>
         </div>

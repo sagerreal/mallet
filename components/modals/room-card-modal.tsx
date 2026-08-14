@@ -83,6 +83,16 @@ const QUANTITY_DEFS: readonly QuantityDef[] = [
   { kind: "windows_count", label: "Windows", unit: "count" },
 ];
 
+/**
+ * The kinds whose EXISTENCE the scanner cannot see, so "none" is a real answer worth one tap.
+ *
+ * A soffit belongs here for the same reason as trim: plenty of rooms have none, and leaving the row
+ * unanswered is indistinguishable from not having looked. Walls, ceiling, doors and windows are
+ * measured or counted — "none" is not a thing you tell the app about them.
+ */
+const TRIM_KINDS: readonly RoomQuantityKind[] = ["baseboard_lnft", "crown_lnft", "soffit_sqft"];
+const isTrim = (kind: RoomQuantityKind): boolean => TRIM_KINDS.includes(kind);
+
 /** 1 decimal for sq ft / ln ft, whole numbers for counts. */
 export function formatQuantity(value: number, unit: QuantityUnit): string {
   return unit === "count" ? String(Math.round(value)) : value.toFixed(1);
@@ -282,6 +292,43 @@ function QuantityRow({
           }}
         />
       </Field>
+      {/* THE TWO ANSWERS A TRIM ROW ACTUALLY HAS.
+          Accepting the calculated perimeter used to mean noticing the number was already in the box
+          and pressing Enter; recording "this room has no crown" meant knowing that typing a zero
+          would do it. Neither reads as an option, so both are buttons:
+            · the calculation, named and carrying its number — the scanner's perimeter, taken.
+            · None in this room — the honest answer for rubber cove base or a ceiling with no crown,
+              and a CONFIRMED zero rather than a row nobody answered. */}
+      {(quantity.derivedValue != null || isTrim(def.kind)) && (
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-3)" }}>
+          {quantity.derivedValue != null && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                onCommit(def.kind, quantity.derivedValue as number);
+                setOpen(false);
+                setError(null);
+              }}
+            >
+              Use measured {formatQuantity(quantity.derivedValue, def.unit)}
+            </button>
+          )}
+          {isTrim(def.kind) && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={() => {
+                onCommit(def.kind, 0);
+                setOpen(false);
+                setError(null);
+              }}
+            >
+              None in this room
+            </button>
+          )}
+        </div>
+      )}
       {note && (
         <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
           {note}
