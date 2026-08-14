@@ -1916,6 +1916,10 @@
   .ts-dhdr .ts-onjobs{display:inline-block;margin-left:var(--space-3);text-transform:none;
     font-size:var(--type-sm);font-weight:500;color:var(--ink-3);letter-spacing:0}
 
+  /* The Overdue heading on My day. Amber, not red: work running late is ordinary, and a red
+     banner on a technician's route reads as a telling-off. */
+  .mdc-sec.mdc-late{color:var(--amber)}
+
   /* The office's request, on the technician's own week. Amber, not red: being asked to fix
      Wednesday is ordinary, and a red banner on somebody's pay screen reads as trouble. */
   .mh-changes{background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius-sm);
