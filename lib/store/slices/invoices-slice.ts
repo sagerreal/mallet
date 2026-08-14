@@ -59,10 +59,6 @@ import {
 import { reportWriteError } from "../write-error";
 import { userMessage } from "@/lib/trpc/error-map";
 
-// Continue the sample's INV numbers.
-// After reconcile, the server-canonical `num` overwrites this optimistic value.
-let _nextInvNum = 810;
-
 function linesTotal(lines: InvoiceLine[]): number {
   return lines.reduce((s, l) => s + (l.q ?? 1) * (l.r ?? 0), 0);
 }
@@ -321,6 +317,18 @@ export interface InvoicesSlice {
    */
   sendInvoice: (id: string, surface?: InvoiceWriteSurface) => Promise<{ ok: boolean; error?: string }>;
   /**
+   * Commit a hand-made invoice to the server WITHOUT sending it — what "Done" does.
+   *
+   * The sheet's Done was `onClick={close}` and nothing else, so an invoice typed straight into it
+   * was thrown away on close with no warning. Nothing else could save it either: the Money ledger
+   * renders from the server, so a store-local invoice is invisible everywhere except the sheet
+   * open on it.
+   *
+   * Resolves { ok } rather than rejecting, so the sheet can stay OPEN on a failure instead of
+   * closing over lost work.
+   */
+  saveDraft: (id: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
    * Charge the shop's trip fee on a scoping visit the customer declined, and put the resulting
    * invoice in the store.
    *
@@ -401,7 +409,11 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
     const inv: Invoice = {
       ...draft,
       id,
-      num: `INV-${_nextInvNum++}`,
+      // NO optimistic number. This used to continue a counter left over from the deleted sample
+      // data ("INV-810"), which incremented in the browser: two people drafting at once saw the
+      // same number, and neither matched the shop's books. The server issues the real one at
+      // draft time; until then the sheet shows none.
+      num: "",
       origin: "manual",
     };
 
@@ -662,6 +674,51 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
   //
   // Callers: invoice-modal.tsx send(), close-out-modal.tsx approvePayment().
   // ---------------------------------------------------------------------------
+  saveDraft: async (id) => {
+    const inv = get().invoices.find((i) => i.id === id);
+    if (!inv) return { ok: false, error: INVOICE_GONE };
+    // Already on the server — Done is then just "close", and drafting again would mint a second
+    // row (draft-invoice inserts, it does not upsert).
+    if (inv.origin === "db") return { ok: true };
+    // The same two requirements v1.invoicing.draft enforces, named separately: one message for
+    // both sent whoever hit it looking in the wrong place.
+    if (!inv.lines.length) return { ok: false, error: "add at least one line before saving" };
+    if (!inv.leadId) {
+      return {
+        ok: false,
+        error: "pick the customer from the list before saving — this name isn't linked to a customer yet",
+      };
+    }
+    try {
+      const dto = await trpcVanilla.v1.invoicing.draft.mutate({
+        id: inv.id,
+        leadId: inv.leadId,
+        title: inv.title ?? undefined,
+        termsDays: inv.termsDays ?? 0,
+        discBps: Math.round((inv.pricing?.disc ?? 0) * 100),
+        taxBps: Math.round((inv.pricing?.tax ?? 0) * 100),
+        lines: inv.lines.map((l) => ({
+          description: l.d,
+          quantity:    l.q ?? 1,
+          rateCents:   Math.round((l.r ?? 0) * 100),
+          costCents:   Math.round((l.c ?? 0) * 100),
+          taxable:     !l.notax,
+        })),
+      });
+      invalidateLists("invoices", "jobs");
+      // Stamps origin "db" and the server's own num, so a second Done is a no-op and the sheet
+      // stops showing a number no one else can see.
+      const reconciled = dtoInvoiceToStore(dto, inv);
+      set((s) => ({ invoices: reconcileInv(s.invoices, { ...reconciled, id }) }));
+      return { ok: true };
+    } catch (err) {
+      // The row stays exactly as it was — local, with its lines — so the work is still on screen
+      // and a retry drafts the same invoice rather than duplicating it.
+      reportWriteError("saveDraft", err);
+      return { ok: false, error: userMessage(err, "Couldn't save this invoice — try again.") };
+    }
+  },
+
   sendInvoice: (id, surface = "office") => {
     const inv = get().invoices.find((i) => i.id === id);
     const prior = snapshotInv(get().invoices, id);
