@@ -88,8 +88,7 @@ export function PaymentsCard() {
             ) : (
               <>
                 Customers can&rsquo;t pay yet — an invoice they open says to contact you directly.
-                Stripe usually finishes on its own; if it&rsquo;s asking for a document, it&rsquo;s
-                in your Stripe dashboard.
+                If Stripe needs anything else from you, finishing verification is where it asks.
               </>
             )}
           </div>
@@ -97,18 +96,42 @@ export function PaymentsCard() {
               ?connect=return redirect, which a shop in this state has already been through and
               cannot reach again. Without this button a shop whose charges are enabled an hour
               later stays stuck on "can't pay" forever. */}
-          <button
-            type="button"
-            className="btn sm"
-            style={{ marginTop: "var(--space-3)" }}
-            disabled={refresh.isPending}
-            onClick={() => {
-              setError(null);
-              refresh.mutate();
-            }}
-          >
-            {refresh.isPending ? "Checking…" : "Check again"}
-          </button>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}>
+            {/* THE ONLY CONTROL THAT CAN CHANGE THE ANSWER. An Express account's outstanding
+                requirement — an ID document, a bank account — is collectable ONLY through Stripe's
+                own hosted flow; the platform is refused by the API outright ("This application does
+                not have the required permissions for this endpoint"). Offered whenever charges are
+                off rather than gated on a requirements list: knowing which of the two states a shop
+                is in would mean persisting a new field, and the flow is harmless when nothing is
+                due — Stripe just shows what it already has. */}
+            {!live && (
+              <button
+                type="button"
+                className="btn sm primary"
+                disabled={begin.isPending}
+                onClick={() => {
+                  setError(null);
+                  begin.mutate();
+                }}
+              >
+                {begin.isPending ? "Opening Stripe…" : "Finish verification with Stripe"}
+              </button>
+            )}
+            {/* Kept alongside: Stripe can enable charges with no shop action at all, and then this
+                is the only thing that writes the flag back (there is an account.updated webhook,
+                but accounts predating its metadata stamp never reach it). */}
+            <button
+              type="button"
+              className="btn sm"
+              disabled={refresh.isPending}
+              onClick={() => {
+                setError(null);
+                refresh.mutate();
+              }}
+            >
+              {refresh.isPending ? "Checking…" : "Check again"}
+            </button>
+          </div>
         </div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)" }}>
