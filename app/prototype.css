@@ -1831,9 +1831,23 @@
   .sum-bar i{display:block;height:100%;background:var(--ink);border-radius:var(--radius-pill);transition:width .3s ease}
   .sum-sub{font-size:var(--type-sm);color:var(--ink-3);margin-top:var(--space-3)}
   @media (max-width:640px){
-    .summary{grid-template-columns:1fr}
-    .sum-cell{border-left:0;border-top:1px solid var(--line)}
-    .sum-cell:first-child{border-top:0}
+    /* TWO UP, NOT ONE DOWN. The desktop strip is three columns; collapsing it to one turned three
+       compact figures into three 169px blocks — 435px of a 852px screen to say two numbers and a
+       progress bar. A phone reads a pair of figures side by side perfectly well; it is the desktop
+       PADDING that does not fit, not the columns.
+       A third cell spans the row rather than sitting alone in a half-width column. */
+    /* The open-shift card is a WARNING, and a warning that runs eleven lines stops reading as one.
+       Its two explanatory sentences are the same weight as the heading; on a phone that is 98px of
+       prose above the control that resolves it. */
+    .mh-s{font-size:var(--type-sm);margin-top:var(--space-1)}
+    .summary{grid-template-columns:1fr 1fr}
+    .sum-cell{padding:var(--space-3) var(--space-4);border-left:1px solid var(--line);border-top:0}
+    .sum-cell:nth-child(odd){border-left:0}
+    .sum-cell:nth-child(n+3){grid-column:1 / -1;border-top:1px solid var(--line);border-left:0}
+    .sum-val{margin-top:var(--space-2)}
+    .sum-val .n{font-size:var(--type-2xl)}
+    .sum-bar{margin-top:var(--space-2)}
+    .sum-sub{margin-top:var(--space-2);font-size:var(--type-xs)}
   }
 
   .weeknav{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-6) var(--space-2xs) var(--space-3)}
