@@ -28,6 +28,7 @@ vi.mock("./fold-card", () => ({
 describe("BrandingCard", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    updateBrand.mockResolvedValue({ ok: true });
     brand = { name: "Rivera Plumbing", tagline: "Licensed", site: "r.com", color: "#9C5B34", initials: "RP" };
     storeState = { brand, updateBrand };
   });
@@ -70,6 +71,54 @@ describe("BrandingCard", () => {
 
     expect(screen.getByDisplayValue("Rivera Plumbing")).toBeTruthy();
     expect(screen.queryByDisplayValue("My Business")).toBeNull();
+  });
+
+  /**
+   * The card flashed "Saved ✓" the instant Save was clicked, while updateBrand was still in
+   * flight. When the server refused — a tagline over its 500-character cap, most easily — the
+   * store rolled back, the field reverted under a green tick, and nothing said why. A save
+   * confirmation that fires before the save lands is a claim the app cannot back.
+   */
+  describe("a rejected save", () => {
+    it("says what was refused instead of flashing Saved", async () => {
+      updateBrand.mockResolvedValue({ ok: false, message: "Tagline is too long — 500 characters maximum." });
+      render(<BrandingCard />);
+
+      fireEvent.change(screen.getByLabelText(/tagline/i), { target: { value: "x".repeat(501) } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+      });
+
+      expect(screen.getByText("Tagline is too long — 500 characters maximum.")).toBeTruthy();
+      expect(screen.queryByText(/saved/i)).toBeNull();
+    });
+
+    it("keeps the edit so it can be fixed, rather than reverting under a tick", async () => {
+      updateBrand.mockResolvedValue({ ok: false, message: "Tagline is too long — 500 characters maximum." });
+      render(<BrandingCard />);
+
+      fireEvent.change(screen.getByLabelText(/tagline/i), { target: { value: "Licensed, bonded & insured" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+      });
+
+      // Still dirty: the hydrator's re-sync must not reclaim a field the user has not resolved.
+      storeState = { brand: { ...brand, tagline: "Licensed" }, updateBrand };
+      act(() => {});
+      expect(screen.getByDisplayValue("Licensed, bonded & insured")).toBeTruthy();
+    });
+
+    it("flashes Saved only once the write has actually landed", async () => {
+      updateBrand.mockResolvedValue({ ok: true });
+      render(<BrandingCard />);
+
+      fireEvent.change(screen.getByLabelText(/tagline/i), { target: { value: "Licensed & insured" } });
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: /^save$/i }));
+      });
+
+      expect(screen.getByText(/saved/i)).toBeTruthy();
+    });
   });
 
   it("does not overwrite user edits when the store brand changes (dirty guard)", () => {

@@ -361,8 +361,11 @@ function MemberRow({ member }: { member: MemberItem }) {
       setRoleError(null);
       utils.v1.identity.members.invalidate().catch(() => {});
     },
+    // Never the raw transport message: it printed "cannot remove the last owner" at whoever tried,
+    // which is a log line, not an answer. userMessage passes through the sentences a human wrote
+    // (the last-owner refusal names the move that clears it) and supplies copy for the rest.
     onError: (err) => {
-      setRoleError(err.message);
+      setRoleError(userMessage(err, "Couldn't change that role — try again."));
     },
   });
 

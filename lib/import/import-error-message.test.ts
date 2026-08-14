@@ -7,6 +7,7 @@
  * sheet. A validation failure has to read as a sentence naming the columns to look at.
  */
 import { describe, it, expect } from "vitest";
+import { INPUT_VALIDATION_FIELD } from "@/lib/trpc/input-validation";
 import { importErrorMessage, IMPORT_VALIDATION_COPY, IMPORT_STOPPED_COPY } from "./import-error-message";
 
 describe("importErrorMessage", () => {
@@ -40,5 +41,16 @@ describe("importErrorMessage", () => {
     const one = new Error('{"code":"invalid_type","expected":"number","path":["rows",0,"cost"]}');
 
     expect(importErrorMessage(one)).toBe(IMPORT_VALIDATION_COPY);
+  });
+
+  it("keeps the column copy once the server flattens the issues to a sentence", () => {
+    // The formatter now rewrites the message before it leaves the server, so the payload is gone —
+    // the tag is the only thing left that says "this was a shape rejection". Without reading it,
+    // the import modal would fall back to the generic sentence and stop naming the columns.
+    const flattened = Object.assign(new Error("Check unit price cents and try again — that value wasn't accepted."), {
+      data: { code: "BAD_REQUEST", [INPUT_VALIDATION_FIELD]: true },
+    });
+
+    expect(importErrorMessage(flattened)).toBe(IMPORT_VALIDATION_COPY);
   });
 });

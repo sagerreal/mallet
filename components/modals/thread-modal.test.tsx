@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
+import { SMS_BODY_MAX_CHARS } from "@mallet/shared/messaging/sms-limits";
 import { ThreadModalContent } from "./thread-modal";
 
 const h = vi.hoisted(() => ({
@@ -128,5 +129,66 @@ describe("ThreadModalContent — read state", () => {
     expect(h.clearLeadUnreadLocal).toHaveBeenCalledWith("lead-1");
     expect(h.markReadMutate).toHaveBeenCalledWith({ leadId: "lead-1" });
     expect(h.updateLead).not.toHaveBeenCalled();
+  });
+});
+
+/**
+ * A send can be refused for reasons that have nothing to do with the phone number — the commonest
+ * being a body over the carrier's 1600-character limit. The composer mapped EVERY BAD_REQUEST to
+ * "This customer has no phone number on file", which the header contradicts two lines above with
+ * the number itself. The server's own sentence is the only thing that names the real cause.
+ */
+describe("ThreadModalContent — a refused send says why", () => {
+  const withPhone = () => {
+    h.leads = [{ id: "lead-1", name: "Dana Alvarez", phone: "+15555550123", acts: [] }];
+  };
+
+  const refuseWith = (code: string, message: string) => {
+    h.sendMutate.mockRejectedValueOnce(Object.assign(new Error(message), { name: "TRPCClientError", data: { code } }));
+  };
+
+  const typeAndSend = (text: string) => {
+    fireEvent.change(screen.getByPlaceholderText("Text Dana…"), { target: { value: text } });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  };
+
+  it("does not blame the phone number for a length rejection", async () => {
+    withPhone();
+    refuseWith("BAD_REQUEST", "Body is too long — 1600 characters maximum.");
+    render(<ThreadModalContent />);
+
+    typeAndSend("hello");
+
+    expect(await screen.findByText("Body is too long — 1600 characters maximum.")).toBeTruthy();
+    expect(screen.queryByText(/no phone number on file/i)).toBeNull();
+  });
+
+  it("still falls back to plain copy when the server wrote no sentence", async () => {
+    withPhone();
+    refuseWith("BAD_GATEWAY", "boom");
+    render(<ThreadModalContent />);
+
+    typeAndSend("hello");
+
+    expect(await screen.findByText(/couldn.t send/i)).toBeTruthy();
+  });
+
+  it("caps the composer at the carrier limit so the refusal is unreachable", () => {
+    withPhone();
+    render(<ThreadModalContent />);
+
+    expect(screen.getByPlaceholderText("Text Dana…").getAttribute("maxLength")).toBe(String(SMS_BODY_MAX_CHARS));
+  });
+
+  it("counts down only once the limit is close enough to matter", () => {
+    withPhone();
+    render(<ThreadModalContent />);
+    const box = screen.getByPlaceholderText("Text Dana…");
+
+    fireEvent.change(box, { target: { value: "hello" } });
+    expect(screen.queryByText(/characters left/i)).toBeNull();
+
+    fireEvent.change(box, { target: { value: "x".repeat(SMS_BODY_MAX_CHARS - 40) } });
+    expect(screen.getByText("40 characters left")).toBeTruthy();
   });
 });

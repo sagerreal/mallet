@@ -20,7 +20,7 @@
 import type { StateCreator } from "zustand";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { isDefaultSourceLabel } from "@/lib/store/default-sources";
-import { reportWriteError } from "../write-error";
+import { reportWriteError, writeFailure } from "../write-error";
 import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
 import type { TradeKey } from "@/app/(office)/settings/trade-playbooks";
 import type { MeasurementGate } from "@/lib/measurement-gate";
@@ -52,8 +52,16 @@ export interface SourceItem {
 
 // Outcome of addSource so the UI can give feedback instead of silently swallowing a failure:
 // "empty" (blank input), "duplicate" (matches a built-in or an existing custom source), or
-// "failed" (the persist call errored — e.g. a transient connection blip).
-export type AddSourceResult = { ok: true } | { ok: false; reason: "empty" | "duplicate" | "failed" };
+// "failed" (the server refused, or the call never landed).
+//
+// "failed" carries the SENTENCE as well as the reason. The other two are conditions the caller
+// already knows how to word — it has the name that was typed — whereas only the server knows why
+// it refused, and collapsing that to a bare "failed" left the picker discarding the typed name in
+// silence.
+export type AddSourceResult =
+  | { ok: true }
+  | { ok: false; reason: "empty" | "duplicate" }
+  | { ok: false; reason: "failed"; message: string };
 
 export interface BookingService {
   name: string;
@@ -511,10 +519,10 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
       }));
       return { ok: true };
     } catch (e) {
-      // Roll back the optimistic row and surface the failure — never silently swallow it.
+      // Roll back the optimistic row and hand the sentence to the picker, which still has the row
+      // that failed on screen. Not the global announcer: one failure said twice reads as two.
       set((s) => ({ sources: s.sources.filter((x) => x.id !== id) }));
-      reportWriteError("addSource", e);
-      return { ok: false, reason: "failed" };
+      return { ...writeFailure("addSource", e), reason: "failed" };
     }
   },
 

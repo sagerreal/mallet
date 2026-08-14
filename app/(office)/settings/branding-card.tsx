@@ -42,6 +42,7 @@ export function BrandingCard() {
   const [color, setColor] = useState(brand.color);
   const [initials, setInitials] = useState(brand.initials);
   const { saved, flash, reset: resetSaved } = useSaveFlash();
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // dirty: true once the user has made any edit; prevents BrandHydrator's
   // async resolution from clobbering an in-progress form.
@@ -61,18 +62,31 @@ export function BrandingCard() {
   function markDirty() {
     setDirty(true);
     resetSaved();
+    setSaveError(null);
   }
 
-  function handleSave() {
+  /**
+   * "Saved ✓" used to appear the instant this ran, while the write was still in flight. A server
+   * refusal — a tagline over its 500-character cap is the easy one — rolled the store back, so the
+   * field reverted under a green tick with nothing said. The confirmation now waits for the write,
+   * and a refusal keeps the edit on screen so it can be corrected rather than retyped.
+   */
+  async function handleSave() {
     const trimmed = name.trim();
     if (!trimmed) return; // brand name maps to NOT NULL orgs.name
-    updateBrand({
+    setSaveError(null);
+    const result = await updateBrand({
       name: trimmed,
       tagline: tagline.trim() || "",
       site: site.trim() || "",
       color: color || "",
       initials: (initials.trim() || trimmed.slice(0, 2)).toUpperCase(),
     });
+    if (!result.ok) {
+      // Stays dirty: the hydrator's re-sync must not reclaim a field the user has not resolved.
+      setSaveError(result.message);
+      return;
+    }
     setDirty(false);
     flash();
   }
@@ -138,9 +152,14 @@ export function BrandingCard() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
-        <button className="btn primary" onClick={handleSave} disabled={!name.trim()}>Save</button>
+        <button className="btn primary" onClick={() => void handleSave()} disabled={!name.trim()}>Save</button>
         <SavedFlash saved={saved} />
       </div>
+      {saveError && (
+        <div role="alert" style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
+          {saveError}
+        </div>
+      )}
     </FoldCard>
   );
 }

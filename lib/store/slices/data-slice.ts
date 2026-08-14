@@ -13,6 +13,7 @@
 import type { StateCreator } from "zustand";
 import type { Company, Tech, Brand, BusinessIdentity, DocWording } from "../types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { writeFailure, type WriteOutcome } from "../write-error";
 
 // Placeholder shown ONLY until BrandHydrator seeds the real brand from
 // v1.settings.get + v1.identity.me. Never written back to the DB.
@@ -75,8 +76,13 @@ export interface DataSlice {
   /**
    * Optimistically patch the brand, then persist via v1.settings.updateBrand.
    * Reconciles from the returned settingsDTO.brand; rolls back on error.
+   *
+   * AWAITABLE, unlike its siblings, because the Branding card has an explicit Save button and
+   * confirms with "Saved ✓". Fire-and-forget meant that tick appeared while the write was still
+   * in flight — so a refused save showed a green confirmation over a field that then reverted,
+   * with nothing said. The caller needs the outcome to make a claim about it.
    */
-  updateBrand: (patch: Partial<Brand>) => void;
+  updateBrand: (patch: Partial<Brand>) => Promise<WriteOutcome>;
 }
 
 export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set, get) => ({
@@ -96,12 +102,12 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set,
 
   setDocWording: (docWording) => set({ docWording }),
 
-  updateBrand: (patch) => {
+  updateBrand: async (patch) => {
     const snapshot = get().brand;
     // Optimistic — the Branding card + customer surfaces reflect it immediately.
     set((s) => ({ brand: { ...s.brand, ...patch } }));
 
-    void trpcVanilla.v1.settings.updateBrand
+    return trpcVanilla.v1.settings.updateBrand
       .mutate({
         name: patch.name,
         tagline: patch.tagline ?? null,
@@ -123,10 +129,13 @@ export const createDataSlice: StateCreator<DataSlice, [], [], DataSlice> = (set,
             logoUrl: b.logoUrl ?? undefined,
           },
         });
+        return { ok: true } as WriteOutcome;
       })
-      .catch(() => {
-        // Rollback to the pre-mutation snapshot.
+      .catch((err: unknown) => {
+        // Rollback to the pre-mutation snapshot. The sentence goes back to the Branding card,
+        // which owns the Save button that made the claim — not to the global announcer.
         set({ brand: snapshot });
+        return writeFailure("updateBrand", err);
       });
   },
 

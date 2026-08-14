@@ -11,6 +11,7 @@ import { DrizzleMessageRepository, DrizzleLeadAssignmentReader, DrizzleLeadUnrea
 import { SendMessageUseCase } from "../app/send-message";
 import { ListThreadUseCase } from "../app/list-thread";
 import { ListConversationsUseCase } from "../app/list-conversations";
+import { SMS_BODY_MAX_CHARS } from "@mallet/shared/messaging/sms-limits";
 import { messageDTO, toMessageDTO } from "./message-dto";
 import type { ConversationRow } from "../domain/message-repository";
 
@@ -96,7 +97,7 @@ const toConversationDTO = (row: ConversationRow): ConversationDTO => ({
 
 const sendInput = z.object({
   leadId: z.string().uuid(),
-  body: z.string().min(1).max(1600),
+  body: z.string().min(1).max(SMS_BODY_MAX_CHARS),
   // Optional office-chosen destination override (e.g. the estimate-modal send panel's
   // editable number). Validated server-side via Phone.parse; falls back to the lead's
   // on-file phone when absent.

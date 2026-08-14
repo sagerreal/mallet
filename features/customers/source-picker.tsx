@@ -36,11 +36,20 @@ export function SourcePicker({ value, onPick }: SourcePickerProps) {
 
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState("");
+  const [addError, setAddError] = useState<string | null>(null);
 
   const commit = async () => {
     const name = draft.trim();
     if (!name) return;
+    setAddError(null);
     const result = await addSource(name);
+    // A refused add used to clear the box and close the row regardless, so the typed name simply
+    // disappeared. The server's reason is the only thing that makes the next attempt different
+    // from the last, so it stays on screen with the name still in the box.
+    if (!result.ok && result.reason === "failed") {
+      setAddError(result.message);
+      return;
+    }
     // A duplicate is not an error worth a message here — the source already exists, so selecting it
     // is what the person meant either way.
     if (result.ok || result.reason === "duplicate") onPick(name);
@@ -80,29 +89,40 @@ export function SourcePicker({ value, onPick }: SourcePickerProps) {
       })}
 
       {adding ? (
-        <div className="cfrow" style={{ padding: "var(--space-2) var(--space-3)" }}>
-          <input
-            type="text"
-            placeholder="Source name"
-            value={draft}
-            maxLength={100}
-            autoFocus
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                void commit();
-              }
-              if (e.key === "Escape") {
-                setAdding(false);
-                setDraft("");
-              }
-            }}
-          />
-          <button type="button" className="btn sm primary" onClick={() => void commit()}>
-            Add
-          </button>
-        </div>
+        <>
+          <div className="cfrow" style={{ padding: "var(--space-2) var(--space-3)" }}>
+            <input
+              type="text"
+              placeholder="Source name"
+              value={draft}
+              maxLength={100}
+              autoFocus
+              onChange={(e) => setDraft(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void commit();
+                }
+                if (e.key === "Escape") {
+                  setAdding(false);
+                  setDraft("");
+                  setAddError(null);
+                }
+              }}
+            />
+            <button type="button" className="btn sm primary" onClick={() => void commit()}>
+              Add
+            </button>
+          </div>
+          {addError && (
+            <div
+              role="alert"
+              style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", padding: "0 var(--space-3) var(--space-2)" }}
+            >
+              {addError}
+            </div>
+          )}
+        </>
       ) : (
         <button type="button" className="qa-srcopt add" onClick={() => setAdding(true)}>
           + Add a new source…

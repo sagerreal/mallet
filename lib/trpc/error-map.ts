@@ -29,6 +29,19 @@ const FALLBACK = "Something went wrong. Try again.";
  */
 export const APP_ERROR_FIELD = "appErrorField";
 
+/**
+ * The tRPC code on a transport error, or null when it carries none.
+ *
+ * For the rare surface that must write its OWN sentence for one specific code — the texting
+ * composer's carrier failure, where the shared BAD_GATEWAY copy talks about the assistant — so it
+ * branches on the code rather than on the sentence.
+ */
+export const transportCode = (error: unknown): string | null => {
+  if (typeof error !== "object" || error === null || !("data" in error)) return null;
+  const code = (error as { data?: { code?: unknown } | null }).data?.code;
+  return typeof code === "string" && code !== "" ? code : null;
+};
+
 /** The domain tag on a transport error, or null when it carries none. */
 export const appErrorField = (error: unknown): string | null => {
   if (typeof error !== "object" || error === null || !("data" in error)) return null;

@@ -13,14 +13,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { TRPCClientError } from "@trpc/client";
 import { useAppStore, useActiveModal, useCloseModal } from "@/lib/store/app-store";
 import { api } from "@/lib/trpc/client";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import type { Lead, LeadNote } from "@/lib/store/types";
 import type { MessageDTO } from "@mallet/messaging";
+import { SMS_BODY_MAX_CHARS } from "@mallet/shared/messaging/sms-limits";
 import { shortWhen } from "@/lib/format";
-import { userMessage } from "@/lib/trpc/error-map";
+import { userMessage, transportCode } from "@/lib/trpc/error-map";
 import { hasPhone, PhoneAddInput } from "@/lib/phone";
 import { useSmsGate } from "@/features/a2p/use-sms-ready";
 import { SmsNote } from "@/features/a2p/sms-blocked";
@@ -128,35 +128,23 @@ interface OptimisticMsg {
   body: string;
 }
 
+/** How near the cap the composer starts counting down. */
+const SMS_COUNTER_FROM = 100;
+
 // ── Error label ───────────────────────────────────────────────────────────────
 
 function friendlyError(err: unknown): string {
-  // Prefer structured tRPC code over message-string matching — codes are stable, messages are not.
-  if (err instanceof TRPCClientError) {
-    const code = err.data?.code as string | undefined;
-    // PRECONDITION_FAILED covers THREE unrelated blockers on this one endpoint: no business
-    // number, 10DLC not approved, and texting not set up on the server. Collapsing them into one
-    // sentence sent somebody hunting a business number that was configured all along, so the
-    // server's own wording wins here — it is the only thing that names the real cause.
-    if (code === "PRECONDITION_FAILED") {
-      return userMessage(err, "Texting isn't set up yet.");
-    }
-    if (code === "BAD_REQUEST") return "This customer has no phone number on file.";
-    if (code === "BAD_GATEWAY") return "Couldn't send — please try again.";
-    return "Send failed — please try again.";
-  }
-  // Fallback for non-tRPC errors: match on message strings.
-  const msg = err instanceof Error ? err.message : String(err);
-  if (msg.includes("PRECONDITION_FAILED") || msg.toLowerCase().includes("not configured") || msg.toLowerCase().includes("twilio")) {
-    return "Texting isn't set up yet.";
-  }
-  if (msg.includes("BAD_REQUEST") || msg.toLowerCase().includes("no phone")) {
-    return "This customer has no phone number on file.";
-  }
-  if (msg.includes("BAD_GATEWAY")) {
-    return "Couldn't send — please try again.";
-  }
-  return "Send failed — please try again.";
+  // BAD_REQUEST used to be answered with "This customer has no phone number on file" — for EVERY
+  // refusal, including a body over the carrier's limit, while the header two lines above printed
+  // the number. It is now a sentence the server wrote (the formatter flattens a Zod input
+  // rejection before it leaves — see trpc/errors.ts), and PRECONDITION_FAILED covers three
+  // unrelated blockers here (no business number, 10DLC not approved, texting not configured), so
+  // for both the server's own wording is the only thing that names the real cause.
+  //
+  // BAD_GATEWAY is the one code this surface answers itself: the shared map's sentence for it
+  // talks about the assistant, which says nothing to somebody whose text did not go out.
+  if (transportCode(err) === "BAD_GATEWAY") return "Couldn't send — the carrier rejected it. Try again.";
+  return userMessage(err, "Couldn't send — try again.");
 }
 
 // ── Main modal ────────────────────────────────────────────────────────────────
@@ -359,6 +347,7 @@ export function CustomerThreadPane({
             <input
               value={draft}
               placeholder={`Text ${firstName(custName)}…`}
+              maxLength={SMS_BODY_MAX_CHARS}
               onChange={(e) => setDraft(e.target.value)}
               onKeyDown={(e) => {
                 // Enter is a send too. Gating only the button would leave the whole thing
@@ -383,6 +372,13 @@ export function CustomerThreadPane({
               Send
             </button>
           </div>
+          {/* Silent until the cap is within reach: a counter on every short text is noise, and the
+              only moment it earns its place is when the next few words will be the ones cut. */}
+          {draft.length > SMS_BODY_MAX_CHARS - SMS_COUNTER_FROM && (
+            <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-1) 0" }}>
+              {SMS_BODY_MAX_CHARS - draft.length} characters left
+            </div>
+          )}
           <SmsNote gate={smsGate} />
         </>
       )}
