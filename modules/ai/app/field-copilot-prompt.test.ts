@@ -2,7 +2,7 @@
 //
 // Key assertions:
 // - Redacted variant contains the hard no-prices rule
-// - FOUND WORK marker format is documented and enforced by the prompt language
+// - The prompt emits NO found-work marker and never claims to have staged anything
 // - Safety escalation language is present
 // - Prompt is non-empty and covers key behaviours
 
@@ -26,24 +26,22 @@ describe("buildFieldPrompt", () => {
       }
     });
 
-    it("always contains the FOUND WORK marker format", () => {
+    // The marker is gone: change orders are how a tech proposes extra work, so a second
+    // pipeline that staged add-ons from a chat reply was retired with it.
+    it("never emits a found-work marker", () => {
       for (const seesPrice of [true, false]) {
         const prompt = buildFieldPrompt({ seesPrice });
-        expect(prompt, `seesPrice=${seesPrice}`).toContain("FOUND WORK:");
+        expect(prompt, `seesPrice=${seesPrice}`).not.toContain("FOUND WORK");
       }
     });
 
-    it("specifies the description length limit (≤80 chars)", () => {
+    // The dangerous failure is not silence, it is a false claim: a tech told the office already
+    // knows will walk off the job without raising anything.
+    it("points out-of-scope work at a change order and forbids claiming it was staged", () => {
       for (const seesPrice of [true, false]) {
         const prompt = buildFieldPrompt({ seesPrice });
-        expect(prompt, `seesPrice=${seesPrice}`).toContain("80");
-      }
-    });
-
-    it("specifies one-per-reply max for FOUND WORK marker", () => {
-      for (const seesPrice of [true, false]) {
-        const prompt = buildFieldPrompt({ seesPrice });
-        expect(prompt, `seesPrice=${seesPrice}`).toContain("one per reply max");
+        expect(prompt, `seesPrice=${seesPrice}`).toContain("change order");
+        expect(prompt, `seesPrice=${seesPrice}`).toContain("Never say you have added, staged, or sent anything.");
       }
     });
 
@@ -74,14 +72,6 @@ describe("buildFieldPrompt", () => {
       expect(prompt).toContain("prices");
     });
 
-    it("the FOUND WORK instructions note no prices restriction", () => {
-      const prompt = buildFieldPrompt({ seesPrice: false });
-      // The instruction line before the FOUND WORK format should mention the no-prices constraint
-      const instructionLine = prompt
-        .split("\n")
-        .find((line) => line.includes("80 chars") && line.includes("no prices"));
-      expect(instructionLine, "FOUND WORK instruction must mention 'no prices' when !seesPrice").toBeDefined();
-    });
   });
 
   describe("seesPrice=true — price rule is absent", () => {
@@ -90,17 +80,6 @@ describe("buildFieldPrompt", () => {
       expect(prompt).not.toContain("PRICE RULE");
     });
 
-    it("the FOUND WORK instructions do NOT mention no-prices restriction", () => {
-      const prompt = buildFieldPrompt({ seesPrice: true });
-      // The instruction line for FOUND WORK should NOT have no-prices when seesPrice=true
-      const instructionLine = prompt
-        .split("\n")
-        .find((line) => line.includes("80 chars"));
-      expect(instructionLine, "FOUND WORK 80-char instruction should exist").toBeDefined();
-      if (instructionLine) {
-        expect(instructionLine).not.toContain("no prices");
-      }
-    });
   });
 
   describe("techName", () => {
@@ -116,14 +95,7 @@ describe("buildFieldPrompt", () => {
     });
   });
 
-  describe("FOUND WORK marker contract documentation", () => {
-    it("the marker is exactly 'FOUND WORK: {description}'", () => {
-      // The contract is that replies end with this exact prefix — verify the prompt
-      // communicates the format unambiguously so the PR3 parser can rely on it.
-      const prompt = buildFieldPrompt({ seesPrice: false });
-      expect(prompt).toMatch(/FOUND WORK: \{[^}]+\}/);
-    });
-
+  describe("safety", () => {
     it("electrical is also mentioned as a safety escalation hazard", () => {
       const prompt = buildFieldPrompt({ seesPrice: false });
       expect(prompt.toLowerCase()).toContain("electrical");
@@ -159,9 +131,9 @@ describe("buildFieldPrompt — no job open", () => {
     expect(noJob).toMatch(/open the job and ask again/i);
   });
 
-  /** FOUND WORK stages an add-on against a job. With none open there is nothing to attach it to. */
-  it("withholds the FOUND WORK marker, which has nowhere to land", () => {
-    expect(noJob).not.toContain("FOUND WORK");
+  /** Change orders live on a job. With none open there is nothing to point the tech at. */
+  it("withholds the change-order instruction, which has nothing to attach to", () => {
+    expect(noJob).not.toContain("change order");
   });
 
   it("keeps every guardrail that has nothing to do with a job", () => {
@@ -171,9 +143,44 @@ describe("buildFieldPrompt — no job open", () => {
     expect(hidden).toMatch(/PRICE RULE \(strict\)/);
   });
 
-  it("leaves the in-job prompt exactly as it was — hasJob defaults true", () => {
+  it("hasJob defaults true — the in-job prompt is what an omitted flag builds", () => {
     expect(buildFieldPrompt({ seesPrice: true })).toBe(buildFieldPrompt({ seesPrice: true, hasJob: true }));
     expect(buildFieldPrompt({ seesPrice: true })).toContain("get_my_job");
-    expect(buildFieldPrompt({ seesPrice: true })).toContain("FOUND WORK");
+    expect(buildFieldPrompt({ seesPrice: true })).toContain("change order");
+  });
+});
+
+/**
+ * THE DATE. A copilot that does not know today cannot resolve "tomorrow", "Thursday" or "the
+ * 13th" into the YYYY-MM-DD get_my_day needs. Observed before this line existed: asked about
+ * "August 13" the model guessed 2025, the tool refused it as out of range, and the model then
+ * reasoned from its own wrong guess that the correct date was out of range too.
+ */
+describe("buildFieldPrompt — today", () => {
+  it("states the date with its weekday, and the raw form the tool takes", () => {
+    const p = buildFieldPrompt({ seesPrice: true, today: "2026-08-14" });
+    expect(p).toContain("Friday");
+    expect(p).toContain("14 August 2026");
+    expect(p).toContain("2026-08-14");
+  });
+
+  it("tells the model to resolve against that date, not its own idea of the year", () => {
+    const p = buildFieldPrompt({ seesPrice: true, today: "2026-08-14" });
+    expect(p).toMatch(/never against your own assumption of the year/i);
+  });
+
+  it("appears on the general chat too — the agenda question lives there", () => {
+    const p = buildFieldPrompt({ seesPrice: true, hasJob: false, today: "2026-08-14" });
+    expect(p).toContain("2026-08-14");
+  });
+
+  it("omits the line rather than inventing a date when none is given", () => {
+    expect(buildFieldPrompt({ seesPrice: true })).not.toMatch(/^Today is /m);
+  });
+
+  it("omits the line for a malformed date rather than printing Invalid Date", () => {
+    const p = buildFieldPrompt({ seesPrice: true, today: "not-a-date" });
+    expect(p).not.toContain("Invalid Date");
+    expect(p).not.toMatch(/^Today is /m);
   });
 });

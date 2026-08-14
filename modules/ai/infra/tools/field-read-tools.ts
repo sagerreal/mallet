@@ -21,14 +21,20 @@
 
 import { z } from "zod";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import type { OrgId, JobId } from "@mallet/shared/types";
-import { asJobId } from "@mallet/shared/types";
+import type { OrgId, JobId, UserId } from "@mallet/shared/types";
+import { asJobId, toPage } from "@mallet/shared/types";
 import type { ToolMeta } from "../../app/run-agent-turn";
 import type { ToolOutcome } from "../../domain/tool";
 import { jsonSchema, invalid } from "./shared";
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { DrizzleSettingsRepository } from "@mallet/settings";
 import { toJobSummaryDTO } from "@mallet/jobs";
+// Deep imports, deliberately — same reason the redaction helper below is one. The `@mallet/customers`
+// barrel re-exports its tRPC router, which pulls the config validator and throws in a unit test
+// with no DB env. These three files are pure app/api logic with no transport in their import graph.
+import { DrizzleLeadRepository } from "../../../customers/infra/drizzle-lead-repository";
+import { ListJobsUseCase } from "../../../jobs/app/list-jobs";
+import { byVisitOn } from "../../../jobs/api/my-day-order";
 import { redactMoneyForTech } from "../../../jobs/api/money-redaction";
 import type { BookingService } from "@mallet/settings";
 import type { JobChecklistProps } from "../../../jobs/domain/job";
@@ -42,6 +48,17 @@ export interface FieldToolScope {
   readonly jobId: JobId;
   /** true when the org's techSeesPrice setting is on — already resolved before buildFieldTools */
   readonly seesPrice: boolean;
+  /** The caller. get_my_day is scoped to THEIR route — never the shop's whole book. */
+  readonly userId: UserId;
+  /**
+   * The caller's own calendar date, `YYYY-MM-DD`, sent by the client.
+   *
+   * "Today" is a statement about where the van is, and there is no org timezone column for the
+   * server to reproduce it — the same reasoning as myDayInput's client-supplied instants. A tech
+   * in PDT at 6pm is already on tomorrow's date in UTC, so deriving this from the server clock
+   * would answer the wrong day for the entire evening.
+   */
+  readonly today: string;
 }
 
 // Deps the tools need: tx factories per call (mirrors the NoTx pattern in ai-router).
@@ -65,6 +82,36 @@ export interface FieldTool {
 // ---------------------------------------------------------------------------
 
 const noInput = z.object({});
+
+/** The one tool that takes an argument: which day. Absent means the caller's own today. */
+const myDayInput = z.object({
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, "expected a YYYY-MM-DD date")
+    .optional()
+    .describe("The day to read, YYYY-MM-DD. Omit for today."),
+});
+
+/** One page IS the agenda — a day with more stops than this is not a day one person drives. */
+const AGENDA_LIMIT = 100;
+
+/** The day pager's reach, measured from the CALLER's today rather than a server clock. */
+const AGENDA_REACH_DAYS = 15;
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Whether a `YYYY-MM-DD` date is close enough to the caller's own today to be a real question.
+ *
+ * Impossible-but-well-formed dates ("2026-02-30") roll over in the Date constructor; the
+ * round-trip check rejects them rather than admitting them through a NaN comparison.
+ */
+const withinAgendaReach = (date: string, today: string): boolean => {
+  const parsed = new Date(`${date}T00:00:00Z`);
+  const ref = new Date(`${today}T00:00:00Z`);
+  if (Number.isNaN(parsed.getTime()) || Number.isNaN(ref.getTime())) return false;
+  if (parsed.toISOString().slice(0, 10) !== date) return false;
+  return Math.abs(parsed.getTime() - ref.getTime()) / MS_PER_DAY <= AGENDA_REACH_DAYS;
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -190,6 +237,103 @@ const buildGetOrgServiceContextTool = (scope: FieldToolScope, deps: FieldToolDep
 });
 
 // ---------------------------------------------------------------------------
+// Tool: get_my_day — the caller's own route for a named day
+// ---------------------------------------------------------------------------
+
+/**
+ * A stop, as the model should read it. Deliberately NOT the job DTO: the agenda question is
+ * "where am I going and what is it", and a full summary per stop would spend the context window
+ * on checklist answers and photo metadata for jobs the tech has not opened.
+ *
+ * Money follows the same rule as everywhere else — the total rides only when seesPrice is on.
+ */
+const toAgendaStop = (
+  dto: ReturnType<typeof toJobSummaryDTO>,
+  seesPrice: boolean,
+): Record<string, unknown> => {
+  // The stop's own clock. `scheduledStart` is a wall-clock HH:MM on `scheduledDate` — the board's
+  // grammar — so it needs no timezone conversion to be read back to the person driving there.
+  const next = (dto.visits ?? []).find((v) => v.status !== "canceled");
+  return {
+    num: dto.num,
+    title: dto.title,
+    customer: dto.customerName ?? null,
+    address: dto.addr ?? null,
+    status: dto.status,
+    ...(next?.scheduledStart ? { scheduledStart: next.scheduledStart } : {}),
+    ...(next?.durationMinutes ? { durationMinutes: next.durationMinutes } : {}),
+    ...(seesPrice && dto.total ? { total: dto.total } : {}),
+  };
+};
+
+const buildGetMyDayTool = (scope: FieldToolScope, deps: FieldToolDeps): FieldTool => ({
+  meta: {
+    name: "get_my_day",
+    description:
+      "Returns the CALLER'S OWN route for one day: each stop's job number, title, customer, address, scheduled time and status, earliest first. Defaults to today. Pass a YYYY-MM-DD date for another day (tomorrow, yesterday, a named weekday) within about two weeks either side. Use this for any question about what work the tech has, where they are going, how many stops are left, or what is next.",
+    inputSchema: jsonSchema(myDayInput),
+    mutating: false,
+  },
+  execute: async (input) => {
+    const parsed = myDayInput.safeParse(input);
+    if (!parsed.success) return invalid(parsed.error.issues);
+
+    const date = parsed.data.date ?? scope.today;
+    // A model-supplied date is client input: bound it, or "what did I do last year" becomes a
+    // scan of the shop's whole history. The caller's own `today` is the reference point.
+    if (!withinAgendaReach(date, scope.today)) {
+      return {
+        ok: false as const,
+        error: `${date} is out of reach — this covers about two weeks either side of ${scope.today}.`,
+      };
+    }
+
+    return deps.withTx(scope.orgId, async (tx) => {
+      const repo = new DrizzleJobRepository(tx, scope.orgId);
+      const page = await new ListJobsUseCase(repo).exec({
+        page: toPage({ limit: AGENDA_LIMIT, cursor: null }),
+        // The board's own predicate, narrowed to one date and to THIS caller. excludeCanceled
+        // closes the visit-outlives-its-job gap — a called-off job is not a stop.
+        filter: {
+          assignedUserId: scope.userId,
+          visitFrom: date,
+          visitTo: date,
+          excludeCanceled: true,
+        },
+      });
+
+      if (page.items.length === 0) {
+        return {
+          ok: true as const,
+          summary: `No stops scheduled for ${date}${date === scope.today ? " (today)" : ""}.`,
+        };
+      }
+
+      const ordered = [...page.items].sort(byVisitOn(date));
+      const jobIds = ordered.map((j) => j.props.id);
+      // Both reads batched — an agenda is the screen a tech reloads most, and a per-job or
+      // per-lead query here would be exactly the N+1 the field router already avoids.
+      const [executionByJob, leads] = await Promise.all([
+        repo.listExecutionForJobs(jobIds),
+        new DrizzleLeadRepository(tx, scope.orgId).findByIds([
+          ...new Set(ordered.map((j) => j.props.leadId)),
+        ]),
+      ]);
+      const nameByLead = new Map(leads.map((l) => [l.props.id, l.props.name]));
+
+      const stops = ordered.map((j) =>
+        toAgendaStop(
+          toJobSummaryDTO(j, executionByJob.get(j.props.id), nameByLead.get(j.props.leadId) ?? null),
+          scope.seesPrice,
+        ),
+      );
+
+      return { ok: true as const, summary: JSON.stringify({ date, stops }) };
+    });
+  },
+});
+
+// ---------------------------------------------------------------------------
 // Tool 3: get_callback_history
 // ---------------------------------------------------------------------------
 
@@ -270,6 +414,7 @@ const buildGetCallbackHistoryTool = (scope: FieldToolScope, deps: FieldToolDeps)
 export const buildFieldTools = (deps: FieldToolDeps) =>
   (scope: FieldToolScope): FieldTool[] => [
     buildGetMyJobTool(scope, deps),
+    buildGetMyDayTool(scope, deps),
     buildGetOrgServiceContextTool(scope, deps),
     buildGetCallbackHistoryTool(scope, deps),
   ];
@@ -277,17 +422,22 @@ export const buildFieldTools = (deps: FieldToolDeps) =>
 /**
  * The tools a conversation gets when NO job is open — the Ask tab's general chat.
  *
- * Only the org-scoped one survives. `get_my_job` and `get_callback_history` both close over a
- * verified jobId; handing them a placeholder would either leak another tenant's job or fail at
- * the first call, and offering the model a tool that cannot work is worse than not offering it.
+ * `get_my_job` and `get_callback_history` close over a verified jobId; handing them a placeholder
+ * would either read the wrong job or fail at the first call, and offering the model a tool that
+ * cannot work is worse than not offering it. Both are withheld.
  *
- * The scope keeps `orgId` and `seesPrice` — the price guardrail is about the ROLE, not the job,
- * and applies to a general answer exactly as it does to a job-specific one.
+ * `get_my_day` is NOT job-scoped and belongs here. It is keyed on the CALLER, and "what have I got
+ * today" is the most obvious question a tech opens this tab to ask — without it the model correctly
+ * but uselessly reports that it cannot see anything, which is exactly what the general chat is for.
+ *
+ * The scope keeps `orgId`, `userId`, `today` and `seesPrice` — the price guardrail is about the
+ * ROLE, not the job, and applies to a general answer exactly as it does to a job-specific one.
  */
 export const buildOrgOnlyFieldTools = (deps: FieldToolDeps) =>
-  (scope: Omit<FieldToolScope, "jobId">): FieldTool[] => [
-    buildGetOrgServiceContextTool({ ...scope, jobId: NO_JOB } as FieldToolScope, deps),
-  ];
+  (scope: Omit<FieldToolScope, "jobId">): FieldTool[] => {
+    const scoped = { ...scope, jobId: NO_JOB } as FieldToolScope;
+    return [buildGetMyDayTool(scoped, deps), buildGetOrgServiceContextTool(scoped, deps)];
+  };
 
 /**
  * A structurally-valid JobId the org-scoped tool never reads.
