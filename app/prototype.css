@@ -392,8 +392,11 @@
   .setsec-h h3{margin:0}
   /* collapsible settings card — header always visible, body folds (progressive disclosure) */
   .foldcard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);margin-bottom:var(--space-3);box-shadow:var(--shadow-sm);max-width:680px}
-  .foldcard .fhead{display:flex;align-items:center;gap:var(--space-2);cursor:pointer;padding:var(--space-4) var(--space-5);user-select:none}
-  .foldcard .fhead h3{margin:0;font-size:var(--type-md);font-weight:800}
+  /* the heading that carries the disclosure button — stripped back to a plain box so the row
+     measures exactly as it did when .fhead was a div */
+  .foldcard .fwrap{margin:0;font:inherit}
+  .foldcard .fhead{display:flex;align-items:center;gap:var(--space-2);cursor:pointer;padding:var(--space-4) var(--space-5);user-select:none;width:100%;background:none;border:0;color:inherit;font:inherit;text-align:left}
+  .foldcard .fhead .ftitle{font-size:var(--type-md);font-weight:800}
   /* the row's mark: a quiet tile, so seven rows read as seven THINGS rather than one grey wall.
      Monochrome on purpose — the palette has no brand colours in it and a row of vendor logos would
      be the loudest thing in the product. */

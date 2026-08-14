@@ -26,7 +26,7 @@ import { DocumentsCard } from "./documents-card";
 import { SalesTaxCard } from "./sales-tax-card";
 import { CallbackNumberCard } from "./callback-number-card";
 import { A2pRegistrationCard } from "./a2p/a2p-registration-card";
-import { MarkYou, MarkTeam, MarkPermissions, MarkPunch, MarkSources } from "./setting-marks";
+import { MarkYou, MarkTeam, MarkPermissions, MarkPunch } from "./setting-marks";
 import { resolveSettingsTab, DEFAULT_SET_TAB, type SetTab } from "./settings-tabs";
 import { WebsiteFormCard } from "./website-form-card";
 import { LeadMarketplacesCard } from "./lead-marketplaces-card";
@@ -36,7 +36,6 @@ import { QuickbooksCard } from "./quickbooks-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { TimezoneCard } from "./timezone-card";
 import { ImportCard } from "./import-card";
-import { DEFAULT_SOURCES } from "@/lib/store/default-sources";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_PAGE_LIMIT, HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
@@ -783,7 +782,7 @@ function TeamRolesBlock() {
 }
 
 // ============================================================================
-// Section: Lead sources
+// Section: Integrations
 // ============================================================================
 
 /**

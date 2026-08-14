@@ -64,15 +64,25 @@ export function CustomersView() {
   // the hydrator's first 500 rows — so on 606 customers it reported "500 of 500".
   const cq = useCustomersQueryState();
   const serverSort = cq.sortCol ? (CUSTOMER_COL_TO_SORT[cq.sortCol] ?? null) : null;
+  const archived = archiveSet === "archived";
+  // A GROUP IS A LIVE-ONLY AXIS. Every arm of leadGroupCondition ANDs `deleted_at IS NULL`, so a
+  // group carried into the archived set asks for a customer who is both deleted and not — the
+  // list came back empty for every shop that had a chip on, and the chips are disabled there, so
+  // there was no way to take the selection off. Dropping it here is what makes the disabled row
+  // honest: the filter genuinely does not apply to this set.
+  const group = archived ? "" : cq.group;
+  // Anything that could be hiding rows. An empty list under one of these is a no-match, not a fact
+  // about the shop's book — see the empty cell below.
+  const narrowed = Boolean(cq.search || cq.stage || cq.source || cq.scope || group);
   const list = useCustomersQuery({
     search: cq.search,
     stage: cq.stage,
     source: cq.source,
     scope: cq.scope,
-    group: cq.group,
+    group,
     // The Archived tab used to change nothing but the UI — it never reached the query, so it
     // returned the LIVE list with a Restore column added and Restore was a no-op.
-    archived: archiveSet === "archived",
+    archived,
     sort: serverSort,
     sortDir: serverSort ? cq.sortDir : null,
   });
@@ -185,7 +195,7 @@ export function CustomersView() {
         group={(cq.group || null) as LeadGroup | null}
         counts={list.groupCounts}
         onGroup={(g) => cq.setGroup(g ?? "")}
-        disabled={archiveSet === "archived"}
+        disabled={archived}
       />
 
       {/* Mobile keeps its own People/Companies + Active/Archived pair; on desktop those live in
@@ -212,7 +222,7 @@ export function CustomersView() {
           <colgroup>
             {/* The Archived view's Restore cell is a real column and shares the same normalised
                 budget — a fixed pixel width here would push the total past 100%. */}
-            {colWidths(archiveSet === "archived" ? [...visible, "restore"] : visible).map((w, i) => (
+            {colWidths(archived ? [...visible, "restore"] : visible).map((w, i) => (
               <col key={i} style={{ width: w }} />
             ))}
           </colgroup>
@@ -234,7 +244,7 @@ export function CustomersView() {
                   </th>
                 );
               })}
-              {archiveSet === "archived" && <th aria-label="Restore" />}
+              {archived && <th aria-label="Restore" />}
             </tr>
           </thead>
           <tbody>
@@ -245,14 +255,17 @@ export function CustomersView() {
                   lead={lead}
                   visibleCols={visible}
                   onOpen={(id) => openModal(MODAL.LEAD, { leadId: id })}
-                  onRestore={archiveSet === "archived" ? restoreLead : undefined}
+                  onRestore={archived ? restoreLead : undefined}
                 />
               ))
             ) : (
               <tr>
-                <td colSpan={visible.length + (archiveSet === "archived" ? 1 : 0)}>
+                <td colSpan={visible.length + (archived ? 1 : 0)}>
                   <div className="empty-att">
-                    {archiveSet === "archived" ? (
+                    {/* "No archived customers" is a claim about the whole set, so only the
+                        UNNARROWED query is entitled to make it. Under a search or a filter the
+                        row states what is actually true and hands back the way out. */}
+                    {archived && !narrowed ? (
                       "No archived customers."
                     ) : (
                       <>

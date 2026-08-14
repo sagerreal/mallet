@@ -13,6 +13,12 @@ let custSeg = "people";
 // so a fixture with rows but total 0 would render the first-run screen and prove nothing.
 let listState = { total: undefined as number | undefined, isFetched: true, isError: false, isLoading: false, isRefetching: false };
 const openModal = vi.fn();
+const clearFilters = vi.fn();
+// The list's own filter state, settable per test — the view decides which parts of it reach the
+// query, and that decision is what the archived-set tests assert.
+let queryState = { search: "", stage: "", source: "", scope: "", group: "" };
+// The arguments the view actually handed the query on the last render.
+let lastQuery: Record<string, unknown> | undefined;
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: { restoreLead: () => void }) => unknown) => sel({ restoreLead: vi.fn() }),
@@ -24,7 +30,7 @@ vi.mock("@/lib/store/app-store", () => ({
 }));
 
 vi.mock("./use-customers-query", () => ({
-  useCustomersQuery: () => ({
+  useCustomersQuery: (state: Record<string, unknown>) => ((lastQuery = state), {
     rows: leads,
     shown: leads.length,
     ...listState,
@@ -41,8 +47,9 @@ vi.mock("./use-customers-query", () => ({
     refetch: vi.fn(),
   }),
   useCustomersQueryState: () => ({
-    search: "", setSearch: vi.fn(), stage: "", setStage: vi.fn(), source: "", setSource: vi.fn(),
-    sortCol: null, sortDir: null, toggleSortCol: vi.fn(), clear: vi.fn(),
+    ...queryState,
+    setSearch: vi.fn(), setStage: vi.fn(), setSource: vi.fn(), setScope: vi.fn(), setGroup: vi.fn(),
+    sortCol: null, sortDir: null, toggleSortCol: vi.fn(), clear: clearFilters,
   }),
   CUSTOMER_COL_TO_SORT: { name: "name", latest: "lastActivity", age: "created" },
 }));
@@ -50,7 +57,15 @@ vi.mock("./use-customers-query", () => ({
 vi.mock("./leads-hydrator", () => ({ toStoreLead: (l: unknown) => l }));
 
 // Stub heavy children so the view renders in isolation (mirrors the branding-card test approach).
-vi.mock("./customers-toolbar", () => ({ CustomersToolbar: () => <div data-testid="toolbar" /> }));
+// The toolbar owns the Active/Archived toggle, so the stub has to be able to flip it — the
+// archived-set behaviour is unreachable otherwise.
+vi.mock("./customers-toolbar", () => ({
+  CustomersToolbar: ({ onArchiveSet }: { onArchiveSet: (v: "active" | "archived") => void }) => (
+    <div data-testid="toolbar">
+      <button onClick={() => onArchiveSet("archived")}>Show archived</button>
+    </div>
+  ),
+}));
 vi.mock("./companies-view", () => ({ CompaniesView: () => <div data-testid="companies" /> }));
 vi.mock("./lead-row", () => ({ LeadRow: () => (<tr data-testid="lead-row"><td /></tr>) }));
 vi.mock("./customers-columns", () => ({
@@ -158,10 +173,65 @@ describe("CustomersView — first-run empty state", () => {
   });
 });
 
+/**
+ * THE ARCHIVED SET AND THE GROUP CHIPS ARE DIFFERENT AXES.
+ *
+ * Every arm of leadGroupCondition ANDs `deleted_at IS NULL` — a group describes where a LIVE
+ * customer's work has got to. Sent alongside `archived: true` it asks for a row that is both
+ * deleted and not, so the archived list came back empty for every shop with a chip selected, said
+ * "No archived customers" as though that settled it, and disabled the chips so there was no way to
+ * take the selection off.
+ */
+describe("CustomersView — the archived set", () => {
+  beforeEach(() => {
+    leads = [];
+    custSeg = "people";
+    bookTotalOverride = 12;
+    listState = { total: 12, isFetched: true, isError: false, isLoading: false, isRefetching: false };
+    queryState = { search: "", stage: "", source: "", scope: "", group: "" };
+    lastQuery = undefined;
+    vi.clearAllMocks();
+  });
+
+  it("drops the group selection when the archived set is showing", () => {
+    queryState = { ...queryState, group: "owesMoney" };
+    leads = [aLead()];
+    render(<CustomersView />);
+    fireEvent.click(screen.getByRole("button", { name: "Show archived" }));
+    expect(lastQuery?.archived).toBe(true);
+    expect(lastQuery?.group).toBe("");
+  });
+
+  it("still narrows the live set by the group selection", () => {
+    queryState = { ...queryState, group: "owesMoney" };
+    leads = [aLead()];
+    render(<CustomersView />);
+    expect(lastQuery?.archived).toBe(false);
+    expect(lastQuery?.group).toBe("owesMoney");
+  });
+
+  it("states the archived set is empty only when nothing is narrowing it", () => {
+    render(<CustomersView />);
+    fireEvent.click(screen.getByRole("button", { name: "Show archived" }));
+    expect(screen.getByText("No archived customers.")).toBeTruthy();
+  });
+
+  it("offers a way out instead of asserting emptiness when a search is narrowing the archived set", () => {
+    queryState = { ...queryState, search: "abbott" };
+    render(<CustomersView />);
+    fireEvent.click(screen.getByRole("button", { name: "Show archived" }));
+    expect(screen.queryByText("No archived customers.")).toBeNull();
+    const clear = screen.getByRole("button", { name: "clear the filters" });
+    fireEvent.click(clear);
+    expect(clearFilters).toHaveBeenCalled();
+  });
+});
+
 describe("CustomersView — the Companies segment", () => {
   beforeEach(() => {
     leads = [];
     custSeg = "people";
+    queryState = { search: "", stage: "", source: "", scope: "", group: "" };
     listState = { total: undefined, isFetched: true, isError: false, isLoading: false, isRefetching: false };
   });
 
