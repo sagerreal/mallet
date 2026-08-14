@@ -115,6 +115,9 @@ function useAppStoreMock(selector: (s: Record<string, unknown>) => unknown) {
 }
 useAppStoreMock.getState = mockStoreState;
 
+// The sheet links to /ask?jobId= (Ask moved to its own tab), so it holds a router now.
+const askPush = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: askPush }) }));
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
   useOpenModal: () => mockOpenModal,

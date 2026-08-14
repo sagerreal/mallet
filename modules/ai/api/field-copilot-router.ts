@@ -16,7 +16,7 @@ import type { Principal } from "@mallet/identity";
 import type { AppDeps } from "@/trpc/deps";
 import { runAgentTurn, type AgentResult, type ExecuteTool, type ToolMeta } from "../app/run-agent-turn";
 import { LlmError, type AgentMessage, type UserContentBlock } from "../domain/llm-client";
-import { buildFieldTools } from "../infra/tools/field-read-tools";
+import { buildFieldTools, buildOrgOnlyFieldTools } from "../infra/tools/field-read-tools";
 import { buildFieldPrompt } from "../app/field-copilot-prompt";
 import { DrizzleJobRepository } from "../../jobs/infra/drizzle-job-repository";
 import { DrizzleSettingsRepository } from "../../settings/infra/drizzle-settings-repository";
@@ -70,7 +70,14 @@ export const createFieldCopilotRouter = () =>
     run: anyRoleNoTx
       .input(
         z.object({
-          jobId: z.string().uuid(),
+          /**
+           * OPTIONAL — the Ask tab is a general chat with no job open.
+           *
+           * Present: the older in-job conversation, unchanged — the job is verified, its tools are
+           * closed over it, and photos resolve against its execution rows.
+           * Absent: trade knowledge plus the org-scoped tool only. See buildOrgOnlyFieldTools.
+           */
+          jobId: z.string().uuid().optional(),
           message: z.string().min(1).max(2000),
           transcript: transcriptSchema.optional(),
           photoIds: z.array(z.string().uuid()).max(3).optional(),
@@ -86,7 +93,17 @@ export const createFieldCopilotRouter = () =>
           });
         }
 
-        const jobId = asJobId(input.jobId);
+        // A photo is a row on a JOB's execution record — there is nowhere to resolve one from
+        // without a job, and silently dropping an attachment the tech meant to send would produce
+        // advice about a photo the model never saw. Refuse, and say which part is unsupported.
+        if (!input.jobId && input.photoIds && input.photoIds.length > 0) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "open the job to ask about a photo",
+          });
+        }
+
+        const jobId = input.jobId ? asJobId(input.jobId) : null;
 
         // Short auth-check tx: assertOnJobIfTech + job existence + getTechSeesPrice
         // + resolve photo storagePaths. Closed before the slow model round-trips
@@ -94,7 +111,7 @@ export const createFieldCopilotRouter = () =>
         const { seesPrice, storagePaths } = await withTenant(principal.orgId, async (tx) => {
           const repo = new DrizzleJobRepository(tx, principal.orgId);
 
-          if (principal.role === "tech") {
+          if (jobId && principal.role === "tech") {
             // assertOnJobIfTech: throws NOT_FOUND or FORBIDDEN for tech callers.
             const job = await repo.findById(jobId);
             if (!job) {
@@ -103,13 +120,15 @@ export const createFieldCopilotRouter = () =>
             if (!job.isAssignedTo(principal.userId)) {
               throw new TRPCError({ code: "FORBIDDEN", message: "this job isn't assigned to you" });
             }
-          } else {
+          } else if (jobId) {
             // Owner/office: verify the job exists and is not deleted.
             const job = await repo.findById(jobId);
             if (!job) {
               throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
             }
           }
+          // No jobId: nothing to authorise against. The org tx itself is the tenant boundary, and
+          // the only tool this conversation gets reads org-scoped rows through it.
 
           const settingsRepo = new DrizzleSettingsRepository(tx, principal.orgId);
           const techSeesPrice = await settingsRepo.getTechSeesPrice();
@@ -118,7 +137,7 @@ export const createFieldCopilotRouter = () =>
 
           // Resolve photoIds → storagePaths, verifying they belong to this exact job.
           let resolvedPaths: readonly string[] = [];
-          if (input.photoIds && input.photoIds.length > 0) {
+          if (jobId && input.photoIds && input.photoIds.length > 0) {
             const execution = await repo.listExecution(jobId);
             resolvedPaths = resolvePhotoPaths(input.photoIds, execution.photos.map((p) => p.props), jobId);
           }
@@ -127,7 +146,7 @@ export const createFieldCopilotRouter = () =>
         });
 
         return runFieldTurn(principal, deps, {
-          jobId: input.jobId,
+          jobId: input.jobId ?? null,
           message: input.message,
           priorMessages: input.transcript,
           seesPrice,
@@ -177,7 +196,8 @@ const runFieldTurn = async (
   principal: Principal,
   deps: AppDeps,
   params: {
-    readonly jobId: string;
+    /** Null when no job is open — the Ask tab's general chat. See the `run` input. */
+    readonly jobId: string | null;
     readonly message: string;
     readonly priorMessages?: AgentMessage[];
     readonly seesPrice: boolean;
@@ -191,7 +211,7 @@ const runFieldTurn = async (
     });
   }
 
-  const jobId = asJobId(params.jobId);
+  const jobId = params.jobId ? asJobId(params.jobId) : null;
   const orgId = principal.orgId;
 
   // Download photos AFTER the auth tx closes (NoTx discipline — external I/O).
@@ -205,13 +225,24 @@ const runFieldTurn = async (
         message: "photo storage is not configured — photo upload is disabled",
       });
     }
+    // Unreachable without a job: the router refuses photoIds when jobId is absent, and
+    // storagePaths only ever come from that job's own execution rows.
+    if (!jobId) {
+      throw new TRPCError({ code: "BAD_REQUEST", message: "open the job to ask about a photo" });
+    }
     userBlocks = await downloadPhotoBlocks(params.storagePaths, orgId, jobId, deps.photoStorageGateway);
   }
 
   // Build tools closed over the VERIFIED jobId and seesPrice.
   // Each tool execute() call opens its own short withTenant tx — mirrors the
   // NoTx composition in ai-router.ts:394-415.
-  const fieldTools = buildFieldTools({ withTx: withTenant })({ orgId, jobId, seesPrice: params.seesPrice });
+  //
+  // With no job open the two job-scoped tools are withheld rather than handed a placeholder —
+  // offering the model a tool that cannot work is worse than not offering it, and the prompt is
+  // branched to match so it never reaches for one that is absent.
+  const fieldTools = jobId
+    ? buildFieldTools({ withTx: withTenant })({ orgId, jobId, seesPrice: params.seesPrice })
+    : buildOrgOnlyFieldTools({ withTx: withTenant })({ orgId, seesPrice: params.seesPrice });
   const metas: ToolMeta[] = fieldTools.map((t) => t.meta);
 
   const execute: ExecuteTool = (name, input) => {
@@ -224,7 +255,7 @@ const runFieldTurn = async (
   try {
     result = await runAgentTurn({
       llm: deps.llmClient,
-      system: buildFieldPrompt({ seesPrice: params.seesPrice }),
+      system: buildFieldPrompt({ seesPrice: params.seesPrice, hasJob: jobId !== null }),
       tools: metas,
       execute,
       userMessage: params.message,

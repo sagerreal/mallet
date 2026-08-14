@@ -450,6 +450,72 @@
   .att-item.clickable:hover{background:color-mix(in srgb,var(--ink) 4%,transparent)}
   .empty-att{color:var(--ink-2);font-size:var(--type-base);padding:var(--space-5) var(--space-2);text-align:center}
 
+  /* ---- the Ask tab (app/(field)/ask) ---------------------------------------------------------
+     Three rows owning the space between the topbar and the tab bar: header-less thread, then a
+     composer pinned to the BOTTOM OF THE COLUMN rather than the window — so the tab bar and the
+     home indicator are never covered and nothing competes with the shell's own fixed chrome. */
+  /* THE PAGE ITSELF MUST NOT SCROLL — the same fix Messages needed (see main:has(.msg-shell)).
+     `height:100%` collapses here: on a phone the shell is auto-height (.appshell{height:auto}),
+     so a percentage has nothing to resolve against and the composer floats wherever the content
+     ends — mid-screen on an empty conversation. Letting `main` own the viewport and flex means
+     the thread scrolls and the composer sits on the bottom edge, above the tab bar, where a
+     thumb expects it. */
+  main:has(.askpage){display:flex;flex-direction:column;overflow:hidden;padding-bottom:0}
+  .askpage{display:flex;flex-direction:column;flex:1;min-height:0}
+  /* On a PHONE the document scrolls (.appshell is auto-height there), so `flex:1` has nothing to
+     fill and the composer lands wherever the thread happens to end — mid-screen on an empty
+     conversation. Pin the surface between the topbar and the bottom chrome, exactly as the
+     Messages reading pane does: the thread scrolls, the composer stays under the thumb.
+     Not floating UI — a full-screen surface, not a panel over content. */
+  @media (max-width:760px){
+    .askpage{position:fixed;left:0;right:0;top:calc(54px + var(--safe-t));
+      bottom:calc(60px + var(--safe-b));z-index:30;background:var(--bg)}
+    /* A TECH has no command bar (the field layout renders it only for owner/office), so the only
+       bottom chrome is the 60px tab bar. An office user visiting this field route DOES get the
+       bar, and then the clearance is the 132px `main` reserves for both. Asking the DOM which
+       chrome exists beats hard-coding the larger number and leaving a dead band on the tech's
+       screen — the role that actually lives here. */
+    .appshell:has(.cmdline) .askpage{bottom:calc(132px + var(--safe-b))}
+  }
+  .askpage-thread{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;
+    gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-5)}
+  .askpage-empty{margin:auto 0;text-align:center;color:var(--ink-2);display:flex;
+    flex-direction:column;gap:var(--space-2)}
+  .askpage-empty h1{font-size:var(--type-2xl);margin:0 0 var(--space-1);color:var(--ink);letter-spacing:-.02em}
+  .askpage-empty p{margin:0;font-size:var(--type-base);line-height:1.55}
+  .askpage-msg{font-size:var(--type-md);line-height:1.5;padding:var(--space-2) var(--space-3);
+    border-radius:var(--radius-lg);max-width:84%;white-space:pre-wrap;overflow-wrap:anywhere}
+  .askpage-msg.me{background:var(--pri-bg);color:var(--pri-fg);align-self:flex-end;
+    border-bottom-right-radius:var(--radius-2xs)}
+  .askpage-msg.ai{background:var(--card);border:1px solid var(--line);align-self:flex-start;
+    border-bottom-left-radius:var(--radius-2xs)}
+  .askpage-err{align-self:flex-start;max-width:86%;background:var(--red-bg);color:var(--red);
+    border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:var(--radius-md);
+    padding:var(--space-2) var(--space-3);font-size:var(--type-base);line-height:1.5}
+  .askpage-composer{flex:none;display:flex;align-items:center;gap:var(--space-2);
+    padding:var(--space-3) var(--space-4);background:var(--card);border-top:1px solid var(--line)}
+  .askpage-input{flex:1;min-width:0;min-height:var(--control-h-lg);border-radius:var(--radius-md);
+    padding:0 var(--space-3);font-size:var(--type-md);font-family:inherit;background:var(--paper);color:var(--ink)}
+  .askpage-send{flex:none;width:var(--control-h-lg);height:var(--control-h-lg);
+    border-radius:var(--radius-md);border:1px solid var(--pri-bg);background:var(--pri-bg);
+    color:var(--pri-fg);font-size:var(--type-lg);line-height:1;cursor:pointer}
+  .askpage-send:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .askpage-turn{display:flex;flex-direction:column;gap:var(--space-2)}
+  /* Which job this conversation can see. Absent on the general chat — a header saying "no job"
+     on the tab's own screen is noise, not information. */
+  .askpage-scope{flex:none;background:var(--manila);border-bottom:1px solid var(--manila-line);
+    color:var(--manila-ink);padding:var(--space-2) var(--space-4);font-size:var(--type-base)}
+  /* EXTRA WORK — the proposed add-on. Amber, because it is money the office has not agreed to yet. */
+  .askpage-found{align-self:flex-start;max-width:86%;background:var(--amber-bg);color:var(--amber);
+    border:1px solid color-mix(in srgb,var(--amber) 34%,transparent);border-radius:var(--radius-lg);
+    padding:var(--space-3);font-size:var(--type-base);line-height:1.45;
+    display:flex;flex-direction:column;gap:var(--space-1);align-items:flex-start}
+  .askpage-found b{font-size:var(--type-xs);letter-spacing:.08em;text-transform:uppercase}
+  .askpage-add{margin-top:var(--space-1);border:1px solid currentColor;background:transparent;
+    color:inherit;border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3);
+    font-family:inherit;font-size:var(--type-sm);font-weight:700;cursor:pointer;min-height:var(--control-h-sm)}
+  .askpage-add:focus-visible{outline:2px solid currentColor;outline-offset:2px}
+
   /* ---- texting not switched on yet (features/a2p) ------------------------------------------
      ONE banner explains and links; every blocked control gets ONE clause. Manila because this is
      a standing condition of the shop's paperwork, not an error it just made — the red variant is

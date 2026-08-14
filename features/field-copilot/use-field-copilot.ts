@@ -129,7 +129,14 @@ export interface UseFieldCopilotReturn {
   clearError: () => void;
 }
 
-export function useFieldCopilot(jobId: string): UseFieldCopilotReturn {
+/**
+ * @param jobId  The job this conversation is about, or `undefined` for the Ask tab's general
+ *               chat. The server branches on it: with a job it loads the scope, checklist and
+ *               callback history; without one it answers from trade knowledge and the shop's own
+ *               service context. Photos require a job — the endpoint refuses them otherwise,
+ *               because a photo is a row on a job's execution record.
+ */
+export function useFieldCopilot(jobId?: string): UseFieldCopilotReturn {
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -152,7 +159,9 @@ export function useFieldCopilot(jobId: string): UseFieldCopilotReturn {
 
       try {
         const result = await trpcVanilla.v1.fieldCopilot.run.mutate({
-          jobId,
+          // Omitted entirely rather than sent as undefined — the input schema makes it optional
+          // and a general chat has no job to name.
+          ...(jobId ? { jobId } : {}),
           message: trimmed,
           transcript: transcript as Parameters<typeof trpcVanilla.v1.fieldCopilot.run.mutate>[0]["transcript"],
           photoIds: photoIds.length > 0 ? photoIds : undefined,

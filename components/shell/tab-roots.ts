@@ -24,6 +24,9 @@ export const TAB_ROOTS = [
   "/my-day",
   "/my-hours",
   "/messages",
+  // Ask moved out of the tech job sheet onto its own field tab — a chat with follow-ups and
+  // long answers needs a screen, not a panel inside the job it is about.
+  "/ask",
   "/account",
 ] as const;
 

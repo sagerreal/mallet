@@ -67,6 +67,12 @@ const ChatIcon = () => (
     <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
   </svg>
 );
+/** The Ask mark — the same four-point spark the command bar and the Counter already use. */
+const AskIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />
+  </svg>
+);
 const MoreIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="5" cy="12" r="1.4" />
@@ -140,6 +146,14 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
     // Unread team messages — the tab bar IS a tech's navigation, so this is the only place their
     // device can tell them a teammate wrote.
     { href: "/messages", label: "Messages", icon: <ChatIcon />, active: pathname.startsWith("/messages"), count: navCounts.messages ?? 0 },
+    // ASK IS A TAB, not a bar and not a section inside the job sheet.
+    //
+    // It used to live only inside the tech job modal, which made the one feature the field app is
+    // FOR reachable from exactly one screen, and only once a job was open. A chat has follow-ups,
+    // photos and long answers; a strip above the tab bar gives it a cramped panel over live
+    // content, which is the shape it already had. A tab gives it the screen every other chat app
+    // on that phone gets, and puts it where a tech is already looking all day.
+    { href: "/ask", label: "Ask", icon: <AskIcon />, active: pathname.startsWith("/ask") },
     { href: "/account", label: "More", icon: <MoreIcon />, active: pathname.startsWith("/account") },
   ];
 

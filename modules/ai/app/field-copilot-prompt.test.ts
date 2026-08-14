@@ -130,3 +130,50 @@ describe("buildFieldPrompt", () => {
     });
   });
 });
+
+/**
+ * THE ASK TAB IS A GENERAL CHAT. A tech opens it between calls, in the van, or before the first
+ * job of the day. With no job open the model has no `get_my_job` and no `get_callback_history` in
+ * its registry, so a prompt that orders it to "call get_my_job first" sends it after a tool that
+ * does not exist — and one that says its advice is "grounded in THIS job" invites it to answer as
+ * though it can see a scope it cannot.
+ */
+describe("buildFieldPrompt — no job open", () => {
+  const noJob = buildFieldPrompt({ seesPrice: true, hasJob: false });
+
+  it("does not order the model to call a tool it was not given", () => {
+    expect(noJob).not.toContain("get_my_job");
+    expect(noJob).not.toContain("get_callback_history");
+  });
+
+  it("keeps the one tool that is org-scoped rather than job-scoped", () => {
+    expect(noJob).toContain("get_org_service_context");
+  });
+
+  it("says plainly that there is no job, so the model does not invent one", () => {
+    expect(noJob).toMatch(/No specific job is open/i);
+    expect(noJob).toMatch(/do not claim to see a scope/i);
+  });
+
+  it("names the way back to job-specific help instead of guessing", () => {
+    expect(noJob).toMatch(/open the job and ask again/i);
+  });
+
+  /** FOUND WORK stages an add-on against a job. With none open there is nothing to attach it to. */
+  it("withholds the FOUND WORK marker, which has nowhere to land", () => {
+    expect(noJob).not.toContain("FOUND WORK");
+  });
+
+  it("keeps every guardrail that has nothing to do with a job", () => {
+    expect(noJob).toMatch(/gas leak/i);
+    expect(noJob).toMatch(/PLAIN TEXT ONLY/);
+    const hidden = buildFieldPrompt({ seesPrice: false, hasJob: false });
+    expect(hidden).toMatch(/PRICE RULE \(strict\)/);
+  });
+
+  it("leaves the in-job prompt exactly as it was — hasJob defaults true", () => {
+    expect(buildFieldPrompt({ seesPrice: true })).toBe(buildFieldPrompt({ seesPrice: true, hasJob: true }));
+    expect(buildFieldPrompt({ seesPrice: true })).toContain("get_my_job");
+    expect(buildFieldPrompt({ seesPrice: true })).toContain("FOUND WORK");
+  });
+});
