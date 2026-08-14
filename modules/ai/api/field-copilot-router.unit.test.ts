@@ -25,7 +25,8 @@ import { buildFieldTools } from "../infra/tools/field-read-tools";
 import { buildFieldPrompt } from "../app/field-copilot-prompt";
 import { runAgentTurn } from "../app/run-agent-turn";
 import type { LlmClient, LlmRequest, AssistantTurn, AssistantBlock, AgentMessage, UserContentBlock } from "../domain/llm-client";
-import { resolvePhotoPaths, sanitiseTranscript } from "./field-copilot-helpers";
+import { resolvePhotoPaths, sanitiseTranscript, transcriptSchema } from "./field-copilot-helpers";
+
 
 // ---------------------------------------------------------------------------
 // Mocks — declared before any imports that pull the mocked modules
@@ -366,13 +367,67 @@ describe("sanitiseTranscript", () => {
     expect(JSON.stringify(sanitised)).not.toContain("dataBase64");
   });
 
-  it("leaves non-user_blocks messages unchanged", () => {
+  it("leaves a plain text conversation unchanged", () => {
     const transcript: AgentMessage[] = [
       { role: "user", kind: "text", text: "hello" },
       { role: "assistant", kind: "assistant", blocks: [{ type: "text", text: "hi" }] },
     ];
     const sanitised = sanitiseTranscript(transcript, "hello");
     expect(sanitised).toEqual(transcript);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The second-message bug: a tool call left plumbing in the transcript that the
+// input schema refuses, so any follow-up died on validation.
+// ---------------------------------------------------------------------------
+
+describe("sanitiseTranscript — a turn that called a tool", () => {
+  /** What runAgentTurn appends for one read-only tool round-trip. */
+  const withToolCall: AgentMessage[] = [
+    { role: "user", kind: "text", text: "do I have jobs today?" },
+    {
+      role: "assistant",
+      kind: "assistant",
+      blocks: [
+        { type: "thinking", thinking: "check the agenda", signature: "sig" },
+        { type: "tool_use", id: "tu_1", name: "get_my_day", input: {} },
+      ],
+    },
+    {
+      role: "user",
+      kind: "tool_results",
+      results: [{ toolUseId: "tu_1", content: '{"date":"2026-08-14","stops":[]}', isError: false }],
+    },
+    { role: "assistant", kind: "assistant", blocks: [{ type: "text", text: "Nothing today." }] },
+  ];
+
+  // THE REGRESSION. Owen: first ask worked, second said the value was not accepted.
+  it("round-trips through the router's OWN input schema", () => {
+    const sanitised = sanitiseTranscript(withToolCall, "do I have jobs today?");
+    expect(transcriptSchema.safeParse(sanitised).success).toBe(true);
+    // And prove the pre-fix transcript is exactly what the schema rejected.
+    expect(transcriptSchema.safeParse(withToolCall).success).toBe(false);
+  });
+
+  it("drops the tool_results entry — server-authored output never round-trips", () => {
+    const sanitised = sanitiseTranscript(withToolCall, "x");
+    expect(sanitised.some((m) => m.role === "user" && m.kind === "tool_results")).toBe(false);
+  });
+
+  /** Keeping tool_use with its answer stripped would leave a dangling call the model API rejects. */
+  it("drops the pure tool-call turn rather than leaving a dangling tool_use", () => {
+    const sanitised = sanitiseTranscript(withToolCall, "x");
+    expect(JSON.stringify(sanitised)).not.toContain("tool_use");
+    expect(JSON.stringify(sanitised)).not.toContain("thinking");
+  });
+
+  it("keeps the answer the follow-up actually refers to", () => {
+    const sanitised = sanitiseTranscript(withToolCall, "x");
+    expect(sanitised).toEqual([
+      { role: "user", kind: "text", text: "do I have jobs today?" },
+      { role: "assistant", kind: "assistant", blocks: [{ type: "text", text: "Nothing today." }] },
+    ]);
   });
 });
 

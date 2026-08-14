@@ -23,34 +23,7 @@ import { DrizzleSettingsRepository } from "../../settings/infra/drizzle-settings
 import { asJobId, type OrgId, type JobId } from "@mallet/shared/types";
 import type { PhotoMediaType } from "../../jobs/domain/photo-storage-gateway";
 import { logger } from "@mallet/shared/observability";
-import { resolvePhotoPaths, sanitiseTranscript } from "./field-copilot-helpers";
-
-// ---------------------------------------------------------------------------
-// Transcript schema (cloned from ai-router — no cross-module private import)
-// Validates untrusted client-round-tripped conversation state. Tenancy is always
-// re-derived server-side; this guards against structurally malformed payloads.
-// ---------------------------------------------------------------------------
-
-const assistantBlockSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("text"), text: z.string() }),
-  z.object({ type: z.literal("thinking"), thinking: z.string(), signature: z.string() }),
-  z.object({ type: z.literal("redacted_thinking"), data: z.string() }),
-  z.object({ type: z.literal("tool_use"), id: z.string(), name: z.string(), input: z.unknown() }),
-]);
-
-// NOTE: no tool_results member — the field copilot is advise-only (zero mutating tools),
-// so a turn never pauses mid-tool and the client transcript can never legitimately hold
-// tool results. Rejecting them closes a forged-transcript entry point the office schema must allow.
-const transcriptSchema = z.array(
-  z.union([
-    z.object({ role: z.literal("user"), kind: z.literal("text"), text: z.string() }),
-    z.object({
-      role: z.literal("assistant"),
-      kind: z.literal("assistant"),
-      blocks: z.array(assistantBlockSchema),
-    }),
-  ]),
-);
+import { resolvePhotoPaths, sanitiseTranscript, transcriptSchema } from "./field-copilot-helpers";
 
 // ---------------------------------------------------------------------------
 // Output shape
