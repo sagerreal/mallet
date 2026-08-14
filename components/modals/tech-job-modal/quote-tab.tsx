@@ -39,6 +39,11 @@ import { ScanUnavailable, type ScanBlocker } from "@/components/shared/scan-unav
 import { measurementSurfacesVisible } from "@/lib/measurement-gate";
 import { useMeasurementGate } from "@/features/settings/measurement-gate-provider";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
+import { MeasuredRoomsList } from "./measured-rooms-list";
+
+/** Stable identity — a fresh [] each render would re-render the list on every store write. */
+const EMPTY_ROOMS: readonly RoomCard[] = [];
+import type { RoomCard } from "@/lib/store/types";
 import { downscaleImage } from "@/lib/images/downscale";
 import { uploadFieldPhoto } from "@/lib/store/upload-field-photo";
 import { TechQuoteBuilder, type TechQuoteMode } from "@/components/modals/pricing/tech-quote-builder";
@@ -254,7 +259,8 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
   // Seeds the store for this job and gives the row its count. Same hook the room card uses, so the
   // number here and the list in there can never disagree.
   useJobRooms(measurementSurfacesVisible(measurementGate) ? job.id : null);
-  const roomCount = useAppStore((s) => s.roomsByJob[job.id]?.length ?? 0);
+  const rooms = useAppStore((s) => s.roomsByJob[job.id]) ?? EMPTY_ROOMS;
+  const roomCount = rooms.length;
   const pushModal = usePushModal();
   const close = useCloseModal();
   const scan = useRoomScanAvailability();
@@ -398,12 +404,13 @@ export function QuoteTab({ job, scopeVisit, readOnly, onSigned }: QuoteTabProps)
                 open={roomsRowOpen}
                 onOpenChange={setRoomsRowOpen}
               >
-                {roomCount > 0 && (
-                  <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-2)" }}>
-                    {roomCount === 1 ? "1 room measured" : `${roomCount} rooms measured`} — open the
-                    price to see what they came to.
-                  </p>
-                )}
+                {/* The rooms themselves, each a way into its own card — numbers, what is not
+                    painted, rename, re-scan, delete. This row used to say only how MANY there
+                    were, which left a scanned room with no way to open, correct or remove it. */}
+                <MeasuredRoomsList
+                  rooms={rooms}
+                  onOpenRoom={(captureId) => pushModal(MODAL.ROOM_CARD, { captureId, jobId: job.id })}
+                />
                 {scanBlocker === null ? (
                   <button
                     type="button"
