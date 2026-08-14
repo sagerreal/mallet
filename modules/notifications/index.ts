@@ -16,6 +16,11 @@ export type {
 export { LoggingNotificationSender } from "./infra/logging-notification-sender";
 export { ResendEmailSender } from "./infra/resend-email-sender";
 export { TwilioSmsSender } from "./infra/twilio-sms-sender";
+export { OrgSmsNotificationSender } from "./infra/org-sms-notification-sender";
+export { resolveOrgNotificationSender } from "./infra/resolve-org-sender";
+export { resolveSmsIdentity, canSendAutomatedSms } from "./infra/resolve-sms-identity";
+export { pickSmsIdentity } from "./infra/sms-identity";
+export type { SmsSendingIdentity } from "./infra/sms-identity";
 export type { SmsTransport } from "./infra/twilio-sms-sender";
 export { ChannelRouterNotificationSender } from "./infra/channel-router-notification-sender";
 export type { ReminderTargetReader } from "./domain/reminder-target-reader";

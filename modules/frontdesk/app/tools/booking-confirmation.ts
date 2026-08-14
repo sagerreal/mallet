@@ -12,7 +12,7 @@ import type { VoiceToolContext } from "./tool-result";
 // COMPLIANCE GATE: voice calls themselves are never gated (10DLC governs SMS, not voice), but this
 // one background SMS is real A2P traffic the moment the platform's SMS channel is configured — which
 // it is in prod. Before sending, we read the SAME `GetA2pStatusUseCase.canText` check every other
-// SMS-capable path in the app gates on (via ctx.deps.isSmsA2pActive, bound to this call's org by the
+// SMS-capable path in the app gates on (via ctx.deps.canSendAutomatedSms, bound to this call's org by the
 // composition root — never a model/client-supplied org id). A non-active org SKIPS the send (never
 // throws): this is a fire-and-forget background path with no human awaiting a synchronous response,
 // so the booking must never fail on it — but an unregistered org must never actually transmit SMS
@@ -54,13 +54,15 @@ export const sendBookingConfirmation = async (
   ctx: VoiceToolContext,
 ): Promise<void> => {
   try {
-    // COMPLIANCE GATE (see file header): a non-active org skips the send — logged, never thrown —
-    // so an unregistered/pending org's booking still succeeds but never transmits real SMS.
-    const active = await ctx.deps.isSmsA2pActive();
-    if (!active) {
+    // COMPLIANCE GATE (see file header): with no line to send from at all, skip — logged, never
+    // thrown — so the booking still succeeds and nothing unregistered goes out. A shop with no
+    // campaign of its own is NOT skipped any more: its confirmation rides Mallet's shared line,
+    // which is the point of that line. Only a total absence of any registered line stops it.
+    const canSend = await ctx.deps.canSendAutomatedSms();
+    if (!canSend) {
       logger.info(
         { orgId: ctx.orgId, tool: "book_visit", jobId },
-        "frontdesk.book_visit.confirmation_sms_skipped_a2p_inactive",
+        "frontdesk.book_visit.confirmation_sms_skipped_no_line",
       );
       return;
     }

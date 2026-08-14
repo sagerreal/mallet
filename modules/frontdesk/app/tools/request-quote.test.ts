@@ -199,7 +199,7 @@ const buildHarness = (overrides?: {
     availability: { async read() { return { crewCount: 0, visits: [] }; }, async readFieldCrewIds() { return []; }, async readCrewSchedules() { return []; }, async readSameDayCrewLoads() { return []; } },
     geocoder: inertGeocoder(),
     sendNotification: inertSendNotification(),
-    isSmsA2pActive: async () => true,
+    canSendAutomatedSms: async () => true,
     bus,
     clock,
     ids,

@@ -45,6 +45,28 @@ const ConfigSchema = z.object({
   // Carriers check the SERVICE: a reply sent naming a bare `from` is filtered as unregistered
   // traffic even when the campaign is approved and the number sits in that service's pool.
   MALLET_ASSISTANT_MESSAGING_SERVICE_SID: z.string().min(1).optional(),
+  /**
+   * THE SHARED LINE a shop's AUTOMATED texts ride until it has a number of its own.
+   *
+   * A2P vetting runs 5-7 business days and can run weeks; a shop that signs up this morning still
+   * has to be able to invoice, remind and receipt. Jobber and Housecall Pro both send automated
+   * messages from a platform number until the business has a dedicated one, and this is Mallet's.
+   * The moment a shop's own number and Messaging Service exist, its automated texts move there —
+   * see resolveOrgNotificationSender.
+   *
+   * DELIBERATELY NOT `TWILIO_FROM_NUMBER`, whose name says nothing about whose number it is, and
+   * which has never been set in any environment (so every automated text has been logged, never
+   * sent). Its own pair, so pointing the shared line somewhere else later is a config change.
+   *
+   * ONE-WAY, and that is not a limitation to fix: a number that serves every shop belongs to none
+   * of them, so an inbound reply has no org to land in. The webhook already ignores a text from a
+   * number it does not recognise, which is the behaviour Jobber documents for its own pool.
+   *
+   * Unset, SMS notifications keep degrading to the logging stub exactly as they do today.
+   */
+  MALLET_SHARED_SMS_NUMBER: z.string().min(1).optional(),
+  /** The Messaging Service carrying the campaign for the shared line. Carriers check the SERVICE. */
+  MALLET_SHARED_SMS_MESSAGING_SERVICE_SID: z.string().min(1).optional(),
   // Optional override for the URL used in Twilio HMAC signature verification. Behind proxies that
   // don't forward X-Forwarded-* headers, req.url may not match the externally-reachable URL that
   // Twilio signed against. Set this to EXACTLY the webhook URL configured in the Twilio console

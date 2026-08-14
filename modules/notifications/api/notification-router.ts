@@ -5,7 +5,7 @@ import { orThrow } from "@/trpc/errors";
 import { Phone, isOk, toPage, type OrgId } from "@mallet/shared/types";
 import { loadConfig, resolvePublicAppOrigin } from "@mallet/shared/config";
 import type { TenantTx } from "@mallet/shared/db/tx";
-import { isSmsA2pActive } from "@mallet/a2p";
+import { resolveOrgNotificationSender, canSendAutomatedSms } from "@mallet/notifications";
 import {
   NOTIFICATION_CHANNELS,
   NOTIFICATION_STATUSES,
@@ -87,22 +87,26 @@ const repoFor = (ctx: NotificationRouterCtx) => new DrizzleNotificationRepositor
 /* assertDelivered — "did this actually leave the building?" — now lives in ./assert-delivered.ts,
    because the technician's fieldInvoicing.sendDocument needs the identical answer. */
 
-// Gate outbound SMS on the org's 10DLC campaign being active — the same carrier-compliance rule
-// the messaging router's `send` enforces (Task 14). This router has its own SMS-capable
-// interactive sends (send / sendInvoiceReminder / advanceReminder), so it needs the identical
-// guard: block BEFORE any use-case/sender work when the channel is sms and the org isn't approved
-// yet. Email is unaffected (10DLC only governs SMS). Reuses the a2p module's own status projection
-// (GetA2pStatusUseCase.canText) so "active" is defined in exactly one place; a missing
-// registration row (org never started) reads as inactive, same as the messaging router's read.
-const assertSmsA2pActive = async (ctx: NotificationRouterCtx, channel: NotificationChannel): Promise<void> => {
+/**
+ * Can this shop send an automated text at all?
+ *
+ * NOT "is this shop's own campaign active" — that was the question until the shared line existed,
+ * and it made the shared line unreachable: a shop waiting on carrier vetting was refused here,
+ * before the sender that would have used Mallet's line was ever built. An invoice reminder is a
+ * one-way notification; it needs A registered line, not THIS SHOP's registered line.
+ *
+ * Two-way conversation texting keeps the stricter rule and lives in the messaging router: a shared
+ * line belongs to no shop, so a customer's reply has no thread to land in.
+ *
+ * Email is untouched — 10DLC governs text messages only.
+ */
+const assertCanSendSms = async (ctx: NotificationRouterCtx, channel: NotificationChannel): Promise<void> => {
   if (channel !== "sms") return;
-  const active = await isSmsA2pActive(ctx.tx, ctx.principal.orgId);
-  if (!active) {
-    throw new TRPCError({
-      code: "PRECONDITION_FAILED",
-      message: "texting isn't approved for this org yet — finish 10DLC registration",
-    });
-  }
+  if (await canSendAutomatedSms(ctx.tx, ctx.principal.orgId)) return;
+  throw new TRPCError({
+    code: "PRECONDITION_FAILED",
+    message: "texting isn't available for this shop yet",
+  });
 };
 
 export const createNotificationRouter = () =>
@@ -121,7 +125,7 @@ export const createNotificationRouter = () =>
       )
       .output(notificationDTO)
       .mutation(async ({ ctx, input }) => {
-        await assertSmsA2pActive(ctx, input.channel);
+        await assertCanSendSms(ctx, input.channel);
         let to = input.to;
         if (input.channel === "sms") {
           const parsed = Phone.parse(input.to);
@@ -132,7 +136,12 @@ export const createNotificationRouter = () =>
         }
         const useCase = new SendNotificationUseCase(
           repoFor(ctx),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
@@ -161,10 +170,15 @@ export const createNotificationRouter = () =>
       .input(z.object({ invoiceId: z.string().uuid(), channel: channelEnum }))
       .output(notificationDTO)
       .mutation(async ({ ctx, input }) => {
-        await assertSmsA2pActive(ctx, input.channel);
+        await assertCanSendSms(ctx, input.channel);
         const send = new SendNotificationUseCase(
           repoFor(ctx),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,
@@ -195,10 +209,15 @@ export const createNotificationRouter = () =>
         // after this guard would need to run. Since it CAN reach sms, a non-active org must be
         // blocked unconditionally rather than let the use-case decide; passing the literal "sms"
         // reuses the exact same gate the sibling paths use for the conservative "assume sms" case.
-        await assertSmsA2pActive(ctx, "sms");
+        await assertCanSendSms(ctx, "sms");
         const send = new SendNotificationUseCase(
           repoFor(ctx),
-          ctx.deps.notificationSender ?? new LoggingNotificationSender(ctx.deps.clock),
+          await resolveOrgNotificationSender({
+            tx: ctx.tx,
+            orgId: ctx.principal.orgId,
+            base: ctx.deps.notificationSender,
+            clock: ctx.deps.clock,
+          }),
           ctx.deps.bus,
           ctx.deps.clock,
           ctx.deps.ids,

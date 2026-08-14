@@ -13,12 +13,11 @@ import { EnsureCustomerUseCase, DrizzleLeadRepository } from "@mallet/customers"
 import { CreateTaskUseCase, DrizzleTaskRepository } from "@mallet/tasks";
 import { CreateManualJobUseCase, CreateVisitUseCase, DrizzleJobRepository } from "@mallet/jobs";
 import {
-  LoggingNotificationSender,
   SendNotificationUseCase,
   DrizzleNotificationRepository,
   type NotificationSender,
 } from "@mallet/notifications";
-import { isSmsA2pActive } from "@mallet/a2p";
+import { resolveOrgNotificationSender, canSendAutomatedSms } from "@mallet/notifications";
 import { getAppDeps } from "@/trpc/di";
 import {
   DrizzleOnCallReader,
@@ -222,7 +221,15 @@ const handleToolCalls = async (
   tx: TenantTx,
 ): Promise<Response> => {
   const ledger = new DrizzleToolInvocationLedger(tx, orgId);
-  const notificationSender = resolveNotificationSender();
+  // Per-org, resolved inside this call's tenant tx. The booking confirmation is a customer-facing
+  // text and must come from the SHOP's own number — the boot-time sender cannot know whose shop
+  // this call is for, so it sent every org's confirmation from one configured number.
+  const notificationSender = await resolveOrgNotificationSender({
+    tx,
+    orgId,
+    base: getAppDeps().notificationSender,
+    clock: systemClock,
+  });
   const runner = new RunToolCallsUseCase(VOICE_TOOLS, ledger, (base) =>
     buildVoiceToolDeps(base.tx, base.orgId, notificationSender),
   );
@@ -281,8 +288,8 @@ const handleEndOfCall = async (
 // query-only readers. The comms send goes through a tenant-tx-scoped SendNotificationUseCase (so
 // the booking confirmation writes an observable notifications row); its repo + bus are tx-scoped,
 // while the underlying channel sender is request-independent and passed in (degrades to a logging
-// stub only when the comms channel itself is unconfigured — see resolveNotificationSender). The
-// org's 10DLC status (isSmsA2pActive) is read fresh per call from the SAME tx/orgId, so the voice
+// stub only when the comms channel itself is unconfigured — see resolveOrgNotificationSender). The
+// whether any registered line exists (canSendAutomatedSms) is read fresh per call from the SAME tx/orgId, so the voice
 // tool's one background SMS (the booking confirmation) can skip-not-throw when the org isn't
 // A2P-active yet — see booking-confirmation.ts. Every DB port is tenant-tx-scoped so nothing
 // reaches drizzle outside withTenant.
@@ -314,7 +321,7 @@ const buildVoiceToolDeps = (
       systemClock,
       uuidGenerator,
     ),
-    isSmsA2pActive: () => isSmsA2pActive(tx, orgId),
+    canSendAutomatedSms: () => canSendAutomatedSms(tx, orgId),
     bus,
     clock: systemClock,
     ids: uuidGenerator,
@@ -324,8 +331,6 @@ const buildVoiceToolDeps = (
 // The comms sender from the composition root. Optional in AppDeps (tests omit it) so we fall back to
 // the logging stub — unconfigured comms degrade to a logged no-op, never an error (book_visit's SMS
 // is a best-effort background send).
-const resolveNotificationSender = (): NotificationSender =>
-  getAppDeps().notificationSender ?? new LoggingNotificationSender(systemClock);
 
 const buildCreateTask = (tx: TenantTx, orgId: OrgId): CreateTaskUseCase =>
   new CreateTaskUseCase(new DrizzleTaskRepository(tx, orgId), systemClock, uuidGenerator);

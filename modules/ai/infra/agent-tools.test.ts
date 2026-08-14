@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { canSendAutomatedSms } from "@mallet/notifications";
 import { randomUUID } from "node:crypto";
 import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
 import { uuidGenerator } from "@mallet/shared/ports";
@@ -61,6 +62,12 @@ vi.mock("@mallet/notifications", () => ({
   AdvanceReminderUseCase: vi.fn(),
   DrizzleNotificationRepository: vi.fn(),
   DrizzleReminderTargetReader: vi.fn(),
+  // The agent's reminders go out on the SHOP's number, resolved per call. The tool only needs a
+  // sender back; which number it carries is OrgSmsNotificationSender's business, tested there.
+  resolveOrgNotificationSender: vi.fn(async () => ({ send: vi.fn() })),
+  // "Is there a registered line to send from" — the shop's own once it has one, Mallet's shared
+  // line until then. Which line it picks is resolve-sms-identity's business, tested there.
+  canSendAutomatedSms: vi.fn(async () => true),
   STUB_EXTERNAL_ID: "stub:logged",
 }));
 vi.mock("@mallet/a2p", () => ({
@@ -716,13 +723,16 @@ describe("notification_send_invoice_reminder", () => {
     deps: { ...makeCtx().deps, notificationSender: {} as unknown as ToolContext["deps"]["notificationSender"] },
   });
 
-  it("blocks an SMS reminder when the org's A2P campaign isn't active", async () => {
-    mockClass(DrizzleRegistrationRepository, {});
-    mockClass(GetA2pStatusUseCase, {
-      exec: vi.fn().mockResolvedValue({ status: "not_started", canText: false, needsInput: true, failureReason: null }),
-    });
+  /**
+   * THE RULE CHANGED. The gate used to ask whether THIS SHOP's own 10DLC campaign was live and
+   * refuse otherwise — which made Mallet's shared line unreachable for exactly the shops it exists
+   * to serve. An invoice reminder is a one-way notification; it needs A registered line, not this
+   * shop's. It is refused only when there is no line anywhere, which is a platform config gap.
+   */
+  it("refuses an SMS reminder only when there is no line to send from at all", async () => {
+    vi.mocked(canSendAutomatedSms).mockResolvedValue(false);
 
-    // Plain makeCtx() (no sender configured) — proves the a2p gate fires FIRST, before the
+    // Plain makeCtx() (no sender configured) — proves the gate fires FIRST, before the
     // sender-configured check even runs.
     const result = await toolByName("notification_send_invoice_reminder").handle(
       { invoiceId, channel: "sms" },
@@ -730,39 +740,15 @@ describe("notification_send_invoice_reminder", () => {
     );
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error).toContain("10DLC");
+    if (!result.ok) expect(result.error).toContain("isn't available");
     // No send attempt was made — the gate fires before any notification/sender work.
     expect(vi.mocked(AdvanceReminderUseCase)).not.toHaveBeenCalled();
   });
 
-  it("does not block an email reminder when the org's A2P campaign isn't active", async () => {
-    mockClass(DrizzleRegistrationRepository, {});
-    mockClass(GetA2pStatusUseCase, {
-      exec: vi.fn().mockResolvedValue({ status: "not_started", canText: false, needsInput: true, failureReason: null }),
-    });
-    mockClass(DrizzleNotificationRepository, {});
-    mockClass(DrizzleReminderTargetReader, {});
-    mockClass(AdvanceReminderUseCase, {
-      exec: vi.fn().mockResolvedValue({
-        ok: true,
-        value: { props: { id: "notif-1", channel: "email", status: "sent", externalId: "real-ext-id" } },
-      }),
-    });
-
-    const result = await toolByName("notification_send_invoice_reminder").handle(
-      { invoiceId, channel: "email" },
-      ctxWithSender(),
-    );
-
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.summary).toContain("email");
-  });
-
-  it("allows an SMS reminder when the org's A2P campaign is active", async () => {
-    mockClass(DrizzleRegistrationRepository, {});
-    mockClass(GetA2pStatusUseCase, {
-      exec: vi.fn().mockResolvedValue({ status: "active", canText: true, needsInput: false, failureReason: null }),
-    });
+  it("sends for a shop with NO campaign of its own — the shared line carries it", async () => {
+    // The case that was broken: a brand-new shop, vetting not started, still has to be able to
+    // remind a customer about an invoice.
+    vi.mocked(canSendAutomatedSms).mockResolvedValue(true);
     mockClass(DrizzleNotificationRepository, {});
     mockClass(DrizzleReminderTargetReader, {});
     mockClass(AdvanceReminderUseCase, {
