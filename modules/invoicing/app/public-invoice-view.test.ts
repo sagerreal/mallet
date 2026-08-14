@@ -100,6 +100,7 @@ const BARE_CONTEXT: PublicInvoiceContext = {
   serviceAddress: null,
   serviceAt: null,
   wording: { invoiceFooter: null, payInstructions: null, receiptNote: null },
+  authorization: null,
 };
 
 const ctx = (overrides: Partial<PublicInvoiceContext> = {}): PublicInvoiceContext => ({
@@ -360,5 +361,36 @@ describe("createCheckoutWithDeps", () => {
   it("maps a provider outage to unavailable, never leaking the raw error", async () => {
     const outcome = await createCheckoutWithDeps(ORG, INV, deps(invoice(), downGateway));
     expect(outcome).toEqual({ kind: "unavailable" });
+  });
+});
+
+describe("toPublicInvoiceView — what the customer signed, cited on their own copy", () => {
+  // The office sheet has shown "Authorized by …, signed quote EST-1044" since the authorization
+  // work landed. The CUSTOMER's copy never carried it — so the person who actually signed saw no
+  // record of their own signature on the bill, and had nothing to check the amount against. That
+  // is precisely the document a disputed invoice turns on.
+  const SIGNED = {
+    signerName: "Owen Duggan",
+    signedAt: new Date("2026-08-11T17:04:00Z"),
+    documentRef: "EST-1044",
+    authorizedCents: 122_300,
+  };
+
+  it("carries the signature onto the customer's copy", () => {
+    const view = toPublicInvoiceView(invoice(), ctx({ authorization: SIGNED }));
+
+    expect(view.authorization).toMatchObject({
+      signerName: "Owen Duggan",
+      documentRef: "EST-1044",
+      authorizedCents: 122_300,
+    });
+  });
+
+  it("carries nothing when nothing was signed", () => {
+    // An unsigned invoice has no authorised amount, so there is no claim to make about it —
+    // the same reason the office banner stays rare enough to mean something.
+    const view = toPublicInvoiceView(invoice(), ctx({ authorization: null }));
+
+    expect(view.authorization).toBeNull();
   });
 });

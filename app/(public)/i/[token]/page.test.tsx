@@ -55,6 +55,7 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
     // shop: no footer, and the standard pay/receipt sentences.
     footerNote: null,
     payInstructions: "To pay this invoice, contact Rivera Plumbing directly.",
+    authorization: null,
     receiptNote: "This invoice is settled in full. Keep this link for your records.",
     ...over,
   };
@@ -306,5 +307,34 @@ describe("PublicInvoicePage — keepable, not just payable", () => {
     expect(button.parentElement?.className).toContain("noprint");
     expect(screen.getByText("Powered by Mallet").className).toContain("noprint");
     expect(screen.getByText("Labor").closest(".noprint")).toBeNull();
+  });
+});
+
+describe("the customer's copy cites what they signed", () => {
+  // The office sheet has shown "Authorized by …, signed quote EST-1044" since the authorization
+  // work landed; the customer's own copy never did. So the person who actually signed had no
+  // record of their signature on the bill, and nothing to check the amount against — on exactly
+  // the document a disputed invoice turns on.
+  it("names the signer, the document and the amount approved", async () => {
+    getPublicInvoiceMock.mockResolvedValue(
+      view({
+      authorization: {
+        signerName: "Owen Duggan",
+        signedAt: new Date("2026-08-11T17:04:00Z"),
+        documentRef: "EST-1044",
+        authorizedCents: 122_300,
+      },
+    }));
+    await renderPage();
+
+    expect(screen.getByText(/Owen Duggan/)).toBeTruthy();
+    expect(screen.getByText(/EST-1044/)).toBeTruthy();
+  });
+
+  it("says nothing at all on a bill nobody signed", async () => {
+    getPublicInvoiceMock.mockResolvedValue(view({ authorization: null }));
+    await renderPage();
+
+    expect(screen.queryByText(/Approved by/i)).toBeNull();
   });
 });

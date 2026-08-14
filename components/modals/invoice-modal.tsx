@@ -681,6 +681,10 @@ export function InvoiceModalContent() {
   // about a delivery it did not ask for.
   const [resendNote, setResendNote] = useState<string | null>(null);
   const [resendOpen, setResendOpen] = useState(false);
+  // Which way the resend goes. Null = follow the default (text when there is a number). The office
+  // could not say otherwise before: the invoice picked for you, so a customer who reads email and
+  // ignores texts had no route. A quote has had this toggle all along.
+  const [resendChannel, setResendChannel] = useState<"sms" | "email" | null>(null);
   const [recMethod, setRecMethod] = useState<RecordMethod>("cash");
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
@@ -875,12 +879,13 @@ export function InvoiceModalContent() {
     setResendNote(null);
     setBusy(true);
     const hasPhone = Boolean(phone && phone !== "—");
+    const channel = resendChannel ?? (hasPhone ? "sms" : "email");
     try {
       await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
         invoiceId: invoice.id,
-        channel: hasPhone ? "sms" : "email",
+        channel,
       });
-      setResendNote(`Sent to ${hasPhone ? fmtPhone(phone) : (invoice.email || "their email")}.`);
+      setResendNote(`Sent to ${channel === "sms" ? fmtPhone(phone) : (invoice.email || "their email")}.`);
     } catch (e) {
       // Includes the no-phone-no-email precondition — the server names the actual problem.
       setPayErr(e instanceof Error ? e.message : "Couldn't resend the invoice — try again.");
@@ -1021,13 +1026,33 @@ export function InvoiceModalContent() {
             open={resendOpen}
             onOpenChange={setResendOpen}
           >
+            {/* Offered only when there is a real choice to make — with no number on file, Text is
+                a control that could only fail. */}
+            {phone && phone !== "—" ? (
+              <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
+                <button
+                  type="button"
+                  className={`chip ${(resendChannel ?? "sms") === "sms" ? "sel" : ""}`}
+                  onClick={() => setResendChannel("sms")}
+                >
+                  Text
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${resendChannel === "email" ? "sel" : ""}`}
+                  onClick={() => setResendChannel("email")}
+                >
+                  Email
+                </button>
+              </div>
+            ) : null}
             <button
               type="button"
               className="btn sm primary"
               disabled={busy}
               onClick={() => void resend()}
             >
-              {busy ? "Sending…" : `Send it again${phone && phone !== "—" ? " by text" : " by email"}`}
+              {busy ? "Sending…" : "Send it again"}
             </button>
           </SheetRow>
 

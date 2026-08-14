@@ -15,6 +15,7 @@ import {
 import type { Invoice } from "../domain/invoice";
 import { DrizzleInvoiceRepository } from "../infra/drizzle-invoice-repository";
 import { DrizzleConnectTargetReader } from "../infra/drizzle-connect-target-reader";
+import { DrizzleAuthorizationReader } from "../infra/drizzle-authorization-reader";
 import { DrizzleServiceDateReader } from "../infra/drizzle-service-date-reader";
 import { StripePaymentLinkGateway } from "../infra/stripe-payment-link-gateway";
 import {
@@ -145,7 +146,7 @@ async function loadDocumentContext(
   invoice: Invoice,
 ): Promise<PublicInvoiceContext> {
   const jobId = invoice.props.sourceJobId;
-  const [target, business, wording, leads, serviceAt] = await Promise.all([
+  const [target, business, wording, leads, serviceAt, auth] = await Promise.all([
     // Whether the Pay button can exist at all: the shop finished Stripe Connect onboarding AND
     // can take charges. Read via the same seam the office checkout uses.
     new DrizzleConnectTargetReader(tx, orgId).read(),
@@ -154,6 +155,9 @@ async function loadDocumentContext(
     new DrizzleLeadRepository(tx, orgId).findByIds([invoice.props.leadId]),
     // No source job means no service date. Omitted, never faked from the invoice date.
     jobId ? new DrizzleServiceDateReader(tx, orgId).forJob(jobId) : Promise.resolve(null),
+    // The signature this bill rests on — the SAME reader the office sheet cites, so the two copies
+    // of one bill can never disagree about who approved it. No source job means nothing was signed.
+    jobId ? new DrizzleAuthorizationReader(tx, orgId).forJob(jobId) : Promise.resolve(null),
   ]);
 
   const lead = leads[0];
@@ -167,6 +171,17 @@ async function loadDocumentContext(
     serviceAddress: lead?.props.address ?? null,
     serviceAt,
     wording,
+    // The citation only. The office's OVERAGE warning deliberately stays behind: a bill exceeding
+    // what was signed is something for the shop to fix before sending, not an argument to hand the
+    // customer inside their own copy.
+    authorization: auth
+      ? {
+          signerName: auth.signerName,
+          signedAt: auth.signedAt,
+          documentRef: auth.documentRef,
+          authorizedCents: auth.authorizedCents,
+        }
+      : null,
   };
 }
 

@@ -21,6 +21,7 @@ import { notFound } from "next/navigation";
 import { getPublicInvoice } from "@/modules/invoicing/app/public-invoice";
 import type { PublicInvoiceView } from "@/modules/invoicing/app/public-invoice";
 import { termsLine } from "@/features/invoices/terms-line";
+import { fmt$, formatDocDate } from "@/lib/format";
 import { InvoiceDocument } from "@/components/shared/invoice-document";
 import { PayInvoiceButton } from "./PayInvoiceButton";
 import { PrintInvoiceButton } from "./PrintInvoiceButton";
@@ -228,6 +229,25 @@ export default async function PublicInvoicePage({
             // on the paper copy too, so it is deliberately NOT .noprint.
             footerNote={view.footerNote}
           />
+
+          {/* WHAT THEY SIGNED, on their own copy. The office sheet has cited this since the
+              authorization work landed; the customer's copy did not, so the person who actually
+              approved the work had no record of their signature on the bill — on exactly the
+              document a disputed invoice turns on. Inside the document, not `.noprint`: it belongs
+              on the paper copy most of all. */}
+          {view.authorization && (
+            <p
+              style={{
+                fontSize: "var(--type-sm)",
+                color: "var(--ink-2)",
+                margin: "var(--space-3) 0 0",
+              }}
+            >
+              Approved by {view.authorization.signerName} on{" "}
+              {formatDocDate(view.authorization.signedAt.toISOString())} · {view.authorization.documentRef} ·{" "}
+              {fmt$(view.authorization.authorizedCents / 100)} authorised
+            </p>
+          )}
 
           {/* THE action — only when it can actually run. `.noprint`: a paper copy of a bill has
               no button on it, and the printed page must be the document alone. */}
