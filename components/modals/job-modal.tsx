@@ -3,7 +3,7 @@
  * Faithful port of the prototype's openJob office/owner body (lines 4699-4729)
  * plus its per-visit visitRow (4677-4698) and helpers jobPriceSummary (4513),
  * jobNoteFeed (6364), moneyPointer (6379) — re-housed in the sheet grammar:
- * sticky .sheet-head (job title · status · customer · phone), Call/Text as a
+ * sticky .sheet-head (job title · status · customer), Call/Text as a
  * .sheet-secrow, the label+value sections as SheetRow accordions (schedule and
  * checklist blocks kept intact inside theirs), and a sticky .sheet-foot with
  * Done as the one primary and Delete job quiet red beside it.
@@ -49,7 +49,7 @@ import { api } from "@/lib/trpc/client";
 import { userMessage } from "@/lib/trpc/error-map";
 import type { Estimate, Job, Visit, Lead, Tech, Invoice } from "@/lib/store/types";
 import { isVisitPlaced } from "@/lib/store/visit-placement";
-import { fmt$ } from "@/lib/format";
+import { fmt$, fmtPhone } from "@/lib/format";
 import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
@@ -764,8 +764,10 @@ export function JobModalContent() {
 
   return (
     <>
-      {/* Sticky header — the job as an h2 over one calm meta line
-          (status pill · customer · phone). */}
+      {/* Sticky header — the job as an h2 over one calm meta line (status pill · record trail).
+          NO phone here: it rendered raw E.164 jammed against the trail, and only when a number
+          existed — the same two-homes split the customer sheet already removed. Call and Text sit
+          directly below, which is what the number was in the header for. */}
       <div className="sheet-head">
         {/* The heading IS the job name. It used to be a plain h2 with a "Job" row further down
             holding the same string, so renaming meant scrolling past the name to find the row that
@@ -785,7 +787,6 @@ export function JobModalContent() {
           {/* customer > quote > job > invoice. Replaces a hand-rolled name link that only worked
               when the store happened to hold the lead, and reached none of the other records. */}
           <Trail kind="job" id={job.id} />
-          {phone && <span>{phone}</span>}
         </div>
       </div>
 
@@ -821,7 +822,7 @@ export function JobModalContent() {
         {!lead && (
           <SheetRow
             label="Customer phone"
-            value={job.phone?.trim() ? job.phone : "Add"}
+            value={job.phone?.trim() ? fmtPhone(job.phone) : "Add"}
             valueIsHint={!job.phone?.trim()}
             expandable
           >
