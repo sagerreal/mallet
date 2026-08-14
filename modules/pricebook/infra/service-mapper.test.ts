@@ -93,13 +93,24 @@ describe("rowToService (service mapper)", () => {
 // row. Rejecting the whole aggregate over it — and with it the whole page — is out of all
 // proportion to the damage. Strict on write (the DB CHECK and the zod input schema both still
 // refuse an unknown value), tolerant on read.
+/**
+ * The placeholder here must be a unit this build will NEVER know. It was `soffit_sqft`, chosen
+ * while that really was unknown — then #536 shipped soffits and made it a real MEASURED_BY_KIND,
+ * so these tests began asserting that a supported unit gets dropped. Both branches were green in
+ * isolation and main went red on the merge.
+ *
+ * `mystery_cubits` is not a unit anyone will add, which is the whole point: a stand-in for
+ * "unknown" must not be a plausible future feature.
+ */
+const NEVER_A_UNIT = "mystery_cubits";
+
 describe("rowToService — a measured_by this build has not heard of", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("still loads the service, so one unknown row cannot take down the whole book", () => {
     vi.spyOn(logger, "warn").mockImplementation(() => {});
     const row = baseRow();
-    row.measuredBy = "soffit_sqft";
+    row.measuredBy = NEVER_A_UNIT;
 
     const service = rowToService(row);
 
@@ -110,7 +121,7 @@ describe("rowToService — a measured_by this build has not heard of", () => {
   it("drops the unit rather than guessing one — this build cannot price against it", () => {
     vi.spyOn(logger, "warn").mockImplementation(() => {});
     const row = baseRow();
-    row.measuredBy = "soffit_sqft";
+    row.measuredBy = NEVER_A_UNIT;
 
     expect(rowToService(row).props.measuredBy).toBeNull();
   });
@@ -118,12 +129,12 @@ describe("rowToService — a measured_by this build has not heard of", () => {
   it("says so in the log — dropping a pricing unit is never silent", () => {
     const warn = vi.spyOn(logger, "warn").mockImplementation(() => {});
     const row = baseRow();
-    row.measuredBy = "soffit_sqft";
+    row.measuredBy = NEVER_A_UNIT;
 
     rowToService(row);
 
     expect(warn).toHaveBeenCalledTimes(1);
-    expect(JSON.stringify(warn.mock.calls[0])).toContain("soffit_sqft");
+    expect(JSON.stringify(warn.mock.calls[0])).toContain(NEVER_A_UNIT);
   });
 
   // The tolerance is scoped to this ONE column. A row that breaks a real invariant is still
@@ -131,7 +142,7 @@ describe("rowToService — a measured_by this build has not heard of", () => {
   it("does not make the mapper tolerant of anything else", () => {
     vi.spyOn(logger, "warn").mockImplementation(() => {});
     const row = baseRow();
-    row.measuredBy = "soffit_sqft";
+    row.measuredBy = NEVER_A_UNIT;
     row.unitPriceCents = -1;
 
     expect(() => rowToService(row)).toThrow(/corrupt pricebook_item/);
