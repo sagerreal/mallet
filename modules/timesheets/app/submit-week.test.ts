@@ -36,6 +36,9 @@ class FakeSubmissions implements WeekSubmissionRepository {
   async findFor(techUserId: UserId, weekStart: string): Promise<WeekSubmission | null> {
     return this.rows.get(this.key(techUserId, weekStart)) ?? null;
   }
+  async findForWeek(weekStart: string): Promise<readonly WeekSubmission[]> {
+    return [...this.rows.values()].filter((s) => s.props.weekStart === weekStart);
+  }
   async claim(input: {
     id: string;
     orgId: string;

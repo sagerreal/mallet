@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 interface Store {
   techs: { id: string; name: string }[];
@@ -33,6 +33,7 @@ vi.mock("@/lib/trpc/client", () => ({
         // Has the tech signed this week off? The card shows the third state between draft and
         // approved; null = not submitted, which is what these fixtures assume.
         submissionFor: { useQuery: () => ({ data: { submission: null } }) },
+        submissionsForWeek: { useQuery: () => ({ data: { submissions: [] } }) },
       },
       // The grid computes overtime from the shop's own rule now (useOvertimePolicy), so it reads the
       // one anyRole settings window. Undefined data = the hook's federal fallback, which is what
@@ -52,23 +53,38 @@ const store = (timeEntries: unknown[], techs: Store["techs"] = []): Store => ({
   setTimeEntries: vi.fn(),
 });
 
+/**
+ * Render the panel and open the crew row, because the grid no longer opens one for you.
+ *
+ * The office used to auto-select a technician so the page was not blank; the crew grid IS the page
+ * now, so a week is a deliberate click. These tests are about what happens INSIDE an open week, so
+ * they take that click first. Tolerant of there being no row at all — the first-run and empty-state
+ * tests render the same component and have nothing to open.
+ */
+function renderOpen(techName = "Mike") {
+  const out = render(<TimesheetsPanel />);
+  const row = screen.queryByRole("button", { name: new RegExp(techName) });
+  if (row) fireEvent.click(row);
+  return out;
+}
+
 describe("TimesheetsPanel — first-run empty state", () => {
   beforeEach(() => { storeState = store([]); q = { isFetched: true, isError: false }; everTotal = 0; vi.clearAllMocks(); });
 
   it("shows the first-run screen when loaded and no hours are logged", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
     expect(screen.getByText("No hours logged yet")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Set up crew" })).toBeTruthy();
   });
 
   it("offers the manual-entry path only when there is a crew member", () => {
     storeState = store([]); // no crew → no manual entry button
-    const { unmount } = render(<TimesheetsPanel />);
+    const { unmount } = renderOpen();
     expect(screen.queryByRole("button", { name: "+ Add entry" })).toBeNull();
     unmount();
 
     storeState = store([], [{ id: "t1", name: "Mike" }]);
-    render(<TimesheetsPanel />);
+    renderOpen();
     expect(screen.getByRole("button", { name: "+ Add entry" })).toBeTruthy();
   });
 
@@ -81,17 +97,17 @@ describe("TimesheetsPanel — first-run empty state", () => {
     });
 
     it("does not tell the shop to set up a crew it already has", () => {
-      render(<TimesheetsPanel />);
+      renderOpen();
       expect(screen.queryByRole("button", { name: "Set up crew" })).toBeNull();
     });
 
     it("makes logging time the primary action, because that is what is left to do", () => {
-      render(<TimesheetsPanel />);
+      renderOpen();
       expect(screen.getByRole("button", { name: "+ Add entry" })).toBeTruthy();
     });
 
     it("explains that hours arrive when the crew starts a job, rather than blaming setup", () => {
-      render(<TimesheetsPanel />);
+      renderOpen();
       expect(screen.getByText(/as soon as they start a job/i)).toBeTruthy();
     });
   });
@@ -99,7 +115,7 @@ describe("TimesheetsPanel — first-run empty state", () => {
   describe("when there is no crew yet", () => {
     it("asks for a crew, and does not offer an entry that would belong to nobody", () => {
       storeState = store([]);
-      render(<TimesheetsPanel />);
+      renderOpen();
       expect(screen.getByRole("button", { name: "Set up crew" })).toBeTruthy();
       expect(screen.queryByRole("button", { name: "+ Add entry" })).toBeNull();
     });
@@ -107,14 +123,14 @@ describe("TimesheetsPanel — first-run empty state", () => {
 
   it("shows the quiet loading state on cold load — not the first-run flash", () => {
     q = { isFetched: false, isError: false };
-    render(<TimesheetsPanel />);
+    renderOpen();
     expect(screen.queryByText("No hours logged yet")).toBeNull();
     expect(screen.getByText("Loading…")).toBeTruthy();
   });
 
   it("shows the load-failed state — not the first-run screen — when the load errored", () => {
     q = { isFetched: true, isError: true };
-    render(<TimesheetsPanel />);
+    renderOpen();
     expect(screen.queryByText("No hours logged yet")).toBeNull();
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
@@ -127,7 +143,7 @@ describe("TimesheetsPanel — first-run empty state", () => {
   it("does not offer set-up for a quiet week when the shop has hours in other weeks", () => {
     everTotal = 412; // months of history in the database…
     storeState = store([], [{ id: "t1", name: "Mike" }]); // …and nothing in the week on screen
-    render(<TimesheetsPanel />);
+    renderOpen();
     expect(screen.queryByText("No hours logged yet")).toBeNull();
     expect(screen.queryByRole("button", { name: "Set up crew" })).toBeNull();
   });

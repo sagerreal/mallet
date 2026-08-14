@@ -99,6 +99,8 @@ export interface TsTechWeekCardProps {
    * somebody gets paid for four days of a five-day week.
    */
   submittedAt: string | null;
+  /** Rendered as a crew-grid row's body: no frame, no title, no metrics — the row states those. */
+  inGrid?: boolean;
 }
 
 /** "Thu 2:14p" — when he signed it off, in the reader's own timezone. */
@@ -152,13 +154,18 @@ export function TsTechWeekCard({
   onReopen,
   unfinishedDays,
   submittedAt,
+  inGrid = false,
 }: TsTechWeekCardProps) {
   const locked = rollup.approved;
   const refused = unfinishedDays != null && unfinishedDays.length > 0;
+  // Inside the crew grid the row above already states the name, the total and the overtime, so the
+  // card sheds its own frame, title and metrics and keeps only what the row cannot say: the actions,
+  // the submitted state and the entries themselves. Same component, same rules — one card is not
+  // allowed to approve on terms the other refuses.
   return (
-    <div className="card" style={{ marginTop: "var(--space-3)" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-1)", flexWrap: "wrap" }}>
-        <b style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{tech.name} · this week</b>
+    <div className={inGrid ? undefined : "card"} style={inGrid ? undefined : { marginTop: "var(--space-3)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginBottom: "var(--space-1)", flexWrap: "wrap", paddingTop: inGrid ? "var(--space-3)" : undefined }}>
+        {!inGrid && <b style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>{tech.name} · this week</b>}
         <span style={{ flex: 1 }} />
         {!locked && submittedAt !== null ? (
           <span className="ts-sent">Submitted · {tsSubmittedLabel(submittedAt)}</span>
@@ -191,7 +198,7 @@ export function TsTechWeekCard({
           </>
         )}
       </div>
-      <TsWeekMetrics rollup={rollup} />
+      {!inGrid && <TsWeekMetrics rollup={rollup} />}
       {refused && (
         <p
           role="alert"

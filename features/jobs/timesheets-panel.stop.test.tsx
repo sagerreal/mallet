@@ -40,6 +40,7 @@ vi.mock("@/lib/trpc/client", () => ({
         // Has the tech signed this week off? The card shows the third state between draft and
         // approved; null = not submitted, which is what these fixtures assume.
         submissionFor: { useQuery: () => ({ data: { submission: null } }) },
+        submissionsForWeek: { useQuery: () => ({ data: { submissions: [] } }) },
       },
       // The grid computes overtime from the shop's own rule now (useOvertimePolicy), so it reads the
       // one anyRole settings window. Undefined data = the hook's federal fallback, which is what
@@ -68,6 +69,21 @@ const store = (timeEntries: TimeEntry[], jobs: Job[] = []): Store => ({
   setTimeEntries: vi.fn(),
 });
 
+/**
+ * Render the panel and open the crew row, because the grid no longer opens one for you.
+ *
+ * The office used to auto-select a technician so the page was not blank; the crew grid IS the page
+ * now, so a week is a deliberate click. These tests are about what happens INSIDE an open week, so
+ * they take that click first. Tolerant of there being no row at all — the first-run and empty-state
+ * tests render the same component and have nothing to open.
+ */
+function renderOpen(techName = "Mike Rivera") {
+  const out = render(<TimesheetsPanel />);
+  const row = screen.queryByRole("button", { name: new RegExp(techName) });
+  if (row) fireEvent.click(row);
+  return out;
+}
+
 describe("stopping a running entry from the office grid", () => {
   beforeEach(() => {
     storeState = store([running()]);
@@ -75,7 +91,7 @@ describe("stopping a running entry from the office grid", () => {
   });
 
   it("opens the out-time picker on Stop instead of inventing an end time", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
@@ -85,7 +101,7 @@ describe("stopping a running entry from the office grid", () => {
   });
 
   it("writes the chosen end time AND stops the clock in one change", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     fireEvent.click(screen.getByRole("button", { name: "5:00pm" }));
@@ -96,7 +112,7 @@ describe("stopping a running entry from the office grid", () => {
   });
 
   it("lets the office edit a running entry's other fields — it is no longer inert", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
     fireEvent.click(screen.getByRole("button", { name: "Travel" }));
@@ -106,7 +122,7 @@ describe("stopping a running entry from the office grid", () => {
 
   it("never offers an out time before the in time", () => {
     storeState = store([running({ start: "15:00" })]);
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
 
@@ -116,7 +132,7 @@ describe("stopping a running entry from the office grid", () => {
 
   it("refuses to open an approved entry", () => {
     storeState = store([running({ id: "e-appr", status: "approved", end: "16:00", running: false })]);
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     expect(screen.queryByRole("button", { name: "Stop" })).toBeNull();
   });
@@ -130,7 +146,7 @@ describe("approving a week that is still on the clock", () => {
     storeState.approveTechWeek = vi
       .fn()
       .mockResolvedValue({ status: "unfinished", days: ["2026-06-30"] } as ApproveWeekOutcome);
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
@@ -140,7 +156,7 @@ describe("approving a week that is still on the clock", () => {
 
   it("says nothing when the week is approved", async () => {
     storeState = store([running({ end: "16:00", running: false })]);
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Approve" }));
 
@@ -155,7 +171,7 @@ describe("a scheduled day with nothing recorded", () => {
     // Monday's hours exist, Wednesday's job has none — the week is populated, so this is the
     // absence row and not the first-run screen.
     storeState = store([running({ id: "e-mon", date: "2026-06-29", end: "16:00", running: false })], jobs);
-    render(<TimesheetsPanel />);
+    renderOpen();
 
     expect(screen.getByText("No hours recorded")).toBeTruthy();
     expect(screen.getByText(tsDayLabel(TODAY, "long"))).toBeTruthy();
@@ -193,20 +209,20 @@ describe("the whole row opens the editor, not just the pencil", () => {
   });
 
   it("opens the editor when the row itself is clicked", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
     fireEvent.click(rowFor("Edit Job entry"));
     // The editor's in/out picker triggers only exist once it is open (label carries a ▾ caret).
     expect(screen.getByRole("button", { name: /^8:00am/ })).toBeTruthy();
   });
 
   it("still opens from the label, for keyboard users", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
     fireEvent.click(screen.getByRole("button", { name: /Edit Job entry/i }));
     expect(screen.getByRole("button", { name: /^8:00am/ })).toBeTruthy();
   });
 
   it("does NOT also open the editor when Delete is clicked", () => {
-    render(<TimesheetsPanel />);
+    renderOpen();
     fireEvent.click(screen.getByRole("button", { name: "✕" }));
     // One tap must do one thing: the delete fired, the editor did not open behind it.
     expect(screen.queryByRole("button", { name: /^8:00am/ })).toBeNull();
@@ -215,7 +231,7 @@ describe("the whole row opens the editor, not just the pencil", () => {
 
   it("leaves an APPROVED row unclickable — it is locked until the office reopens it", () => {
     storeState = store([finished({ status: "approved" })]);
-    render(<TimesheetsPanel />);
+    renderOpen();
     // No edit affordance at all on an approved row.
     expect(screen.queryByRole("button", { name: /Edit Job entry/i })).toBeNull();
   });

@@ -49,6 +49,20 @@ export class DrizzleWeekSubmissionRepository implements WeekSubmissionRepository
     return row ? toDomain(row) : null;
   }
 
+  async findForWeek(weekStart: string): Promise<readonly WeekSubmission[]> {
+    // No limit: the unique (org, tech, week) index caps this at one row per person on the crew.
+    const rows = await this.tx
+      .select()
+      .from(timesheetSubmissions)
+      .where(
+        and(
+          eq(timesheetSubmissions.orgId, this.orgId),
+          eq(timesheetSubmissions.weekStart, weekStart),
+        ),
+      );
+    return rows.map(toDomain);
+  }
+
   async claim(input: {
     id: string;
     orgId: string;
