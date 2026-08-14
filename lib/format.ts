@@ -88,8 +88,14 @@ export const formatDateTime = (iso: string | null): string =>
 // Prototype-sample money is plain DOLLARS (not cents) — fmt$ is its one formatter.
 // Locale pinned to en-US: an undefined locale renders differently per machine and
 // risks SSR hydration mismatches.
-export const fmt$ = (dollars: number): string =>
-  "$" + Math.round(dollars).toLocaleString("en-US");
+// The sign belongs to the amount, ahead of the currency: "$-41" reads as a price of minus-41,
+// and next to a "+" prefix on screen it printed "+$-41".
+export const fmt$ = (dollars: number): string => {
+  const whole = Math.round(dollars);
+  return whole < 0
+    ? "-$" + Math.abs(whole).toLocaleString("en-US")
+    : "$" + whole.toLocaleString("en-US");
+};
 
 // Cent-precise dollars formatter for money that can be sub-dollar (e.g. pricebook
 // MATERIALS — a wax ring or fastener costs cents, so rounding to whole dollars would

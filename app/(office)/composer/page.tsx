@@ -58,7 +58,6 @@ import {
   tierDisplayName,
   tieredLinesForPayload,
   tierNamesForPayload,
-  toEstimateLines,
   toProposalChips,
   unconfirmedRoomsNoticeText,
   type AiTiersDraft,
@@ -82,7 +81,6 @@ export default function ComposerPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const leads = useLeads();
-  const addEstimate = useAppStore((s) => s.addEstimate);
   const adoptEstimate = useAppStore((s) => s.adoptEstimate);
   const moveLeadStage = useAppStore((s) => s.moveLeadStage);
   const addLeadNote = useAppStore((s) => s.addLeadNote);
@@ -117,6 +115,9 @@ export default function ComposerPage() {
   const [sendError, setSendError] = useState<string | null>(null);
   const [custError, setCustError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  // Save draft awaits the server before it navigates, so it has an in-flight window of its own —
+  // separate from isSending, which owns the Send button's copy.
+  const [isSavingDraft, setIsSavingDraft] = useState(false);
 
   // Invalidates the cached customer list so the leads hydrator picks up a
   // freshly-created customer (with its server-assigned id) into the store.
@@ -524,40 +525,66 @@ export default function ComposerPage() {
   // ALL of them derive the payload at call time; a GBB quote always carries
   // the full three-tier structure (gating keys off the recommended tier).
 
-  function saveDraftComposer() {
+  // Preview has to persist a draft to mint the public token the customer page reads, so every
+  // Preview leaves a REAL Draft in the ledger. Both terminal actions supersede those drafts, and
+  // both archive them here — best-effort: a failed archive leaves a draft the office can trash
+  // from the estimate modal, and must not fail a quote that is already saved or sent. The ref is
+  // cleared so a later action can't archive the same id twice.
+  function archivePreviewDrafts() {
+    for (const p of previewDraftsRef.current) {
+      quoteArchiveMutation.mutate(
+        { estimateId: p.id },
+        {
+          onError: (err) => {
+            if (process.env.NODE_ENV !== "production") {
+              console.error("[composer] preview-draft archive failed", { estimateId: p.id, err });
+            }
+          },
+        },
+      );
+    }
+    previewDraftsRef.current = [];
+  }
+
+  async function saveDraftComposer() {
     // Gate on the recommended tier's real lines (mirrors the domain's send
-    // rule) — the server's draft schema rejects `description: ""` and the
-    // optimistic estimate would roll back silently AFTER the redirect.
-    const gateLines = realLines(linesForSend(cs));
-    if (gateLines.length === 0) return;
-    // Draft requires a lead because addEstimate needs a real leadId.
+    // rule) — the server's draft schema rejects `description: ""`.
+    if (realLines(linesForSend(cs)).length === 0) return;
+    // Draft requires a lead: the estimate hangs off a real leadId.
     if (!selectedLead) return;
-    // GBB saves the FULL three-tier structure; single saves the line table.
-    const gbb = cs.format === "gbb" && cs.gbb ? cs.gbb : null;
-    addEstimate({
-      leadId: selectedLead.id,
-      title: selectedLead.job || "Quote draft",
-      status: "draft",
-      age: 0,
-      viewed: false,
-      fu: { on: cs.fuOn, stage: 0 },
-      lines: toEstimateLines(gbb ? tieredLinesForPayload(gbb) : gateLines),
-      pricing: { ...cs.pricing },
-      validDays: cs.validDays,
-      ...(gbb
-        ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
-        : {}),
-      ...(cs.terms ? { termsSnapshot: cs.terms.text } : {}),
-      // The scope-visit job behind this quote survives a save-draft too — without it, a draft
-      // saved from the scoped card would accept into a DUPLICATE job later.
-      ...(cs.jobId ? { jobId: cs.jobId } : {}),
-    });
-    // Traces held on this quote persist onto the flow's job when one exists
-    // (?job=/?change=) — fire-and-forget; the draft is already saved.
-    void persistHeldTraces();
-    // Quotes live on the work board on the Office page (the /quotes and /pipeline routes
-    // just redirect there); the new draft lands in the "in the shop" lane.
-    router.push("/dashboard");
+    if (isSavingDraft) return; // in-flight guard: a second click would mint a second draft
+
+    setSendError(null);
+    setIsSavingDraft(true);
+    try {
+      // The SAME payload the send and preview paths draft with — one builder, so a draft saved
+      // here and the same quote sent later reach the server as the same estimate.
+      const drafted = await quoteDraftMutation.mutateAsync(buildDraftPayload(selectedLead));
+      // The server holds it; adopt the returned record rather than re-persisting through
+      // addEstimate, which would orphan a duplicate draft in the shop rail.
+      adoptEstimate(drafted, { on: cs.fuOn, stage: 0 });
+      archivePreviewDrafts();
+      // Traces held on this quote persist onto the flow's job when one exists
+      // (?job=/?change=) — fire-and-forget; the draft is already saved.
+      void persistHeldTraces();
+      // Quotes live on the work board on the Office page (the /quotes and /pipeline routes
+      // just redirect there); the new draft lands in the "in the shop" lane.
+      //
+      // The redirect happens HERE, after the server has the record. It used to fire in the same
+      // tick as an optimistic store write: a refused payload (a discount past 10000 bps, a
+      // dropped connection) rolled back on a page nobody was on any more, so the app reported a
+      // save and the quote was gone.
+      router.push("/dashboard");
+    } catch (e: unknown) {
+      const code = (e as { data?: { code?: string } }).data?.code;
+      setSendError(
+        code === "BAD_REQUEST"
+          ? "Draft not saved — the server refused these details. Check the pricing figures and the line items, then save again."
+          : "Draft not saved — check your connection and try again.",
+      );
+    } finally {
+      setIsSavingDraft(false);
+    }
   }
 
   // The v1.quoting.draft payload built from the current composer state — shared by the
@@ -694,22 +721,8 @@ export default function ComposerPage() {
         useAppStore.getState().updateEstimate(reviseId, { archived: true });
       }
 
-      // Preview drafts from this composer session are superseded by the real send —
-      // archive them so they don't linger in the shop rail (best-effort; a failed
-      // archive just leaves a draft the user can trash from the estimate modal).
-      for (const p of previewDraftsRef.current) {
-        quoteArchiveMutation.mutate(
-          { estimateId: p.id },
-          {
-            onError: (err) => {
-              if (process.env.NODE_ENV !== "production") {
-                console.error("[composer] preview-draft archive failed", { estimateId: p.id, err });
-              }
-            },
-          },
-        );
-      }
-      previewDraftsRef.current = [];
+      // Preview drafts from this composer session are superseded by the real send.
+      archivePreviewDrafts();
 
       addLeadNote(selectedLead.id, {
         type: "text",
@@ -946,6 +959,7 @@ export default function ComposerPage() {
             : null
         }
         isSending={isSending}
+        isSavingDraft={isSavingDraft}
         sendError={sendError}
         onPreview={previewComposer}
         onSaveDraft={saveDraftComposer}

@@ -6,6 +6,7 @@
  */
 
 import { Field } from "@/components/ui/input";
+import { MAX_SHARE_PCT, clampSharePct } from "@mallet/shared/types";
 import { pricingSummary, type ComposerState } from "./composer-state";
 
 export function PricingCard({
@@ -31,18 +32,22 @@ export function PricingCard({
         </div>
         <div className="reveal-body">
         <div style={{ display: "flex", gap: "var(--space-4)" }}>
+          {/* Discount and deposit are shares of the bill: the domain refuses anything past 100%,
+              so the box cannot be allowed to produce it — 150 here used to reach the server as
+              15000 bps, which refused the whole draft. */}
           <Field label="Discount %" style={{ flex: 1 }}>
             <input
               type="number"
               inputMode="decimal"
               min={0}
+              max={MAX_SHARE_PCT}
               value={state.pricing.disc || ""}
               placeholder="0"
               onChange={(e) =>
                 onUpdate({
                   pricing: {
                     ...state.pricing,
-                    disc: Math.max(0, +e.target.value || 0),
+                    disc: clampSharePct(+e.target.value || 0),
                   },
                 })
               }
@@ -53,13 +58,14 @@ export function PricingCard({
               type="number"
               inputMode="decimal"
               min={0}
+              max={MAX_SHARE_PCT}
               value={state.pricing.dep || ""}
               placeholder="0"
               onChange={(e) =>
                 onUpdate({
                   pricing: {
                     ...state.pricing,
-                    dep: Math.max(0, +e.target.value || 0),
+                    dep: clampSharePct(+e.target.value || 0),
                   },
                 })
               }

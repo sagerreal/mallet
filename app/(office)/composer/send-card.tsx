@@ -99,6 +99,7 @@ export function SendCard({
   gateReason,
   deliveryGateReason,
   isSending,
+  isSavingDraft,
   sendError,
   onPreview,
   onSaveDraft,
@@ -112,6 +113,8 @@ export function SendCard({
   /** Blocks SEND only (no destination for the chosen channel) — null when clear. */
   deliveryGateReason: string | null;
   isSending: boolean;
+  /** A Save draft is in flight — it awaits the server before it leaves the page. */
+  isSavingDraft: boolean;
   sendError: string | null;
   onPreview: () => void;
   onSaveDraft: () => void;
@@ -239,24 +242,27 @@ export function SendCard({
             {shownReason}
           </span>
         )}
-        <button className="btn ghost" onClick={onPreview} disabled={gated}>
+        <button className="btn ghost" onClick={onPreview} disabled={gated || isSavingDraft}>
           Preview
         </button>
+        {/* Save draft holds the page until the server has the record, so it reports its own
+            in-flight state rather than borrowing the Send button's. */}
         <button
           className="btn ghost"
           onClick={onSaveDraft}
-          disabled={gated || isSending}
+          disabled={gated || isSending || isSavingDraft}
+          aria-busy={isSavingDraft}
         >
-          Save draft
+          {isSavingDraft ? "Saving…" : "Save draft"}
         </button>
         <button
           className="btn primary"
           onClick={onSend}
-          disabled={sendGated || isSending}
+          disabled={sendGated || isSending || isSavingDraft}
           aria-busy={isSending}
           style={{
-            opacity: sendGated || isSending ? 0.6 : 1,
-            cursor: sendGated || isSending ? "not-allowed" : "pointer",
+            opacity: sendGated || isSending || isSavingDraft ? 0.6 : 1,
+            cursor: sendGated || isSending || isSavingDraft ? "not-allowed" : "pointer",
           }}
         >
           {isSending
