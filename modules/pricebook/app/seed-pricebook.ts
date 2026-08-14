@@ -4,10 +4,13 @@ import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
 import type { Service, ServicePricedBy } from "../domain/service";
 import type { Category } from "../domain/category";
+import type { Material } from "../domain/material";
 import type { ServiceRepository } from "../domain/service-repository";
 import type { CategoryRepository } from "../domain/category-repository";
+import type { MaterialRepository, MarkupBandsRepository } from "../domain/material-repository";
 import { CreateCategoryUseCase } from "./create-category";
 import { CreateServiceUseCase } from "./create-service";
+import { CreateMaterialUseCase } from "./create-material";
 
 export interface SeedCategoryInput {
   readonly name: string;
@@ -28,17 +31,41 @@ export interface SeedServiceInput {
   readonly measuredBy?: ServicePricedBy | null;
 }
 
+/**
+ * A stock item the trade buys and consumes — paint by the gallon, caulk by the tube.
+ *
+ * SEPARATE FROM A SERVICE, and the unit is why. A service is priced per unit of WORK (a square
+ * foot of wall); a material is bought in whatever the supplier sells (a gallon), and the two do
+ * not convert without a coverage rate. Seeding materials as flat services would put "Interior
+ * latex, eggshell · $38" in the list a shop quotes from, where it reads as a sellable job.
+ *
+ * Cost only, never a sell price: markup bands turn cost into price, and a starter pack that
+ * hard-coded a margin would be inventing the shop's pricing for it.
+ */
+export interface SeedMaterialInput {
+  readonly name: string;
+  readonly unitCostCents: number;
+  /** What one of it IS — "gal", "tube", "roll". Shown beside the cost. */
+  readonly unitOfMeasure: string;
+  /** The number the trade actually needs at the shelf, e.g. paint coverage per coat. */
+  readonly description?: string;
+  readonly categoryName?: string;
+}
+
 // Vertical-agnostic seed spec — this use-case has no idea what "plumbing" is. The concrete
 // pack (app/(office)/settings/pricebook-seed.ts) is composed in by the router, keeping the
 // module reusable if a second starter pack is ever added.
 export interface SeedPricebookInput {
   readonly categories: readonly SeedCategoryInput[];
   readonly services: readonly SeedServiceInput[];
+  /** Absent for a trade whose pack has none — seeds nothing, exactly as before. */
+  readonly materials?: readonly SeedMaterialInput[];
 }
 
 export interface SeedPricebookResult {
   readonly categories: Category[];
   readonly services: Service[];
+  readonly materials: Material[];
 }
 
 // A brand-new org's pricebook starts empty, which makes the Settings card look broken rather
@@ -63,6 +90,10 @@ export class SeedPricebookUseCase {
     private readonly categoryRepo: CategoryRepository,
     private readonly clock: Clock,
     private readonly ids: IdGenerator,
+    // Optional so every existing caller and test keeps compiling and keeps its exact behaviour:
+    // no material repo means no materials, which is what a pack without them wants anyway.
+    private readonly materialRepo?: MaterialRepository,
+    private readonly bandsRepo?: MarkupBandsRepository,
   ) {}
 
   async exec(
@@ -72,7 +103,7 @@ export class SeedPricebookUseCase {
     const existing = await this.serviceRepo.list(toPage({ limit: 1 }), {});
     if (existing.items.length > 0) {
       logger.info({ orgId, servicesCreated: 0, categoriesCreated: 0 }, "pricebook.seed.skipped");
-      return ok({ services: [], categories: [] });
+      return ok({ services: [], categories: [], materials: [] });
     }
 
     const createCategory = new CreateCategoryUseCase(this.categoryRepo, this.clock, this.ids);
@@ -117,11 +148,43 @@ export class SeedPricebookUseCase {
       services.push(result.value);
     }
 
+    // Materials LAST: a service is what the shop sells and must exist even if the pack carries no
+    // stock list, so nothing above depends on this step.
+    const materials: Material[] = [];
+    if (input.materials?.length && this.materialRepo && this.bandsRepo) {
+      const createMaterial = new CreateMaterialUseCase(
+        this.materialRepo,
+        this.bandsRepo,
+        this.clock,
+        this.ids,
+      );
+      for (const [position, mat] of input.materials.entries()) {
+        const result = await createMaterial.exec(
+          {
+            name: mat.name,
+            categoryId: categoryIdByName.get(mat.categoryName ?? "") ?? null,
+            description: mat.description ?? null,
+            unitCostCents: mat.unitCostCents,
+            unitOfMeasure: mat.unitOfMeasure,
+            position,
+          },
+          orgId,
+        );
+        if (!result.ok) return err(result.error);
+        materials.push(result.value);
+      }
+    }
+
     logger.info(
-      { orgId, servicesCreated: services.length, categoriesCreated: categories.length },
+      {
+        orgId,
+        servicesCreated: services.length,
+        categoriesCreated: categories.length,
+        materialsCreated: materials.length,
+      },
       "pricebook.seeded",
     );
 
-    return ok({ services, categories });
+    return ok({ services, categories, materials });
   }
 }

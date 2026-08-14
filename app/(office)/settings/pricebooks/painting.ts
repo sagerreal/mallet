@@ -260,10 +260,121 @@ const PAINTING_SERVICES: readonly SeedServiceInput[] = [
   },
 ];
 
+/**
+ * WHAT A PAINTER BUYS, in the unit the supplier sells it in.
+ *
+ * These are COSTS, never prices. Markup bands turn a cost into a sell price, and a starter pack
+ * that hard-coded a margin would be inventing this shop's pricing for it.
+ *
+ * COVERAGE IS THE POINT, and it is why a painter gets a stock list where a plumber does not. A
+ * plumber buys a water heater for one address; a painter consumes the same dozen items on every
+ * job, and the quantity is not a guess — it falls out of the wall area. One gallon covers about
+ * 350 sq ft of primed drywall per coat, so a scanned 210 sq ft bathroom at two coats is 1.2
+ * gallons, which is two cans because paint is not sold by the fifth. That number lives in each
+ * description so it is on the shelf label rather than in someone's head.
+ *
+ * Figures are 2026 US contractor-grade retail (Sherwin-Williams / Behr Pro / PPG trade lines),
+ * which is what a 1-3 crew shop actually pays — not builder-grade, not designer.
+ */
+const PAINTING_MATERIALS = [
+  {
+    name: "Interior latex, eggshell",
+    unitOfMeasure: "gal",
+    unitCostCents: 3800,
+    description: "Walls. Covers ~350 sq ft per coat.",
+    categoryName: "Interior Walls & Ceilings",
+  },
+  {
+    name: "Interior latex, flat",
+    unitOfMeasure: "gal",
+    unitCostCents: 3000,
+    description: "Ceilings. Covers ~350 sq ft per coat.",
+    categoryName: "Interior Walls & Ceilings",
+  },
+  {
+    name: "Interior latex, semi-gloss",
+    unitOfMeasure: "gal",
+    unitCostCents: 4200,
+    description: "Trim, doors, cabinets. Covers ~350 sq ft per coat.",
+    categoryName: "Trim, Doors & Windows",
+  },
+  {
+    name: "Drywall primer (PVA)",
+    unitOfMeasure: "gal",
+    unitCostCents: 2200,
+    description: "New or patched drywall. Covers ~300 sq ft.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Stain-blocking primer",
+    unitOfMeasure: "gal",
+    unitCostCents: 3800,
+    description: "Water stains, smoke, dark-to-light colour changes. Covers ~300 sq ft.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Exterior acrylic, satin",
+    unitOfMeasure: "gal",
+    unitCostCents: 5200,
+    description: "Exterior body and trim. Covers ~300 sq ft per coat on smooth siding.",
+    categoryName: "Exterior",
+  },
+  {
+    name: "Painter's caulk",
+    unitOfMeasure: "tube",
+    unitCostCents: 350,
+    description: "Trim-to-wall seams. One tube runs ~40 ln ft.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Spackle / patching compound",
+    unitOfMeasure: "qt",
+    unitCostCents: 800,
+    description: "Nail holes and small dings.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Painter's tape, 1.88 in",
+    unitOfMeasure: "roll",
+    unitCostCents: 750,
+    description: "60 yd per roll.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Masking film",
+    unitOfMeasure: "roll",
+    unitCostCents: 1800,
+    description: "Pre-taped plastic for cabinets, windows and floors.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Canvas drop cloth, 9x12",
+    unitOfMeasure: "each",
+    unitCostCents: 2400,
+    description: "Reusable — costed per job at roughly a tenth of replacement.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Roller cover, 3/8 in nap",
+    unitOfMeasure: "each",
+    unitCostCents: 600,
+    description: "One per colour per day on smooth walls.",
+    categoryName: "Prep & Repair",
+  },
+  {
+    name: "Sandpaper, assorted grit",
+    unitOfMeasure: "pack",
+    unitCostCents: 900,
+    description: "Scuff-sanding trim and patched areas.",
+    categoryName: "Prep & Repair",
+  },
+] as const;
+
 export const PAINTING_PRICEBOOK: TradePricebook = {
   key: "painting",
   categories: PAINTING_CATEGORIES,
   services: PAINTING_SERVICES,
+  materials: PAINTING_MATERIALS,
   // homewyse.com and homeadvisor.com answer automated fetches; every homeguide.com and angi.com
   // link below returns HTTP 403 to a script but resolves fine in a browser. The figure each one
   // supplies is recorded inline next to the line it prices, so a number survives a source a

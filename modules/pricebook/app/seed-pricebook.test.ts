@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   asServiceId,
   asCategoryId,
+  asMaterialId,
   asOrgId,
   FixedClock,
   isOk,
@@ -11,6 +12,7 @@ import {
   type CursorPage,
   type Paginated,
 } from "@mallet/shared/types";
+import { Material } from "../domain/material";
 import { Service, type ServiceProps } from "../domain/service";
 import { Category, type CategoryProps } from "../domain/category";
 import type { ServiceRepository } from "../domain/service-repository";
@@ -321,5 +323,137 @@ describe("SeedPricebookUseCase", () => {
     };
 
     await expect(useCase.exec(ORG, SEED_INPUT)).rejects.toThrow("db unavailable");
+  });
+});
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MATERIALS
+//
+// A painter's pricebook is not finished at the service list. Paint is bought by the GALLON and
+// consumed off wall area, so a shop whose Materials tab reads 0 has no cost basis for the thing
+// it spends most of its money on — and no way to turn a scanned 210 sq ft bathroom into the two
+// cans it actually takes. Service trades genuinely have no equivalent (a water heater is bought
+// for one address), so this is opt-in per pack and absent means absent.
+// ─────────────────────────────────────────────────────────────────────────────
+
+class FakeMaterialRepo {
+  readonly created: { name: string; unitCostCents: number; unitOfMeasure: string; position: number }[] = [];
+  async create(input: { id: string; orgId: string; name: string; unitCostCents: number; unitOfMeasure: string; position: number }) {
+    this.created.push({
+      name: input.name,
+      unitCostCents: input.unitCostCents,
+      unitOfMeasure: input.unitOfMeasure,
+      position: input.position,
+    });
+    const r = Material.create({
+      id: asMaterialId(`00000000-0000-4000-8000-${String(this.created.length).padStart(12, "0")}`),
+      orgId: ORG,
+      categoryId: null,
+      code: null,
+      name: input.name,
+      description: null,
+      unitCostCents: input.unitCostCents,
+      unitPriceCents: input.unitCostCents,
+      unitOfMeasure: input.unitOfMeasure,
+      markupBps: null,
+      pricingMode: "rule",
+      taxable: true,
+      vendor: null,
+      active: true,
+      position: input.position,
+      createdAt: new Date("2026-07-01T00:00:00Z"),
+      updatedAt: new Date("2026-07-01T00:00:00Z"),
+    });
+    if (!isOk(r)) throw new Error("Material.create failed in fake");
+    return r.value;
+  }
+  async findById() { return null; }
+  async allNames() { return this.created.map((m) => m.name); }
+  async list() { return { items: [], nextCursor: null }; }
+  async save() { throw new Error("unused"); }
+  async archiveByLead() { return 0; }
+  async archive() { throw new Error("unused"); }
+}
+
+const fakeBands = { list: async () => [], replaceAll: async () => {} };
+
+const PAINT_PACK: SeedPricebookInput = {
+  categories: [{ name: "Interior Walls & Ceilings" }],
+  services: [
+    { name: "Interior wall painting", categoryName: "Interior Walls & Ceilings", unitPriceCents: 225, costCents: 105, measuredBy: "walls_sqft" },
+  ],
+  materials: [
+    { name: "Interior latex, eggshell", unitCostCents: 3800, unitOfMeasure: "gal", description: "Covers ~350 sq ft per coat.", categoryName: "Interior Walls & Ceilings" },
+    { name: "Painter's caulk", unitCostCents: 350, unitOfMeasure: "tube" },
+  ],
+};
+
+describe("SeedPricebookUseCase — materials", () => {
+  let services: FakeServiceRepository;
+  let categories: FakeCategoryRepository;
+  let materials: FakeMaterialRepo;
+  let useCase: SeedPricebookUseCase;
+
+  beforeEach(() => {
+    nextMintedId = 0;
+    services = new FakeServiceRepository();
+    categories = new FakeCategoryRepository();
+    materials = new FakeMaterialRepo();
+    useCase = new SeedPricebookUseCase(
+      services,
+      categories,
+      new FixedClock(new Date("2026-08-14T12:00:00Z")),
+      { newId: () => `00000000-0000-4000-8000-${String(++nextMintedId).padStart(12, "0")}` },
+      materials as never,
+      fakeBands,
+    );
+  });
+
+  it("seeds the pack's materials alongside its services", async () => {
+    const result = await useCase.exec(ORG, PAINT_PACK);
+
+    expect(isOk(result)).toBe(true);
+    expect(materials.created.map((m) => m.name)).toEqual([
+      "Interior latex, eggshell",
+      "Painter's caulk",
+    ]);
+  });
+
+  it("keeps the supplier's unit — a gallon of paint is not a square foot of wall", async () => {
+    await useCase.exec(ORG, PAINT_PACK);
+
+    expect(materials.created[0]).toMatchObject({ unitOfMeasure: "gal", unitCostCents: 3800 });
+    expect(materials.created[1]).toMatchObject({ unitOfMeasure: "tube", unitCostCents: 350 });
+  });
+
+  it("keeps the pack's own order, the way services do", async () => {
+    await useCase.exec(ORG, PAINT_PACK);
+
+    expect(materials.created.map((m) => m.position)).toEqual([0, 1]);
+  });
+
+  it("returns them, so the store adopts the seed instead of refetching", async () => {
+    const result = await useCase.exec(ORG, PAINT_PACK);
+
+    expect(isOk(result) && result.value.materials).toHaveLength(2);
+  });
+
+  it("seeds none for a pack that carries none — a service trade buys parts per address", async () => {
+    const result = await useCase.exec(ORG, { categories: PAINT_PACK.categories, services: PAINT_PACK.services });
+
+    expect(isOk(result) && result.value.materials).toEqual([]);
+    expect(materials.created).toHaveLength(0);
+  });
+
+  // Same idempotence law the services follow: an org with a book already is left alone entirely,
+  // so a re-clicked button cannot append a second set of paint.
+  it("writes no material into a book that already has a service", async () => {
+    services.store.set(asServiceId("11111111-1111-1111-1111-111111111111"), makeService());
+
+    const result = await useCase.exec(ORG, PAINT_PACK);
+
+    expect(isOk(result) && result.value.materials).toEqual([]);
+    expect(materials.created).toHaveLength(0);
   });
 });

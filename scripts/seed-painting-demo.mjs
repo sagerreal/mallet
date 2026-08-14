@@ -136,6 +136,35 @@ const BOOKING = {
   feeCredited: false,
 };
 
+/**
+ * WHAT THE SHOP BUYS, in the unit the supplier sells it in — the same list the painting trade pack
+ * seeds (app/(office)/settings/pricebooks/painting.ts), repeated here because this org already has
+ * services and the seed endpoint is idempotent by design: it no-ops the moment a book has one
+ * line, so it can never top up an existing shop.
+ *
+ * Coverage is in every description because it is the number the demo turns on: one gallon covers
+ * ~350 sq ft per coat, so a scanned 210 sq ft bathroom at two coats is 1.2 gallons — two cans,
+ * because paint is not sold by the fifth.
+ *
+ * sell = cost here (markup_bps null → the org default applies at quote time); the seed does not
+ * invent this shop's margin.
+ */
+const MATERIALS = [
+  { slug: "mat-eggshell", name: "Interior latex, eggshell", uom: "gal", cost: 3800, cat: "cat-interior", desc: "Walls. Covers ~350 sq ft per coat." },
+  { slug: "mat-flat", name: "Interior latex, flat", uom: "gal", cost: 3000, cat: "cat-interior", desc: "Ceilings. Covers ~350 sq ft per coat." },
+  { slug: "mat-semigloss", name: "Interior latex, semi-gloss", uom: "gal", cost: 4200, cat: "cat-trim", desc: "Trim, doors, cabinets. Covers ~350 sq ft per coat." },
+  { slug: "mat-pva", name: "Drywall primer (PVA)", uom: "gal", cost: 2200, cat: "cat-prep", desc: "New or patched drywall. Covers ~300 sq ft." },
+  { slug: "mat-blocker", name: "Stain-blocking primer", uom: "gal", cost: 3800, cat: "cat-prep", desc: "Water stains, smoke, dark-to-light colour changes. Covers ~300 sq ft." },
+  { slug: "mat-ext", name: "Exterior acrylic, satin", uom: "gal", cost: 5200, cat: "cat-exterior", desc: "Exterior body and trim. Covers ~300 sq ft per coat on smooth siding." },
+  { slug: "mat-caulk", name: "Painter's caulk", uom: "tube", cost: 350, cat: "cat-prep", desc: "Trim-to-wall seams. One tube runs ~40 ln ft." },
+  { slug: "mat-spackle", name: "Spackle / patching compound", uom: "qt", cost: 800, cat: "cat-prep", desc: "Nail holes and small dings." },
+  { slug: "mat-tape", name: "Painter's tape, 1.88 in", uom: "roll", cost: 750, cat: "cat-prep", desc: "60 yd per roll." },
+  { slug: "mat-film", name: "Masking film", uom: "roll", cost: 1800, cat: "cat-prep", desc: "Pre-taped plastic for cabinets, windows and floors." },
+  { slug: "mat-drop", name: "Canvas drop cloth, 9x12", uom: "each", cost: 2400, cat: "cat-prep", desc: "Reusable — costed per job at roughly a tenth of replacement." },
+  { slug: "mat-roller", name: "Roller cover, 3/8 in nap", uom: "each", cost: 600, cat: "cat-prep", desc: "One per colour per day on smooth walls." },
+  { slug: "mat-sand", name: "Sandpaper, assorted grit", uom: "pack", cost: 900, cat: "cat-prep", desc: "Scuff-sanding trim and patched areas." },
+];
+
 const CUSTOMERS = [
   { slug: "cust-ruiz", name: "Marisol Ruiz", phone: "+15105550142", email: "m.ruiz@example.com", address: "418 Ravenwood Ave, Oakland, CA 94610", stage: "won", source: "Referral", valueCents: 486000 },
   { slug: "cust-tan", name: "Peter Tan", phone: "+14155550188", email: "ptan@example.com", address: "77 Sutro Heights Ln, San Francisco, CA 94121", stage: "quote_sent", source: "Google", valueCents: 312000 },
@@ -190,7 +219,7 @@ function orgDate(offset) {
 
 const timeLiteral = (hour) => `${pad(Math.floor(hour))}:${pad(Math.round((hour % 1) * 60))}:00`;
 
-const TABLES = ["orgs", "org_settings", "users", "leads", "jobs", "job_visits", "pricebook_categories", "pricebook_items"];
+const TABLES = ["orgs", "org_settings", "users", "leads", "jobs", "job_visits", "pricebook_categories", "pricebook_items", "pricebook_materials"];
 
 /** Row counts for THIS org, plus a total, so a stray write into another org is visible. */
 async function snapshot() {
@@ -312,6 +341,22 @@ async function writePricebook() {
         unit_price_cents = excluded.unit_price_cents, cost_cents = excluded.cost_cents,
         position = excluded.position, measured_by = excluded.measured_by`;
   }
+  let matPosition = 0;
+  for (const m of MATERIALS) {
+    await sql`
+      insert into pricebook_materials (
+        id, org_id, category_id, name, description, unit_cost_cents, unit_price_cents,
+        unit_of_measure, position
+      ) values (
+        ${idOf(m.slug)}, ${ORG_ID}, ${idOf(m.cat)}, ${m.name}, ${m.desc},
+        ${m.cost}, ${m.cost}, ${m.uom}, ${matPosition++}
+      )
+      on conflict (id) do update set
+        category_id = excluded.category_id, name = excluded.name,
+        description = excluded.description, unit_cost_cents = excluded.unit_cost_cents,
+        unit_price_cents = excluded.unit_price_cents,
+        unit_of_measure = excluded.unit_of_measure, position = excluded.position`;
+  }
 }
 
 async function writeCustomers() {
@@ -372,7 +417,7 @@ async function main() {
   console.log(`\n${ORG_NAME}  (org ${ORG_ID})`);
   if (DRY_RUN) {
     console.log("\n--dry-run: nothing will be written.\n");
-    console.log(`  ${CATEGORIES.length} categories, ${SERVICES.length} services ` +
+    console.log(`  ${CATEGORIES.length} categories, ${SERVICES.length} services, ${MATERIALS.length} materials ` +
       `(${SERVICES.filter((s) => s.measuredBy && s.measuredBy !== "hour").length} priced off a scan)`);
     console.log(`  ${CUSTOMERS.length} customers, ${JOBS.length} jobs`);
     console.log(`  logins: ${OWNER_EMAIL} / ${TECH_EMAIL}  (password ${DEMO_PASSWORD})\n`);

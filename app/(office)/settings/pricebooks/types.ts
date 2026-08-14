@@ -1,4 +1,4 @@
-import type { SeedServiceInput } from "@mallet/pricebook";
+import type { SeedServiceInput, SeedMaterialInput } from "@mallet/pricebook";
 import type { TradeKey } from "../trade-playbooks";
 
 /**
@@ -22,6 +22,16 @@ export interface TradePricebook {
   readonly key: TradeKey;
   readonly categories: readonly string[];
   readonly services: readonly SeedServiceInput[];
+  /**
+   * The stock the trade buys and consumes, in the units a supplier sells it in.
+   *
+   * Optional, and most packs will never have one. A service trade carries its parts on the JOB
+   * (a water heater is bought for one address), so a stock list adds nothing. It earns its place
+   * where the same few items are consumed across every job and the quantity follows from a
+   * measurement — a painter's gallons come straight off wall area, which is exactly what a room
+   * scan produces.
+   */
+  readonly materials?: readonly SeedMaterialInput[];
   /** Where the figures came from, so a future editor can re-check them rather than guess. */
   readonly sources: readonly string[];
 }

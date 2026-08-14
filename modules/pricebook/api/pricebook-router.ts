@@ -862,6 +862,8 @@ export const createPricebookRouter = () =>
           categoryRepo,
           ctx.deps.clock,
           ctx.deps.ids,
+          new DrizzleMaterialRepository(ctx.tx, ctx.principal.orgId),
+          new DrizzleMarkupBandsRepository(ctx.tx, ctx.principal.orgId),
         );
         // The shop's OWN trade decides the pack. This used to hand every org the plumbing
         // catalogue regardless — a roofer opening their pricebook to "Replace 40gal gas water
@@ -871,15 +873,19 @@ export const createPricebookRouter = () =>
         const pack = pricebookFor(settings.props.trade);
         // No pack for this trade (including "Other") seeds NOTHING rather than falling back to
         // another trade's prices — a wrong catalogue is worse than an empty one.
-        if (!pack) return { services: [], categories: [] };
+        if (!pack) return { services: [], categories: [], materials: [] };
         const result = await useCase.exec(ctx.principal.orgId, {
           categories: pack.categories.map((name: string) => ({ name })),
           services: pack.services,
+          // Most packs carry none — a service trade buys its parts for one address, so a stock
+          // list adds nothing. A painter consumes the same dozen items on every job.
+          materials: pack.materials,
         });
         const seeded = orThrow(result);
         return {
           services: seeded.services.map(toServiceDTO),
           categories: seeded.categories.map(toCategoryDTO),
+          materials: seeded.materials.map(toMaterialDTO),
         };
       }),
   });

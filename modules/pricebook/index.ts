@@ -15,7 +15,13 @@ export { ListServicesUseCase } from "./app/list-services";
 export { CreateCategoryUseCase } from "./app/create-category";
 export { ListCategoriesUseCase } from "./app/list-categories";
 export { SeedPricebookUseCase } from "./app/seed-pricebook";
-export type { SeedPricebookInput, SeedPricebookResult, SeedServiceInput, SeedCategoryInput } from "./app/seed-pricebook";
+export type {
+  SeedPricebookInput,
+  SeedPricebookResult,
+  SeedServiceInput,
+  SeedCategoryInput,
+  SeedMaterialInput,
+} from "./app/seed-pricebook";
 export { CreateMaterialUseCase } from "./app/create-material";
 export { UpdateMaterialUseCase } from "./app/update-material";
 export { ArchiveMaterialUseCase } from "./app/archive-material";
