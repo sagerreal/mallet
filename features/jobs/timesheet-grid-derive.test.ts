@@ -21,7 +21,8 @@ const entry = (over: Partial<TimeEntry> = {}): TimeEntry =>
     id: `e${seq++}`,
     techId: "t1",
     date: "2026-08-10",
-    kind: "job",
+    // REGULAR: these assert PAID day totals and overtime, and a job row contributes neither.
+    kind: "shop",
     start: "08:00",
     end: "16:00",
     jobId: null,

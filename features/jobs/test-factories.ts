@@ -92,8 +92,10 @@ export function mkEntry(overrides: Partial<TimeEntry> = {}): TimeEntry {
     techId: "1",
     minutes: null,
     date: "2026-07-01",
-    kind: "job",
-    jobId: "1",
+    // REGULAR time by default. Job rows are costing: they run beside the shift and add no paid
+    // hours, so a job-kind default made every hours assertion in the suite total zero.
+    kind: "shop",
+    jobId: null,
     start: "08:00",
     end: "12:00",
     note: "",

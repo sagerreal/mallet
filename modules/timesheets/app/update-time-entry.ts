@@ -69,6 +69,7 @@ export class UpdateTimeEntryUseCase {
     if (p.startTime !== null) {
       const gate = await overlapGateError(this.entries, {
         id: p.id,
+        kind: p.kind,
         techUserId: p.techUserId,
         workDate: p.workDate,
         startTime: p.startTime,

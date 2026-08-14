@@ -16,11 +16,14 @@ const TECH = "user-1";
 const ITEM = "42";
 const ACCESS: QboAccess = { accessToken: "ACCESS-1", realmId: "913035" };
 
+// REGULAR time by default — that is what pays and what QuickBooks receives. A job row is costing:
+// it runs beside the shift, adds no hours, and is excluded from the day total (see the exclusion
+// cases below).
 const entry = (over: Partial<SyncableTimeEntry> = {}): SyncableTimeEntry => ({
   id: "te-1",
   techUserId: TECH,
   workDate: "2026-07-21",
-  kind: "job",
+  kind: "shop",
   startTime: "08:00",
   endTime: "16:00",
   note: "Water heater",

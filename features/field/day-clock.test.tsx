@@ -109,13 +109,17 @@ function row(over: Record<string, unknown> = {}) {
 }
 
 /**
- * A normal morning: shop, a fifteen-minute break, then a job still running at 9:05.
- * Worked = 0:48 + 0:20 = 1:08. Break = 0:15. Deliberately NOT in start order — the server sorts
- * a day by (work_date, id), i.e. UUID order, and the panel has to fix that itself.
+ * A normal morning: regular time, a fifteen-minute break, then a stretch still running at 9:05.
+ *
+ * The running stretch is regular time with a job row beside it — the panel names the job from the
+ * agenda but counts the shift. Worked = 0:48 + 0:20 = 1:08, Break = 0:15. Deliberately NOT in start order — the
+ * server sorts a day by (work_date, id), i.e. UUID order, and the panel has to fix that itself.
  */
 function morning() {
   return [
-    row({ id: "c", jobId: "job-1", kind: "job", startTime: "08:45", endTime: null, running: true }),
+    // Two lanes at once: the shift that pays, and the job row beside it that names what he is on.
+    row({ id: "c", kind: "shop", startTime: "08:45", endTime: null, running: true }),
+    row({ id: "d", jobId: "job-1", kind: "job", startTime: "08:45", endTime: null, running: true }),
     row({ id: "a", kind: "shop", startTime: "07:42", endTime: "08:30" }),
     row({ id: "b", kind: "break", startTime: "08:30", endTime: "08:45" }),
   ];
@@ -166,7 +170,7 @@ describe("DayClock — the three states", () => {
   // THE FIGURE IS THE DAY, NOT THE STRETCH. It used to be the length of the current segment,
   // which resets on every break and every job start — at 4pm after a normal day it read 0:50.
   it("shows the DAY's worked total, and advances it as the clock runs", () => {
-    openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "08:45" }));
+    openQuery = loaded(serverEntry({ kind: "shop", jobId: "job-1", startTime: "08:45" }));
     listQuery = dayRows(morning());
     render(<DayClock />);
     // shop 0:48 + the running job 0:20. The unpaid break is not in it.
@@ -204,7 +208,7 @@ describe("DayClock — the three states", () => {
   });
 
   it("reads an on-site job segment as simply on the clock — the row is about being paid", () => {
-    openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "09:00" }));
+    openQuery = loaded(serverEntry({ kind: "shop", jobId: "job-1", startTime: "09:00" }));
     render(<DayClock />);
     expect(screen.getByText("On the clock")).toBeTruthy();
     expect(screen.getByText("since 9a")).toBeTruthy();
@@ -329,7 +333,7 @@ const JOBS = [{ id: "job-1", num: "JOB-2541", title: "Water heater repair", cust
 
 describe("DayClock — today's hours, expanded in place", () => {
   beforeEach(() => {
-    openQuery = loaded(serverEntry({ kind: "job", jobId: "job-1", startTime: "08:45" }));
+    openQuery = loaded(serverEntry({ kind: "shop", jobId: "job-1", startTime: "08:45" }));
     listQuery = dayRows(morning());
   });
 

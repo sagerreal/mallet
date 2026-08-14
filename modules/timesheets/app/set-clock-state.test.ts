@@ -63,6 +63,8 @@ const minutes = (n: number): number => n * MINUTE_MS;
 const after = (base: Date, ms: number): Date => new Date(base.getTime() + ms);
 
 interface RunningFixture {
+  /** Override when a test seeds TWO running rows — one per lane — so their ids differ. */
+  readonly id?: string;
   readonly kind: TimeEntryKind;
   readonly jobId?: JobId | null;
   readonly workDate?: string;
@@ -74,7 +76,7 @@ interface RunningFixture {
 const running = (fixture: RunningFixture): TimeEntry => {
   const created = fixture.createdAt ?? OPENED_AT;
   const result = TimeEntry.create({
-    id: asTimeEntryId(OPEN_ID),
+    id: asTimeEntryId(fixture.id ?? OPEN_ID),
     orgId: asOrgId(ORG),
     techUserId: TECH,
     jobId: fixture.jobId ?? null,
@@ -115,6 +117,12 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   /** Every write, in order — the close-before-open rule is an ordering claim, so it is recorded. */
   readonly ops: string[] = [];
   readonly created: TimeEntry[] = [];
+  /** Kinds of every row this fake was asked to finish — the costing lane's closes included. */
+  closedKinds(): string[] {
+    return [...this.rows.values()]
+      .filter((r) => !r.deleted && !r.entry.props.running)
+      .map((r) => r.entry.props.kind);
+  }
   readonly saved: TimeEntry[] = [];
   readonly removed: string[] = [];
   readonly findOpenCalls: UserId[] = [];
@@ -127,25 +135,33 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
     return this.created.length + this.saved.length + this.removed.length;
   }
 
-  private openRow(techUserId: string): TimeEntry | null {
+  /** The running row in one LANE — the shift (what pays) or the job overlay (costing). */
+  private openRow(techUserId: string, lane: "shift" | "job" = "shift"): TimeEntry | null {
     for (const row of this.rows.values()) {
-      if (!row.deleted && row.entry.props.running && row.entry.props.techUserId === techUserId) {
-        return row.entry;
-      }
+      const p = row.entry.props;
+      if (row.deleted || !p.running || p.techUserId !== techUserId) continue;
+      if ((lane === "job") === (p.kind === "job")) return row.entry;
     }
     return null;
   }
 
   async findOpenForTech(techUserId: UserId): Promise<TimeEntry | null> {
     this.findOpenCalls.push(techUserId);
-    return this.openRow(techUserId);
+    return this.openRow(techUserId, "shift");
+  }
+
+  /** The costing lane — a job row runs beside the shift, never instead of it. */
+  async findOpenJobForTech(techUserId: UserId): Promise<TimeEntry | null> {
+    return this.openRow(techUserId, "job");
   }
 
   async create(input: CreateInput): Promise<TimeEntry> {
-    // Mirrors the partial unique index the database holds — one running entry per technician. A
-    // fake without it would let an ordering bug (open before close) pass every test in this file.
-    if (input.running && this.openRow(input.techUserId) !== null) {
-      throw new Error("fake repository: a technician cannot have two running entries");
+    // Mirrors migration 0158: one running row per technician PER LANE. Two shift segments still
+    // double-count and are still impossible; a job row running beside the shift is the point.
+    // Without this an ordering bug (open before close) would pass every test in this file.
+    const lane = input.kind === "job" ? "job" : "shift";
+    if (input.running && this.openRow(input.techUserId, lane) !== null) {
+      throw new Error(`fake repository: a technician cannot have two running ${lane} entries`);
     }
     const result = TimeEntry.create({
       id: asTimeEntryId(input.id),
@@ -214,6 +230,8 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
 // ---------------------------------------------------------------------------
 
 interface RunOptions {
+  /** Rows to seed besides `open` — e.g. a job row running in the costing lane. */
+  readonly extraRows?: readonly TimeEntry[];
   readonly open?: TimeEntry;
   readonly timeZone?: string;
   readonly now?: Date;
@@ -231,6 +249,9 @@ const tapWith = async (
   const now = options.now ?? NOW;
   const repo = new FakeTimeEntryRepository();
   if (options.open) repo.seed(options.open);
+  // Rows in the OTHER lane — a job running beside the shift. Seeded separately because the two
+  // lanes are found by two different reads since migration 0158.
+  for (const row of options.extraRows ?? []) repo.seed(row);
   const useCase = new SetClockStateUseCase(
     repo,
     new FixedClock(now),
@@ -276,21 +297,20 @@ describe("SetClockStateUseCase — from an idle clock", () => {
     expect(outcome.repo.writeCount).toBe(1);
   });
 
-  it("On my way with no day open starts JOB time on that job — the morning punch nobody made", async () => {
+  it("On my way with no day open starts the SHIFT — the morning punch nobody made", async () => {
+    // The job itself opens in the costing lane beside it; `opened` is the row that PAYS.
     const outcome = await tapWith({ tap: "enroute", jobId: JOB_A });
 
     const result = succeeded(outcome);
-    expect(result.opened?.props.kind).toBe("job");
-    expect(result.opened?.props.jobId).toBe(JOB_A);
+    expect(result.opened?.props.kind).toBe("shop");
     expect(result.closed).toEqual([]);
   });
 
-  it("Arrived with no day open starts job time on that job", async () => {
+  it("Arrived with no day open starts the shift too", async () => {
     const outcome = await tapWith({ tap: "arrived", jobId: JOB_A });
 
     const result = succeeded(outcome);
-    expect(result.opened?.props.kind).toBe("job");
-    expect(result.opened?.props.jobId).toBe(JOB_A);
+    expect(result.opened?.props.kind).toBe("shop");
   });
 
   it("Break with no day open opens the break rather than doing nothing", async () => {
@@ -330,23 +350,24 @@ describe("SetClockStateUseCase — from an idle clock", () => {
 describe("SetClockStateUseCase — from shop time", () => {
   const shop = () => running({ kind: "shop" });
 
-  it("On my way closes the regular segment and opens JOB time on that job", async () => {
+  it("On my way LEAVES the shift running — the job opens beside it", async () => {
+    // The whole change: the man is on the clock AND on a job. One fact about one hour, so the
+    // shift is not closed and re-opened around it.
     const outcome = await tapWith({ tap: "enroute", jobId: JOB_A }, { open: shop() });
 
     const result = succeeded(outcome);
-    expect(result.closed[0]?.props.endTime).toBe(LOCAL_NOW_HHMM);
-    expect(result.closed[0]?.props.running).toBe(false);
-    expect(result.opened?.props.kind).toBe("job");
-    expect(result.opened?.props.startTime).toBe(LOCAL_NOW_HHMM);
+    expect(result.closed).toEqual([]);
+    expect(result.noop).toBe(true);
+    // The job row landed in the costing lane, which `opened` does not report.
+    expect(outcome.repo.created.some((c) => c.props.kind === "job" && c.props.jobId === JOB_A)).toBe(true);
   });
 
-  it("Arrived closes the shop segment and opens job time", async () => {
+  it("Arrived leaves the shift running too", async () => {
     const outcome = await tapWith({ tap: "arrived", jobId: JOB_A }, { open: shop() });
 
     const result = succeeded(outcome);
-    expect(result.closed[0]?.props.kind).toBe("shop");
-    expect(result.opened?.props.kind).toBe("job");
-    expect(result.opened?.props.jobId).toBe(JOB_A);
+    expect(result.closed).toEqual([]);
+    expect(outcome.repo.created.some((c) => c.props.kind === "job")).toBe(true);
   });
 
   it("Break closes the shop segment and opens the break", async () => {
@@ -398,8 +419,9 @@ describe("SetClockStateUseCase — from a legacy travel row", () => {
     const result = succeeded(outcome);
     expect(result.closed[0]?.props.kind).toBe("travel");
     expect(result.closed[0]?.props.endTime).toBe(LOCAL_NOW_HHMM);
-    expect(result.opened?.props.kind).toBe("job");
-    expect(result.opened?.props.jobId).toBe(JOB_A);
+    // The shift resumes as REGULAR; the job opens in the costing lane beside it.
+    expect(result.opened?.props.kind).toBe("shop");
+    expect(outcome.repo.created.some((c) => c.props.kind === "job" && c.props.jobId === JOB_A)).toBe(true);
   });
 
   it("Done closes a legacy travel row and resumes unassigned regular time", async () => {
@@ -419,48 +441,58 @@ describe("SetClockStateUseCase — from a legacy travel row", () => {
   });
 });
 
-describe("SetClockStateUseCase — from job time", () => {
-  const onJobA = () => running({ kind: "job", jobId: JOB_A });
+/**
+ * The COSTING lane — a job row running beside the shift, not instead of a slice of it.
+ *
+ * `open` in these fixtures is the SHIFT (regular time), because that is what runs all day. The job
+ * row is found through findOpenJobForTech and never appears in `opened`, which reports the row that
+ * pays.
+ */
+describe("SetClockStateUseCase — the job running beside the shift", () => {
+  const onShift = () => running({ kind: "shop" });
+  /** A job row already running in the costing lane, alongside the shift. */
+  const alsoOnJob = (jobId: JobId) =>
+    running({ kind: "job", jobId, id: "cccccccc-cccc-cccc-cccc-cccccccccccc" });
 
-  it("Done closes the job segment and auto-resumes shop time", async () => {
-    const outcome = await tapWith({ tap: "done" }, { open: onJobA() });
-
-    const result = succeeded(outcome);
-    expect(result.closed[0]?.props.kind).toBe("job");
-    expect(result.closed[0]?.props.endTime).toBe(LOCAL_NOW_HHMM);
-    expect(result.opened?.props.kind).toBe("shop");
-  });
-
-  it("keeps the job of the segment it closes, even when the tap names none", async () => {
-    const outcome = await tapWith({ tap: "done", jobId: null }, { open: onJobA() });
-
-    expect(succeeded(outcome).closed[0]?.props.jobId).toBe(JOB_A);
-  });
-
-  it("On my way to the next job closes the first job and opens the next", async () => {
-    const outcome = await tapWith({ tap: "enroute", jobId: JOB_B }, { open: onJobA() });
+  it("Done closes the job and LEAVES the shift running — he is still on the clock", async () => {
+    const outcome = await tapWith({ tap: "done" }, { open: onShift(), extraRows: [alsoOnJob(JOB_A)] });
 
     const result = succeeded(outcome);
-    expect(result.closed[0]?.props.jobId).toBe(JOB_A);
-    expect(result.opened?.props.kind).toBe("job");
-    expect(result.opened?.props.jobId).toBe(JOB_B);
+    // The shift is untouched; only the job row ended.
+    expect(result.closed.some((c) => c.props.kind === "shop")).toBe(false);
+    expect(outcome.repo.closedKinds()).toContain("job");
   });
 
-  it("Break closes job time and opens an unassigned break", async () => {
-    const outcome = await tapWith({ tap: "break" }, { open: onJobA() });
+  it("On my way to the NEXT job closes the first and opens the second", async () => {
+    const outcome = await tapWith({ tap: "enroute", jobId: JOB_B }, { open: onShift(), extraRows: [alsoOnJob(JOB_A)] });
+
+    succeeded(outcome);
+    expect(outcome.repo.created.some((c) => c.props.kind === "job" && c.props.jobId === JOB_B)).toBe(true);
+  });
+
+  it("Break closes the job — a man on his lunch is not on the job", async () => {
+    // Leaving it open would charge the customer for his sandwich.
+    const outcome = await tapWith({ tap: "break" }, { open: onShift(), extraRows: [alsoOnJob(JOB_A)] });
 
     const result = succeeded(outcome);
-    expect(result.closed[0]?.props.kind).toBe("job");
     expect(result.opened?.props.kind).toBe("break");
-    expect(result.opened?.props.jobId).toBeNull();
+    expect(outcome.repo.closedKinds()).toContain("job");
   });
 
-  it("End day closes job time and leaves nothing running", async () => {
-    const outcome = await tapWith({ tap: "end_day" }, { open: onJobA() });
+  it("End day closes the job as well as the shift", async () => {
+    const outcome = await tapWith({ tap: "end_day" }, { open: onShift(), extraRows: [alsoOnJob(JOB_A)] });
 
     const result = succeeded(outcome);
-    expect(result.closed[0]?.props.endTime).toBe(LOCAL_NOW_HHMM);
     expect(result.opened).toBeNull();
+    expect(outcome.repo.closedKinds()).toContain("job");
+  });
+
+  it("tapping Arrived on the SAME job again changes nothing", async () => {
+    // Closing to reopen would split one stretch of work into two rows that each look like a visit.
+    const outcome = await tapWith({ tap: "arrived", jobId: JOB_A }, { open: onShift(), extraRows: [alsoOnJob(JOB_A)] });
+
+    succeeded(outcome);
+    expect(outcome.repo.created.filter((c) => c.props.kind === "job")).toHaveLength(0);
   });
 });
 
@@ -476,12 +508,14 @@ describe("SetClockStateUseCase — from a break", () => {
     expect(result.opened?.props.kind).toBe("shop");
   });
 
-  it("Arrived closes the break and opens job time", async () => {
+  it("Arrived ends the break and puts him back on the clock, on that job", async () => {
     const outcome = await tapWith({ tap: "arrived", jobId: JOB_A }, { open: onBreak() });
 
     const result = succeeded(outcome);
     expect(result.closed[0]?.props.kind).toBe("break");
-    expect(result.opened?.props.kind).toBe("job");
+    // The SHIFT resumes; the job lands beside it, which `opened` does not report.
+    expect(result.opened?.props.kind).toBe("shop");
+    expect(outcome.repo.created.some((c) => c.props.kind === "job")).toBe(true);
   });
 });
 
@@ -490,12 +524,15 @@ describe("SetClockStateUseCase — from a break", () => {
 // ---------------------------------------------------------------------------
 
 describe("SetClockStateUseCase — a segment shorter than a minute", () => {
-  // Opened in the same minute the next tap lands in: nothing happened in between.
+  // Opened in the same minute the next tap lands in: nothing happened in between. A SHIFT row —
+  // the collapse is about the segment that pays; the costing lane is found separately.
   const justOpened = () =>
-    running({ kind: "job", jobId: JOB_A, startTime: LOCAL_NOW_HHMM, createdAt: NOW });
+    running({ kind: "shop", startTime: LOCAL_NOW_HHMM, createdAt: NOW });
 
   it("soft-deletes the segment instead of recording a zero-length row", async () => {
-    const outcome = await tapWith({ tap: "done", at: after(NOW, 20_000) }, { open: justOpened() });
+    // Break, not Done: Done ends the JOB now and leaves the shift alone, so it cannot collapse a
+    // shift segment. Break is a tap that genuinely changes the shift.
+    const outcome = await tapWith({ tap: "break", at: after(NOW, 20_000) }, { open: justOpened() });
 
     const result = succeeded(outcome);
     expect(outcome.repo.removed).toEqual([OPEN_ID]);
@@ -504,16 +541,16 @@ describe("SetClockStateUseCase — a segment shorter than a minute", () => {
   });
 
   it("reports the discarded entry so the caller can drop the row it was showing", async () => {
-    const outcome = await tapWith({ tap: "done", at: after(NOW, 20_000) }, { open: justOpened() });
+    const outcome = await tapWith({ tap: "break", at: after(NOW, 20_000) }, { open: justOpened() });
 
     expect(succeeded(outcome).discardedEntryId).toBe(OPEN_ID);
   });
 
   it("still opens the next segment, so the technician stays on the clock", async () => {
-    const outcome = await tapWith({ tap: "done", at: after(NOW, 20_000) }, { open: justOpened() });
+    const outcome = await tapWith({ tap: "break", at: after(NOW, 20_000) }, { open: justOpened() });
 
     const result = succeeded(outcome);
-    expect(result.opened?.props.kind).toBe("shop");
+    expect(result.opened?.props.kind).toBe("break");
     expect(result.opened?.props.running).toBe(true);
   });
 
@@ -542,15 +579,15 @@ describe("SetClockStateUseCase — a segment that runs past local midnight", () 
 
   const overnight = () =>
     running({
-      kind: "job",
-      jobId: JOB_A,
+      kind: "shop",
       workDate: "2026-07-23",
       startTime: "22:40",
       createdAt: LATE_JOB_START,
     });
 
   const tapDone = () =>
-    tapWith({ tap: "done", at: FINISHED_AT }, { open: overnight(), now: FINISHED_AT });
+    tapWith(
+      { tap: "end_day", at: FINISHED_AT }, { open: overnight(), now: FINISHED_AT });
 
   it("ends the first day at 23:59 rather than writing an impossible row", async () => {
     const result = succeeded(await tapDone());
@@ -571,20 +608,15 @@ describe("SetClockStateUseCase — a segment that runs past local midnight", () 
     expect(result.closed[1]?.props.running).toBe(false);
   });
 
-  it("keeps the job on the remainder, so the midnight call is still costed to it", async () => {
+  it("dates the remainder to the new local day", async () => {
     const result = succeeded(await tapDone());
 
-    expect(result.closed[1]?.props.kind).toBe("job");
-    expect(result.closed[1]?.props.jobId).toBe(JOB_A);
+    expect(result.closed[1]?.props.workDate).toBe("2026-07-24");
+    expect(result.closed[1]?.props.startTime).toBe("00:00");
   });
 
-  it("resumes shop time on the new local day", async () => {
-    const result = succeeded(await tapDone());
-
-    expect(result.opened?.props.kind).toBe("shop");
-    expect(result.opened?.props.workDate).toBe("2026-07-24");
-    expect(result.opened?.props.startTime).toBe("00:20");
-    expect(result.opened?.props.running).toBe(true);
+  it("leaves nothing running — End day ends the day", async () => {
+    expect(succeeded(await tapDone()).opened).toBeNull();
   });
 });
 
@@ -648,8 +680,8 @@ describe("SetClockStateUseCase — a refused tap writes nothing", () => {
 
   it("refuses a tap timestamped before the running segment started", async () => {
     const outcome = await tapWith(
-      { tap: "done", at: after(OPENED_AT, -minutes(2)) },
-      { open: running({ kind: "job", jobId: JOB_A }) },
+      { tap: "end_day", at: after(OPENED_AT, -minutes(2)) },
+      { open: running({ kind: "shop" }) },
     );
 
     expect(refusal(outcome).kind).toBe("validation");
@@ -676,8 +708,10 @@ describe("SetClockStateUseCase — a refused tap writes nothing", () => {
 // ---------------------------------------------------------------------------
 
 describe("SetClockStateUseCase — how the rows reach the timesheet", () => {
-  it("stops the running entry BEFORE starting the next one, so two clocks never run at once", async () => {
-    const outcome = await tapWith({ tap: "arrived", jobId: JOB_A }, { open: running({ kind: "shop" }) });
+  it("stops the running entry BEFORE starting the next one, so two SHIFTS never run at once", async () => {
+    // Break, not Arrived: Arrived leaves the shift alone now and only adds a costing row, so it no
+    // longer exercises the close-then-open ordering this test exists for.
+    const outcome = await tapWith({ tap: "break" }, { open: running({ kind: "shop" }) });
 
     succeeded(outcome);
     expect(outcome.repo.ops).toEqual(["save", "create:running"]);
@@ -685,8 +719,8 @@ describe("SetClockStateUseCase — how the rows reach the timesheet", () => {
 
   it("discards the collapsed segment BEFORE starting the next one", async () => {
     const outcome = await tapWith(
-      { tap: "done", at: after(NOW, 20_000) },
-      { open: running({ kind: "job", jobId: JOB_A, startTime: LOCAL_NOW_HHMM, createdAt: NOW }) },
+      { tap: "break", at: after(NOW, 20_000) },
+      { open: running({ kind: "shop", startTime: LOCAL_NOW_HHMM, createdAt: NOW }) },
     );
 
     succeeded(outcome);
@@ -696,12 +730,11 @@ describe("SetClockStateUseCase — how the rows reach the timesheet", () => {
   it("writes the midnight rows in day order, finished ones before the new running one", async () => {
     const finishedAt = new Date("2026-07-24T07:20:00.000Z");
     const outcome = await tapWith(
-      { tap: "done", at: finishedAt },
+      { tap: "break", at: finishedAt },
       {
         now: finishedAt,
         open: running({
-          kind: "job",
-          jobId: JOB_A,
+          kind: "shop",
           workDate: "2026-07-23",
           startTime: "22:40",
           createdAt: new Date("2026-07-24T05:40:00.000Z"),
@@ -793,7 +826,7 @@ describe("the after-midnight emergency call survives the bound", () => {
     tapWith(
       { tap: "end_day", at: endedAt },
       {
-        open: running({ kind: "job", jobId: JOB_A, workDate: "2026-07-24", startTime: "22:40", createdAt: startedAt }),
+        open: running({ kind: "shop", workDate: "2026-07-24", startTime: "22:40", createdAt: startedAt }),
         now: endedAt,
       },
     );
@@ -808,9 +841,8 @@ describe("the after-midnight emergency call survives the bound", () => {
     expect(result.boundedClose).toBe(false);
   });
 
-  it("keeps the job on the after-midnight half, so the call is still costed to it", async () => {
+  it("dates the after-midnight half to the new day", async () => {
     const result = succeeded(await outcome());
-    expect(result.closed[1]?.props.jobId).toBe(JOB_A);
     expect(result.closed[1]?.props.workDate).toBe("2026-07-25");
   });
 });

@@ -89,8 +89,18 @@ export function entryHours(entry: MyHoursEntry): number {
  * (features/field/day-segments.ts). Sharing the sentence and not the sum is what keeps My hours
  * and the day panel from disagreeing when a second unpaid kind is added.
  */
+/**
+ * JOB TIME IS NOT PAID TIME.
+ *
+ * A job row records WHICH JOB part of a shift was spent on — costing, not time tracking — and it
+ * runs BESIDE the regular time it describes rather than replacing a slice of it. The shift is what
+ * pays. Counting both would pay a twelve-hour day as fifteen the moment three of its hours were
+ * attributed to a job.
+ *
+ * Breaks are unpaid for the ordinary reason.
+ */
 export function isPaidKind(kind: MyHoursEntry["kind"]): boolean {
-  return kind !== "break";
+  return kind !== "break" && kind !== "job";
 }
 
 /** Paid recorded length — the policy above, applied to a settled row. */

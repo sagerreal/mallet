@@ -63,7 +63,14 @@ export function runsForDay(entries: readonly MyHoursEntry[]): HoursRun[] {
 
   // Time-off rows are not stretches of a day — they carry no times and cannot join a run.
   // The sheet renders them as their own kind of row, never here.
-  const punched = sorted.filter((e): e is PunchedEntry => e.startTime !== null);
+  //
+  // JOB ROWS ARE NOT STRETCHES EITHER. A job row runs BESIDE the shift saying which job it was
+  // spent on; it is costing, not paid time. Listing it as its own run would draw the same hour
+  // twice — once as the shift and once as the job — and the totals would disagree with the row
+  // they sit under. Which job is live is named from the row itself, not from this list.
+  const punched = sorted.filter(
+    (e): e is PunchedEntry => e.startTime !== null && e.kind !== "job",
+  );
   for (const entry of punched) {
     const open = runs[runs.length - 1];
     const last = open?.[open.length - 1];

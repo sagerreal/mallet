@@ -18,7 +18,8 @@ import { UNMAPPED_EMPLOYEE, NO_DEFAULT_ITEM, NOT_FINISHED, ZERO_DURATION } from 
  * customer and no job, so a row that says "3.58 h" tells QuickBooks nothing a day total would not,
  * while inviting somebody to read those rows as separate work.
  *
- * BREAKS ARE EXCLUDED, exactly as before — unpaid time is not hours worked.
+ * BREAKS AND JOB ROWS ARE EXCLUDED. Breaks are unpaid; job rows are costing, and run beside the
+ * shift rather than being part of it.
  *
  * A DAY IS ALL OR NOTHING. If any entry on it cannot be read, the whole day is refused rather than
  * silently totalling the rest: a day short by one entry is a short paycheque that looks correct.
@@ -64,7 +65,10 @@ export function toDayTotals(entries: readonly SyncableTimeEntry[]): Result<DayTo
   for (const e of entries) {
     // Unpaid, so not hours worked. Excluded before any other check — a malformed break must not
     // refuse a day it was never going to contribute to.
-    if (e.kind === "break") continue;
+    // Unpaid, so not hours worked — and a JOB row is costing, not time tracking. It runs beside
+    // the shift rather than being part of it, so counting it here would send a twelve-hour day to
+    // payroll as fifteen.
+    if (e.kind === "break" || e.kind === "job") continue;
     if (!e.endTime) return err(validation("the timer is still running", NOT_FINISHED));
 
     const start = toMinutes(e.startTime);

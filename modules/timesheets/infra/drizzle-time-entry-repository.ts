@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, ne, or, sql, type SQL } from "drizzle-orm";
 import { timeEntries } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
@@ -79,7 +79,7 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
     return row ? toDomain(row) : null;
   }
 
-  async findOpenForTech(techUserId: UserId): Promise<TimeEntry | null> {
+  private async findOpenOfLane(techUserId: UserId, lane: "shift" | "job"): Promise<TimeEntry | null> {
     const rows = await this.tx
       .select()
       .from(timeEntries)
@@ -89,6 +89,8 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
           eq(timeEntries.techUserId, techUserId),
           eq(timeEntries.running, true),
           isNull(timeEntries.deletedAt),
+          // One lane at a time — the paying shift, or the costing overlay. See migration 0158.
+          lane === "job" ? eq(timeEntries.kind, "job") : ne(timeEntries.kind, "job"),
         ),
       )
       // The partial unique index already guarantees at most one match. Ordering newest-first is
@@ -99,6 +101,16 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
       .limit(1);
     const row = rows[0];
     return row ? toDomain(row) : null;
+  }
+
+  /** The running shift segment — what pays. */
+  async findOpenForTech(techUserId: UserId): Promise<TimeEntry | null> {
+    return this.findOpenOfLane(techUserId, "shift");
+  }
+
+  /** The running job row — costing only, and allowed to run beside the shift. */
+  async findOpenJobForTech(techUserId: UserId): Promise<TimeEntry | null> {
+    return this.findOpenOfLane(techUserId, "job");
   }
 
   /** The filter, once — so count and list can never disagree about what they are describing. */

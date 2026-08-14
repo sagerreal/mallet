@@ -116,6 +116,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
 
   // Added with the clock state machine: the use-cases under test never tap the clock, so it
   // is always idle here.
+  async findOpenJobForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
+
   async findOpenForTech(): Promise<TimeEntry | null> {
     return null;
   }
@@ -477,7 +481,9 @@ describe("UpdateTimeEntryUseCase — one person cannot be two places at once", (
 
   it("refuses a patch that lands on another row, naming the clash", async () => {
     const repo = new FakeTimeEntryRepository();
-    repo.seed(makeEntry()); // 08:00–10:00, ENTRY_ID
+    // Both rows PAID: the gate is about two paid rows sharing an hour. A job row is exempt — it is
+    // costing, runs beside the shift, and cannot double-count.
+    repo.seed(makeEntry({ kind: "shop" })); // 08:00–10:00, ENTRY_ID
     repo.seed(makeEntry({ id: OTHER_ID, kind: "shop", startTime: "10:00", endTime: "22:00" }));
     const useCase = new UpdateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T12:00:00Z")));
 
@@ -501,7 +507,7 @@ describe("UpdateTimeEntryUseCase — one person cannot be two places at once", (
 
   it("checks the day the row is MOVING TO, not the day it came from", async () => {
     const repo = new FakeTimeEntryRepository();
-    repo.seed(makeEntry()); // 2026-07-07 08:00–10:00
+    repo.seed(makeEntry({ kind: "shop" })); // 2026-07-07 08:00–10:00
     repo.seed(makeEntry({ id: OTHER_ID, workDate: "2026-07-08", kind: "travel", startTime: "09:00", endTime: "17:00" }));
     const useCase = new UpdateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T12:00:00Z")));
 

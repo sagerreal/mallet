@@ -114,6 +114,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async findOpenForTech(): Promise<TimeEntry | null> {
     return null;
   }
+  /** The costing lane. These fakes hold no job overlay, so it is always idle. */
+  async findOpenJobForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------------------

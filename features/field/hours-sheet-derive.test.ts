@@ -48,7 +48,7 @@ describe("shiftRows", () => {
     const rows = shiftRows([
       row({ kind: "shop", startTime: "07:30", endTime: "12:00" }),
       row({ kind: "break", startTime: "12:00", endTime: "12:30" }),
-      row({ kind: "job", startTime: "12:30", endTime: "16:00" }),
+      row({ kind: "shop", startTime: "12:30", endTime: "16:00" }),
     ]);
     expect(rows).toHaveLength(1);
     expect(rows[0]!.startTime).toBe("07:30");

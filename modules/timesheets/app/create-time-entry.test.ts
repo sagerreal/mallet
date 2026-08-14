@@ -146,6 +146,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
   async findOpenForTech(): Promise<TimeEntry | null> {
     return null;
   }
+  /** The costing lane. These fakes hold no job overlay, so it is always idle. */
+  async findOpenJobForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
 }
 
 // Deterministic IdGenerator stub — always returns MINTED_ID.
@@ -404,7 +408,8 @@ describe("CreateTimeEntryUseCase — one person cannot be two places at once", (
 
   it("refuses a row that collides with the OPEN clock segment, saying the day is still open", async () => {
     const repo = new FakeTimeEntryRepository();
-    repo.listRows.push(makeEntry({ startTime: "13:00", endTime: null, running: true, src: "clock" }));
+    // The open CLOCK segment is a shift row — job rows run in their own lane and never block.
+    repo.listRows.push(makeEntry({ kind: "shop", startTime: "13:00", endTime: null, running: true, src: "clock" }));
     const useCase = new CreateTimeEntryUseCase(repo, new FixedClock(new Date("2026-07-07T08:00:00Z")), stubIds);
 
     const result = await useCase.exec(cmd({ startTime: "14:00", endTime: "15:00" }), ORG);
@@ -494,15 +499,14 @@ describe("CreateTimeEntryUseCase — overlap gate edge cases", () => {
 });
 
 /**
- * ATTRIBUTING TIME IS NOT A COLLISION.
+ * JOB ROWS ARE EXEMPT FROM THE OVERLAP GATE.
  *
- * A technician clocks ten hours of regular time and never switches state, then the office wants to
- * say three of them were on J-1039. The overlap gate refused that, because the clock is a state
- * machine and regular time already claimed those minutes — which made the commonest office action
- * on the screen impossible. Job time is a SUBDIVISION of regular time, so the regular row is cut
- * around the new one instead.
+ * A job row says which job a stretch of the shift was spent on. It adds no paid hours and runs
+ * beside the regular time it describes, so it cannot double-count — and refusing it for landing
+ * inside that shift made the commonest office action impossible: attributing three hours of a
+ * twelve-hour day collided with the twelve hours by definition.
  */
-describe("CreateTimeEntryUseCase — job time carves out of regular time", () => {
+describe("CreateTimeEntryUseCase — job time may overlap the shift", () => {
   const JOB = "44444444-4444-4444-4444-444444444444" as CreateTimeEntryCommand["jobId"];
   const jobCmd = (over: Partial<CreateTimeEntryCommand> = {}): CreateTimeEntryCommand => ({
     techUserId: USER_ID,
@@ -518,16 +522,8 @@ describe("CreateTimeEntryUseCase — job time carves out of regular time", () =>
     editedBy: null,
     ...over,
   });
-  /** A carve does TWO creates — the regular tail and the job row — so the fake is primed twice. */
   const run = (repo: FakeTimeEntryRepository, over: Partial<CreateTimeEntryCommand> = {}) => {
     repo.willReturn(makeEntry({ kind: "job", startTime: "13:00", endTime: "16:00" }));
-    const orig = repo.create.bind(repo);
-    repo.create = async (input) => {
-      repo.willReturn(
-        makeEntry({ kind: input.kind as TimeEntryKind, startTime: input.startTime ?? "13:00", endTime: input.endTime }),
-      );
-      return orig(input);
-    };
     return new CreateTimeEntryUseCase(
       repo,
       new FixedClock(new Date("2026-07-07T08:00:00Z")),
@@ -535,64 +531,39 @@ describe("CreateTimeEntryUseCase — job time carves out of regular time", () =>
     ).exec(jobCmd(over), ORG);
   };
 
-  it("splits the regular row and lands the job row — no refusal", async () => {
+  it("lands inside a twelve-hour shift without touching it", async () => {
     const repo = new FakeTimeEntryRepository();
-    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
-    const result = await run(repo);
-
-    expect(isOk(result)).toBe(true);
-    // The head keeps the original row's id; the tail is a new row; the job row is created too.
-    expect(repo.saveCalls[0]?.props.endTime).toBe("13:00");
-    const tail = repo.createCalls.find((c) => c.kind === "shop");
-    expect(tail?.startTime).toBe("16:00");
-    expect(tail?.endTime).toBe("22:00");
-    expect(repo.createCalls.some((c) => c.kind === "job")).toBe(true);
+    const shift = makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" });
+    repo.listRows.push(shift);
+    expect(isOk(await run(repo))).toBe(true);
+    // The shift is untouched — no split, no trim, no refusal.
+    expect(repo.saveCalls).toHaveLength(0);
+    expect(repo.removeCalls).toHaveLength(0);
+    expect(repo.listRows).toContain(shift);
   });
 
-  it("keeps the day's PAID MINUTES exactly — 12 hours before, 12 after", async () => {
-    const repo = new FakeTimeEntryRepository();
-    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
-    await run(repo);
-    const m = (t: string) => Number(t.split(":")[0]) * 60 + Number(t.split(":")[1]);
-    const head = m(repo.saveCalls[0]?.props.endTime ?? "00:00") - m("10:00");
-    const tail = repo.createCalls
-      .filter((c) => c.kind === "shop")
-      .reduce((s, c) => s + (m(c.endTime ?? "00:00") - m(c.startTime ?? "00:00")), 0);
-    const job = m("16:00") - m("13:00");
-    expect(head + tail + job).toBe(12 * 60);
-  });
-
-  it("still REFUSES a job row that would eat a break — unpaid minutes must not become paid", async () => {
+  it("may overlap a BREAK too — it is a note about the day, not paid time", async () => {
     const repo = new FakeTimeEntryRepository();
     repo.listRows.push(makeEntry({ kind: "break", startTime: "13:00", endTime: "13:30" }));
-    const result = await run(repo, { startTime: "13:05", endTime: "13:20" });
-    expect(isOk(result)).toBe(false);
-    expect(repo.saveCalls).toHaveLength(0);
+    expect(isOk(await run(repo, { startTime: "13:05", endTime: "13:20" }))).toBe(true);
   });
 
-  it("still refuses a job row landing on ANOTHER JOB — both already claim that cost", async () => {
+  it("may overlap ANOTHER JOB — two jobs can share an hour on a report", async () => {
     const repo = new FakeTimeEntryRepository();
     repo.listRows.push(makeEntry({ kind: "job", startTime: "10:00", endTime: "22:00" }));
-    expect(isOk(await run(repo))).toBe(false);
-  });
-
-  it("does NOT carve for a job row with no job on it — that attributes nothing", async () => {
-    const repo = new FakeTimeEntryRepository();
-    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
-    expect(isOk(await run(repo, { jobId: null }))).toBe(false);
-    expect(repo.saveCalls).toHaveLength(0);
-  });
-
-  it("does NOT carve one regular row out of another — that is somebody double-entering a shift", async () => {
-    const repo = new FakeTimeEntryRepository();
-    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
-    expect(isOk(await run(repo, { kind: "shop", jobId: null }))).toBe(false);
-  });
-
-  it("removes the regular row entirely when the job covers all of it", async () => {
-    const repo = new FakeTimeEntryRepository();
-    repo.listRows.push(makeEntry({ kind: "shop", startTime: "13:00", endTime: "16:00" }));
     expect(isOk(await run(repo))).toBe(true);
-    expect(repo.removeCalls).toHaveLength(1);
+  });
+
+  it("does NOT let a job row make a REGULAR row legal on top of it", async () => {
+    // Exemption runs one way: two paid rows sharing an hour still double-count.
+    const repo = new FakeTimeEntryRepository();
+    repo.listRows.push(makeEntry({ kind: "shop", startTime: "10:00", endTime: "22:00" }));
+    repo.willReturn(makeEntry({ kind: "shop" }));
+    const result = await new CreateTimeEntryUseCase(
+      repo,
+      new FixedClock(new Date("2026-07-07T08:00:00Z")),
+      stubIds,
+    ).exec(jobCmd({ kind: "shop", jobId: null }), ORG);
+    expect(isOk(result)).toBe(false);
   });
 });

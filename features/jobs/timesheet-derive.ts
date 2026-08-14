@@ -82,8 +82,18 @@ export function tsHours(e: TimeEntry): number {
 }
 
 /** Paid hours — unpaid break excluded. */
+/**
+ * JOB TIME IS NOT PAID TIME.
+ *
+ * A job row records WHICH JOB part of a shift was spent on — costing, not time tracking — and it
+ * runs BESIDE the regular time it describes rather than replacing a slice of it. The shift is what
+ * pays. Counting both would pay a twelve-hour day as fifteen the moment three of its hours were
+ * attributed to a job.
+ *
+ * Breaks are unpaid for the ordinary reason.
+ */
 export function tsPaid(e: TimeEntry): number {
-  return e.kind === "break" ? 0 : tsHours(e);
+  return e.kind === "break" || e.kind === "job" ? 0 : tsHours(e);
 }
 
 /** Paid hours that were actually WORKED — the only hours that can create overtime. */
@@ -103,8 +113,11 @@ export function tsWorked(e: TimeEntry): number {
  * Everything else — shop, travel, breaks, time off — is shift time. Paid, and not on a job.
  */
 export function tsJobHours(entries: TimeEntry[]): number {
+  // tsHours, NOT tsPaid: a job row is deliberately unpaid — it annotates the shift rather than
+  // adding to it — so asking tsPaid for its length now returns zero. This figure is the costing
+  // one, and it wants the stretch that was actually spent on the job.
   return tsMoney(
-    entries.reduce((sum, e) => (e.kind === "job" && e.jobId ? sum + tsPaid(e) : sum), 0),
+    entries.reduce((sum, e) => (e.kind === "job" && e.jobId ? sum + tsHours(e) : sum), 0),
   );
 }
 
