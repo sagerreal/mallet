@@ -332,4 +332,18 @@ describe("weekSummary", () => {
     const s = weekSummary(args([row({ workDate: "2026-08-10", startTime: "08:00", endTime: null, running: true })]));
     expect(s.workedHours).toBe(0);
   });
+
+  // ...and SAYS SO. My day counts the stretch the technician is standing in (day-segments.ts) and
+  // this does not, so at 3pm the two screens stated different totals for the same day with nothing
+  // on either to explain the gap. The figure stays a timesheet figure; the summary carries the fact
+  // that a shift is still open so the headline can qualify itself.
+  it("reports that a shift is still running, so the headline can say why it is short", () => {
+    const s = weekSummary(args([row({ workDate: "2026-08-10", startTime: "08:00", endTime: null, running: true })]));
+    expect(s.shiftRunning).toBe(true);
+  });
+
+  it("reports no running shift on a week that is entirely clocked out", () => {
+    const s = weekSummary(args([row({ workDate: "2026-08-10", startTime: "08:00", endTime: "16:00" })]));
+    expect(s.shiftRunning).toBe(false);
+  });
 });

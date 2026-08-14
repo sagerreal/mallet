@@ -628,3 +628,47 @@ describe("submitting the week", () => {
     expect(screen.queryByRole("button", { name: "Submit week" })).toBeNull();
   });
 });
+
+/**
+ * THE PAGER RAN PAST ITS OWN DATA. My hours fetches one fixed twelve-week window and the arrows
+ * moved through it unbounded, so a few taps back the register rendered weeks the fetch had never
+ * covered and stated "No shifts recorded this week" over weeks the technician had worked — and
+ * forward it paged for ever, into years nobody has booked.
+ */
+describe("the week pager stays inside the window it was fetched with", () => {
+  beforeEach(() => {
+    listQuery = {
+      data: { items: [entry()], nextCursor: null },
+      isFetched: true,
+      isError: false,
+      isRefetching: false,
+      refetch: vi.fn(),
+    };
+  });
+
+  const back = () => screen.getByRole("button", { name: "Previous week" });
+  const fwd = () => screen.getByRole("button", { name: "Next week" });
+
+  it("refuses the tap that would leave the fetched weeks behind", () => {
+    render(<MyHoursPage />);
+    // Eleven whole weeks separate this week (Jun 29) from the oldest week the window covers end to
+    // end (Apr 13).
+    for (let i = 0; i < 11; i += 1) fireEvent.click(back());
+    expect(screen.getByText("Apr 13 – Apr 19")).toBeTruthy();
+    expect(back().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("stops forward at the last week the window reaches, instead of walking into next year", () => {
+    render(<MyHoursPage />);
+    fireEvent.click(fwd());
+    expect(screen.getByText("Jul 6 – Jul 12")).toBeTruthy();
+    expect(fwd().hasAttribute("disabled")).toBe(true);
+  });
+
+  it("leaves both arrows live in the middle of the window", () => {
+    render(<MyHoursPage />);
+    fireEvent.click(back());
+    expect(back().hasAttribute("disabled")).toBe(false);
+    expect(fwd().hasAttribute("disabled")).toBe(false);
+  });
+});

@@ -222,7 +222,11 @@ export function JobCard({
         </div>
       ) : null}
       {addr ? <div className="mdc-addr">{addr}</div> : null}
-      {notes ? <div className="mdc-addr">{notes}</div> : null}
+      {/* Its OWN class, not the address's. The office writes gate codes and symptoms here at
+          length, and an unclamped note pushed the circle row — the only thing on this card anyone
+          presses — off the bottom. Clamped as `.mdc-addr` it would have taken the address with it,
+          and an address that ends in an ellipsis is not an address. */}
+      {notes ? <div className="mdc-note">{notes}</div> : null}
 
       <div
         className="mdc-steps"
