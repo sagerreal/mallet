@@ -62,6 +62,8 @@ vi.mock("@/lib/trpc/client", () => ({
           },
         },
       },
+      // The sheet header's record trail — settled/empty here.
+      links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       // The customer's note trail behind the Customer notes row — idle here.
       customers: { listNotes: { useQuery: () => ({ data: undefined }) } },
     },
@@ -93,5 +95,43 @@ describe("JobModalContent — fetch-on-miss for store-absent jobs", () => {
     queryState = { data: undefined, isError: true };
     render(<JobModalContent />);
     expect(screen.getByText("Job not found")).toBeTruthy();
+  });
+});
+
+describe("JobModalContent — the phone is not in the meta line", () => {
+  beforeEach(() => {
+    adoptJob.mockClear();
+    queryState = { data: undefined, isError: false };
+    mockJobs = [
+      {
+        id: "job-far-page", leadId: "lead-aaa", title: "Drain clearing — kitchen", svc: "service",
+        origin: "db", addr: "", phone: "+19255550181", status: "complete", archived: false,
+        lines: [], addons: [], photos: [], notes: "", acts: [], visits: [],
+      },
+    ];
+  });
+
+  it("keeps the number out of the header, where it sat beside the record trail", () => {
+    // It rendered E.164 straight after "no invoice" — unformatted, and pushed against a row of
+    // record links it has nothing to do with. The customer sheet already settled this: a number
+    // gets ONE home, and a header slot that only appears when the number exists is not it.
+    const { container } = render(<JobModalContent />);
+
+    const head = container.querySelector(".sheet-head");
+    expect(head?.textContent).not.toContain("9255550181");
+  });
+
+  it("keeps its one home — the Customer phone row — and formats it there", () => {
+    render(<JobModalContent />);
+
+    // Formatted, like every other surface. The row read the stored E.164 straight out.
+    expect(screen.getByText("(925) 555-0181")).toBeTruthy();
+  });
+
+  it("still offers Call and Text, which is what the number was there for", () => {
+    render(<JobModalContent />);
+
+    expect(screen.getByRole("button", { name: "Call" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Text" })).toBeTruthy();
   });
 });
