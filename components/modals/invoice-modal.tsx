@@ -672,6 +672,7 @@ export function InvoiceModalContent() {
   const setInvoiceLines = useAppStore((s) => s.setInvoiceLines);
   const recordPayment = useAppStore((s) => s.recordPayment);
   const sendInvoice = useAppStore((s) => s.sendInvoice);
+  const saveDraft = useAppStore((s) => s.saveDraft);
 
   const [busy, setBusy] = useState(false);
   const [payErr, setPayErr] = useState<string | null>(null);
@@ -767,6 +768,36 @@ export function InvoiceModalContent() {
   // close-out flow must not fire SMS a tech never saw. A delivery failure surfaces the server's
   // sentence inline while the invoice STAYS sent (the send itself succeeded; only the message
   // didn't go out). The modal stays open and re-renders to the sent state, where Charge /
+  /**
+   * "Done" on a hand-made invoice COMMITS it, then closes.
+   *
+   * It used to be `onClick={close}` and nothing else, so an invoice typed straight into this sheet
+   * was thrown away on close with no warning — and nothing else could have saved it, because the
+   * Money ledger renders from the server and a store-local invoice appears nowhere but here.
+   *
+   * A failure keeps the sheet OPEN with the reason, which is the whole point: closing over work
+   * that did not save is the failure being fixed. saveDraft is a no-op on a row the server already
+   * holds, so an ordinary Done on a real invoice still just closes.
+   */
+  async function done() {
+    if (!invoice) {
+      close();
+      return;
+    }
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const result = await saveDraft(invoice.id);
+      if (!result.ok) {
+        setPayErr(result.error ?? "Couldn't save this invoice — try again.");
+        return;
+      }
+      close();
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Record become available — no dead-end close.
   async function send() {
     if (!invoice) return;
@@ -1025,8 +1056,8 @@ export function InvoiceModalContent() {
             {busy ? "Opening…" : `Charge a card — ${fmt$(due)}`}
           </button>
         ) : (
-          <button className="sheet-pri" onClick={close}>
-            Done
+          <button className="sheet-pri" disabled={busy} onClick={() => void done()}>
+            {busy ? "Saving…" : "Done"}
           </button>
         )}
       </div>

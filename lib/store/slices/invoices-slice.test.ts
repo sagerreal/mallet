@@ -1262,3 +1262,117 @@ describe("recordPayment resolves the server's outcome", () => {
     expect(recordPaymentMutate).not.toHaveBeenCalled();
   });
 });
+
+// ---------------------------------------------------------------------------
+// saveDraft — what "Done" does on a hand-made invoice.
+// ---------------------------------------------------------------------------
+// Done used to be `onClick={close}` and nothing else: an invoice typed straight into the sheet had
+// no DB row, so closing it threw the work away with no warning. Nothing else could save it either —
+// the ledger renders from the server, so a store-local invoice is invisible everywhere except the
+// sheet open on it.
+
+describe("saveDraft — Done commits a hand-made invoice", () => {
+  beforeEach(() => {
+    draftMutate.mockReset();
+    sendMutate.mockReset();
+  });
+
+  it("drafts the invoice on the server and reconciles the row", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1" })]);
+
+    const res = await s.state.saveDraft("inv-1");
+
+    expect(res.ok).toBe(true);
+    expect(draftMutate).toHaveBeenCalledTimes(1);
+    // Reconciled to a real server row, so a second Done is a no-op rather than a duplicate.
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.origin).toBe("db");
+  });
+
+  it("does NOT send it — Done is not Send", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1" })]);
+
+    await s.state.saveDraft("inv-1");
+
+    expect(sendMutate).not.toHaveBeenCalled();
+    expect(s.state.invoices.find((i) => i.id === "inv-1")?.status).toBe("draft");
+  });
+
+  it("is a no-op on an invoice the server already holds", async () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "db" })]);
+
+    const res = await s.state.saveDraft("inv-1");
+
+    expect(res.ok).toBe(true);
+    expect(draftMutate).not.toHaveBeenCalled();
+  });
+
+  it("names the missing customer rather than saving a bill nobody owes", async () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "" })]);
+
+    const res = await s.state.saveDraft("inv-1");
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/customer/i);
+    expect(draftMutate).not.toHaveBeenCalled();
+  });
+
+  it("names the missing lines", async () => {
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1", lines: [], total: 0 })]);
+
+    const res = await s.state.saveDraft("inv-1");
+
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/line/i);
+  });
+
+  it("keeps the row local when the server refuses, so the work is still on screen", async () => {
+    draftMutate.mockRejectedValue(new Error("network"));
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1" })]);
+
+    const res = await s.state.saveDraft("inv-1");
+
+    expect(res.ok).toBe(false);
+    const row = s.state.invoices.find((i) => i.id === "inv-1");
+    expect(row).toBeDefined();
+    expect(row?.origin).toBe("manual"); // still local — a retry drafts, never duplicates
+    expect(row?.lines).toHaveLength(1);
+  });
+
+  it("carries the rates the sheet is showing", async () => {
+    draftMutate.mockResolvedValue(dbDto({ id: "inv-1", status: "draft" }));
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({ id: "inv-1", origin: "manual", jobId: null, leadId: "lead-1",
+        pricing: { disc: 10, tax: 8.75 } }),
+    ]);
+
+    await s.state.saveDraft("inv-1");
+
+    expect(draftMutate.mock.calls[0]?.[0]).toMatchObject({ discBps: 1_000, taxBps: 875 });
+  });
+});
+
+describe("addInvoice — a local draft carries no invoice number", () => {
+  it("shows no number until the server issues one", () => {
+    // The sheet printed a real-looking "INV-810" beside a DRAFT pill. It came from a counter left
+    // over from the deleted sample data and incremented in the browser, so two people making an
+    // invoice at once saw the same number and neither matched the shop's books.
+    const s = makeSlice();
+    s.seed([]);
+
+    const { invoice } = s.state.addInvoice({
+      jobId: null, leadId: "", cust: "", phone: "", title: "", lines: [], total: 0,
+      depPaid: 0, payments: [], status: "draft", age: 0, archived: false,
+    });
+
+    expect(invoice.num).toBe("");
+  });
+});
