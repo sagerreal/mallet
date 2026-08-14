@@ -488,6 +488,14 @@ export const createJobRouter = () =>
               costIsPartial: z.boolean(),
               source: z.enum(["measured", "scheduled", "mixed"]),
               quotedCents: z.number().int(),
+              /** Parts cost. 0 is a real answer — a service call with no parts costs no parts. */
+              materialsCents: z.number().int(),
+              /** Billed EX TAX. Null = not invoiced, which is not the same as invoiced for nothing. */
+              revenueCents: z.number().int().nullable(),
+              /** The job this one came back on, when it is a warranty callback. */
+              callbackOf: z.string().uuid().nullable(),
+              /** What the visits were booked for — what the actual hours are judged against. */
+              scheduledHours: z.number(),
             }),
           ),
         }),
