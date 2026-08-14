@@ -1890,6 +1890,12 @@
   .shd-gap{font-size:var(--type-sm);color:var(--ink-3)}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
+  /* The office's request, on the technician's own week. Amber, not red: being asked to fix
+     Wednesday is ordinary, and a red banner on somebody's pay screen reads as trouble. */
+  .mh-changes{background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius-sm);
+    color:var(--amber);font-size:var(--type-base);padding:var(--space-3);margin:var(--space-3) 0 0}
+  .mh-changes b{font-weight:700}
+
   /* ---- JOB COSTING (Timesheets → Job costing) ----------------------------------------------
      Tiles are the week's answer; the table is the working. Prefixed `jc-` for the same reason the
      grid is prefixed `tsg-` — bare one- and two-letter class names in this file are global. */
@@ -1934,6 +1940,12 @@
   .tsg-batch .btn.ghost:hover{border-color:var(--card);background:color-mix(in srgb,var(--card) 12%,transparent)}
   .tsg-batch-gap{flex:1 1 auto}
   .tsg-batch-note{font-size:var(--type-base);color:var(--ink-2);margin:0 0 var(--space-3)}
+  /* The reason field, expanded inside the bar. flex-basis 100% breaks it onto its own line so the
+     input gets real width instead of being squeezed between the buttons. */
+  .tsg-batch-ask{flex:1 1 100%;display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;
+    padding-top:var(--space-2)}
+  .tsg-batch-lbl{font-size:var(--type-base);color:var(--card)}
+  .tsg-batch-input{flex:1 1 260px;min-width:220px}
   .tsg-batch-held{color:var(--amber)}
   .tsg-search{min-width:200px;flex:0 1 240px}
   .tsg-chips{display:flex;gap:var(--space-2);flex-wrap:wrap}

@@ -20,6 +20,7 @@ import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
 import { SetClockStateUseCase } from "../app/set-clock-state";
 import { SubmitWeekUseCase, SUBMITTED_WEEK_MESSAGE } from "../app/submit-week";
+import { RequestChangesUseCase } from "../app/request-changes";
 import { weekStartOf } from "../domain/week-submission";
 import type { ClockTap } from "../domain/clock";
 import { timeEntryDTO, toTimeEntryDTO } from "./time-entry-dto";
@@ -544,6 +545,29 @@ export const createTimesheetRouter = () =>
         const repo = new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId);
         const sub = await repo.findFor(techUserId, input.weekStart);
         return { submission: sub === null ? null : toWeekSubmissionDTO(sub) };
+      }),
+
+    /**
+     * Hand a submitted week back to the technician, with a reason.
+     *
+     * ownerOrOffice: retracting somebody's sign-off is a management act. The alternative the office
+     * had was editing his hours for him, which changes his pay without him seeing it.
+     */
+    requestChanges: ownerOrOffice
+      .input(
+        z.object({
+          techUserId: z.string().uuid(),
+          weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+          reason: z.string().min(1).max(300),
+        }),
+      )
+      .output(z.object({ reopened: z.boolean() }))
+      .mutation(async ({ ctx, input }) => {
+        const uc = new RequestChangesUseCase(
+          new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId),
+          ctx.deps.clock,
+        );
+        return orThrow(await uc.exec(input, ctx.principal.orgId));
       }),
 
     /**

@@ -206,6 +206,14 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
           </>
         }
       />
+      {/* The office handed it back and said why. Above the submitted note deliberately: this is the
+          only thing on the screen he has to act on, and it names the day so he is not re-reading a
+          whole week to find what they meant. */}
+      {submission.changesRequested !== null ? (
+        <p className="mh-changes" role="status">
+          <b>The office sent this week back.</b> {submission.changesRequested}
+        </p>
+      ) : null}
       {canEditOwnTimes && weekLocked ? (
         <p className="mh-officeonly">
           You submitted this week. The office has it now — ask them if something needs changing.
