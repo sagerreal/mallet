@@ -31,7 +31,7 @@ let completeOpts: typeof startOpts = {};
 let startPending = false;
 const startMutate = vi.fn();
 const completeMutate = vi.fn();
-let enrouteOpts: { onMutate?: (v: { jobId: string; visitId: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
+let enrouteOpts: { onMutate?: (v: { jobId: string; visitId: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void; retry?: number } = {};
 let visitStatusOpts: { onMutate?: (v: { jobId: string; visitId: string; status: string }) => void; onSuccess?: (d: unknown) => void; onError?: (e: unknown) => void } = {};
 const enrouteMutate = vi.fn();
 const visitStatusMutate = vi.fn();
@@ -492,14 +492,12 @@ describe("My day — the whole row opens the job, not just the words", () => {
     expect(openModal).not.toHaveBeenCalled();
   });
 
-  it("sends on-my-way from the card and patches the stamp optimistically", () => {
+  it("sends on-my-way from the card", () => {
+    // What it deliberately does NOT do — move the card before the send lands — has its own block
+    // at the foot of this file.
     render(<MyDayPage />);
     fireEvent.click(screen.getByRole("button", { name: "On my way" }));
     expect(enrouteMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1" });
-    enrouteOpts.onMutate?.({ jobId: "job-1", visitId: "visit-1" });
-    const patch = setData.mock.calls.at(-1)?.[1] as (p: unknown) => { items: { visits: { enrouteAt: string | null }[] }[] };
-    const patched = patch({ items: [job({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30" })] })] });
-    expect(patched.items[0]!.visits[0]!.enrouteAt).not.toBeNull();
   });
 
   it("shows the live On-site-since stamp while the visit is in progress", () => {
@@ -614,7 +612,7 @@ describe("My day — the finished card's money slot", () => {
   it("offers Take payment with the job's figure when nothing is billed yet", () => {
     withJob(finishedJob({ total: { cents: 184500, currency: "USD" }, bill: null }));
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Take payment · $1,845" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take payment · $1,845.00" })).toBeTruthy();
   });
 
   it("pushes the close-out sheet from the jobId alone — it finds or mints the invoice itself", () => {
@@ -631,7 +629,7 @@ describe("My day — the finished card's money slot", () => {
   it("shows Paid with the ledger's own figure once the bill is paid", () => {
     withJob(finishedJob({ bill: { status: "paid", amountPaid: { cents: 41200, currency: "USD" } } }));
     render(<MyDayPage />);
-    expect(screen.getByText("Paid ✓ · $412")).toBeTruthy();
+    expect(screen.getByText("Paid ✓ · $412.00")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
   });
 
@@ -653,14 +651,14 @@ describe("My day — the finished card's money slot", () => {
     // still offer the door money, exactly as the sheet's own foot would.
     withJob(finishedJob({ total: { cents: 90000, currency: "USD" }, bill: { status: "sent", amountPaid: { cents: 0, currency: "USD" } } }));
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Take payment · $900" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take payment · $900.00" })).toBeTruthy();
     expect(screen.queryByText("Sent to the office")).toBeNull();
   });
 
   it("offers the REMAINING balance on a partial payment", () => {
     withJob(finishedJob({ total: { cents: 90000, currency: "USD" }, bill: { status: "partial", amountPaid: { cents: 40000, currency: "USD" } } }));
     render(<MyDayPage />);
-    expect(screen.getByRole("button", { name: "Take payment · $500" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take payment · $500.00" })).toBeTruthy();
   });
 
   it("offers nothing on a voided bill — the invoice slot is spent", () => {
@@ -683,7 +681,7 @@ describe("My day — the finished card's money slot", () => {
     withJob(finishedJob({ total: { cents: 26850, currency: "USD" }, bill: null, invRequested: true }));
     render(<MyDayPage />);
     expect(screen.getByText("Sent to the office")).toBeTruthy();
-    expect(screen.getByText("$269")).toBeTruthy();
+    expect(screen.getByText("$268.50")).toBeTruthy();
   });
 
   it("offers no money on a finished STOP whose JOB still has a trip to run", () => {
@@ -706,5 +704,81 @@ describe("My day — the finished card's money slot", () => {
     withJob(job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })], total: { cents: 184500, currency: "USD" } }));
     render(<MyDayPage />);
     expect(screen.queryByRole("button", { name: /Take payment/ })).toBeNull();
+  });
+});
+
+/**
+ * THE 45 CENTS. The same balance was formatted two ways on the one path where a person hands over
+ * cash: the card rounded to whole dollars (fmt$) and the close-out that opens from it printed the
+ * exact figure (fmt$2). A $123.45 balance read "$123" on the card, and a technician who collected
+ * what the card said was short — every time, on every job that is not a round number.
+ */
+describe("My day — the figure on the card is the figure at the door", () => {
+  const doneVisit = () =>
+    visit({ status: "complete", completedAt: "2026-07-01T20:00:00.000Z", scheduledDate: "2026-07-01", scheduledStart: "08:30" });
+  const finishedJob = (over: Record<string, unknown> = {}) =>
+    job({ status: "complete", visits: [doneVisit()], ...over });
+  const withJob = (j: unknown) => {
+    queryState = { data: { items: [j], customers: [] }, isLoading: false, isFetching: false };
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+  });
+
+  it("asks for the exact balance, not a rounded one", () => {
+    withJob(finishedJob({ total: { cents: 12345, currency: "USD" }, bill: null }));
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $123.45" })).toBeTruthy();
+  });
+
+  it("subtracts a part payment to the cent", () => {
+    withJob(
+      finishedJob({
+        total: { cents: 20000, currency: "USD" },
+        bill: { status: "sent", amountPaid: { cents: 7555, currency: "USD" } },
+      }),
+    );
+    render(<MyDayPage />);
+    expect(screen.getByRole("button", { name: "Take payment · $124.45" })).toBeTruthy();
+  });
+
+  it("states what was actually taken on the paid chip", () => {
+    withJob(finishedJob({ bill: { status: "paid", amountPaid: { cents: 41250, currency: "USD" } } }));
+    render(<MyDayPage />);
+    expect(screen.getByText("Paid ✓ · $412.50")).toBeTruthy();
+  });
+});
+
+/**
+ * ON MY WAY IS A TEXT TO A THIRD PARTY. Every other tap on this card asserts a local state change;
+ * this one asserts that the customer was told. The optimistic patch removed the button on the tap,
+ * so a request the phone never finished sending — backgrounded, reloaded, out of signal — left a
+ * card that said the text had gone with nothing behind it, and the toast that would have said
+ * otherwise died with the page that was reloading.
+ */
+describe("My day — On my way claims nothing until the server says it sent", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    startPending = false;
+    queryState = {
+      data: { items: [job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })] })], customers: [] },
+      isLoading: false,
+      isFetching: false,
+    };
+  });
+
+  it("does not patch the card as en route before the send is confirmed", () => {
+    render(<MyDayPage />);
+    fireEvent.click(screen.getByRole("button", { name: "On my way" }));
+    expect(enrouteMutate).toHaveBeenCalledWith({ jobId: "job-1", visitId: "visit-1" });
+    expect(enrouteOpts.onMutate).toBeUndefined();
+    expect(setData).not.toHaveBeenCalled();
+  });
+
+  it("retries the tap — the endpoint is idempotent and the truck is between cells", () => {
+    render(<MyDayPage />);
+    expect(enrouteOpts.retry).toBeDefined();
   });
 });

@@ -55,7 +55,15 @@ import type {
 
 // ---- helpers (ported 1:1 from the prototype) -------------------------------
 
-/** fmt$ — integer dollars → "$N,NNN" (prototype fmt$). */
+/**
+ * Whole dollars — for the figures that are ESTIMATES OR RATES, never a sum anyone hands over: the
+ * hourly labour rate, the Front Desk's "read it as ~$185", the found-work rollup that is explicitly
+ * not on this bill. Rounding those is right; a tilde and two decimal places argue with each other.
+ *
+ * EVERYTHING ON THE BILL USES fmt$2. The bill lines, the total, the deductions and the balance are
+ * one arithmetic chain ending in cash changing hands, and this rounded them at every step — so the
+ * card said "Take payment · $123", the header said "$123.45", and the technician was 45c short.
+ */
 function fmt$(n: number): string {
   return "$" + Math.round(n).toLocaleString("en-US");
 }
@@ -340,7 +348,7 @@ export function BillAsk({ job, suggested, onCommit, error, serviceFee }: BillAsk
                       ⏱ from the clock
                     </span>
                   ) : null}
-                  <b style={{ marginLeft: "auto" }}>{fmt$(billLineAmt(L))}</b>
+                  <b style={{ marginLeft: "auto" }}>{fmt$2(billLineAmt(L))}</b>
                   <button className="btn sm ghost" onClick={() => removeLine(k)}>
                     ✕
                   </button>
@@ -348,7 +356,7 @@ export function BillAsk({ job, suggested, onCommit, error, serviceFee }: BillAsk
               ) : (
                 <div key={k} className="stage-row" style={{ border: "none", padding: "var(--space-2) 0" }}>
                   <span style={{ flex: 1 }}>{L.d}</span>
-                  <b>{fmt$(L.r)}</b>{" "}
+                  <b>{fmt$2(L.r)}</b>{" "}
                   <button className="btn sm ghost" onClick={() => removeLine(k)}>
                     ✕
                   </button>
@@ -420,7 +428,7 @@ export function BillAsk({ job, suggested, onCommit, error, serviceFee }: BillAsk
                 marginTop: "var(--space-3)",
               }}
             >
-              <b>Total {fmt$(tot)}</b>
+              <b>Total {fmt$2(tot)}</b>
               <button className="btn sm primary" onClick={commitItems}>
                 Use this bill
               </button>
@@ -465,20 +473,18 @@ function DueCard({ invoice }: { invoice: Invoice }) {
       <span style={{ textAlign: "right" }}>
         {invoice.depPaid ? (
           <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--green-700)" }}>
-            − {fmt$(invoice.depPaid)} deposit paid
+            − {fmt$2(invoice.depPaid)} deposit paid
           </div>
         ) : null}
         {paid ? (
           <div className="muted" style={{ fontSize: "var(--type-sm)", color: "var(--green-700)" }}>
-            − {fmt$(paid)} paid
+            − {fmt$2(paid)} paid
           </div>
         ) : null}
         <div style={{ fontWeight: 900, fontSize: "var(--type-2xl)", lineHeight: 1.1 }}>
           {total <= 0 ? (
             <span style={{ fontSize: "var(--type-lg)", color: "var(--ink-3)" }}>No bill set yet</span>
           ) : due > 0 ? (
-            // Cent-precise on purpose: the local fmt$ rounds to whole dollars, which printed "$10"
-            // over an invoice genuinely due $10.40 — a money figure may never disagree with the charge.
             fmt$2(due)
           ) : (
             "Paid ✓"
@@ -761,10 +767,10 @@ function PayBlock({
     return (
       <div className="cotap cotap-ok">
         <div className="cotap-check">✓</div>
-        <div style={{ fontWeight: 800, fontSize: "var(--type-xl)" }}>Approved · {fmt$(p.amt || due)}</div>
+        <div style={{ fontWeight: 800, fontSize: "var(--type-xl)" }}>Approved · {fmt$2(p.amt || due)}</div>
         <div className="cotap-sub">
           {detail}
-          {nowDue > 0 ? ` · ${fmt$(nowDue)} still due` : " · paid in full"}
+          {nowDue > 0 ? ` · ${fmt$2(nowDue)} still due` : " · paid in full"}
         </div>
         <div
           style={{
@@ -1642,7 +1648,7 @@ export function CloseOutModalContent() {
                 disabled={isOffice && pending.length > 0}
                 onClick={() => setPayOpen(true)}
               >
-                Take payment — {fmt$(due)}
+                Take payment — {fmt$2(due)}
               </button>
               {isOffice ? (
                 <button className="btn" style={{ minHeight: 48 }} onClick={sendToOffice}>

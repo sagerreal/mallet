@@ -324,7 +324,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
     mockGetInvoice.mockResolvedValue(paidRecord);
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Card"));
     await act(async () => {}); // mint lands
   }
@@ -377,7 +377,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     mockGetInvoice.mockResolvedValue(paidRecord);
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Card"));
     await act(async () => {});
 
@@ -404,7 +404,7 @@ describe("CloseOutModalContent — card = real Stripe checkout (Task 6)", () => 
     mockGetInvoice.mockResolvedValue(paidRecord);
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Card"));
     await act(async () => {});
 
@@ -445,7 +445,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
 
   async function clickRecordCash() {
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Cash"));
     fireEvent.click(screen.getByText(/Record cash — paid/));
     await act(async () => {});
@@ -522,7 +522,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     mockGetInvoice.mockImplementationOnce(() => new Promise<Invoice>((res) => (resolveGet = res)));
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Cash"));
 
     const recordBtn = screen.getByText(/Record cash — paid/).closest("button") as HTMLButtonElement;
@@ -567,7 +567,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
   // record itself stayed unawaited: the store action was typed `=> void`, kicked off the write
   // and rolled back inside a `.catch`, so approvePayment returned { ok: true } on the very next
   // line. A voided invoice, a payment that landed concurrently, an offline tech — every one of
-  // them rendered "Approved · $450" for money that was never recorded.
+  // them rendered "Approved · $450.00" for money that was never recorded.
   // -------------------------------------------------------------------------
 
   it("the server REFUSING the record blocks Approved: its reason is named on the record step", async () => {
@@ -604,7 +604,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText(/Charge Visa/));
     await act(async () => {});
 
@@ -620,7 +620,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText(/Charge Visa/));
     await act(async () => {});
 
@@ -636,7 +636,7 @@ describe("CloseOutModalContent — record ordering + paid race (fix round 1)", (
     mockLeads = [{ ...feeLead, card: { brand: "Visa", last4: "4242" } } as unknown as Lead];
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText(/Charge Visa/));
     await act(async () => {});
 
@@ -789,7 +789,7 @@ describe("CloseOutModalContent — never an empty sheet", () => {
       pending.settle({ ok: true });
     });
     rerender(<CloseOutModalContent />);
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    expect(screen.getByText("Take payment — $450.00")).toBeTruthy();
   });
 
   it("says so when handed an invoice id this device never loaded", () => {
@@ -835,7 +835,7 @@ describe("CloseOutModalContent — never an empty sheet", () => {
     render(<CloseOutModalContent />);
 
     expect(mockAddInvoice).not.toHaveBeenCalled();
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    expect(screen.getByText("Take payment — $450.00")).toBeTruthy();
   });
 });
 
@@ -866,8 +866,8 @@ describe("CloseOutModalContent — a technician collects", () => {
 
   it("shows the balance and the payment surfaces", () => {
     render(<CloseOutModalContent />);
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    expect(screen.getByText("Take payment — $450.00")).toBeTruthy();
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     expect(screen.getByText("Cash")).toBeTruthy();
     expect(screen.getByText("Check")).toBeTruthy();
     expect(screen.getByText("Bank")).toBeTruthy();
@@ -887,7 +887,7 @@ describe("CloseOutModalContent — a technician collects", () => {
     mockGetInvoice.mockResolvedValue({ ...paidRecord, status: "draft" } as Invoice);
 
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Cash"));
     fireEvent.click(screen.getByText(/Record cash — paid/));
     await act(async () => {});
@@ -906,7 +906,7 @@ describe("CloseOutModalContent — a technician collects", () => {
     mockCreatePayment.mockResolvedValue({ url: CHECKOUT_URL });
     mockGetInvoice.mockResolvedValue(paidRecord);
     render(<CloseOutModalContent />);
-    fireEvent.click(screen.getByText("Take payment — $450"));
+    fireEvent.click(screen.getByText("Take payment — $450.00"));
     fireEvent.click(screen.getByText("Card"));
     await act(async () => {});
     expect(mockCreatePayment).toHaveBeenCalledWith("field", "inv-1");
@@ -921,7 +921,7 @@ describe("CloseOutModalContent — a technician collects", () => {
   // and even unredacted it is the raw line sum with no deposit credited and no recorded tax.
   // Rendering the optimistic row would put a wrong figure on the Take-payment button and pre-fill
   // the amount box with it, and a tap inside the round-trip records against the wrong balance.
-  it("waits for the server's balance rather than drawing the redacted job's $0", () => {
+  it("waits for the server's balance rather than drawing the redacted job's $0.00", () => {
     mockJobs = [{ ...cardJob, lines: [{ d: "Fix water heater", q: 1, r: null }] } as unknown as Job];
     // The optimistic row addInvoice just inserted: origin "manual", total 0.
     mockInvoices = [{ ...cardInvoice, total: 0, lines: [], origin: "manual" } as unknown as Invoice];
@@ -935,7 +935,7 @@ describe("CloseOutModalContent — a technician collects", () => {
   // The gate is the SURFACE, not the redaction: the deposit skew has nothing to do with hidden
   // prices, and a job with no lines at all makes `pricesHidden` false while `jobTotal` is still 0.
   it("waits on a deposit-credited job even when this device CAN see the rates", () => {
-    // $1,000 of lines, $200 already taken — the server says $800, the optimistic row says $1,000.
+    // $1,000.00 of lines, $200.00 already taken — the server says $800, the optimistic row says $1,000.
     mockInvoices = [
       { ...cardInvoice, total: 450, depPaid: 200, origin: "manual" } as unknown as Invoice,
     ];
@@ -951,12 +951,12 @@ describe("CloseOutModalContent — a technician collects", () => {
     render(<CloseOutModalContent />);
 
     expect(screen.queryByText("Reading the balance…")).toBeNull();
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    expect(screen.getByText("Take payment — $450.00")).toBeTruthy();
   });
 
-  // A withheld add-on rate reduced with `?? 0` prints "$0 in found work", which reads as "nothing
+  // A withheld add-on rate reduced with `?? 0` prints "$0.00 in found work", which reads as "nothing
   // extra was found" — the exact opposite of the warning this card exists to give.
-  it("names no figure on found work whose rate this device may not see, never $0", () => {
+  it("names no figure on found work whose rate this device may not see, never $0.00", () => {
     mockJobs = [
       {
         ...cardJob,
@@ -967,7 +967,7 @@ describe("CloseOutModalContent — a technician collects", () => {
 
     expect(screen.getByText("⚠ Found work — not on this bill")).toBeTruthy();
     expect(screen.getByText("Expansion tank")).toBeTruthy();
-    expect(screen.queryByText(/\$0\b/)).toBeNull();
+    expect(screen.queryByText(/\$0.00\b/)).toBeNull();
   });
 
   it("never shows the price BUILDER, even on a genuinely unpriced job", () => {
@@ -997,7 +997,7 @@ describe("CloseOutModalContent — a technician collects", () => {
     expect(screen.queryByText("Leave off")).toBeNull();
     // And the pay button is LIVE: the only way to clear `pending` is setAddonStatus, which is
     // office-only by law, so a disable here could never be cleared from this device.
-    const pay = screen.getByText("Take payment — $450").closest("button") as HTMLButtonElement;
+    const pay = screen.getByText("Take payment — $450.00").closest("button") as HTMLButtonElement;
     expect(pay.disabled).toBe(false);
   });
 });
@@ -1019,7 +1019,7 @@ describe("CloseOutModalContent — the office keeps its own gates (regression fe
 
     expect(screen.getByText(/awaiting the customer/)).toBeTruthy();
     expect(screen.getByText(/OK’d — include/)).toBeTruthy();
-    const pay = screen.getByText("Take payment — $450").closest("button") as HTMLButtonElement;
+    const pay = screen.getByText("Take payment — $450.00").closest("button") as HTMLButtonElement;
     expect(pay.disabled).toBe(true);
   });
 
@@ -1031,7 +1031,7 @@ describe("CloseOutModalContent — the office keeps its own gates (regression fe
     render(<CloseOutModalContent />);
 
     expect(screen.queryByText("Reading the balance…")).toBeNull();
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    expect(screen.getByText("Take payment — $450.00")).toBeTruthy();
   });
 
   it("still offers the hand-off and the price builder", () => {
@@ -1116,7 +1116,7 @@ describe("CloseOutModalContent — where Done lands", () => {
 // ---------------------------------------------------------------------------
 // The optimistic due figure — the hydration-flash law applied to money. The sheet raises the
 // invoice on mount and draws the row it just asked for; that draw used to carry the RAW LINE SUM
-// (`jobTotal`), so a $100 job with the shop's stored 8.45% sales tax flashed "$100" and snapped
+// (`jobTotal`), so a $100.00 job with the shop's stored 8.45% sales tax flashed "$100.00" and snapped
 // to "$108.45" when the server's answer landed. The draw now derives the same discount → tax
 // chain the server bills (job.pricing through deriveTotals), so the figure never changes — and
 // the one figure the client genuinely cannot derive (an estimate's deposit credit) is GATED
@@ -1161,7 +1161,7 @@ describe("CloseOutModalContent — the optimistic due figure is the BILLED total
     mockJobs = [{ ...cardJob }];
     mockInvoices = [{ ...cardInvoice, origin: "manual" } as unknown as Invoice];
     render(<CloseOutModalContent />);
-    expect(screen.getByText("Take payment — $450")).toBeTruthy();
+    expect(screen.getByText("Take payment — $450.00")).toBeTruthy();
   });
 
   it("an ESTIMATE-SOURCED job's optimistic row is gated — the deposit credit is server knowledge", () => {

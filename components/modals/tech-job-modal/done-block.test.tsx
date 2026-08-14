@@ -52,7 +52,7 @@ describe("ScopeHandoffBlock — visit fee collection", () => {
         onCollectFee={vi.fn()}
       />,
     );
-    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+    expect(screen.getByText("Collect the visit fee — $89.00")).toBeTruthy();
     expect(screen.getByText("Open the Quote tab →")).toBeTruthy();
   });
 
@@ -68,7 +68,7 @@ describe("ScopeHandoffBlock — visit fee collection", () => {
       />,
     );
     expect(screen.getByText("✓ Scoped — the office builds the quote")).toBeTruthy();
-    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+    expect(screen.getByText("Collect the visit fee — $89.00")).toBeTruthy();
   });
 
   it("fee button absent when a fee invoice already exists for this job", () => {
@@ -113,7 +113,7 @@ describe("ScopeHandoffBlock — visit fee collection", () => {
         onCollectFee={onCollectFee}
       />,
     );
-    fireEvent.click(screen.getByText("Collect the visit fee — $89"));
+    fireEvent.click(screen.getByText("Collect the visit fee — $89.00"));
     expect(onCollectFee).toHaveBeenCalledTimes(1);
   });
 
@@ -238,7 +238,7 @@ describe("DoneBlock — the field capabilities", () => {
   it("no hand-off button on a job with money owed — the close-out carries it", () => {
     render(<DoneBlock {...doneBlockProps} canSetBill={false} />);
     expect(screen.getByText("✓ Job done")).toBeTruthy();
-    expect(screen.getByText("$185")).toBeTruthy(); // the money is still fully theirs to read
+    expect(screen.getByText("$185.00")).toBeTruthy(); // the money is still fully theirs to read
     expect(screen.queryByText("Send to the office to bill")).toBeNull();
   });
 
@@ -271,7 +271,7 @@ describe("DoneBlock — the field capabilities", () => {
         canSetBill={false}
       />,
     );
-    expect(screen.getByText("✓ Paid · $185")).toBeTruthy();
+    expect(screen.getByText("✓ Paid · $185.00")).toBeTruthy();
     expect(screen.queryByText("receipt & invoice")).toBeNull();
   });
 
@@ -320,7 +320,7 @@ describe("DoneBlock / doneFootAction — a redacted device is not a free job", (
 // MUTATION response have to produce the same card, because a refetch cycle alternates between
 // them. They did not: the mutation responses carried no execution at all, so tapping a visit made
 // the card read "No price set — the office invoices it" on JOB-2545's agreed $185, and the next
-// list refetch put the $185 straight back.
+// list refetch put the $185.00 straight back.
 //
 // Built through the REAL mappers rather than store fixtures — the whole failure was the gap
 // between two wire shapes, and a fixture written by hand tests neither of them.
@@ -347,14 +347,14 @@ describe("DoneBlock — the two wire shapes agree, so the card cannot flap", () 
       lines: [priceLine],
     });
     cardFor(job);
-    expect(screen.getByText("$185")).toBeTruthy();
+    expect(screen.getByText("$185.00")).toBeTruthy();
     expect(screen.queryByText("No price set — the office invoices it.")).toBeNull();
   });
 
   it("the MUTATION response renders the same card", () => {
     const job = mutationJob({ id: "job-2545", status: "complete", lines: [priceLine] });
     cardFor(job);
-    expect(screen.getByText("$185")).toBeTruthy();
+    expect(screen.getByText("$185.00")).toBeTruthy();
     expect(screen.queryByText("No price set — the office invoices it.")).toBeNull();
   });
 

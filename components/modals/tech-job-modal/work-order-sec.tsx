@@ -2,7 +2,7 @@
  * components/modals/tech-job-modal/work-order-sec.tsx
  * The work order: what was sold, itemised, with a count and a Total.
  *
- * "WORK ORDER · 4 items · $730" is not a money-rule violation. The rule (see job-modal.tsx) is
+ * "WORK ORDER · 4 items · $730.00" is not a money-rule violation. The rule (see job-modal.tsx) is
  * that this surface shows the PRICE THE OFFICE SET — line items and a total — and never cost,
  * margin, profit or P&L. Line COST is not rendered here under any condition, for any role.
  *
@@ -10,8 +10,8 @@
  * `techSeesPrice` is off, so a naive sum of a genuinely priced job returns 0 and would print a
  * fabricated "$0" at a technician standing on a doorstep. The three:
  *
- *   1. figures visible          → "4 items · $730" and a Total row
- *   2. genuinely free / unset   → "4 items · $0" and a Total row reading $0
+ *   1. figures visible          → "4 items · $730.00" and a Total row
+ *   2. genuinely free / unset   → "4 items · $0.00" and a Total row reading $0.00
  *   3. withheld from this device→ "4 items", no Total, and one plain sentence saying so
  *
  * `pricesHidden` (a null rate = the redaction signal, never a real zero) is what separates 3 from
@@ -34,7 +34,7 @@
 import { memo } from "react";
 import type { CSSProperties } from "react";
 import type { Job } from "@/lib/store/types";
-import { fmt$, fmt$2 } from "@/lib/format";
+import { fmt$2 } from "@/lib/format";
 import { jobHasPricing, jobPricingRates, jobPricedTotals } from "@/lib/store/job-pricing";
 import { PriceBreakdown } from "@/components/modals/pricing/field-pricing";
 import { pricesHidden } from "./helpers";
@@ -92,7 +92,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
   const photoN = (job.photos ?? []).length;
   const hidden = pricesHidden(job);
   const showMoney = seesPrice && !hidden;
-  // Summed over the RENDERED lines only, so "4 items · $730" and the Total row can never
+  // Summed over the RENDERED lines only, so "4 items · $730.00" and the Total row can never
   // disagree with the four numbers between them.
   const total = scope.reduce((sum, l) => sum + (l.q ?? 1) * (l.r ?? 0), 0);
   const items = `${scope.length} item${scope.length === 1 ? "" : "s"}`;
@@ -111,7 +111,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
       <div className="fsec-h">
         <span>Work order</span>
         <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
-          {showMoney ? `${items} · ${priced ? fmt$2(totals.total / 100) : fmt$(total)}` : items}
+          {showMoney ? `${items} · ${priced ? fmt$2(totals.total / 100) : fmt$2(total)}` : items}
         </span>
       </div>
       {/* NO job title and NO "Scope — what was sold" subhead. The section head already says WORK
@@ -130,7 +130,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
                   The amount is the line's other half, not an aside: same size as the description
                   and weighted, so the column reads as a column. */}
               {showMoney && x.r != null && (
-                <span className="fig" style={{ fontWeight: 700 }}>{fmt$((x.q ?? 1) * x.r)}</span>
+                <span className="fig" style={{ fontWeight: 700 }}>{fmt$2((x.q ?? 1) * x.r)}</span>
               )}
             </div>
           ))}
@@ -140,7 +140,7 @@ function WorkOrderSecFn({ job, seesPrice }: WorkOrderSecProps) {
           ) : showMoney ? (
             <div style={TOTAL_ROW}>
               <span style={{ flex: 1 }}>Total</span>
-              <span className="fig">{fmt$(total)}</span>
+              <span className="fig">{fmt$2(total)}</span>
             </div>
           ) : hidden ? (
             // State 3. One plain sentence, not a blank where a number should be — a technician
