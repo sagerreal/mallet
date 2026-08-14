@@ -50,6 +50,7 @@ const mockSignJobQuote = vi.fn(
   (): Promise<{ ok: boolean; error?: string }> => Promise.resolve({ ok: true }),
 );
 const mockUpdateJob = vi.fn();
+const mockAppendJobNote = vi.fn();
 // Save-on-leave: the quote builder writes the field draft when it unmounts.
 const mockSaveQuoteDraft = vi.fn(() => Promise.resolve({ ok: true }));
 const mockSetVisitStatus = vi.fn();
@@ -80,6 +81,7 @@ function mockStoreState(): Record<string, unknown> {
     toggles: { techSeesPrice: mockSeesPrice },
     setVisitStatus: mockSetVisitStatus,
     updateJob: mockUpdateJob,
+    appendJobNote: mockAppendJobNote,
     recordPayment: noop,
     addAddonField: noop,
     checkVerifyItem: noop,
@@ -208,6 +210,8 @@ beforeEach(() => {
   mockCanText = true;
   mockOpenModal.mockClear();
   mockUpdateJob.mockReset();
+  mockAppendJobNote.mockReset();
+  mockAppendJobNote.mockResolvedValue({ ok: true });
   mockUpdateJob.mockResolvedValue({ ok: true });
   mockSetVisitStatus.mockReset();
   mockAddInvoice.mockClear();
@@ -863,16 +867,17 @@ describe("TechJobModalContent — phone controls (office)", () => {
 // ---------------------------------------------------------------------------
 
 describe("NoteFeed — office composer", () => {
-  it("adds a stamped note through updateJob (empty notes → single stamped line)", async () => {
+  // The stamping and the append moved to the SERVER (AppendJobNoteUseCase) — assembling the whole
+  // notes field in the browser is how two people adding a note in the same minute erased each
+  // other. The sheet now sends one note's text.
+  it("sends the note's TEXT, not a rebuilt notes field", async () => {
     render(<TechJobModalContent />);
     openSection("Job notes");
     const input = screen.getByPlaceholderText("add a note…");
     fireEvent.change(input, { target: { value: "Gate code 4411" } });
     fireEvent.click(screen.getByLabelText("Add note"));
     await vi.waitFor(() => {
-      expect(mockUpdateJob).toHaveBeenCalledWith("job-1", {
-        notes: "[Jul 13] Gate code 4411",
-      });
+      expect(mockAppendJobNote).toHaveBeenCalledWith("job-1", "Gate code 4411");
     });
     // input clears on success (after the awaited persist resolves)
     await vi.waitFor(() => {
@@ -880,23 +885,20 @@ describe("NoteFeed — office composer", () => {
     });
   });
 
-  it("appends to existing notes on its own stamped line", async () => {
-    mockJobs = [makeJob({ notes: "Bring the tall ladder" })];
+  it("sends only the new line when the job already has notes — the server does the appending", async () => {
+    mockJobs = [makeJob({ notes: "[Jul 12] Earlier note" })];
     render(<TechJobModalContent />);
     openSection("Job notes");
-    fireEvent.change(screen.getByPlaceholderText("add a note…"), {
-      target: { value: "Left key under mat" },
-    });
+    fireEvent.change(screen.getByPlaceholderText("add a note…"), { target: { value: "Second" } });
     fireEvent.click(screen.getByLabelText("Add note"));
     await vi.waitFor(() => {
-      expect(mockUpdateJob).toHaveBeenCalledWith("job-1", {
-        notes: "Bring the tall ladder\n[Jul 13] Left key under mat",
-      });
+      expect(mockAppendJobNote).toHaveBeenCalledWith("job-1", "Second");
     });
   });
 
-  it("surfaces the save-failure copy when updateJob reports not-ok", async () => {
-    mockUpdateJob.mockResolvedValue({ ok: false });
+
+  it("surfaces the save-failure copy when the append is refused", async () => {
+    mockAppendJobNote.mockResolvedValue({ ok: false });
     render(<TechJobModalContent />);
     openSection("Job notes");
     fireEvent.change(screen.getByPlaceholderText("add a note…"), {
@@ -925,21 +927,22 @@ describe("NoteFeed — tech (read-only)", () => {
     mockRole = "tech";
   });
 
-  it("shows 'No notes yet.' and no composer when there are zero entries", () => {
+  it("shows a composer even with zero entries — the tech has something to record", () => {
+    // "No notes yet." was the whole content for a tech: a section that opened onto nothing.
+    // With a composer there IS something to do, so the empty-state line has no work left to do.
     render(<TechJobModalContent />);
     openSection("Job notes");
-    expect(screen.getByText("No notes yet.")).toBeTruthy();
-    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
-    expect(screen.queryByLabelText("Add note")).toBeNull();
+    expect(screen.getByPlaceholderText("add a note…")).toBeTruthy();
+    expect(screen.getByLabelText("Add note")).toBeTruthy();
   });
 
-  it("shows existing note entries without a composer", () => {
+  it("shows existing note entries with a composer", () => {
     mockJobs = [makeJob({ notes: "Customer prefers mornings" })];
     render(<TechJobModalContent />);
     openSection("Job notes");
     expect(screen.getByText("Customer prefers mornings")).toBeTruthy();
     expect(screen.queryByText("No notes yet.")).toBeNull();
-    expect(screen.queryByPlaceholderText("add a note…")).toBeNull();
+    expect(screen.getByPlaceholderText("add a note…")).toBeTruthy();
   });
 });
 

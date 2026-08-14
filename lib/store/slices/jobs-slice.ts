@@ -516,6 +516,15 @@ export interface JobsSlice {
    */
   setVisitNotes: (jobId: string, visitId: string, notes: string) => Promise<{ ok: boolean; error?: string }>;
   /**
+   * Add ONE line to a job's notes feed from either surface (v1.field.appendJobNote — anyRole,
+   * assignment-gated for a tech).
+   *
+   * Sends the TEXT, never a rebuilt blob. The office composer used to read job.notes, append in
+   * the browser and write the whole field back through jobs.update, so two people adding a note
+   * inside one round trip erased each other. The server appends to what the field holds now.
+   */
+  appendJobNote: (jobId: string, text: string) => Promise<{ ok: boolean; error?: string }>;
+  /**
    * Book the return trip from the field. SERVER-FIRST, deliberately: the row's id and position are
    * minted server-side, and an optimistic visit carrying a client-invented id would collide with
    * the reconcile the mutation's own DTO performs a moment later.
@@ -1570,6 +1579,37 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // v1.field.setVisitNotes + reconcile from the returned jobDTO; rollback +
   // { ok: false, error } on refusal so the Scope row shows the server's words.
   // ---------------------------------------------------------------------------
+  appendJobNote: (jobId, text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return Promise.resolve({ ok: true });
+    const prior = snapshot(get().jobs, jobId);
+    const job = get().jobs.find((j) => j.id === jobId);
+
+    // Optimistic: the stamp is computed the same way the server does, so the line the tech sees
+    // now is the line that comes back. A store-local job has no row to append to.
+    const stamp = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const existing = (job?.notes ?? "").trim();
+    const next = existing ? `${existing}\n[${stamp}] ${trimmed}` : `[${stamp}] ${trimmed}`;
+    set((s) => ({ jobs: s.jobs.map((j) => (j.id === jobId ? { ...j, notes: next } : j)) }));
+
+    if (!job || job.origin !== JOB_ORIGIN.DB) return Promise.resolve({ ok: true });
+
+    return trpcVanilla.v1.field.appendJobNote
+      .mutate({ jobId, text: trimmed })
+      .then((dto) => {
+        // The server's blob wins — it appended to whatever was really there, which may include a
+        // note somebody else added while this one was in flight.
+        set((s) => ({ jobs: reconcileJob(s.jobs, dtoJobToStoreJob(dto)) }));
+        invalidateJobLists();
+        return { ok: true };
+      })
+      .catch((err: unknown) => {
+        if (prior) set((s) => ({ jobs: restoreJob(s.jobs, prior) }));
+        reportWriteError("appendJobNote", err);
+        return { ok: false, error: userMessage(err) };
+      });
+  },
+
   setVisitNotes: (jobId, visitId, notes) => {
     const prior = snapshot(get().jobs, jobId);
     const trimmed = notes.trim();

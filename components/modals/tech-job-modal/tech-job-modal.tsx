@@ -127,6 +127,7 @@ export function TechJobModalContent() {
   const setVisitStatus = useAppStore((s) => s.setVisitStatus);
   const addFollowUpVisit = useAppStore((s) => s.addFollowUpVisit);
   const updateJob = useAppStore((s) => s.updateJob);
+  const appendJobNote = useAppStore((s) => s.appendJobNote);
   const chargeCardOnFile = useAppStore((s) => s.chargeCardOnFile);
   // Money in the tech view is gated by this permission toggle (a scalar — safe
   // to select directly; never derive an array in a selector).
@@ -637,9 +638,11 @@ export function TechJobModalContent() {
         addPhoto={addJobPhoto}
       />
 
-      {/* 8. Notes feed — office composes while the job is open (same gate as
-          Call/Text; the server refuses note edits once the job is complete). */}
-      <NoteFeed job={job} canCompose={isOffice && !done} updateJob={updateJob} />
+      {/* 8. Notes feed. EVERY role composes while the job is open — the person standing at the
+          job is the one with something to record, and gating it to office left a tech opening
+          this section to "No notes yet." and nothing else. v1.field.appendJobNote is anyRole and
+          assignment-gated; the server still refuses a note once the job is complete. */}
+      <NoteFeed job={job} canCompose={!done} appendNote={appendJobNote} />
 
       {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
       <div className="sheet-foot">

@@ -12,7 +12,6 @@
 
 import { memo, useState } from "react";
 import type { Job } from "@/lib/store/types";
-import { todayISO } from "@/lib/clock";
 import { AO_INPUT } from "./helpers";
 import { SheetRow } from "@/components/modals/sheet-row";
 
@@ -70,7 +69,8 @@ export interface NoteFeedProps {
    * follow-up.
    */
   canCompose: boolean;
-  updateJob: (id: string, patch: Partial<Job>) => Promise<{ ok: boolean }>;
+  /** Adds ONE note. Sends the text; the server stamps it and appends. */
+  appendNote: (id: string, text: string) => Promise<{ ok: boolean }>;
 }
 
 // NoteFeed uses a custom comparator so a checklist tap (job.verify change)
@@ -78,20 +78,20 @@ export interface NoteFeedProps {
 export function noteFeedPropsEqual(a: NoteFeedProps, b: NoteFeedProps): boolean {
   return (
     a.canCompose === b.canCompose &&
-    a.updateJob === b.updateJob &&
+    a.appendNote === b.appendNote &&
     a.job.id === b.job.id &&
     a.job.notes === b.job.notes &&
     a.job.acts === b.job.acts
   );
 }
 
-function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
+function NoteFeedFn({ job, canCompose, appendNote }: NoteFeedProps) {
   const [text, setText] = useState("");
   const [error, setError] = useState("");
   const entries = jobNoteEntries(job);
 
   /**
-   * OPTIMISTIC, the house store pattern. updateJob's own optimistic set puts the note in the
+   * OPTIMISTIC, the house store pattern. appendJobNote's own optimistic set puts the note in the
    * feed in the same tick, so the input clears NOW — it used to clear on the mutation's
    * success, which left the same words sitting in the input AND the list for the whole round
    * trip. On a refusal the slice rolls the feed back and the text returns to the input (unless
@@ -103,17 +103,13 @@ function NoteFeedFn({ job, canCompose, updateJob }: NoteFeedProps) {
   function addNote() {
     const t = text.trim();
     if (!t) return;
-    // Append one stamped line ("[Jul 13] …") to the job's notes blob; the
-    // feed's .ntext renders white-space:pre-line so each line reads separately.
-    const stamp = new Date(todayISO() + "T12:00:00").toLocaleDateString("en-US", {
-      month: "short",
-      day: "numeric",
-    });
-    const existing = (job.notes ?? "").trim();
-    const next = existing ? `${existing}\n[${stamp}] ${t}` : `[${stamp}] ${t}`;
+    // JUST THE TEXT. This used to read job.notes, append a stamped line in the browser and send
+    // the WHOLE field back — so the office and the tech adding a note inside one round trip each
+    // wrote their own version of it, and the second one landing erased the first. The server
+    // appends to what the field holds now (AppendJobNoteUseCase); the stamp is its business.
     setText("");
     setError("");
-    void updateJob(job.id, { notes: next }).then(({ ok }) => {
+    void appendNote(job.id, t).then(({ ok }) => {
       if (ok) return;
       setError(NOTE_SAVE_FAILED_COPY);
       setText((cur) => (cur ? cur : t));
