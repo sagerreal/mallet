@@ -14,6 +14,7 @@
  */
 
 import type { TsGridFilter } from "./timesheet-grid-derive";
+import type { TsGridMode } from "./timesheets-grid";
 
 const CHIPS: readonly { key: TsGridFilter; label: string }[] = [
   { key: "all", label: "All" },
@@ -26,16 +27,25 @@ export interface TimesheetsGridToolbarProps {
   readonly filter: TsGridFilter;
   readonly counts: Record<TsGridFilter, number>;
   readonly query: string;
+  readonly mode: TsGridMode;
   readonly onFilter: (f: TsGridFilter) => void;
   readonly onQuery: (q: string) => void;
+  readonly onMode: (m: TsGridMode) => void;
+  readonly onExport: () => void;
+  /** Nothing on screen means nothing to export — the button says so rather than yielding a header. */
+  readonly exportDisabled: boolean;
 }
 
 export function TimesheetsGridToolbar({
   filter,
   counts,
   query,
+  mode,
   onFilter,
   onQuery,
+  onMode,
+  onExport,
+  exportDisabled,
 }: TimesheetsGridToolbarProps) {
   return (
     <div className="tsg-toolbar">
@@ -67,6 +77,31 @@ export function TimesheetsGridToolbar({
           );
         })}
       </div>
+
+      <span className="tsg-toolbar-gap" />
+
+      {/* Two readings of one week, not two screens. Daily finds the day that looks wrong; summary
+          is the shape payroll is keyed from. */}
+      <div className="segctl" role="group" aria-label="Hours view">
+        <button
+          className={mode === "daily" ? "on" : ""}
+          aria-pressed={mode === "daily"}
+          onClick={() => onMode("daily")}
+        >
+          Daily
+        </button>
+        <button
+          className={mode === "summary" ? "on" : ""}
+          aria-pressed={mode === "summary"}
+          onClick={() => onMode("summary")}
+        >
+          Summary
+        </button>
+      </div>
+
+      <button className="btn sm" onClick={onExport} disabled={exportDisabled}>
+        Export
+      </button>
     </div>
   );
 }

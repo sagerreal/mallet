@@ -32,6 +32,9 @@ import { type TsPick } from "./timesheets-entries";
 import { TsTechWeekCard } from "./timesheets-crew";
 import { TimesheetsGrid } from "./timesheets-grid";
 import { TimesheetsGridToolbar } from "./timesheets-grid-toolbar";
+import { TimesheetsBatchBar, TimesheetsBatchResult } from "./timesheets-batch-bar";
+import { tsRowsToCsv, tsCsvFilename } from "./timesheet-grid-export";
+import type { TsGridMode } from "./timesheets-grid";
 import { tsCrewRows, tsGridCounts, tsFilterRows, type TsGridFilter } from "./timesheet-grid-derive";
 import { JobCostingView } from "./job-costing-view";
 import { TimesheetExceptions } from "./timesheet-exceptions";
@@ -123,6 +126,10 @@ export function TimesheetsPanel() {
   const [pick, setPick] = useState<TsPick>(null);
   const [crewQ, setCrewQ] = useState("");
   const [gridFilter, setGridFilter] = useState<TsGridFilter>("all");
+  const [gridMode, setGridMode] = useState<TsGridMode>("daily");
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchResult, setBatchResult] = useState<{ approved: number; held: string[] } | null>(null);
   // The days the server refused to approve over. Cleared whenever the view moves, so a stale
   // refusal can never sit above a week it doesn't describe.
   const [unfinishedDays, setUnfinishedDays] = useState<readonly string[] | null>(null);
@@ -255,6 +262,55 @@ export function TimesheetsPanel() {
   async function handleApprove(techId: string) {
     const outcome = await approveTechWeek(techId, weekDates);
     setUnfinishedDays(outcome.status === "unfinished" ? outcome.days : null);
+  }
+
+  /**
+   * Approve every ticked week.
+   *
+   * SEQUENTIAL, not Promise.all. Each approval is its own transaction that emits the event driving
+   * the QuickBooks push; firing eight at once against a shared connection buys nothing on a payroll
+   * screen and makes the failure report harder to attribute. Refusals are collected by NAME — "2
+   * held" leaves somebody hunting for which two.
+   */
+  async function handleBatchApprove() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBatchBusy(true);
+    let approved = 0;
+    const held: string[] = [];
+    for (const id of ids) {
+      const outcome = await approveTechWeek(id, weekDates);
+      if (outcome.status === "unfinished") held.push(techById(techs, id)?.name ?? "Crew");
+      else approved += 1;
+    }
+    setBatchBusy(false);
+    setBatchResult({ approved, held });
+    // Only the refused stay ticked: the approved ones have nothing left to do, and leaving them
+    // selected invites a second press that would report zero and read as a failure.
+    setSelectedIds(new Set(ids.filter((id) => held.includes(techById(techs, id)?.name ?? ""))));
+  }
+
+  function handleSelectRow(techId: string, checked: boolean) {
+    setBatchResult(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(techId);
+      else next.delete(techId);
+      return next;
+    });
+  }
+
+  /** The rows ON SCREEN as CSV — a filtered grid must not hand back the unfiltered set. */
+  function handleExport() {
+    const blob = new Blob([tsRowsToCsv(visibleRows, weekDates)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = tsCsvFilename(weekStart);
+    a.click();
+    // Revoked immediately: the click has already handed the blob to the download, and leaving the
+    // object URL alive pins the whole file in memory for the life of the tab.
+    URL.revokeObjectURL(url);
   }
 
   function handleAdd(techId: string) {
@@ -401,13 +457,31 @@ export function TimesheetsPanel() {
         filter={gridFilter}
         counts={gridCounts}
         query={crewQ}
+        mode={gridMode}
         onFilter={setGridFilter}
         onQuery={setCrewQ}
+        onMode={setGridMode}
+        onExport={handleExport}
+        exportDisabled={visibleRows.length === 0}
       />
+
+      <TimesheetsBatchBar
+        count={selectedIds.size}
+        busy={batchBusy}
+        onApprove={() => void handleBatchApprove()}
+        onClear={() => {
+          setSelectedIds(new Set());
+          setBatchResult(null);
+        }}
+      />
+      <TimesheetsBatchResult result={batchResult} />
 
       <TimesheetsGrid
         rows={visibleRows}
         weekDates={weekDates}
+        mode={gridMode}
+        selected={selectedIds}
+        onSelect={handleSelectRow}
         openTechId={selId}
         onToggle={(id) => handleSelect(selId === id ? null : id)}
         renderDetail={(techId) => {
