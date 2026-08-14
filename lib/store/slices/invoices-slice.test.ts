@@ -750,6 +750,105 @@ describe("setInvoices — summary rows merge, never clobber", () => {
 
     expect(s.state.invoices.map((i) => i.id)).toEqual(["inv-2"]);
   });
+
+  // THE DEMOTE. `partial` is a statement about STRUCTURE — "this row has no lines, no job link
+  // and no payment history". After the fold above it has all three, so re-stamping the flag says
+  // something untrue about the row, and the surfaces that WAIT on it act on it: the invoice sheet
+  // re-opens its fetch for any partial row, React Query answered from its 30-second cache — the
+  // PRE-payment read — and the sheet adopted that stale record over the settled one. A payment
+  // the office had just recorded came back as "Due now · Charge a card" and stayed that way
+  // until a reload, because nothing partial was left to trigger another fetch.
+  it("does not demote a full record — a recorded payment survives the refetch it triggers", async () => {
+    recordPaymentMutate.mockReset();
+    recordPaymentMutate.mockResolvedValue(
+      dbDto({
+        status: "paid",
+        payments: [
+          { amount: { cents: 100_000, currency: "USD" }, receivedAt: new Date().toISOString(), method: "cash" },
+        ],
+        amountPaid: { cents: 100_000, currency: "USD" },
+        due: { cents: 0, currency: "USD" },
+      }),
+    );
+    const s = makeSlice();
+    s.seed([makeInvoice({ id: "inv-1", status: "sent", total: 1000 })]);
+
+    await s.state.recordPayment("inv-1", { amt: 1000, when: "Just now", method: "cash" });
+    // …and the list refetch that recordPayment's own invalidateLists kicked off lands.
+    s.state.setInvoices([summaryRow({ id: "inv-1", status: "paid", total: 1000, due: 0, paidTotal: 1000 })]);
+
+    const merged = s.state.invoices[0]!;
+    expect(merged.partial).toBeUndefined();
+    expect(merged.payments).toHaveLength(1);
+    expect(invDue(merged)).toBe(0);
+  });
+
+  // The flag is the only thing that changes. `paidTotal` is `total − due` on both summary mappers,
+  // and the summary's own depPaid is 0, so the parts-derived balance a non-partial row uses lands
+  // on the server's figure exactly.
+  it("answers with the server's money after the fold — dropping the flag moves no figure", () => {
+    const s = makeSlice();
+    s.seed([
+      makeInvoice({ id: "inv-1", total: 1000, payments: [{ amt: 200, when: "2:14 PM", method: "cash" }] }),
+    ]);
+
+    s.state.setInvoices([summaryRow({ id: "inv-1", total: 1000, due: 800, paidTotal: 200 })]);
+
+    const merged = s.state.invoices[0]!;
+    expect(invPaid(merged)).toBe(200);
+    expect(invDue(merged)).toBe(800);
+  });
+
+  it("stays partial when it lands on another summary — that row still has no lines or history", () => {
+    const s = makeSlice();
+    s.seed([summaryRow({ id: "inv-1" })]);
+
+    s.state.setInvoices([summaryRow({ id: "inv-1", due: 0, paidTotal: 1000 })]);
+
+    expect(s.state.invoices[0]?.partial).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// setInvoices — the snapshot describes the SERVER's book, and nothing else.
+//
+// A store-local invoice ("+ New → New invoice") has no DB row, so no list can ever mention it —
+// and it was deleted by the first refetch that arrived while the sheet was still open on it. The
+// modal then found no row, fell through to its fetch-on-miss path, and answered "Couldn't load
+// this invoice" about the invoice being typed into it. The same drop landed on a createFromJob
+// still in flight: its reconcile maps over the row it inserted, so with that row gone a
+// successfully created invoice was written nowhere and vanished until the next refetch.
+// ---------------------------------------------------------------------------
+
+describe("setInvoices — a snapshot cannot delete what the server has never seen", () => {
+  const manualDraft = () => {
+    const { id: _id, num: _num, ...rest } = makeInvoice({
+      jobId: null, leadId: "", cust: "", lines: [], total: 0, origin: undefined,
+    });
+    return rest;
+  };
+
+  it("keeps a store-local draft the list has no way to carry", () => {
+    const s = makeSlice();
+    s.seed([]);
+    const { invoice } = s.state.addInvoice(manualDraft());
+
+    s.state.setInvoices([makeInvoice({ id: "inv-db", partial: true })]);
+
+    expect(s.state.invoices.map((i) => i.id)).toEqual([invoice.id, "inv-db"]);
+  });
+
+  it("never leaves two rows once the snapshot catches up with that id", () => {
+    const s = makeSlice();
+    s.seed([]);
+    const { invoice } = s.state.addInvoice(manualDraft());
+
+    // The create endpoints preserve the client-authored id, so the server's own list carries it.
+    s.state.setInvoices([makeInvoice({ id: invoice.id, partial: true })]);
+
+    expect(s.state.invoices).toHaveLength(1);
+    expect(s.state.invoices[0]?.origin).toBe("db");
+  });
 });
 
 // ---------------------------------------------------------------------------

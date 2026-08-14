@@ -29,6 +29,7 @@ import { MoneyBandFilter, type MoneyBand } from "./money-band-filter";
 import { useMoneyQuery, useMoneyQueryState } from "./use-money-query";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
+import { ViewToggle } from "@/components/shared/view-toggle";
 
 function MoneyHeader({
   autoRemind,
@@ -313,6 +314,21 @@ export function MoneyLedger() {
             onBand={(b: MoneyBand | null) => setStatusFilter(b ?? "")}
             disabled={moneySet === "archived"}
           />
+
+          {/* Mobile keeps its own Active/Archived pair — the toolbar's copy is hidden under
+              760px along with the rest of the desktop control row, which left a phone with no
+              route to a voided invoice at all. Same slot and shape as Customers. */}
+          <div className="mob-ctrl">
+            <ViewToggle
+              value={moneySet}
+              options={[
+                { value: "active" as const, label: "Active" },
+                { value: "archived" as const, label: "Archived" },
+              ]}
+              onChange={switchSet}
+              ariaLabel="Show active or archived invoices"
+            />
+          </div>
 
           <>
             {chargeError ? (
