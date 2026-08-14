@@ -95,8 +95,11 @@ export function TimezoneCard() {
         </Select>
       </Field>
       <p className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
-        Used by the front desk when it offers appointment times, and by the assistant when it says
-        &ldquo;today&rdquo;.
+        {/* The old copy named the front desk and the assistant and stopped there, which left out
+            the reader that can cost money: the TIME CLOCK decides which day a punch lands on, so a
+            wrong zone files a plumber's evening on tomorrow's timesheet. */}
+        Decides which day a punch lands on for timesheets, when the front desk offers appointment
+        times, and what the assistant means by &ldquo;today&rdquo;.
       </p>
       {saveError && (
         <p role="alert" style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>

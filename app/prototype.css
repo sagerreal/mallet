@@ -402,6 +402,11 @@
   /* a heading INSIDE a tab: the tabs answer "which area", these answer "which kind" */
   .setgroup{max-width:680px;margin:var(--space-5) 0 var(--space-2);font-size:var(--type-xs);font-weight:700;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
   .setgroup:first-child{margin-top:0}
+  /* a source row in the picker: choose it, or take it back out */
+  .qa-srcrow{display:flex;align-items:stretch}
+  .qa-srcrow .qa-srcopt{flex:1}
+  .qa-srcdel{flex:0 0 38px;border:0;background:none;color:var(--ink-3);cursor:pointer;font-size:var(--type-base)}
+  .qa-srcdel:hover{color:var(--red);background:var(--red-bg)}
   .foldcard .fhead .caret{color:var(--ink-3)}
   .foldcard.open .fhead .caret{transform:rotate(90deg)}
   .foldcard .fhead .fsum{margin-left:auto;font-size:var(--type-sm);color:var(--ink-3);font-weight:600;font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46%}

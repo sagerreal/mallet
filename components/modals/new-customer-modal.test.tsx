@@ -26,6 +26,7 @@ const addJob = vi.fn();
 const addVisit = vi.fn();
 const addCompany = vi.fn();
 const addSource = vi.fn();
+const removeSource = vi.fn();
 const updateLead = vi.fn();
 const setLeads = vi.fn();
 const adoptLead = vi.fn();
@@ -37,6 +38,7 @@ const storeState = {
   addVisit,
   addCompany,
   addSource,
+  removeSource,
   updateLead,
   setLeads,
   adoptLead,
@@ -477,5 +479,46 @@ describe("NewCustomerModal — two-button sheet foot (#362)", () => {
     expect(cancel?.style.minHeight).toBe("44px");
     expect(pri?.style.flexGrow).toBe("1");
     expect(pri?.style.width).toBe("auto");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE SOURCE LIST IS EDITED WHERE IT IS USED. It used to be a Settings card, which is how a typo
+// ("Refferal") survives for a year: the place you notice it and the place you fix it were different
+// screens, and only one of them was on the way to anywhere.
+// ---------------------------------------------------------------------------
+
+describe("editing the lead source list from the picker", () => {
+  // The row is a button whose accessible name is "Lead source" plus its current value.
+  const openSourceRow = () => fireEvent.click(screen.getByRole("button", { name: /Lead source/ }));
+
+  it("removes a source this shop added", () => {
+    storeState.sources = [{ id: "src-1", label: "Home show" }];
+    render(<NewCustomerModal open />);
+    openSourceRow();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Home show from the source list" }));
+    expect(removeSource).toHaveBeenCalledWith("src-1");
+  });
+
+  it("offers NO remove on a built-in source — those are always available", () => {
+    storeState.sources = [];
+    render(<NewCustomerModal open />);
+    openSourceRow();
+
+    expect(screen.queryByRole("button", { name: /^Remove Referral/ })).toBeNull();
+  });
+
+  it("clears the selection when the chosen source is the one removed", () => {
+    // Otherwise the form would carry a source that is no longer on the list, and save it.
+    storeState.sources = [{ id: "src-1", label: "Home show" }];
+    render(<NewCustomerModal open />);
+    openSourceRow();
+    fireEvent.click(screen.getByRole("button", { name: "Home show" }));
+    // Choosing collapses the row, so reopen it to reach the remove.
+    openSourceRow();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Home show from the source list" }));
+
+    expect(screen.getByRole("button", { name: /Lead source/ }).textContent).not.toContain("Home show");
   });
 });
