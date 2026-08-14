@@ -30,6 +30,7 @@ import { CallbackAutopsyCard } from "./callback-autopsy-card";
 import { JobsToolbar } from "./jobs-toolbar";
 import { JobsViewFilter } from "./jobs-view-filter";
 import { type JobsArchiveSet } from "./jobs-list-config";
+import { JOB_VIEW_LABELS } from "@/modules/jobs/infra/job-views";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
 import { useJobsQuery, useJobsQueryState } from "./use-jobs-query";
@@ -58,6 +59,30 @@ const FIRST_RUN = {
     actionLabel: "+ New quote",
   },
 } as const;
+
+/**
+ * The empty state's one action. A span rather than a <button>: `button.linklike` resets colour
+ * and font (see the note beside it in prototype.css), so a button here would render as body prose.
+ * role + tabIndex + Enter/Space keep it reachable without touching that rule.
+ */
+function EmptyAction({ label, onAct }: { readonly label: string; readonly onAct: () => void }) {
+  return (
+    <span
+      className="linklike"
+      role="button"
+      tabIndex={0}
+      onClick={onAct}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onAct();
+        }
+      }}
+    >
+      {label}
+    </span>
+  );
+}
 
 export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
   const router = useRouter();
@@ -115,6 +140,20 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
 
   function clearFilters() {
     q.clear();
+    setArchiveSet("active");
+  }
+
+  /**
+   * Widen a search that came up empty to the whole book, KEEPING what was typed.
+   *
+   * The chip row's counts are search-aware and cover every view, so "Late (1)" could sit above a
+   * list reading "No jobs match that" — the match was real, it was simply in another band. The
+   * only remedy offered was clearFilters, which runs q.clear() and throws the search away with
+   * the view, so finding that job meant typing it again. The archive set goes too: it is the half
+   * of "every view" the chip row cannot reach.
+   */
+  function searchEveryView() {
+    q.setView(null);
     setArchiveSet("active");
   }
 
@@ -200,13 +239,20 @@ export function JobsHome({ onOpenJob, onOpenNewJob }: JobsHomeProps) {
 
           {list.rows.length === 0 ? (
             <div className="empty-att" style={{ padding: "var(--space-6) 0" }}>
-              {q.search || view ? (
+              {q.search && view ? (
+                // Name the view, because the view is what came up empty — the chips above are
+                // still counting the matches in the other bands.
                 <>
-                  No jobs match that — <span className="linklike" onClick={clearFilters}>clear the filters</span>
+                  No jobs in {JOB_VIEW_LABELS[view]} match that —{" "}
+                  <EmptyAction label="Search every view" onAct={searchEveryView} />
+                </>
+              ) : q.search || view ? (
+                <>
+                  No jobs match that — <EmptyAction label="clear the filters" onAct={clearFilters} />
                 </>
               ) : (
                 <>
-                  No jobs yet — <span className="linklike" onClick={onOpenNewJob}>create one</span>
+                  No jobs yet — <EmptyAction label="create one" onAct={onOpenNewJob} />
                 </>
               )}
             </div>

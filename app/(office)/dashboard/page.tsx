@@ -4,7 +4,8 @@
  * Office — one page, four tabs: Today (the Home handoff), Front Desk, Pricebook,
  * Checklists. The underline tab bar is the in-page switcher (Stripe/GitHub
  * pattern); the sidebar has a single Office item, no subs. ?tab= deep-links each
- * pane (read once on mount, replaceState on click — same approach as Settings).
+ * pane (read once on mount, pushState on click, popstate back — so Back undoes a
+ * tab switch instead of leaving Office; Settings still replaces, see #51).
  * The Front Desk tab carries a live status dot so the shop's heartbeat is
  * visible from any tab.
  */
@@ -63,9 +64,24 @@ export default function OfficePage() {
   const serviceCount = useAppStore((s) => s.services.length);
   const checklistCount = useAppStore((s) => s.checklists.length);
 
+  // Back has to move the pane, not just the address: with the listener missing the URL would say
+  // Today while Pricebook was still on screen.
+  useEffect(() => {
+    const onPop = () => {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      setTab(t && OFFICE_TABS.includes(t as OfficeTab) ? (t as OfficeTab) : "today");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   function switchTab(t: OfficeTab) {
     setTab(t);
-    window.history.replaceState(null, "", t === "today" ? "/dashboard" : `/dashboard?tab=${t}`);
+    // pushState, not replaceState. Replacing overwrote the entry Back would have returned to, so
+    // Back from a tab left Office entirely instead of undoing the switch — and on the phone shell,
+    // where Back is a topbar button and there is no browser chrome behind it, that reads as the
+    // app throwing you out. One entry per tab is the history cost, and it is the correct one.
+    window.history.pushState(null, "", t === "today" ? "/dashboard" : `/dashboard?tab=${t}`);
   }
 
   return (

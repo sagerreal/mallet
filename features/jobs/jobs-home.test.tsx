@@ -166,6 +166,54 @@ describe("JobsHome — the Active/Archived toggle actually filters", () => {
   });
 });
 
+/**
+ * The chip row's counts are SEARCH-AWARE and cover every view, so a search that matches a job
+ * outside the current view showed "Late (1)" over an empty list reading "No jobs match that" —
+ * and the one action offered ran clear(), which threw away what had been typed to find it.
+ */
+describe("JobsHome — a search that matches somewhere else", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it("names the view the search came up empty in, not the search", () => {
+    listState = list([], { bookTotal: 120 });
+    queryState = freshQueryState({ view: "late", search: "rivera" });
+    setup();
+    expect(screen.getByText(/No jobs in Late match that/)).toBeTruthy();
+  });
+
+  it("offers a search across every view — and keeps the search to do it", () => {
+    listState = list([], { bookTotal: 120 });
+    queryState = freshQueryState({ view: "late", search: "rivera" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "Search every view" }));
+    expect(queryState.setView).toHaveBeenCalledWith(null);
+    // THE BUG: the remedy used to be clear(), which wipes the search along with the view.
+    expect(queryState.clear).not.toHaveBeenCalled();
+    expect(queryState.setSearch).not.toHaveBeenCalled();
+  });
+
+  it("leaves the archive behind too — 'every view' includes the ones the toggle hides", () => {
+    listState = list([], { bookTotal: 120 });
+    queryState = freshQueryState({ view: "late", search: "rivera" });
+    setup();
+    fireEvent.click(screen.getByText("toggle-set"));
+    expect(lastQueryArgs.view).toBe("archived");
+    fireEvent.click(screen.getByRole("button", { name: "Search every view" }));
+    // setView is a mock here, so q.view stays "late" — what this shows is the ARCHIVE set being
+    // released, which is the half of "every view" the chip row cannot reach.
+    expect(lastQueryArgs.view).not.toBe("archived");
+    expect(queryState.setView).toHaveBeenCalledWith(null);
+  });
+
+  it("still offers to clear the filter when nothing was typed", () => {
+    listState = list([], { bookTotal: 120 });
+    queryState = freshQueryState({ view: "late", search: "" });
+    setup();
+    fireEvent.click(screen.getByRole("button", { name: "clear the filters" }));
+    expect(queryState.clear).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("JobsHome — the filter is on the page, not behind a button", () => {
   beforeEach(() => { listState = list([{ id: "j1" }]); queryState = freshQueryState({ view: "today" }); vi.clearAllMocks(); });
 

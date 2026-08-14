@@ -172,17 +172,22 @@ export function QuotesLedger() {
                   onClick={() => openModal(MODAL.EST, { estId: r.id })}
                   {...pressable(() => openModal(MODAL.EST, { estId: r.id }))}
                 >
-                  <td>
+                  {/* data-label/-primary: below 760px `.list-tbl` drops the header row and stacks
+                      the cells, printing each one's label from attr(data-label). Without them the
+                      labels vanished and a pill and three bare figures piled up against the right
+                      edge with nothing saying which was the total. Same contract as the Customers
+                      and Money tables. */}
+                  <td data-label="Status">
                     <span className={`pill ${r.pill.tone}`}>{r.pill.label}</span>
                   </td>
-                  <td>
+                  <td data-label="Customer" data-primary="">
                     <b>{r.customer}</b>
                   </td>
-                  <td className="muted">{r.title}</td>
-                  <td>
+                  <td className="muted" data-label="Quote">{r.title}</td>
+                  <td data-label="Total">
                     <b className="fig">{r.totalDollars ? fmt$(r.totalDollars) : ""}</b>
                   </td>
-                  <td className="muted fig">{r.ageLabel}</td>
+                  <td className="muted fig" data-label="Age">{r.ageLabel}</td>
                 </tr>
               ))}
               {rows.length === 0 ? (

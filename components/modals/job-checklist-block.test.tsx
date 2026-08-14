@@ -233,6 +233,37 @@ describe("JobChecklistBlock — Add to job", () => {
 // Saved rows
 // ---------------------------------------------------------------------------
 
+/**
+ * The saved list is unbounded — a shop that has built twenty close-out lists gets twenty rows
+ * ABOVE the editor, so the panel's own primary button ("Add to job") and the inline error under
+ * it opened below the modal's sticky footer: pressed against a bar that covers them, with the
+ * only way to reach either being to scroll past every checklist first.
+ */
+describe("JobChecklistBlock — the saved list cannot push its own action off the panel", () => {
+  const savedBox = () => document.querySelector(".chk-saved") as HTMLElement | null;
+
+  it("scrolls the saved rows inside their own capped box", () => {
+    h.state.checklists = Array.from({ length: 20 }, (_, i) =>
+      makeSaved({ id: `chk-${i}`, name: `Close-out ${i}` }),
+    );
+    openPanel();
+    const box = savedBox()!;
+    expect(box).toBeTruthy();
+    expect(box.style.overflowY).toBe("auto");
+    // A viewport-relative cap, so the button stays reachable on a phone and a desktop alike.
+    expect(box.style.maxHeight).toMatch(/vh$/);
+    // Every row is inside it — a box holding only some of them caps nothing.
+    expect(box.querySelectorAll(".stage-row")).toHaveLength(20);
+  });
+
+  it("keeps 'Add to job' outside the scroll box and the empty state inside it", () => {
+    openPanel();
+    expect(screen.getByRole("button", { name: "Add to job" }).closest(".chk-saved")).toBeNull();
+    // The starter offer replaces the rows, so it is the box's content, not its sibling.
+    expect(screen.getByText("Start with plumbing basics").closest(".chk-saved")).toBeTruthy();
+  });
+});
+
 describe("JobChecklistBlock — saved checklists", () => {
   it("renders rows as name + item count and attaches on tap (no create)", async () => {
     h.state.checklists = [makeSaved()];

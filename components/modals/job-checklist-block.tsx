@@ -197,6 +197,11 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
     <div className="card" style={{ marginTop: "var(--space-4)" }}>
       <h3 style={{ margin: "0 0 var(--space-2)", fontSize: "var(--type-base)" }}>Add a checklist</h3>
 
+      {/* The saved list is unbounded — a shop with twenty close-out lists pushed this panel's own
+          "Add to job" (and the inline error above it) under the modal's sticky footer, so the
+          primary action opened behind a bar. Capped and scrolled in place: the rows give, the
+          action below them does not move. */}
+      <div className="chk-saved" style={{ maxHeight: "34vh", overflowY: "auto" }}>
       {saved.map((c) => (
         <div key={c.id} className="stage-row clickable" style={{ gap: "var(--space-2)" }}>
           <span
@@ -230,6 +235,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
           </span>
         </div>
       )}
+      </div>
 
       {/* The SAME editor the Checklists library uses. This was "One item per line" in a textarea,
           which could not express a photo step at all — the only way to get one was a

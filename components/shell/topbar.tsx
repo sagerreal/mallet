@@ -4,22 +4,36 @@
 import { usePathname, useRouter } from "next/navigation";
 import { isTabRoot, parentRouteOf } from "@/components/shell/tab-roots";
 
-// Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
+/**
+ * Route → breadcrumb, so the topbar reflects the current screen (like the prototype's crumb).
+ *
+ * The section is the SIDEBAR's own group (components/shell/sidebar.tsx): Office holds the shop's
+ * own surfaces, Customers holds the book and its paper, and Jobs, Money and Settings are
+ * top-level items that are nobody's child. Every office route used to open with a hardcoded
+ * "Customer", so Money read "Customer › Money" and Settings "Customer › Settings" — the crumb
+ * named the wrong part of the app on eleven of its thirteen entries.
+ *
+ * A top-level item takes an empty label: the crumb is then the section alone rather than the
+ * word twice.
+ */
 const CRUMBS: Record<string, { section: string; label: string }> = {
-  "/dashboard": { section: "Customer", label: "Office" },
-  "/frontdesk": { section: "Customer", label: "Front Desk" },
-  "/customers": { section: "Customer", label: "Customers" },
-  "/quotes": { section: "Customer", label: "Quotes" },
-  "/tasks": { section: "Customer", label: "Tasks" },
-  "/composer": { section: "Customer", label: "New quote" },
-  "/jobs": { section: "Customer", label: "Jobs" },
-  "/pricebook": { section: "Customer", label: "Pricebook" },
-  "/money": { section: "Customer", label: "Money" },
-  "/settings": { section: "Customer", label: "Settings" },
-  "/more": { section: "Customer", label: "More" },
+  "/dashboard": { section: "Office", label: "Today" },
+  "/frontdesk": { section: "Office", label: "Front Desk" },
+  "/pricebook": { section: "Office", label: "Pricebook" },
+  "/customers": { section: "Customers", label: "" },
+  "/quotes": { section: "Customers", label: "Quotes" },
+  "/tasks": { section: "Customers", label: "Tasks" },
+  "/composer": { section: "Customers", label: "New quote" },
+  "/jobs": { section: "Jobs", label: "" },
+  "/money": { section: "Money", label: "" },
+  "/settings": { section: "Settings", label: "" },
+  "/more": { section: "More", label: "" },
   "/my-day": { section: "Field", label: "My day" },
   "/my-hours": { section: "Field", label: "My hours" },
   "/messages": { section: "Field", label: "Messages" },
+  // The field shell's own overflow page. Missing entirely, so it fell through to the default
+  // and read "Customer › Home" — a page that is neither.
+  "/account": { section: "Field", label: "More" },
 };
 
 const ChevronLeftIcon = () => (
@@ -49,8 +63,10 @@ export function Topbar({ section: sectionProp, label: labelProp }: TopbarProps) 
     .filter((route) => pathname === route || pathname.startsWith(route + "/"))
     .sort((a, b) => b.length - a.length)[0];
   const crumb = matched ? CRUMBS[matched] : undefined;
-  const section = sectionProp ?? crumb?.section ?? "Customer";
-  const label = labelProp ?? crumb?.label ?? "Home";
+  // An unmapped route names the app rather than inventing a section for it — the old fallback
+  // ("Customer › Home") asserted a place the screen was not in.
+  const section = sectionProp ?? crumb?.section ?? "Mallet";
+  const label = labelProp ?? crumb?.label ?? "";
 
   // The bottom tab bar is the only navigation on a phone and reaches nine routes.
   // Everything else (/tasks, /composer, /settings, /jobs/:id, /money/:id)
