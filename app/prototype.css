@@ -1890,6 +1890,27 @@
   .shd-gap{font-size:var(--type-sm);color:var(--ink-3)}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
+  /* ---- JOB COSTING (Timesheets → Job costing) ----------------------------------------------
+     Tiles are the week's answer; the table is the working. Prefixed `jc-` for the same reason the
+     grid is prefixed `tsg-` — bare one- and two-letter class names in this file are global. */
+  .jc-tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:var(--space-3);
+    margin-bottom:var(--space-4)}
+  .jc-tile{background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);padding:var(--space-4)}
+  .jc-tile-l{font-family:var(--font-mono);font-size:var(--type-xs);letter-spacing:.09em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:700}
+  .jc-tile-v{font-family:var(--font-mono);font-size:var(--type-2xl);font-weight:700;
+    letter-spacing:-.02em;margin-top:var(--space-2);font-variant-numeric:tabular-nums}
+  .jc-tile-s{font-size:var(--type-sm);color:var(--ink-3);margin-top:var(--space-1)}
+  .jc-good{color:var(--green-700)}
+  .jc-bad{color:var(--red)}
+  .jc-note{font-size:var(--type-base);color:var(--ink-2);margin:0 0 var(--space-3)}
+  /* Hours that ran past what was booked. Amber, not red: over is information, not a failure. */
+  .jc-over{color:var(--amber);font-weight:700}
+  /* A warranty return, indented under the job it came back on — it has cost and no revenue, and on
+     its own it reads as a total loss instead of as the thing that ate the row above's margin. */
+  .jc-callback{background:var(--paper)}
+  .jc-callback > th{padding-left:var(--space-6)}
+
   /* ---- OFFICE CREW GRID (Timesheets) -------------------------------------------------------
      Every technician's week on one row. Replaces the crew chip row, which carried hours but no
      status, no issues and no overtime — so "who still needs me" took eight clicks to answer.
