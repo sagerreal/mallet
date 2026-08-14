@@ -25,6 +25,7 @@ import { SetVisitStatusUseCase } from "../app/set-visit-status";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
+import { AppendJobNoteUseCase } from "../app/append-job-note";
 import { CreateVisitUseCase } from "../app/create-visit";
 import { AddReturnTripUseCase } from "../app/add-return-trip";
 import { ApproveFoundWorkUseCase } from "../app/approve-found-work";
@@ -195,6 +196,12 @@ const fieldSignQuoteInput = z.object({
 // column is the SAME field the office pipeline reads (scopedEstimateVisit keys the Quoting
 // column's "quote it ›" card on it), so a tech writing here is the handoff signal, with no new
 // status. Empty string clears the notes (stored as NULL) — the scope stays editable.
+const fieldAppendJobNoteInput = z.object({
+  jobId: z.string().uuid(),
+  /** ONE line. The feed is stamped lines, not a document — see AppendJobNoteUseCase. */
+  text: z.string().min(1).max(2000),
+});
+
 const fieldSetVisitNotesInput = z.object({
   jobId: z.string().uuid(),
   visitId: z.string().uuid(),
@@ -773,6 +780,29 @@ export const createFieldRouter = () =>
     // for the one field. The write is what lights up the office pipeline's "quote it ›" card
     // (scopedEstimateVisit reads visit notes), so it must not be gated on job kind: plain jobs
     // keep their walkthrough notes too.
+    /**
+     * A TECH WRITING A JOB NOTE. The office composer wrote through `v1.jobs.update`
+     * (ownerOrOffice), so the notes section opened for a tech with nothing in it — the person
+     * standing at the job could read what the office left and record nothing back. The field
+     * router already trusts a tech with `setVisitNotes`; a job note is the same act at job scope.
+     *
+     * The APPEND happens on the server (AppendJobNoteUseCase) rather than by writing back a blob
+     * the client assembled, so the office and the tech adding a note in the same minute cannot
+     * erase each other.
+     */
+    appendJobNote: anyRole
+      .input(fieldAppendJobNoteInput)
+      .output(jobDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        // Same authorisation as every other field write: a tech may only touch a job they are on.
+        // Returns null for office/owner, who need no such check.
+        await assertOnJobIfTech(repo, jobId, ctx.principal);
+        const useCase = new AppendJobNoteUseCase(repo, ctx.deps.clock);
+        return toJobDTO(orThrow(await useCase.exec({ jobId, text: input.text })));
+      }),
+
     setVisitNotes: anyRole
       .input(fieldSetVisitNotesInput)
       .output(jobDTO)

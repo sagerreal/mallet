@@ -83,7 +83,7 @@ describe("workOrderPropsEqual", () => {
 });
 
 describe("noteFeedPropsEqual", () => {
-  const props = { job: baseJob, canCompose: true, updateJob: noop as never };
+  const props = { job: baseJob, canCompose: true, appendNote: noop as never };
   it("SKIPS on a verify-only change", () => {
     expect(noteFeedPropsEqual(props, { ...props, job: verifyTapped(baseJob) })).toBe(true);
   });
