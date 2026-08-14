@@ -22,7 +22,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import { AddressInput } from "@/components/ui/address-input";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
-import { DEFAULT_SOURCES, mergeSources } from "@/features/customers/merge-sources";
+import { SourcePicker } from "@/features/customers/source-picker";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { Field, FieldGroup } from "@/components/ui/input";
 import { phoneFieldError } from "@/lib/phone";
@@ -63,10 +63,6 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   const adoptLead = useAppStore((s) => s.adoptLead);
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
-  const storeSources = useAppStore((s) => s.sources);
-  const addSource = useAppStore((s) => s.addSource);
-  const removeSource = useAppStore((s) => s.removeSource);
-  const mergedSources = mergeSources(DEFAULT_SOURCES, storeSources);
 
   const utils = api.useUtils();
   const createMutation = api.v1.customers.create.useMutation();
@@ -115,8 +111,6 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
 
   // Source picker state
   const [source, setSource] = useState<string>("");
-  const [showAddSource, setShowAddSource] = useState(false);
-  const [newSourceValue, setNewSourceValue] = useState("");
 
   // Book a visit row
   const [jobDesc, setJobDesc] = useState("");
@@ -145,8 +139,6 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
     setBizName("");
     setSource("");
     setOpenRow(null);
-    setShowAddSource(false);
-    setNewSourceValue("");
     setJobDesc("");
     setVisitPurpose(null);
     setEmail("");
@@ -386,19 +378,6 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
     setSource(s);
     // Picking a source completes the row — collapse it back to its summary.
     setOpenRow(null);
-    setShowAddSource(false);
-    setNewSourceValue("");
-  }
-
-  function commitNewSource() {
-    const val = newSourceValue.trim().slice(0, 100);
-    if (val) {
-      addSource(val);
-      selectSource(val);
-    } else {
-      setShowAddSource(false);
-      setNewSourceValue("");
-    }
   }
 
   // ---- collapsed row summaries (the value IS the state) ---------------------
@@ -521,68 +500,12 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
             open={openRow === "source"}
             onToggle={() => toggleRow("source")}
           >
-            <div className="qa-srclist" style={{ marginTop: "0" }}>
-              {mergedSources.map((s) => {
-                // A source this shop added can be taken back out from here — the only other place
-                // that was possible was a Settings card, and a list you can add to but not correct
-                // fills up with typos ("Refferal") that nobody can reach.
-                const own = storeSources.find((c) => c.label === s.label);
-                return (
-                  <div key={s.label} className="qa-srcrow">
-                    <button
-                      type="button"
-                      className={`qa-srcopt${source === s.label ? " on" : ""}`}
-                      onClick={() => selectSource(s.label)}
-                    >
-                      <span>{s.label}</span>
-                      {source === s.label ? <span className="qa-srcok">✓</span> : null}
-                    </button>
-                    {own ? (
-                      <button
-                        type="button"
-                        className="qa-srcdel"
-                        aria-label={`Remove ${s.label} from the source list`}
-                        onClick={() => {
-                          // Leads already tagged with it keep their tag — this removes the CHOICE,
-                          // not the history, which is why it needs no confirmation.
-                          removeSource(own.id);
-                          if (source === s.label) setSource("");
-                        }}
-                      >
-                        ✕
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {showAddSource ? (
-                <div className="cfrow" style={{ padding: "var(--space-2) var(--space-3)" }}>
-                  <input
-                    type="text"
-                    placeholder="Source name"
-                    value={newSourceValue}
-                    maxLength={100}
-                    autoFocus
-                    onChange={(e) => setNewSourceValue(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") { e.preventDefault(); commitNewSource(); }
-                      if (e.key === "Escape") { setShowAddSource(false); setNewSourceValue(""); }
-                    }}
-                  />
-                  <button type="button" className="btn sm primary" onClick={commitNewSource}>
-                    Add
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  className="qa-srcopt add"
-                  onClick={() => setShowAddSource(true)}
-                >
-                  + Add a new source…
-                </button>
-              )}
-            </div>
+            {/* The same picker the existing-customer modal uses, so the list behaves identically
+                wherever a source is chosen — including adding and removing while standing in it. */}
+            <SourcePicker
+              value={source}
+              onPick={(label: string) => (label ? selectSource(label) : setSource(""))}
+            />
           </DisclosureRow>
 
           <DisclosureRow
