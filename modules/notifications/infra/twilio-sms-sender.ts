@@ -82,11 +82,20 @@ export class TwilioSmsSender implements NotificationSender {
           try {
             const message = await this.transport({
               to: cmd.to,
-              // One or the other, never both — Twilio rejects a request carrying each. The service
-              // wins when present, because it is what carries the A2P registration.
-              ...(this.messagingServiceSid
-                ? { messagingServiceSid: this.messagingServiceSid }
-                : { from: this.from }),
+              // BOTH, whenever there is a service — and that is not belt-and-braces.
+              //
+              // This once sent the service ALONE, on the belief that Twilio rejects a request
+              // carrying each. It does not: Twilio's Message resource docs say a `from` given
+              // alongside a `messagingServiceSid` must be "a sender from your Messaging Service's
+              // Sender Pool" and is then used, while the service alone means Twilio "determines
+              // the optimal From value from your Sender Pool".
+              //
+              // Twilio choosing is the problem. Mallet's Messaging Service holds more than one
+              // number — a shop's own business line and Mallet's shared line share a pool — so
+              // leaving the choice to Twilio let a shop's text go out from Mallet's number, or the
+              // reverse. Naming both pins the sender AND keeps the campaign that covers it.
+              from: this.from,
+              ...(this.messagingServiceSid ? { messagingServiceSid: this.messagingServiceSid } : {}),
               body: cmd.body,
               ...(this.statusCallback ? { statusCallback: this.statusCallback } : {}),
             });

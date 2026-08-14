@@ -22,21 +22,33 @@ import { pickSmsIdentity, type SmsSendingIdentity } from "./sms-identity";
  * NOT FOR CONVERSATIONS. Two-way texting still requires the shop's OWN number: a shared line
  * belongs to no shop, so an inbound reply has no thread to land in. `messaging.send` keeps its own
  * stricter gate (org number + campaign active) and must not be pointed at this.
+ *
+ * A TENANT QUESTION ONLY. It deliberately does NOT ask whether Twilio is configured on this
+ * server: that is a platform-configuration failure, and this module already has one answer for it
+ * — the send degrades to the logging stub and `assertDelivered` turns that into a
+ * PRECONDITION_FAILED naming the unconfigured channel. Refusing here instead would replace that
+ * precise message with a vaguer one and route an ops problem through a tenant-shaped error.
  */
 export const resolveSmsIdentity = async (
   tx: TenantTx,
   orgId: OrgId,
 ): Promise<SmsSendingIdentity | null> => {
   const config = loadConfig();
-  // No Twilio on this server at all — nothing can send, whatever is registered.
-  if (!config.TWILIO_ACCOUNT_SID || !config.TWILIO_AUTH_TOKEN) return null;
-
   const org = await readOrgSmsIdentity(tx, orgId);
   return pickSmsIdentity(
     { fromNumber: org?.fromNumber, messagingServiceSid: org?.messagingServiceSid },
     {
       fromNumber: config.MALLET_SHARED_SMS_NUMBER,
-      messagingServiceSid: config.MALLET_SHARED_SMS_MESSAGING_SERVICE_SID,
+      // ONE VARIABLE TO TURN THIS ON. The shared line falls back to the Messaging Service the
+      // assistant already uses, because in the first configuration they are the SAME NUMBER — so
+      // requiring the SID to be typed twice was asking for a value the deployment already holds.
+      //
+      // Set the explicit one only when the shared line MOVES (e.g. to the toll-free, which has
+      // better throughput but needs Toll-Free Verification first). Get that wrong and Twilio
+      // refuses the send outright — `from` must be a sender in the named Service's pool — so it
+      // fails loudly at the provider rather than quietly going out unregistered.
+      messagingServiceSid:
+        config.MALLET_SHARED_SMS_MESSAGING_SERVICE_SID ?? config.MALLET_ASSISTANT_MESSAGING_SERVICE_SID,
     },
   );
 };

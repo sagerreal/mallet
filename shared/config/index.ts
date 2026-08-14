@@ -65,7 +65,14 @@ const ConfigSchema = z.object({
    * Unset, SMS notifications keep degrading to the logging stub exactly as they do today.
    */
   MALLET_SHARED_SMS_NUMBER: z.string().min(1).optional(),
-  /** The Messaging Service carrying the campaign for the shared line. Carriers check the SERVICE. */
+  /**
+   * The Messaging Service carrying the campaign for the shared line. Carriers check the SERVICE.
+   *
+   * OPTIONAL, and usually left unset: it falls back to MALLET_ASSISTANT_MESSAGING_SERVICE_SID,
+   * because the shared line and the assistant start out as the same number and so the same
+   * service. Setting the number above is the whole switch. Name this one only when the shared line
+   * moves to a number in a DIFFERENT service.
+   */
   MALLET_SHARED_SMS_MESSAGING_SERVICE_SID: z.string().min(1).optional(),
   // Optional override for the URL used in Twilio HMAC signature verification. Behind proxies that
   // don't forward X-Forwarded-* headers, req.url may not match the externally-reachable URL that

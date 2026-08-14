@@ -36,11 +36,25 @@ describe("TwilioSmsSender — sender identity", () => {
     expect(sent(transport).messagingServiceSid).toBe("MG72c3b0c8cbf98d6cce1bf06a010a0843");
   });
 
-  /** Twilio REJECTS a request carrying both. This is not a style preference. */
-  it("omits `from` entirely when using a service", async () => {
+  /**
+   * NAMES THE NUMBER AS WELL AS THE SERVICE — and it must.
+   *
+   * This file used to assert the opposite, on the belief that "Twilio REJECTS a request carrying
+   * both". It does not. Twilio's own Message resource docs: give `from` alongside
+   * `messagingServiceSid` and it must be "a sender from your Messaging Service's Sender Pool", and
+   * that sender is used; give the service ALONE and Twilio "determines the optimal From value from
+   * your Sender Pool" — i.e. it picks, and we do not.
+   *
+   * That picking is the bug. Mallet's Messaging Service holds MORE THAN ONE number: Summit's
+   * business line and Mallet's own assistant/shared line sit in the same pool. Sending the service
+   * alone let Twilio choose between them, so a shop's own text could go out from Mallet's line, or
+   * Mallet's from the shop's — silently, and defeating the per-org routing entirely.
+   */
+  it("names the number AND the service, so Twilio cannot pick a different sender from the pool", async () => {
     const { sender, transport } = build("MG72c3b0c8cbf98d6cce1bf06a010a0843");
     await sender.send(CMD);
-    expect(sent(transport).from).toBeUndefined();
+    expect(sent(transport).messagingServiceSid).toBe("MG72c3b0c8cbf98d6cce1bf06a010a0843");
+    expect(sent(transport).from).toBe("+16693413343");
   });
 
   it("falls back to the bare number when there is no service", async () => {
