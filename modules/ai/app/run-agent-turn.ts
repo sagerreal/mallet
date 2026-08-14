@@ -34,6 +34,19 @@ export interface RunAgentParams {
   readonly tools: readonly ToolMeta[];
   readonly execute: ExecuteTool;
   readonly userMessage?: string; // a fresh turn
+  /**
+   * Facts the assistant always needs and can never guess — the org's name, today's date in ITS
+   * timezone, and that timezone.
+   *
+   * Prepended to the FIRST user message, never to the system prompt: the system + tools prefix has
+   * to stay byte-identical across tenants or the prompt cache misses on every turn, which would cost
+   * more latency than this saves.
+   *
+   * It used to be a tool the model had to call, which meant a whole model round trip to learn three
+   * facts two cheap queries already had — on every new conversation, before a single word reached
+   * the user.
+   */
+  readonly contextPreamble?: string;
   readonly userBlocks?: readonly UserContentBlock[]; // optional image blocks prepended to the initial user turn
   readonly priorMessages?: readonly AgentMessage[]; // resume: prior transcript
   readonly approvedToolUseIds?: readonly string[]; // resume: mutating tool_use ids the human approved
@@ -112,16 +125,19 @@ export const runAgentTurn = async (params: RunAgentParams): Promise<AgentResult>
   const maxIters = params.maxIters ?? MAX_ITERS_DEFAULT;
 
   const messages: AgentMessage[] = [...(params.priorMessages ?? [])];
+  // Only on a FRESH turn: on a resume the transcript already carries it, and repeating it would
+  // grow the context every round for no gain.
+  const preamble = messages.length === 0 && params.contextPreamble ? `${params.contextPreamble}\n\n` : "";
   if (params.userMessage) {
     if (params.userBlocks && params.userBlocks.length > 0) {
       // Multimodal initial turn: image blocks first, then the text prompt.
       const blocks: readonly UserContentBlock[] = [
         ...params.userBlocks,
-        { type: "text", text: params.userMessage },
+        { type: "text", text: `${preamble}${params.userMessage}` },
       ];
       messages.push({ role: "user", kind: "user_blocks", blocks });
     } else {
-      messages.push({ role: "user", kind: "text", text: params.userMessage });
+      messages.push({ role: "user", kind: "text", text: `${preamble}${params.userMessage}` });
     }
   }
   let usage: LlmUsage = { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 };
