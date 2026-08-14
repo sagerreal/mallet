@@ -6,6 +6,7 @@ import {
   tsWeekDates,
   tsDayShort,
   tsHours,
+  tsJobHours,
   tsPaid,
   tsRollup,
   tsMoney,
@@ -467,5 +468,31 @@ describe("labels for time off", () => {
     expect(TS_TIME_OFF_MINUTES[0]).toBe(30);
     expect(TS_TIME_OFF_MINUTES.at(-1)).toBe(720);
     expect(TS_TIME_OFF_MINUTES).toContain(240);
+  });
+});
+
+describe("tsJobHours — shift time vs job time", () => {
+  const e = mkEntry; // job kind, job "1", 08:00–12:00 by default
+
+  it("counts a job entry that names a job", () => {
+    expect(tsJobHours([e()])).toBe(4);
+  });
+
+  it("does NOT count a job entry with no job on it", () => {
+    // The office sees this as "— no job —". It is paid time no job can be charged for, so calling
+    // it job time would put hours into a costing report that belong to nothing.
+    expect(tsJobHours([e({ jobId: null })])).toBe(0);
+  });
+
+  it("does not count shop, travel or break time", () => {
+    expect(tsJobHours([e({ kind: "shop" }), e({ kind: "travel" }), e({ kind: "break" })])).toBe(0);
+  });
+
+  it("sums several job entries in a day", () => {
+    expect(tsJobHours([e({ end: "10:00" }), e({ start: "13:00", end: "16:00" })])).toBe(5);
+  });
+
+  it("is zero for an empty day rather than throwing", () => {
+    expect(tsJobHours([])).toBe(0);
   });
 });

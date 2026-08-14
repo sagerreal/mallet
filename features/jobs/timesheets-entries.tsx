@@ -31,6 +31,7 @@ import {
   tsSortEntries,
   tsMoney,
   tsPaid,
+  tsJobHours,
   tsHours,
   tsTimeOpts,
   tsTechWeekJobIds,
@@ -603,6 +604,10 @@ function TsDayGroup({
   onCloseEdit,
 }: TsDayGroupProps) {
   const paid = tsMoney(dayEntries.reduce((s, e) => s + tsPaid(e), 0));
+  // The two figures this screen exists to keep apart: what the day PAYS, and how much of it any
+  // job can be charged for. They are read by different systems — the total goes to payroll, the job
+  // share feeds costing — and a day where they diverge is a day nobody attributed.
+  const onJobs = tsJobHours(dayEntries);
   const unfinished = dayEntries.some((e) => e.status !== "approved" && tsIsUnfinished(e));
   return (
     <div className="ts-day">
@@ -610,6 +615,9 @@ function TsDayGroup({
         <span>{tsDayLabel(date, "long")}</span>
         <span className="num">
           {paid.toFixed(2)} h
+          <span className="ts-onjobs">
+            {onJobs > 0 ? `${onJobs.toFixed(2)} on jobs` : "none on jobs"}
+          </span>
           {/* Say WHY this day's total is short, on the day itself — the refusal above names the
               same days, and this is where the office has to act. */}
           {unfinished && (

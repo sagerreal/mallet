@@ -1890,6 +1890,15 @@
   .shd-gap{font-size:var(--type-sm);color:var(--ink-3)}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
+  /* The day's job share, beside its paid total. Quiet and separated: the big number is what the
+     day pays, this is how much of it a job can be charged for, and they answer to different
+     systems — payroll and costing. "none on jobs" is said out loud rather than left blank. */
+  /* Scoped under .ts-dhdr on purpose: the header is uppercase, bold and letter-spaced, and a
+     one-class rule loses to `.ts-dhdr .num` for everything both of them set. Written flat it came
+     out as SHOUTING AT THE SAME WEIGHT as the figure it is meant to sit under. */
+  .ts-dhdr .ts-onjobs{display:inline-block;margin-left:var(--space-3);text-transform:none;
+    font-size:var(--type-sm);font-weight:500;color:var(--ink-3);letter-spacing:0}
+
   /* The office's request, on the technician's own week. Amber, not red: being asked to fix
      Wednesday is ordinary, and a red banner on somebody's pay screen reads as trouble. */
   .mh-changes{background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius-sm);

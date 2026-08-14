@@ -92,6 +92,23 @@ export function tsWorked(e: TimeEntry): number {
 }
 
 /**
+ * Paid hours that are attributed to an ACTUAL JOB — the only hours job costing can use.
+ *
+ * `kind === "job"` is not enough on its own. An entry can be a job entry with no job on it (the
+ * office sees it as "— no job —"), which is time somebody was paid for and that no job can be
+ * charged. Counting it would put hours into a costing report that belong to nothing, so it counts
+ * as shift time here — which is the true statement — and the gap between the two figures is the
+ * thing worth seeing.
+ *
+ * Everything else — shop, travel, breaks, time off — is shift time. Paid, and not on a job.
+ */
+export function tsJobHours(entries: TimeEntry[]): number {
+  return tsMoney(
+    entries.reduce((sum, e) => (e.kind === "job" && e.jobId ? sum + tsPaid(e) : sum), 0),
+  );
+}
+
+/**
  * An entry nobody has ended: the clock is still running on it, or an end time was never recorded.
  * Either way it has no duration, so it totals as zero and cannot be signed for — which is why the
  * server refuses to approve a week containing one (ApproveWeekUseCase, tagged UNFINISHED_DAYS).
