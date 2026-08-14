@@ -116,6 +116,8 @@ const clockStateDTO = z.object({
 });
 
 const weekSubmissionDTO = z.object({
+  /** Whose attestation this is. Single-tech callers already know; the crew list has to be told. */
+  techUserId: z.string(),
   weekStart: z.string(),
   submittedAt: z.string(),
   reopenedAt: z.string().nullable(),
@@ -123,6 +125,7 @@ const weekSubmissionDTO = z.object({
 });
 
 const toWeekSubmissionDTO = (sub: import("../domain/week-submission").WeekSubmission) => ({
+  techUserId: sub.props.techUserId,
   weekStart: sub.props.weekStart,
   submittedAt: sub.props.submittedAt.toISOString(),
   reopenedAt: sub.props.reopenedAt ? sub.props.reopenedAt.toISOString() : null,
@@ -541,6 +544,21 @@ export const createTimesheetRouter = () =>
         const repo = new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId);
         const sub = await repo.findFor(techUserId, input.weekStart);
         return { submission: sub === null ? null : toWeekSubmissionDTO(sub) };
+      }),
+
+    /**
+     * Every technician's attestation for ONE week — the crew grid's Status column.
+     *
+     * ownerOrOffice only: this is the whole crew's state, which is a management view. A tech asking
+     * about their own week still uses submissionFor above, where the role pins them to themselves.
+     */
+    submissionsForWeek: ownerOrOffice
+      .input(z.object({ weekStart: z.string().regex(/^\d{4}-\d{2}-\d{2}$/) }))
+      .output(z.object({ submissions: z.array(weekSubmissionDTO) }))
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId);
+        const subs = await repo.findForWeek(input.weekStart);
+        return { submissions: subs.map(toWeekSubmissionDTO) };
       }),
 
     // Approval is a management action — ownerOrOffice only.

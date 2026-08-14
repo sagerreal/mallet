@@ -1877,6 +1877,75 @@
   .shd-gap{font-size:var(--type-sm);color:var(--ink-3)}
   /* scalable crew list (master-detail) */
   .ts-tlist{display:flex;flex-direction:column;gap:var(--space-2)}
+  /* ---- OFFICE CREW GRID (Timesheets) -------------------------------------------------------
+     Every technician's week on one row. Replaces the crew chip row, which carried hours but no
+     status, no issues and no overtime — so "who still needs me" took eight clicks to answer.
+
+     PREFIXED `tsg-` DELIBERATELY. This file defines bare `.r`, `.l`, `.b`, `.n`, `.m`, `.av`,
+     `.who`, `.ot` and `.sub` as global utilities; a grid class sharing one of those names inherits
+     whatever it sets, which is invisible in the DOM and cost a day's debugging once already. */
+  .tsg{background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  .tsg-toolbar{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)}
+  .tsg-search{min-width:200px;flex:0 1 240px}
+  .tsg-chips{display:flex;gap:var(--space-2);flex-wrap:wrap}
+
+  /* One shared template so the head and every row line up. The day columns are fixed because they
+     hold one number each; only the name flexes. */
+  .tsg-row{display:grid;grid-template-columns:minmax(150px,1.6fr) repeat(7,52px) 104px 74px 130px 30px;
+    align-items:center;gap:var(--space-2);width:100%;padding:var(--space-3) var(--space-4);
+    border-bottom:1px solid var(--line-2);font-size:var(--type-md);text-align:left;
+    background:none;border-left:none;border-right:none;border-top:none;font-family:inherit;color:var(--ink)}
+  .tsg-row:last-child{border-bottom:none}
+  button.tsg-row{cursor:pointer}
+  button.tsg-row:hover{background:var(--paper)}
+  button.tsg-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .tsg-head{font-family:var(--font-mono);font-size:var(--type-xs);letter-spacing:.08em;
+    text-transform:uppercase;color:var(--ink-3);font-weight:700;background:var(--paper)}
+  .tsg-open{background:var(--manila)}
+  button.tsg-open:hover{background:var(--manila)}
+
+  .tsg-who{display:flex;align-items:center;gap:var(--space-3);min-width:0}
+  .tsg-name{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tsg-avatar{width:28px;height:28px;border-radius:50%;background:var(--paper);border:1px solid var(--line);
+    display:grid;place-items:center;font-family:var(--font-mono);font-size:var(--type-xs);
+    font-weight:700;color:var(--ink-2);flex:0 0 auto}
+
+  .tsg-cell{text-align:center;font-variant-numeric:tabular-nums}
+  .tsg-none{background:var(--paper);border-radius:var(--radius-2xs);padding:var(--space-1) 0;color:var(--ink-3)}
+  /* A day that broke the shop's DAILY overtime rule. Amber, not red: overtime is a fact to notice
+     before approving, not an error. */
+  .tsg-otday{background:var(--amber-bg);color:var(--amber);font-weight:700;
+    border-radius:var(--radius-2xs);padding:var(--space-1) 0}
+
+  .tsg-total{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;line-height:1.3}
+  .tsg-total small{display:block;font-weight:500;font-size:var(--type-xs);color:var(--ink-3);white-space:nowrap}
+  .tsg-muted{color:var(--ink-3);font-weight:500}
+
+  .tsg-issues{text-align:center;color:var(--ink-3);font-variant-numeric:tabular-nums}
+  .tsg-has{color:var(--amber);font-weight:700}
+
+  .tsg-statuscell{min-width:0}
+  .tsg-pill{font-size:var(--type-sm);font-weight:700;padding:var(--space-1) var(--space-3);
+    border-radius:var(--radius-xl);white-space:nowrap;display:inline-block}
+  .tsg-review{background:var(--amber-bg);color:var(--amber)}
+  .tsg-submitted{background:var(--paper);color:var(--ink-2);border:1px solid var(--line)}
+  .tsg-approved{background:var(--green-100);color:var(--green-700)}
+  .tsg-empty{background:var(--paper);color:var(--ink-3)}
+
+  .tsg-chev{text-align:center;color:var(--ink-3)}
+  /* The open row's body. Indented to the name column so the entries read as belonging to the person
+     above them rather than to the grid. */
+  .tsg-detail{background:var(--manila);border-bottom:1px solid var(--line);
+    padding:0 var(--space-4) var(--space-4) var(--space-8)}
+
+  @media (max-width:900px){
+    /* The seven day columns are the first thing to go: the week total, the issue count and the
+       status are what the row is scanned for, and they still fit. */
+    .tsg-row{grid-template-columns:minmax(120px,1.6fr) 92px 62px 118px 26px}
+    .tsg-cell{display:none}
+    .tsg-detail{padding-left:var(--space-4)}
+  }
+
   .ts-trow{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}
   /* compact crew selector strip — the timesheet itself is the hero, not a wall of employee cards */
   .ts-chips{display:flex;gap:var(--space-2);overflow-x:auto;padding:var(--space-2xs) 0 var(--space-2xs)}

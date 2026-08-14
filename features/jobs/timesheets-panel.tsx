@@ -8,7 +8,7 @@
  * (timesheets-entries), and all math/labels live in timesheet-derive.
  */
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { todayISO } from "@/lib/clock";
 import { useAppStore } from "@/lib/store/app-store";
@@ -29,7 +29,10 @@ import {
   tsKindChange,
 } from "./timesheet-derive";
 import { type TsPick } from "./timesheets-entries";
-import { TsCrewChips, TsTechWeekCard } from "./timesheets-crew";
+import { TsTechWeekCard } from "./timesheets-crew";
+import { TimesheetsGrid } from "./timesheets-grid";
+import { TimesheetsGridToolbar } from "./timesheets-grid-toolbar";
+import { tsCrewRows, tsGridCounts, tsFilterRows, type TsGridFilter } from "./timesheet-grid-derive";
 import { JobCostingView } from "./job-costing-view";
 import { TimesheetExceptions } from "./timesheet-exceptions";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -119,6 +122,7 @@ export function TimesheetsPanel() {
   const [editId, setEditId] = useState<string | null>(null);
   const [pick, setPick] = useState<TsPick>(null);
   const [crewQ, setCrewQ] = useState("");
+  const [gridFilter, setGridFilter] = useState<TsGridFilter>("all");
   // The days the server refused to approve over. Cleared whenever the view moves, so a stale
   // refusal can never sit above a week it doesn't describe.
   const [unfinishedDays, setUnfinishedDays] = useState<readonly string[] | null>(null);
@@ -130,16 +134,59 @@ export function TimesheetsPanel() {
   const dl = (iso: string) =>
     new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
 
-  const totals = techs.map((t) => tsRollup(timeEntries, t.id, weekDates));
-  const anyEntries = totals.some((r) => r.count > 0);
-  const totPaid = tsMoney(totals.reduce((s, r) => s + r.paid, 0));
-  const totOt = tsMoney(totals.reduce((s, r) => s + r.ot, 0));
+  /**
+   * Who has signed their week off — the third state between draft and approved.
+   *
+   * Read for the WHOLE CREW in one query now that the grid shows a status column for everybody. It
+   * used to be scoped to the open card, on the reasoning that an approver reads one week at a time;
+   * the grid's whole point is that they no longer have to, and status is the column they scan first.
+   */
+  const submissionsQ = api.v1.timesheets.submissionsForWeek.useQuery(
+    { weekStart },
+    { refetchOnWindowFocus: false },
+  );
+  /** techUserId → the moment they signed off, for weeks that have not been reopened since. */
+  const submittedByTech = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sub of submissionsQ.data?.submissions ?? []) {
+      if (sub.reopenedAt === null) m.set(sub.techUserId, sub.submittedAt);
+    }
+    return m;
+  }, [submissionsQ.data]);
+  /**
+   * One row per technician for the grid — hours, overtime, issues and status together.
+   *
+   * Derived from entries ALREADY in the store (the week query loads the whole org's week), so
+   * showing the crew costs no extra fetch. The chip counts come off these same rows, which is what
+   * stops a chip ever disagreeing with the grid under it.
+   */
+  const crewRows = useMemo(
+    () =>
+      tsCrewRows({
+        entries: timeEntries,
+        techs,
+        weekDates,
+        policy: overtimePolicy,
+        submittedTechIds: new Set(submittedByTech.keys()),
+      }),
+    [timeEntries, techs, weekDates, overtimePolicy, submittedByTech],
+  );
+  const gridCounts = useMemo(() => tsGridCounts(crewRows), [crewRows]);
+  const visibleRows = useMemo(
+    () => tsFilterRows(crewRows, gridFilter, crewQ),
+    [crewRows, gridFilter, crewQ],
+  );
+  // `status === "empty"` is the row model's word for "nothing reported", the same test the old
+  // chip totals made with count > 0.
+  const anyEntries = crewRows.some((r) => r.status !== "empty");
+  const totPaid = tsMoney(crewRows.reduce((sum, r) => sum + r.paid, 0));
+  const totOt = tsMoney(crewRows.reduce((sum, r) => sum + r.ot, 0));
 
-  // Selected tech: sticky choice if it still has a chip, else first-with-entries or first crew.
+  // Nothing is open until somebody opens it. The old card auto-selected a technician because the
+  // page was otherwise blank; the grid IS the page now, and opening a week on load would put one
+  // person's entries in front of an approver who has not chosen them yet.
   const selId =
-    selectedTechId != null && techs.some((t) => t.id === selectedTechId)
-      ? selectedTechId
-      : (techs.find((t, i) => (totals[i]?.count ?? 0) > 0) ?? techs[0])?.id ?? null;
+    selectedTechId != null && techs.some((t) => t.id === selectedTechId) ? selectedTechId : null;
 
   function weekNav(delta: number) {
     setWeekStart((w) => tsWeekStart(tsAddDays(w, delta * 7)));
@@ -152,7 +199,8 @@ export function TimesheetsPanel() {
     setUnfinishedDays(null);
   }
 
-  function handleSelect(id: string) {
+  /** null closes the open row. Toggling a row shut leaves the grid with nothing expanded. */
+  function handleSelect(id: string | null) {
     setSelectedTechId(id);
     clearRowState();
   }
@@ -228,18 +276,6 @@ export function TimesheetsPanel() {
 
   const selTech = selId != null ? techById(techs, selId) : undefined;
 
-  /**
-   * Whether the SELECTED technician has signed this week off — the third state between draft and
-   * approved. Scoped to the person on screen: the approver reads one week at a time, and asking for
-   * the whole crew would be a query per chip for a fact only the open card shows.
-   */
-  const submissionQ = api.v1.timesheets.submissionFor.useQuery(
-    { weekStart, techUserId: selId ?? undefined },
-    { enabled: selId != null, refetchOnWindowFocus: false },
-  );
-  const submission = submissionQ.data?.submission ?? null;
-  const submittedAt =
-    submission !== null && submission.reopenedAt === null ? submission.submittedAt : null;
 
   // No-flash first-run gate on the ALL-TIME entry count, counted in the database — NOT on the rows
   // loaded for the week. A shop that took last week off has hours; offering it the set-up screen
@@ -361,23 +397,28 @@ export function TimesheetsPanel() {
         onReview={(id) => handleSelect(id)}
       />
 
-      <TsCrewChips
-        techs={techs}
-        totals={totals}
-        selId={selId}
-        crewQ={crewQ}
-        onCrewQ={setCrewQ}
-        onSelect={handleSelect}
-        toFix={toFix}
+      <TimesheetsGridToolbar
+        filter={gridFilter}
+        counts={gridCounts}
+        query={crewQ}
+        onFilter={setGridFilter}
+        onQuery={setCrewQ}
       />
 
-      {selTech &&
-        (() => {
-          const rollup = tsRollup(timeEntries, selTech.id, weekDates, overtimePolicy);
-          const es = tsWeekEntries(timeEntries, selTech.id, weekDates);
+      <TimesheetsGrid
+        rows={visibleRows}
+        weekDates={weekDates}
+        openTechId={selId}
+        onToggle={(id) => handleSelect(selId === id ? null : id)}
+        renderDetail={(techId) => {
+          const tech = techById(techs, techId);
+          if (!tech) return null;
+          const rollup = tsRollup(timeEntries, techId, weekDates, overtimePolicy);
+          const es = tsWeekEntries(timeEntries, techId, weekDates);
           return (
             <TsTechWeekCard
-              tech={selTech}
+              inGrid
+              tech={tech}
               rollup={rollup}
               entries={es}
               jobs={jobs}
@@ -392,14 +433,15 @@ export function TimesheetsPanel() {
               onDelete={deleteTimeEntry}
               onSetField={handleSetField}
               onCloseEdit={handleCloseEdit}
-              onAddEntry={() => handleAdd(selTech.id)}
-              onApprove={() => void handleApprove(selTech.id)}
+              onAddEntry={() => handleAdd(techId)}
+              onApprove={() => void handleApprove(techId)}
               onReopen={() => handleReopen(es)}
               unfinishedDays={unfinishedDays}
-              submittedAt={submittedAt}
+              submittedAt={submittedByTech.get(techId) ?? null}
             />
           );
-        })()}
+        }}
+      />
       </div>
       )}
     </>
