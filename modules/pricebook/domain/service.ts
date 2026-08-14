@@ -43,7 +43,14 @@ export type MeasuredQuantityKind = PaintingQuantityKind | SiteQuantityKind;
 /** What a service's price is PER: a measured room/site quantity, or an hour of labor. */
 export type ServicePricedBy = MeasuredQuantityKind | "hour";
 
-const isMeasuredByKind = (v: string): v is ServicePricedBy =>
+/**
+ * Whether this build recognizes a stored measured_by value.
+ *
+ * Exported for the READ boundary. The database is shared across branches, so a row can legally
+ * carry a value from a build newer than this one; the mapper needs to ask that question rather
+ * than treating the answer as corruption. See service-mapper.ts.
+ */
+export const isMeasuredByKind = (v: string): v is ServicePricedBy =>
   v === "hour" ||
   Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v) ||
   Object.prototype.hasOwnProperty.call(SITE_KIND_SET, v);
