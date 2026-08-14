@@ -51,7 +51,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
-import { fmt$ } from "@/lib/format";
+import { fmt$, fmtPhone } from "@/lib/format";
 import { InvoiceAuthorizationNote } from "@/components/shared/invoice-authorization";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
@@ -677,6 +677,10 @@ export function InvoiceModalContent() {
   const [busy, setBusy] = useState(false);
   const [payErr, setPayErr] = useState<string | null>(null);
   const [recOpen, setRecOpen] = useState(false);
+  // What the last resend did. Null until one is attempted — the office should not be told anything
+  // about a delivery it did not ask for.
+  const [resendNote, setResendNote] = useState<string | null>(null);
+  const [resendOpen, setResendOpen] = useState(false);
   const [recMethod, setRecMethod] = useState<RecordMethod>("cash");
 
   const invoiceId = activeModal?.params?.invoiceId as string | undefined;
@@ -856,6 +860,39 @@ export function InvoiceModalContent() {
     }
   }
 
+  /**
+   * Send the invoice AGAIN. A sent invoice was a dead end for re-delivery: `priKind` swaps Send for
+   * "Charge a card" the moment it is sent, and no resend existed anywhere — while a QUOTE has both
+   * a channel-toggle send panel and an explicit "Edit & resend". A customer who lost the text had
+   * to be chased by hand.
+   *
+   * Same call the first send makes, so the channel rule is identical: text when there is a number,
+   * else email, and the server picks the line.
+   */
+  async function resend() {
+    if (!invoice) return;
+    setPayErr(null);
+    setResendNote(null);
+    setBusy(true);
+    const hasPhone = Boolean(phone && phone !== "—");
+    try {
+      await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
+        invoiceId: invoice.id,
+        channel: hasPhone ? "sms" : "email",
+      });
+      setResendNote(`Sent to ${hasPhone ? fmtPhone(phone) : (invoice.email || "their email")}.`);
+    } catch (e) {
+      // Includes the no-phone-no-email precondition — the server names the actual problem.
+      setPayErr(e instanceof Error ? e.message : "Couldn't resend the invoice — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The saved card lives on the linked lead — the same place close-out and the customer invoice
+  // read it from. Undefined when no customer is linked, which reads as "no card on file".
+  const savedCard = leads.find((l) => l.id === invoice?.leadId)?.card ?? null;
+
   // THE primary — verb-honest per state. A draft with nothing billed has no
   // send to promote (a promoted action that cannot run is worse than none), so
   // Done — the old footer confirm — takes the slot until there is a bill.
@@ -966,6 +1003,34 @@ export function InvoiceModalContent() {
           collected), an in-flow accordion so a mis-tap costs nothing. */}
       {sent && due > 0 ? (
         <div className="sheet-rows">
+          {/* WHAT "Charge a card" WILL ACTUALLY DO. The sheet never said whether a card was saved,
+              so the primary read as a mystery: charge something on file, or ask the customer for a
+              number? It names the card when there is one. */}
+          <SheetRow
+            label="Card on file"
+            value={savedCard ? `${savedCard.brand} ···${savedCard.last4}` : "No card on file"}
+            valueIsHint={!savedCard}
+          />
+
+          {/* Re-delivery. Quiet row, not a primary — the invoice has already gone once. */}
+          <SheetRow
+            label="Resend invoice"
+            value={resendNote ?? (phone && phone !== "—" ? "By text" : "By email")}
+            valueIsHint={!resendNote}
+            expandable
+            open={resendOpen}
+            onOpenChange={setResendOpen}
+          >
+            <button
+              type="button"
+              className="btn sm primary"
+              disabled={busy}
+              onClick={() => void resend()}
+            >
+              {busy ? "Sending…" : `Send it again${phone && phone !== "—" ? " by text" : " by email"}`}
+            </button>
+          </SheetRow>
+
           <SheetRow
             label="Record a payment"
             value="Cash or check"

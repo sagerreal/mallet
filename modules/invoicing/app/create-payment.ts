@@ -53,11 +53,20 @@ export class CreatePaymentUseCase {
     // Require Connect: a card payment routes to the shop's connected account as a destination
     // charge, so a shop that hasn't finished Stripe onboarding has nowhere for the money to settle.
     // Fail with a clear, actionable message rather than attempting a charge that cannot succeed.
+    // TWO different states, and they need different sentences. Telling a shop whose details are
+    // already in with Stripe to "complete onboarding" names work it has done and leaves no step to
+    // take — the same misdiagnosis the Settings card made by keying "Connected ✓" on
+    // detailsSubmitted. There is nothing for that shop to do but wait.
     const target = await this.connect.read();
-    if (!target.connectedAccountId || !target.chargesEnabled) {
+    if (!target.connectedAccountId) {
+      return err(
+        conflict("this shop can't take cards yet — connect Stripe in Settings → Payments"),
+      );
+    }
+    if (!target.chargesEnabled) {
       return err(
         conflict(
-          "this shop hasn't finished Stripe payment setup — complete onboarding in Settings → Payments to accept cards",
+          "Stripe is still verifying this shop's details — card payments turn on when it finishes. Record a cash or check payment in the meantime.",
         ),
       );
     }

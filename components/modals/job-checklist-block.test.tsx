@@ -187,7 +187,10 @@ describe("JobChecklistBlock — Add to job", () => {
     expect(h.state.updateJob).not.toHaveBeenCalled();
   });
 
-  it("caps at 50 items with functional copy", () => {
+  // 52 steps means 52 clicks, each re-rendering a list that is one row longer — quadratic work in
+  // the DOM, ~1.5s alone and past the 5s default under a full-suite load. The assertion is the
+  // point, not the speed, so the budget is raised rather than the coverage cut.
+  it("caps at 50 items with functional copy", { timeout: 20_000 }, () => {
     openPanel();
     paste(Array.from({ length: 52 }, (_, i) => `Item ${i + 1}`).join("\n"));
     fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
