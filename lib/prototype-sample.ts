@@ -9,6 +9,8 @@
  * comparisons yield the same results as the prototype's todayISO() helper.
  */
 
+import { clampSharePct } from "@mallet/shared/types";
+
 // ---------- date helpers (mirrors the prototype) ----------
 export const TODAY_ISO = "2026-07-01";
 
@@ -758,13 +760,20 @@ export function calcQuote(
   pricing?: { disc?: number; dep?: number; tax?: number }
 ): { sub: number; disc: number; taxed: number; total: number; dep: number } {
   const p = pricing ?? {};
+  // Discount and deposit are shares of the bill and the domain refuses either outside 0..100%.
+  // Clamped here as well as at the input: an out-of-range percentage arriving from anywhere else
+  // used to run the discount past the subtotal and print totals like "+$-41" — a figure no
+  // document could ever carry. Tax has no upper bound in the domain and keeps only its floor.
+  const discPct = clampSharePct(p.disc ?? 0);
+  const depPct = clampSharePct(p.dep ?? 0);
+  const taxPct = Math.max(0, p.tax ?? 0);
   const billed = lines.filter((l) => !l.opt);
   const sub = billed.reduce((s, l) => s + l.q * l.r, 0);
   const taxBase = billed.filter((l) => !l.notax).reduce((s, l) => s + l.q * l.r, 0);
-  const disc = sub * ((p.disc ?? 0) / 100);
-  const taxed = (taxBase - taxBase * ((p.disc ?? 0) / 100)) * ((p.tax ?? 0) / 100);
+  const disc = sub * (discPct / 100);
+  const taxed = (taxBase - taxBase * (discPct / 100)) * (taxPct / 100);
   const total = sub - disc + taxed;
-  const dep = total * ((p.dep ?? 0) / 100);
+  const dep = total * (depPct / 100);
   return { sub, disc, taxed, total, dep };
 }
 

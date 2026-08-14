@@ -116,7 +116,10 @@ export function QuotesLedger() {
                 <button
                   key={f}
                   type="button"
-                  className={`chip${filter === f ? " sel" : ""}`}
+                  // `.on` — this row filters a LIST (same band as Active/Archived, same class the
+                  // Changes-asked chip below already carries). `.sel` is the in-form chosen-option
+                  // look; it read here as a hover state on the one chip that is actually active.
+                  className={`chip${filter === f ? " on" : ""}`}
                   onClick={() => setFilter(f)}
                 >
                   {label}

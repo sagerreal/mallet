@@ -32,6 +32,18 @@ import { money } from "./money";
 /** Basis points: 10000 bps = 100%. */
 export const BPS_DENOMINATOR = 10_000;
 
+/**
+ * The cap on a SHARE-of-the-bill rate (discount, deposit) as a percentage, for the inputs that
+ * collect one. The domain refuses discBps/depBps outside 0..10000 (Estimate.create), and a box
+ * that can produce 150 hands the save path a payload the server will reject — so the same bound
+ * is exported here and bound to the field. Tax is deliberately not covered: see PricingRates.
+ */
+export const MAX_SHARE_PCT = BPS_DENOMINATOR / 100;
+
+/** Clamp a typed discount/deposit percentage into the range the domain accepts. */
+export const clampSharePct = (pct: number): number =>
+  Number.isFinite(pct) ? Math.min(MAX_SHARE_PCT, Math.max(0, pct)) : 0;
+
 /** The three rates a document can carry. All integer basis points. */
 export interface PricingRates {
   /** Discount, 0..10000 bps. */

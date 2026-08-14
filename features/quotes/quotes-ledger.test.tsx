@@ -69,6 +69,20 @@ describe("QuotesLedger — the populated book", () => {
     expect(screen.getByText(/1 of 3/)).toBeTruthy();
   });
 
+  // `.on` is the list-FILTER selected class (ink fill, same band as the Active/Archived
+  // control); `.sel` is the in-form chosen-option class. This row filters a list, and the
+  // Changes-asked chip beside it already writes `.on` — one row, one selected look.
+  it("marks the active filter chip with the list-filter selected class", () => {
+    render(<QuotesLedger />);
+    const chips = screen.getByRole("group", { name: "Filter quotes" });
+    const draft = within(chips).getByRole("button", { name: /^Draft/ });
+    fireEvent.click(draft);
+    expect(draft.className.split(" ")).toContain("on");
+    expect(draft.className.split(" ")).not.toContain("sel");
+    // Only the active one carries it.
+    expect(within(chips).getByRole("button", { name: /^All/ }).className.split(" ")).not.toContain("on");
+  });
+
   it("search reaches customer and title", () => {
     render(<QuotesLedger />);
     fireEvent.change(screen.getByLabelText("Search quotes"), { target: { value: "tankless" } });
