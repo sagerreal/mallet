@@ -28,6 +28,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { useAppStore } from "@/lib/store/app-store";
 import { useFieldCopilot } from "@/features/field-copilot/use-field-copilot";
+import { usePushToTalk } from "@/features/field-copilot/use-push-to-talk";
 import { AiThinkingBlock } from "@/features/counter/artifacts";
 
 /** The opener. Not chat filler — it names what this can answer, which is the thing a tech cannot guess. */
@@ -51,6 +52,13 @@ export default function AskPage() {
   const [draft, setDraft] = useState("");
   const [added, setAdded] = useState<Record<number, boolean>>({});
   const threadRef = useRef<HTMLDivElement>(null);
+  /**
+   * VOICE. A tech asks with his hands full, in a crawlspace, or wearing gloves — dictation is the
+   * primary input on this screen far more often than it is anywhere else in the app. Speech
+   * recognition is a browser capability and needs no job, so unlike the camera it comes over from
+   * the job sheet unchanged. Transcript lands in the draft, so it is editable before it sends.
+   */
+  const ptt = usePushToTalk(setDraft);
 
   // Pin to the newest turn, the way every message surface does — a tech should never have to
   // scroll down to find the answer he just asked for.
@@ -62,6 +70,7 @@ export default function AskPage() {
   function send() {
     const text = draft.trim();
     if (!text || pending) return;
+    if (ptt.listening) ptt.stop(); // never keep dictating into a box that just cleared
     setDraft("");
     void ask(text);
   }
@@ -125,10 +134,35 @@ export default function AskPage() {
       </div>
 
       <div className="askpage-composer">
+        {/* Only when the browser has speech recognition — typing stays the primary path, so a
+            missing mic costs nothing rather than leaving a control that does nothing. */}
+        {ptt.supported ? (
+          <button
+            type="button"
+            className={ptt.listening ? "askpage-mic on" : "askpage-mic"}
+            aria-label={ptt.listening ? "Stop voice input" : "Speak your question"}
+            aria-pressed={ptt.listening}
+            aria-disabled={pending ? true : undefined}
+            onClick={(e) => {
+              if (pending) {
+                e.preventDefault();
+                return;
+              }
+              if (ptt.listening) ptt.stop();
+              else ptt.start();
+            }}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <rect x="9" y="2" width="6" height="11" rx="3" />
+              <path d="M5 10v1a7 7 0 0 0 14 0v-1" />
+              <line x1="12" y1="18" x2="12" y2="22" />
+            </svg>
+          </button>
+        ) : null}
         <input
           className="askpage-input"
           value={draft}
-          placeholder="Ask anything…"
+          placeholder={ptt.listening ? "Listening…" : "Ask anything…"}
           aria-label="Ask Mallet"
           enterKeyHint="send"
           onChange={(e) => setDraft(e.target.value)}
