@@ -25,8 +25,11 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { Checklist, Job } from "@/lib/store/types";
 import type { NewChecklistItem } from "@/lib/store/slices/checklists-slice";
 import { PLUMBING_STARTER_CHECKLISTS } from "@/features/checklists/checklist-seed";
+import { ChecklistStepsEditor, type DraftItem } from "@/features/jobs/checklist-steps-editor";
 
-// Item-type heuristic: a line mentioning a photo becomes a photo step (silent).
+// Item-type heuristic for the CANNED STARTER checklists only — their text is ours, so reading
+// "photo" out of it is a fact about our own copy, not a guess at what somebody typed. Author-typed
+// steps carry an explicit Check/Photo toggle.
 const PHOTO_ITEM_RE = /photo|picture/i;
 
 // Mirrors JOB_CHECKLIST_MAX_ITEMS (modules/jobs/domain/job.ts) — the client-side
@@ -42,18 +45,6 @@ const JOB_CHECKLIST_MAX_ITEM_CHARS = 500;
 // the office can retry.
 const SAVE_FAILED_COPY = "Couldn't save the checklist — try again.";
 
-/** Textarea → items: one per line, trimmed, empties dropped, required for the crew. */
-function linesToItems(raw: string): NewChecklistItem[] {
-  return raw
-    .split("\n")
-    .map((l) => l.trim())
-    .filter((l) => l.length > 0)
-    .map((text) => ({
-      text,
-      type: PHOTO_ITEM_RE.test(text) ? ("photo" as const) : ("check" as const),
-      required: true,
-    }));
-}
 
 // ---- the add panel ------------------------------------------------------------
 
@@ -74,7 +65,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
   const deleteChecklist = useAppStore((s) => s.deleteChecklist);
   const updateJob = useAppStore((s) => s.updateJob);
   const [name, setName] = useState("");
-  const [linesRaw, setLinesRaw] = useState("");
+  const [steps, setSteps] = useState<DraftItem[]>([]);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   // The checklist created by a previous (failed-attach) submit, keyed to the
@@ -124,9 +115,13 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
       setError("This job is finished — reopen it to change its checklist.");
       return;
     }
-    const items = linesToItems(linesRaw);
+    // Blank rows are dropped rather than saved as empty steps — an added-then-unused row is a
+    // slip, not an instruction to the crew.
+    const items: NewChecklistItem[] = steps
+      .map((s) => ({ text: s.text.trim(), type: s.type, required: true }))
+      .filter((s) => s.text.length > 0);
     if (items.length === 0) {
-      setError("Add at least one item — one per line.");
+      setError("Add at least one step.");
       return;
     }
     if (items.length > JOB_CHECKLIST_MAX_ITEMS) {
@@ -141,7 +136,7 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
     if (longIdx !== -1) {
       const over = (items[longIdx]?.text.length ?? 0) - JOB_CHECKLIST_MAX_ITEM_CHARS;
       setError(
-        `Line ${longIdx + 1} is ${over} character${over === 1 ? "" : "s"} too long — an item holds at most ${JOB_CHECKLIST_MAX_ITEM_CHARS}.`,
+        `Step ${longIdx + 1} is ${over} character${over === 1 ? "" : "s"} too long — a step holds at most ${JOB_CHECKLIST_MAX_ITEM_CHARS}.`,
       );
       return;
     }
@@ -236,25 +231,23 @@ function AddChecklistPanel({ job, onDone, onCancel }: AddChecklistPanelProps) {
         </div>
       )}
 
-      <textarea
-        placeholder="One item per line"
-        rows={4}
-        maxLength={10_000}
-        value={linesRaw}
-        onChange={(e) => {
-          setLinesRaw(e.target.value);
+      {/* The SAME editor the Checklists library uses. This was "One item per line" in a textarea,
+          which could not express a photo step at all — the only way to get one was a
+          /photo|picture/i guess at the words — and made every line required with no way to say
+          otherwise. */}
+      <ChecklistStepsEditor
+        name={name}
+        onName={(v) => {
+          setName(v);
           if (error) setError("");
         }}
-        style={{ width: "100%", marginTop: "var(--space-3)", resize: "vertical" }}
-      />
-      <input
-        type="text"
-        placeholder="Checklist"
-        aria-label="Checklist name"
-        maxLength={200}
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        style={{ width: "100%", marginTop: "var(--space-2)" }}
+        items={steps}
+        onItems={(v) => {
+          setSteps(v);
+          if (error) setError("");
+        }}
+        disabled={busy}
+        style={{ marginTop: "var(--space-3)" }}
       />
       {error && (
         <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>{error}</div>

@@ -124,9 +124,16 @@ function openPanel(job = makeJob()) {
   fireEvent.click(screen.getByText("+ Add a checklist"));
 }
 
+/**
+ * Enter steps into the editor the panel now shares with the Checklists library. Keeps taking a
+ * newline-joined string so the existing cases read unchanged; blank lines still mean "a row that
+ * was added and left empty", which the panel drops.
+ */
 function paste(lines: string) {
-  fireEvent.change(screen.getByPlaceholderText("One item per line"), {
-    target: { value: lines },
+  const rows = lines.split("\n");
+  rows.forEach((text, i) => {
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    fireEvent.change(screen.getByLabelText(`Step ${i + 1} description`), { target: { value: text } });
   });
 }
 
@@ -135,7 +142,7 @@ function paste(lines: string) {
 // ---------------------------------------------------------------------------
 
 describe("JobChecklistBlock — Add to job", () => {
-  it("turns lines into items (photo heuristic, required, empties dropped) in ONE create, then attaches", async () => {
+  it("turns steps into items (required, blank rows dropped) in ONE create, then attaches", async () => {
     openPanel();
     paste("Photo of the install\n\n  Test T&P valve  \nHaul away old unit\n");
     fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
@@ -145,8 +152,11 @@ describe("JobChecklistBlock — Add to job", () => {
     const [name, stage, items] = h.state.addChecklist.mock.calls[0] as [string, string, NewItem[]];
     expect(name).toBe("Checklist"); // default when the name input is empty
     expect(stage).toBe("job");
+    // Every step is a Check unless the author says otherwise. The old textarea GUESSED at the
+    // type from the words ("photo" in the text made it a photo step), which is the guesswork the
+    // Check/Photo toggle replaced — see the photo-step test below.
     expect(items).toEqual([
-      { text: "Photo of the install", type: "photo", required: true },
+      { text: "Photo of the install", type: "check", required: true },
       { text: "Test T&P valve", type: "check", required: true },
       { text: "Haul away old unit", type: "check", required: true },
     ]);
@@ -163,18 +173,16 @@ describe("JobChecklistBlock — Add to job", () => {
   it("uses the typed name when given", async () => {
     openPanel();
     paste("One thing");
-    fireEvent.change(screen.getByPlaceholderText("Checklist"), {
-      target: { value: "Repipe close-out" },
-    });
+    fireEvent.change(screen.getByLabelText("Checklist name"), { target: { value: "Repipe close-out" } });
     fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
     await waitFor(() => expect(h.state.addChecklist).toHaveBeenCalledOnce());
     expect(h.state.addChecklist.mock.calls[0]![0]).toBe("Repipe close-out");
   });
 
-  it("empty textarea → functional error, nothing created", () => {
+  it("no steps → functional error, nothing created", () => {
     openPanel();
     fireEvent.click(screen.getByRole("button", { name: "Add to job" }));
-    expect(screen.getByText("Add at least one item — one per line.")).toBeTruthy();
+    expect(screen.getByText("Add at least one step.")).toBeTruthy();
     expect(h.state.addChecklist).not.toHaveBeenCalled();
     expect(h.state.updateJob).not.toHaveBeenCalled();
   });
@@ -336,7 +344,7 @@ describe("JobChecklistBlock — the two ways \"Couldn't save the checklist\" hap
     paste(`ok line\n${"x".repeat(520)}`);
     fireEvent.click(screen.getByText("Add to job"));
 
-    await waitFor(() => expect(screen.getByText(/Line 2 is 20 characters too long/)).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/Step 2 is 20 characters too long/)).toBeTruthy());
     expect(h.state.addChecklist).not.toHaveBeenCalled();
     expect(h.state.updateJob).not.toHaveBeenCalled();
   });
@@ -387,5 +395,62 @@ describe("JobChecklistBlock — one kind of checklist", () => {
         expect.objectContaining({ checklist: expect.objectContaining({ name: "Repipe walkthrough" }) }),
       ),
     );
+  });
+});
+
+describe("JobChecklistBlock — the same editor the Checklists library uses", () => {
+  it("builds a checklist from real steps, not a textarea of lines", async () => {
+    // "One item per line" could not express a photo step at all — the only way to get one was a
+    // /photo|picture/i guess at the words — and it made every line required with no way to say
+    // otherwise. The library had a proper editor; the surface the crew actually runs the list from
+    // had the worse one.
+    openPanel();
+
+    expect(screen.queryByPlaceholderText("One item per line")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Checklist name"), { target: { value: "Drain cleaning" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    fireEvent.change(screen.getByLabelText("Step 1 description"), { target: { value: "Water back on" } });
+    fireEvent.click(screen.getByText("Add to job"));
+
+    await waitFor(() => expect(h.state.addChecklist).toHaveBeenCalled());
+    const [name, stage, items] = h.state.addChecklist.mock.calls[0]!;
+    expect(name).toBe("Drain cleaning");
+    expect(stage).toBe("job");
+    expect(items).toEqual([{ text: "Water back on", type: "check", required: true }]);
+  });
+
+  it("saves a photo step as a photo step", async () => {
+    openPanel();
+    fireEvent.change(screen.getByLabelText("Checklist name"), { target: { value: "Close-out" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    fireEvent.change(screen.getByLabelText("Step 1 description"), { target: { value: "Under the sink" } });
+    fireEvent.click(screen.getByRole("button", { name: "Photo" }));
+    fireEvent.click(screen.getByText("Add to job"));
+
+    await waitFor(() => expect(h.state.addChecklist).toHaveBeenCalled());
+    expect(h.state.addChecklist.mock.calls[0]![2]).toEqual([
+      { text: "Under the sink", type: "photo", required: true },
+    ]);
+  });
+
+  it("drops a blank step rather than saving an empty line", async () => {
+    openPanel();
+    fireEvent.change(screen.getByLabelText("Checklist name"), { target: { value: "Close-out" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    fireEvent.change(screen.getByLabelText("Step 1 description"), { target: { value: "Real step" } });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add step" }));
+    fireEvent.click(screen.getByText("Add to job"));
+
+    await waitFor(() => expect(h.state.addChecklist).toHaveBeenCalled());
+    expect(h.state.addChecklist.mock.calls[0]![2]).toHaveLength(1);
+  });
+
+  it("says so when there is nothing to add", async () => {
+    openPanel();
+    fireEvent.change(screen.getByLabelText("Checklist name"), { target: { value: "Empty" } });
+    fireEvent.click(screen.getByText("Add to job"));
+
+    await waitFor(() => expect(screen.getByText(/Add at least one step/)).toBeTruthy());
+    expect(h.state.addChecklist).not.toHaveBeenCalled();
   });
 });
