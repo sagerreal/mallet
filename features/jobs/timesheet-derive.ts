@@ -113,8 +113,11 @@ export function tsWorked(e: TimeEntry): number {
  * Everything else — shop, travel, breaks, time off — is shift time. Paid, and not on a job.
  */
 export function tsJobHours(entries: TimeEntry[]): number {
+  // tsHours, NOT tsPaid: a job row is deliberately unpaid — it annotates the shift rather than
+  // adding to it — so asking tsPaid for its length now returns zero. This figure is the costing
+  // one, and it wants the stretch that was actually spent on the job.
   return tsMoney(
-    entries.reduce((sum, e) => (e.kind === "job" && e.jobId ? sum + tsPaid(e) : sum), 0),
+    entries.reduce((sum, e) => (e.kind === "job" && e.jobId ? sum + tsHours(e) : sum), 0),
   );
 }
 

@@ -92,12 +92,20 @@ describe("daySummary", () => {
     expect(hoursClock(s.breakHours)).toBe("0:15");
   });
 
-  it("names a job segment when the agenda knows it, and plainly when it does not", () => {
-    const rows = [row({ kind: "job", jobId: "job-1" })];
-    expect(daySummary(rows, TODAY, NOW, () => "#JOB-2541 Delgado").segments[0]?.label).toBe(
-      "#JOB-2541 Delgado",
-    );
+  it("lets an overlapping job NAME the shift segment, plainly when the agenda has forgotten it", () => {
+    // The job row is not a segment of its own — it would draw the same hour twice and the list
+    // would stop adding up to the total above it. It lends its name to the shift it overlaps.
+    const rows = [row({ kind: "shop" }), row({ id: "j", kind: "job", jobId: "job-1" })];
+    const known = daySummary(rows, TODAY, NOW, () => "#JOB-2541 Delgado");
+    expect(known.segments).toHaveLength(1);
+    expect(known.segments[0]?.label).toBe("#JOB-2541 Delgado");
     expect(daySummary(rows, TODAY, NOW, noJobs).segments[0]?.label).toBe("Job");
+  });
+
+  it("does not let a job row add hours — it annotates the shift, it is not extra time", () => {
+    const withJob = daySummary([row({ kind: "shop" }), row({ id: "j", kind: "job", jobId: "job-1" })], TODAY, NOW, noJobs);
+    const shiftOnly = daySummary([row({ kind: "shop" })], TODAY, NOW, noJobs);
+    expect(withJob.workedHours).toBe(shiftOnly.workedHours);
   });
 
   it("answers with an empty day rather than nothing when no rows are today's", () => {

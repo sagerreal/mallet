@@ -23,11 +23,17 @@ describe("toDayTotals", () => {
     expect(r.ok && r.value[0]?.entryIds).toEqual(["a", "b"]);
   });
 
-  it("counts JOB time in the total — it is paid", () => {
-    // The decision is that QuickBooks gets hours, not what they were spent on. Leaving job time
-    // out would short the paycheque by exactly the hours somebody actually worked.
-    const r = toDayTotals([e({ kind: "job", endTime: "12:00" })]);
+  it("EXCLUDES job time — it runs beside the shift and adds no hours of its own", () => {
+    // A job row says WHICH JOB part of the shift was spent on. The shift is what pays; counting
+    // both would send a twelve-hour day to payroll as fifteen.
+    const r = toDayTotals([e({ endTime: "12:00" }), e({ id: "j", kind: "job", endTime: "12:00" })]);
     expect(r.ok && r.value[0]?.minutes).toBe(4 * 60);
+    expect(r.ok && r.value[0]?.entryIds).toEqual(["e1"]);
+  });
+
+  it("sends nothing for a day that was ONLY a job row — no shift, no hours", () => {
+    const r = toDayTotals([e({ kind: "job" })]);
+    expect(r.ok && r.value).toEqual([]);
   });
 
   it("leaves BREAKS out — unpaid is not hours worked", () => {

@@ -27,7 +27,7 @@ const entry = (over: Partial<MyHoursEntry> = {}): MyHoursEntry => ({
 describe("runsForDay", () => {
   it("labels a paid stretch Worked and an unpaid one Break — the only split that changes pay", () => {
     const runs = runsForDay([
-      entry({ kind: "job", startTime: "08:00", endTime: "12:00" }),
+      entry({ kind: "shop", startTime: "08:00", endTime: "12:00" }),
       entry({ kind: "break", startTime: "12:00", endTime: "12:30" }),
     ]);
     expect(runs.map((r) => r.label)).toEqual(["Worked", "Break"]);
@@ -39,7 +39,7 @@ describe("runsForDay", () => {
    */
   it("merges touching paid rows across different kinds into one stretch", () => {
     const runs = runsForDay([
-      entry({ kind: "job", startTime: "10:46", endTime: "11:16" }),
+      entry({ kind: "shop", startTime: "10:46", endTime: "11:16" }),
       entry({ kind: "shop", startTime: "11:16", endTime: "11:22" }),
       entry({ kind: "travel", startTime: "11:22", endTime: "13:51" }),
     ]);
@@ -54,7 +54,7 @@ describe("runsForDay", () => {
 
   it("swallows the one-minute mis-tap sliver instead of rendering it as a 0.02 h row", () => {
     const runs = runsForDay([
-      entry({ kind: "job", startTime: "11:22", endTime: "11:23" }),
+      entry({ kind: "shop", startTime: "11:22", endTime: "11:23" }),
       entry({ kind: "shop", startTime: "11:23", endTime: "13:51" }),
     ]);
     expect(runs).toHaveLength(1);
@@ -75,9 +75,9 @@ describe("runsForDay", () => {
 
   it("never merges worked time into a break, even when the clocks touch", () => {
     const runs = runsForDay([
-      entry({ kind: "job", startTime: "08:00", endTime: "12:00" }),
+      entry({ kind: "shop", startTime: "08:00", endTime: "12:00" }),
       entry({ kind: "break", startTime: "12:00", endTime: "12:30" }),
-      entry({ kind: "job", startTime: "12:30", endTime: "16:30" }),
+      entry({ kind: "shop", startTime: "12:30", endTime: "16:30" }),
     ]);
     expect(runs.map((r) => r.label)).toEqual(["Worked", "Break", "Worked"]);
     expect(runs.map((r) => r.hours)).toEqual([4, 0, 4]);

@@ -60,9 +60,12 @@ describe("tsHours / tsPaid", () => {
   it("never returns negative hours", () => {
     expect(tsHours(mkEntry({ start: "12:00", end: "08:00" }))).toBe(0);
   });
-  it("excludes an unpaid break from paid hours", () => {
+  it("excludes a break AND a job row from paid hours", () => {
+    // A break is unpaid. A job row is costing — it runs beside the shift and adds no hours of its
+    // own, so counting it would pay the same half-hour twice.
     expect(tsPaid(mkEntry({ kind: "break", start: "12:00", end: "12:30" }))).toBe(0);
-    expect(tsPaid(mkEntry({ kind: "job", start: "12:00", end: "12:30" }))).toBe(0.5);
+    expect(tsPaid(mkEntry({ kind: "job", start: "12:00", end: "12:30" }))).toBe(0);
+    expect(tsPaid(mkEntry({ kind: "shop", start: "12:00", end: "12:30" }))).toBe(0.5);
   });
 });
 
@@ -472,7 +475,8 @@ describe("labels for time off", () => {
 });
 
 describe("tsJobHours — shift time vs job time", () => {
-  const e = mkEntry; // job kind, job "1", 08:00–12:00 by default
+  // The factory now defaults to REGULAR, so these say `kind: "job"` where they mean it.
+  const e = (over: Parameters<typeof mkEntry>[0] = {}) => mkEntry({ kind: "job", jobId: "1", ...over });
 
   it("counts a job entry that names a job", () => {
     expect(tsJobHours([e()])).toBe(4);

@@ -100,18 +100,39 @@ export function daySummary(
 ): DaySummary {
   const today = sortByStart(entries.filter((e) => e.workDate === todayISO));
 
-  const segments = today.map((e): DaySegment => {
-    const running = !e.endTime;
-    const named = e.kind === "job" && e.jobId ? jobLabel(e.jobId) : null;
-    return {
-      id: e.id,
-      label: named ?? KIND_LABELS[e.kind],
-      span: running ? `${clockLabel(e.startTime)} –` : `${clockLabel(e.startTime)} – ${clockLabel(e.endTime)}`,
-      hours: running ? runningHours(e, now) : entryHours(e),
-      kind: e.kind,
-      running,
-    };
-  });
+  /**
+   * JOB ROWS NAME A SEGMENT, THEY ARE NOT ONE.
+   *
+   * A job row runs BESIDE the shift saying which job it is being spent on — costing, not paid time.
+   * Listed as its own segment it drew the same hour twice, once as the shift and once as the job,
+   * and the list stopped adding up to the total above it. So the shift segments are the list, and a
+   * job overlapping one lends it its name.
+   */
+  const jobRows = today.filter((e) => e.kind === "job" && e.jobId);
+  const overlappingJob = (e: MyHoursEntry): string | null => {
+    const from = e.startTime ?? "";
+    const to = e.endTime ?? "24:00";
+    const hit = jobRows.find((j) => (j.startTime ?? "") < to && from < (j.endTime ?? "24:00"));
+    if (!hit?.jobId) return null;
+    // A job the agenda no longer carries still gets the plain word — he IS on a job, and calling
+    // that stretch "Regular" would be less true than saying so without the name.
+    return jobLabel(hit.jobId) ?? KIND_LABELS.job;
+  };
+
+  const segments = today
+    .filter((e) => e.kind !== "job")
+    .map((e): DaySegment => {
+      const running = !e.endTime;
+      const named = overlappingJob(e);
+      return {
+        id: e.id,
+        label: named ?? KIND_LABELS[e.kind],
+        span: running ? `${clockLabel(e.startTime)} –` : `${clockLabel(e.startTime)} – ${clockLabel(e.endTime)}`,
+        hours: running ? runningHours(e, now) : entryHours(e),
+        kind: e.kind,
+        running,
+      };
+    });
 
   let workedHours = 0;
   let breakHours = 0;
