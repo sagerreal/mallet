@@ -27,7 +27,7 @@ const KINDS: readonly { readonly k: EntryKind; readonly label: string }[] = [
   { k: "job", label: "Job" },
   { k: "travel", label: "Travel" },
   { k: "break", label: "Break" },
-  { k: "shop", label: "Shop" },
+  { k: "shop", label: "Regular" },
 ];
 
 export interface MyHoursTimeEditorProps {

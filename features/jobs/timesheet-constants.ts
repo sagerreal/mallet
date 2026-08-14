@@ -18,7 +18,7 @@ export const TS_KINDS: Record<string, string> = {
   job: "Job",
   travel: "Travel",
   break: "Break",
-  shop: "Shop",
+  shop: "Regular",
   pto: "PTO",
   vacation: "Vacation",
   sick: "Sick",

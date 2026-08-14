@@ -28,7 +28,7 @@ export const KIND_LABELS: Record<MyHoursEntry["kind"], string> = {
   vacation: "Vacation",
   sick: "Sick",
   holiday: "Holiday",
-  shop: "Shop",
+  shop: "Regular",
 };
 
 // Midday anchor: parsing a bare YYYY-MM-DD lands on UTC midnight, which is the PREVIOUS day in
