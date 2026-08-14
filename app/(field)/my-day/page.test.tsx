@@ -111,11 +111,14 @@ vi.mock("@/features/field/day-clock", () => ({ DayClock: () => <div /> }));
 import MyDayPage from "./page";
 import { MODAL } from "@/lib/store/modal-ids";
 
+// Booked for the pinned clock's day (2026-07-01, vitest.setup.ts). My day shows THAT DAY only, so
+// an undated fixture would render no cards at all and every interaction test below would be
+// asserting against an empty page.
 const visit = (over: Record<string, unknown> = {}) => ({
   id: "visit-1",
   status: "pending",
-  scheduledDate: null,
-  scheduledStart: null,
+  scheduledDate: "2026-07-01",
+  scheduledStart: "09:00",
   ...over,
 });
 
@@ -286,23 +289,23 @@ describe("My day — the time on the card", () => {
 
   it("shows the earliest live visit's start time, not the dead job column", () => {
     withVisits([
-      visit({ id: "v2", scheduledDate: "2026-08-04", scheduledStart: "15:00" }),
-      visit({ id: "v1", scheduledDate: "2026-08-04", scheduledStart: "08:30" }),
+      visit({ id: "v2", scheduledDate: "2026-07-01", scheduledStart: "15:00" }),
+      visit({ id: "v1", scheduledDate: "2026-07-01", scheduledStart: "08:30" }),
     ]);
     render(<MyDayPage />);
     expect(screen.getByText("8:30a")).toBeTruthy();
   });
 
   it("reads an afternoon time as PM without touching a timezone", () => {
-    withVisits([visit({ scheduledDate: "2026-08-04", scheduledStart: "15:00" })]);
+    withVisits([visit({ scheduledDate: "2026-07-01", scheduledStart: "15:00" })]);
     render(<MyDayPage />);
     expect(screen.getByText("3p")).toBeTruthy();
   });
 
   it("skips a canceled visit", () => {
     withVisits([
-      visit({ id: "v1", scheduledDate: "2026-08-04", scheduledStart: "07:00", status: "canceled" }),
-      visit({ id: "v2", scheduledDate: "2026-08-04", scheduledStart: "11:15", status: "pending" }),
+      visit({ id: "v1", scheduledDate: "2026-07-01", scheduledStart: "07:00", status: "canceled" }),
+      visit({ id: "v2", scheduledDate: "2026-07-01", scheduledStart: "11:15", status: "pending" }),
     ]);
     render(<MyDayPage />);
     expect(screen.getByText("11:15a")).toBeTruthy();
@@ -338,7 +341,7 @@ describe("My day — the time on the card", () => {
   it("says 'Not scheduled' when the only LIVE visit is unplaced, not the done visit's old slot", () => {
     withVisits([
       visit({ id: "v1", scheduledDate: "2026-06-30", scheduledStart: "12:00", status: "complete", completedAt: "2026-06-30T19:30:00.000Z" }),
-      visit({ id: "v2", status: "pending" }),
+      visit({ id: "v2", status: "pending", scheduledDate: null, scheduledStart: null }),
     ]);
     render(<MyDayPage />);
     expect(screen.getByText("Not scheduled")).toBeTruthy();
@@ -347,7 +350,7 @@ describe("My day — the time on the card", () => {
   });
 
   it("names the gap rather than guessing when the job has no dated visit", () => {
-    withVisits([visit({ scheduledStart: "09:00" })]);
+    withVisits([visit({ scheduledDate: null, scheduledStart: "09:00" })]);
     render(<MyDayPage />);
     // "Not scheduled" is colLabel's own word for it — the same one the job sheet's header uses.
     // A bare "—" said nothing, and there is no time to print here either.
@@ -398,13 +401,13 @@ describe("My day — which day a row is actually from", () => {
     expect(screen.queryByText("8:30a")).toBeNull();
   });
 
-  // The other direction the same predicate allows, which nobody had considered: an open job the
-  // office has already scheduled ahead.
-  it("puts the DAY on a job scheduled for a future date", () => {
+  // The other direction the same predicate allows: an open job the office scheduled ahead. It is
+  // not this day's work either, so it waits on its own day.
+  it("does NOT show a job scheduled for a future date", () => {
     withVisits([visit({ scheduledDate: "2026-07-03", scheduledStart: "15:00" })]);
     render(<MyDayPage />);
-    expect(screen.getByText("Fri 3")).toBeTruthy();
-    expect(screen.getByText("3p")).toBeTruthy();
+    expect(screen.queryByText("Fri 3")).toBeNull();
+    expect(screen.queryByText("3p")).toBeNull();
   });
 
   // The heading and the empty state described a narrower list than the query returns.
@@ -433,7 +436,7 @@ describe("My day — which day a row is actually from", () => {
 describe("My day — the whole row opens the job, not just the words", () => {
   const rowAt = (over: Record<string, unknown> = {}) => ({
     data: {
-      items: [job({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30" })], ...over })],
+      items: [job({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30" })], ...over })],
       customers: [],
     },
     isLoading: false,
@@ -501,13 +504,13 @@ describe("My day — the whole row opens the job, not just the words", () => {
   });
 
   it("shows the live On-site-since stamp while the visit is in progress", () => {
-    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30", status: "in_progress", startedAt: "2026-07-01T19:38:00.000Z" })] });
+    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30", status: "in_progress", startedAt: "2026-07-01T19:38:00.000Z" })] });
     render(<MyDayPage />);
     expect(screen.getByText(/On site · since/)).toBeTruthy();
   });
 
   it("hides On my way once the tech is on site — a stamp nobody needs anymore", () => {
-    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-08-04", scheduledStart: "08:30", status: "in_progress" })] });
+    queryState = rowAt({ visits: [visit({ scheduledDate: "2026-07-01", scheduledStart: "08:30", status: "in_progress" })] });
     render(<MyDayPage />);
     expect(screen.queryByRole("button", { name: "On my way" })).toBeNull();
     // On site: Done is the one primary left.

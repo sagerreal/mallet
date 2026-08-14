@@ -70,16 +70,18 @@ describe("deriveDayCards", () => {
     ]);
   });
 
-  it("orders a job's own visits by date then start, unplaced last", () => {
+  it("orders a job's own visits by start, and shows only the ones booked for the day", () => {
     const j = job({
       visits: [
         visit({ scheduledDate: null, scheduledStart: null }),
         visit({ scheduledDate: "2026-08-13", scheduledStart: "08:00" }),
         visit({ scheduledDate: TODAY, scheduledStart: "14:00" }),
+        visit({ scheduledDate: TODAY, scheduledStart: "09:00" }),
       ],
     });
     const { upcoming } = deriveDayCards([j], TODAY);
-    expect(upcoming.map((c) => c.day)).toEqual([TODAY, "2026-08-13", null]);
+    // Today's two, in start order — plus the unplaced one, which no day owns and which sorts last.
+    expect(upcoming.map((c) => c.start)).toEqual(["09:00", "14:00", null]);
   });
 
   it("buckets a visit completed today into finished, ordered by when it finished", () => {
@@ -111,7 +113,9 @@ describe("deriveDayCards", () => {
     });
     const { upcoming, finished } = deriveDayCards([j], TODAY);
     expect(finished).toHaveLength(0);
-    expect(upcoming.map((c) => c.day)).toEqual(["2026-08-14"]);
+    // Neither stop is today's: one ran Monday, the other is booked Friday. Both live on their own
+    // day, one tap away on the pager.
+    expect(upcoming).toHaveLength(0);
   });
 
   it("judges 'today' by the CLIENT's local day, not the UTC date of the instant", () => {
@@ -128,6 +132,8 @@ describe("deriveDayCards", () => {
   });
 
   it("gives a visit-less job ONE job-level card so no work goes missing", () => {
+    // It carries no date, so no day owns it and the pager cannot reach it — dropping it would make
+    // assigned work invisible everywhere rather than move it to where it belongs.
     const open = job({ status: "scheduled" });
     const doneToday = job({ status: "complete", completedAt: "2026-08-12T16:00:00.000Z" });
     const { upcoming, finished } = deriveDayCards([open, doneToday], TODAY);
@@ -181,12 +187,12 @@ describe("deriveDayCards — work booked before today", () => {
     expect(cards.upcoming).toHaveLength(1);
   });
 
-  it("keeps a FUTURE booking — the office scheduled it ahead and it has not passed", () => {
+  it("keeps a FUTURE booking off today too — it is not this day's work either", () => {
     const cards = deriveDayCards([job({ visits: [visit({ scheduledDate: "2026-08-20" })] })], TODAY);
-    expect(cards.upcoming).toHaveLength(1);
+    expect(cards.upcoming).toHaveLength(0);
   });
 
-  it("keeps an UNSCHEDULED job — there is no day to page back to, so dropping it would lose it", () => {
+  it("keeps an UNBOOKED job — no day owns it, so dropping it would lose it rather than move it", () => {
     const cards = deriveDayCards([job({ status: "scheduled", visits: [] })], TODAY);
     expect(cards.upcoming).toHaveLength(1);
   });

@@ -114,8 +114,9 @@ export function deriveDayCards(jobs: readonly DayCardJob[], today: string): DayC
         completedAt: j.completedAt,
         startedAt: null,
       };
-      // A job-level card carries no date, so it cannot be overdue — it is unscheduled, which is a
-      // different thing and belongs with the work still to plan.
+      // A job with no visits carries no date, so no day owns it and the pager cannot reach it.
+      // Dropping it would make assigned work invisible everywhere rather than move it, so it stays.
+      // It renders as "Not scheduled", which is the truth about it.
       (step === 3 ? finished : upcoming).push(card);
       continue;
     }
@@ -140,17 +141,16 @@ export function deriveDayCards(jobs: readonly DayCardJob[], today: string): DayC
         if (v.completedAt == null || localDayOf(v.completedAt) === today) finished.push(card);
         continue;
       }
-      // TODAY'S LIST IS TODAY'S. A stop booked for an earlier day belongs to that day, and the
-      // pager reaches it — deriveDayView filters to the date being viewed, so it is one tap back
-      // under "Not finished", not lost. The server returns all open work (openOrCompletedBetween)
-      // because the office needs it; this screen is a technician's route for one day.
+      // TODAY'S LIST IS TODAY'S — nothing else. A stop booked for another day belongs to that day
+      // and the pager reaches it (deriveDayView filters to the date being viewed); a stop with no
+      // date at all is not booked work yet. The server returns everything open
+      // (openOrCompletedBetween) because the office needs it; this screen is one technician's route
+      // for one day.
       //
-      // The FINISHED bucket below has always applied the same rule. The open bucket never did,
-      // which is why Tuesday's stops sat under a heading that says Today.
-      //
-      // An UNSCHEDULED stop stays: it has no date, so there is no day to page back to, and
-      // dropping it would lose it entirely rather than move it.
-      if (card.day !== null && card.day < today) continue;
+      // The FINISHED bucket below has always applied this rule. The open bucket never did.
+      // Only a DATED stop can belong to another day. An unplaced visit carries no date, so no day
+      // owns it and the pager cannot reach it — same reason the job-level card above stays.
+      if (card.day !== null && card.day !== today) continue;
       upcoming.push(card);
     }
   }
