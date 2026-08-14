@@ -484,7 +484,7 @@ describe("UpdateTimeEntryUseCase — one person cannot be two places at once", (
     const result = await useCase.exec({ entryId: ENTRY_ID, startTime: "10:30", endTime: "11:00" }, ORG);
 
     expect(result.ok).toBe(false);
-    if (!result.ok) expect(result.error.message).toContain("Overlaps Shop 10:00–22:00");
+    if (!result.ok) expect(result.error.message).toContain("Overlaps Regular 10:00–22:00");
     expect(repo.saveCalls).toHaveLength(0);
   });
 

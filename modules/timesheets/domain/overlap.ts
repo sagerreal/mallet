@@ -38,7 +38,7 @@ const KIND_LABEL: Record<string, string> = {
   job: "Job",
   travel: "Travel",
   break: "Break",
-  shop: "Shop",
+  shop: "Regular",
 };
 
 /** The refusal a use-case returns when findOverlap names a clash. Lives beside the rule so the

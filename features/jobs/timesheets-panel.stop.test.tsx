@@ -115,9 +115,11 @@ describe("stopping a running entry from the office grid", () => {
     renderOpen();
 
     fireEvent.click(screen.getByRole("button", { name: "Stop" }));
-    fireEvent.click(screen.getByRole("button", { name: "Travel" }));
+    // Regular, not Travel: On my way starts job time now, so travel is no longer an option the
+    // office is offered. The point of the test is that the KIND is editable at all.
+    fireEvent.click(screen.getByRole("button", { name: "Regular" }));
 
-    expect(storeState.updateTimeEntry).toHaveBeenCalledWith("e-live", { kind: "travel" });
+    expect(storeState.updateTimeEntry).toHaveBeenCalledWith("e-live", { kind: "shop" });
   });
 
   it("never offers an out time before the in time", () => {

@@ -22,7 +22,10 @@ import { SelectMenu } from "@/components/ui/select-menu";
 // a length; no times), so the clock kinds are the whole menu here.
 type Kind = "job" | "travel" | "break" | "shop";
 
-const KINDS: readonly Kind[] = ["job", "travel", "shop", "break"];
+// Travel is gone: On my way starts JOB time, so nothing writes a travel row any more and
+// offering one would be a control whose only outcome is a kind the clock never produces.
+// Old days still render their travel rows — the kind stays valid, it is just not offered.
+const KINDS: readonly Kind[] = ["job", "shop", "break"];
 
 /**
  * Unassigned shop time is the honest default: it is the state the day container itself runs in,

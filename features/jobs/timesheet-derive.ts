@@ -290,7 +290,7 @@ export function tsJob(e: TimeEntry, jobs: Job[]): Job | undefined {
 const TS_KIND_LABELS: Record<string, string> = {
   travel: "Travel between jobs",
   break: "Lunch / break",
-  shop: "Shop · load-out & restock",
+  shop: "Regular time — not on a job",
 };
 
 /** Row label — job title · customer, or the fixed label for non-job kinds. */

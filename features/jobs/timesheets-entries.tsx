@@ -67,7 +67,9 @@ function TsKindSeg({ entry, onPick }: TsKindSegProps) {
     // side ran the time-off kinds off the edge of the editor and clipped "Holiday".
     <div className="ts-segstack">
       <div className="ts-seg">
-        {TS_KIND_KEYS.map((k) => (
+        {/* A legacy travel row keeps its own option so the control shows what it IS and the office
+            can move it onto a job. Nothing else is offered travel. */}
+        {(entry.kind === "travel" ? ([...TS_KIND_KEYS, "travel"] as const) : TS_KIND_KEYS).map((k) => (
           <button
             key={k}
             className={entry.kind === k ? "on" : ""}
