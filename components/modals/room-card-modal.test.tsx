@@ -309,20 +309,35 @@ describe("RoomCardModalContent — view mode", () => {
 // Create mode
 // ---------------------------------------------------------------------------
 
-// Techs read the numbers; confirming/overriding them into the record stays desk
-// work (the v1.measurements confirm/override endpoints are ownerOrOffice), so
-// the quantity rows are read-only for a tech. Rename/remove/rescan stay live —
-// the field router-side gate allows an assigned tech.
+// THE SCAN ASKS A QUESTION ONLY THE FIELD CAN ANSWER, so the field has to be able to answer it.
+//
+// The rows used to be read-only for a tech, on the reasoning that resolving a number into the
+// record is desk work. But baseboard and crown arrive needing confirmation, and a soffit arrives
+// with no suggestion at all, precisely because trim existence is not observable from the geometry
+// — derive-painting's own law is that a bathroom with cove base and no crown must never show
+// crown as fact. The person who can see the cove base is the one holding the phone.
+//
+// The result was a tech who could rename the capture and archive the whole room, but could not
+// tap the baseboard row. Owen hit it on the first real bathroom scan: "i cant click down on any
+// of them or edit them". The ASSIGNMENT gate still applies, server-side.
 describe("RoomCardModalContent — view mode, TECH role", () => {
   beforeEach(() => {
     mockRoleRef.role = "tech";
   });
 
-  it("quantity rows are read-only — tapping one opens no editor", () => {
+  it("opens the editor on the row a tech taps", () => {
     render(<RoomCardModalContent />);
     fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
-    expect(screen.queryByLabelText("Walls (sq ft)")).toBeNull();
-    expect(storeState.setRoomQuantity).not.toHaveBeenCalled();
+    expect(screen.getByLabelText("Walls (sq ft)")).toBeTruthy();
+  });
+
+  it("commits the number the tech types", () => {
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+    const field = screen.getByLabelText("Walls (sq ft)");
+    fireEvent.change(field, { target: { value: "312" } });
+    fireEvent.blur(field);
+    expect(storeState.setRoomQuantity).toHaveBeenCalled();
   });
 
   it("keeps the room name editable and the remove control live", () => {

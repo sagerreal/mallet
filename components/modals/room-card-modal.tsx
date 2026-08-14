@@ -18,7 +18,6 @@
 
 import { useState, type FormEvent } from "react";
 import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/store/app-store";
-import { useMe } from "@/features/identity/hooks";
 import { MODAL } from "@/lib/store/modal-ids";
 import { ModalLoading } from "./modal-loading";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
@@ -205,8 +204,12 @@ function QuantityRow({
   source: RoomCard["source"];
   /** A caveat about THIS row's suggestion, shown where it is about to be accepted. */
   note?: string | null;
-  /** Techs read the numbers; confirming/overriding them into the record is desk work
-   *  (v1.measurements.confirmQuantity / overrideQuantity stay ownerOrOffice). */
+  /**
+   * Kept for surfaces that genuinely view rather than edit. It is no longer keyed on ROLE:
+   * baseboard, crown and soffit arrive needing a human answer precisely because the geometry
+   * cannot supply one, and the human who can is the one standing in the room. See the field-access
+   * note in measurements/api/measurement-router.ts.
+   */
   readOnly: boolean;
   onCommit: (kind: RoomQuantityKind, value: number) => void;
 }) {
@@ -499,8 +502,6 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
   // Role gate: quantity confirm/override write ownerOrOffice endpoints — for a tech the
   // rows are read-only (fail closed until the role loads). Scan/rename/archive/re-scan
   // are field work and stay live (v1.measurements allows an assigned tech).
-  const me = useMe();
-  const isOffice = me.data?.role === "owner" || me.data?.role === "office";
   const setRoomQuantity = useAppStore((s) => s.setRoomQuantity);
   const addDeduction = useAppStore((s) => s.addDeduction);
   const removeDeduction = useAppStore((s) => s.removeDeduction);
@@ -541,7 +542,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
               quantity={quantity}
               source={room.source}
               note={def.kind === "crown_lnft" ? crownNote(room) : null}
-              readOnly={!isOffice}
+              readOnly={false}
               onCommit={commitQuantity}
             />
           );
@@ -551,7 +552,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
             modifies one of them — the net it prints IS what an estimate prices from. */}
         <RoomDeductions
           room={room}
-          readOnly={!isOffice}
+          readOnly={false}
           onAdd={(d) => addDeduction(jobId, room.id, d)}
           onRemove={(id) => removeDeduction(jobId, room.id, id)}
         />
