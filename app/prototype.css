@@ -2613,7 +2613,25 @@
   .clockface .clock-elapsed{display:block;font-family:var(--font-mono);font-size:var(--type-3xl);font-weight:700;letter-spacing:-.03em;line-height:1.1}
   .clock-of{display:block;color:var(--ink-2);font-size:var(--type-sm);margin-top:var(--space-1)}
   .clock-state{display:block;margin-top:var(--space-1);font-size:var(--type-base)}
-  @media (max-width:640px){.clockface{flex-wrap:wrap}.clockface .clock-acts{flex-basis:100%}}
+  /* ON A PHONE THE CLOCK IS A BAND, NOT A PANEL.
+     The desktop face is ring | figures | actions in a row. Wrapping it put each on its own line:
+     a 106px ring, then the figures, then a full-width button — 315px of a 852px screen, which
+     pushed the first job card to y=855. The one thing a tech opens this screen for was below the
+     fold, on every phone, always. The parts stay in one row and shrink to fit instead. */
+  @media (max-width:640px){
+    /* Ring and figures share line one; the actions take line two as a COMPACT row. Squeezing the
+       actions onto line one as well left the figures a ~90px column that wrapped four times —
+       denser, and unreadable. Two rows of ~56px and ~46px is still a quarter of what stacking
+       every part cost. */
+    .clockface{flex-wrap:wrap;gap:var(--space-3);align-items:center}
+    .clock-ring{width:56px;height:56px}
+    .clockface .clock-elapsed{font-size:var(--type-xl)}
+    /* The denominator and the state read as one sentence, not two stacked greys. */
+    .clockface .clock-of,.clockface .clock-state{display:inline;font-size:var(--type-sm);margin:0}
+    .clockface .clock-of::after{content:" · "}
+    .clockface .clock-acts{flex-basis:100%;display:flex;flex-wrap:nowrap;gap:var(--space-2)}
+    .clockface .clock-acts .btn{flex:1;min-height:46px;white-space:nowrap}
+  }
   /* the day pager — ‹ Today · Wed, Aug 12 › (arrows HUG the label, mock-style) */
   .mdp{display:flex;align-items:center;gap:var(--space-3);margin:var(--space-4) 0 var(--space-2)}
   .mdp-label{flex:0 0 auto;min-width:0;font-size:var(--type-lg);font-weight:700;margin:0;line-height:1.15;white-space:nowrap}
@@ -2900,9 +2918,16 @@
        (53px, sitting at bottom:60px). You tap a field and it is behind the keyboard toolbar. */
     html{scroll-padding-bottom:calc(113px + var(--safe-b));scroll-padding-top:0}
     .cmdline{position:fixed;left:0;right:0;bottom:60px;z-index:55;padding:0 var(--space-2) 0 var(--space-4);border-top:1px solid var(--manila-line);max-height:72vh}
-    .clockcard .clock-head{flex-direction:column;align-items:stretch;gap:var(--space-3)}
-    .clock-acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:var(--space-2)}
-    .clock-acts .btn{width:100%;min-height:46px}
+    /* The clock head stays a ROW here. Stacking it — ring, then figures, then a full-width
+       button — spent 315px of an 852px screen and pushed the first job card to y=855: the one
+       thing a tech opens this screen for sat below the fold on every phone. The glove floor the
+       stacking was for is a TARGET SIZE, not a full width, so it is kept on the button itself. */
+    .clock-acts{display:flex;gap:var(--space-2);flex-wrap:nowrap}
+    .clock-acts .btn{min-height:46px;white-space:nowrap}
+    /* Everything else that uses this head — no ring, no figures beside it — still stacks. */
+    .clockcard .clock-head:not(.clockface){flex-direction:column;align-items:stretch;gap:var(--space-3)}
+    .clockcard .clock-head:not(.clockface) .clock-acts{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr))}
+    .clockcard .clock-head:not(.clockface) .clock-acts .btn{width:100%}
     /* My Day field view — glove-friendly touch targets */
     .md-ic{width:46px;height:46px}
     .md-ic svg{width:19px;height:19px}
