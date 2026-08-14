@@ -15,7 +15,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { calcQuote } from "@/lib/prototype-sample";
-import { fmt$ } from "@/lib/format";
+import { fmt$, fmt$rate } from "@/lib/format";
 import type { Service, Material } from "@/lib/store/types";
 import {
   hasRealLine,
@@ -419,7 +419,7 @@ export function QuoteCard({
                       className="chip"
                       onClick={() => addPbLine(svc)}
                     >
-                      {svc.name} · <b>{fmt$(svc.unitPrice)}</b>
+                      {svc.name} · <b>{fmt$rate(svc.unitPrice)}</b>
                     </button>
                   ))}
                   {pbMaterialMatches.map((m) => (
@@ -429,7 +429,7 @@ export function QuoteCard({
                       onClick={() => addPbMaterial(m)}
                       title={`Material · ${m.unitOfMeasure}`}
                     >
-                      {m.name} · <b>{fmt$(m.unitPrice)}</b>
+                      {m.name} · <b>{fmt$rate(m.unitPrice)}</b>
                       <span className="muted" style={{ marginLeft: "var(--space-1)" }}>part</span>
                     </button>
                   ))}

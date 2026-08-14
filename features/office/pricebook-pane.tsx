@@ -31,6 +31,7 @@ import { AssembliesPanel } from "@/features/office/assemblies-panel";
 import { AddServiceRow } from "@/app/(office)/settings/add-service-row";
 import { Field } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { tradeUsesAssemblies } from "@/app/(office)/settings/pricebooks";
 
 function sortServices(services: Service[]): Service[] {
   return [...services].sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
@@ -52,6 +53,13 @@ export function PricebookPane() {
   // Reads through the provider, not the raw store: the raw value is `"unknown"` on the first paint
   // of every cold load, so a painter's measured options were withheld for a beat and then appeared.
   const measurementEstimating = measurementConfirmed(useMeasurementGate());
+
+  // Assemblies is a SEPARATE feature that happened to share the measurement switch: its catalog is
+  // seven paving and roofing recipes priced off an aerial site trace, with no vocabulary for a wall
+  // or a ceiling. Gating it on `measurementEstimating` meant every painting shop — which has to
+  // have that switch on for the room scan — opened its pricebook to another trade's work.
+  const trade = useAppStore((s) => s.trade);
+  const showAssemblies = tradeUsesAssemblies(trade);
 
   // Cost/margin are sensitive — hidden from tech role (fail closed until role loads).
   const me = useMe();
@@ -170,7 +178,7 @@ export function PricebookPane() {
                 <button className={pbSeg === "materials" ? "on" : ""} onClick={() => setPbSeg("materials")}>
                   Materials <span className="m">{activeMaterials.length}</span>
                 </button>
-                {measurementEstimating && (
+                {showAssemblies && (
                   <button
                     className={pbSeg === "assemblies" ? "on" : ""}
                     onClick={() => setPbSeg("assemblies")}
@@ -239,7 +247,7 @@ export function PricebookPane() {
             {pbSeg === "materials" && (
               <MaterialsPanel canSeeCost={canSeeCost} />
             )}
-            {pbSeg === "assemblies" && <AssembliesPanel />}
+            {pbSeg === "assemblies" && showAssemblies && <AssembliesPanel />}
           </div>
         </div>
       </div>

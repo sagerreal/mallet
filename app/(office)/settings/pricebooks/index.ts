@@ -54,4 +54,24 @@ export function tradeMeasures(trade: string): boolean {
   if (!pack) return false;
   return pack.services.some((s) => s.measuredBy != null && s.measuredBy !== "hour");
 }
+
+/**
+ * Does this trade have any estimating assemblies?
+ *
+ * NOT derived from the pack, unlike tradeMeasures, and the reason is the whole point. The shipped
+ * catalog (modules/assemblies/domain/assembly-defaults.ts) is seven recipes — driveway
+ * replacement, asphalt overlay, sealcoat, crack filling, pavers, shingle reroof, roof tune-up.
+ * Paving and roofing, and not one of them declares a trade, so there is nothing to derive from.
+ *
+ * Its `measurementBasis` admits only 'area' and 'perimeter' — aerial site-trace vocabulary. It
+ * cannot express a wall, a ceiling, a baseboard run or a door count, so it is not "painting
+ * assemblies are missing": it is a different feature that happened to share the measurement
+ * switch. A painting shop was being shown a paving shop's recipes.
+ *
+ * The moment a catalog entry declares its own trade this becomes derivable, and that is the fix —
+ * not a longer list here.
+ */
+export function tradeUsesAssemblies(trade: string): boolean {
+  return trade === "roofing" || trade === "concrete";
+}
 export type { TradePricebook };

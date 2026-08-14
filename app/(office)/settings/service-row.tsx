@@ -19,7 +19,7 @@
 import { useState } from "react";
 import type { Service, Category } from "@/lib/store/types";
 import type { MeasuredByKind, ServiceUpdateFields } from "@/lib/store/pricebook-mapper";
-import { fmt$ } from "@/lib/format";
+import { fmt$rate } from "@/lib/format";
 import { useFieldId } from "@/components/ui/input";
 import { SelectMenu, type SelectOption } from "@/components/ui/select-menu";
 
@@ -134,7 +134,7 @@ export function ServiceRow({
       >
         <span style={{ flex: 1, fontWeight: 600 }}>{service.name}</span>
         <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>
-          {fmt$(service.unitPrice)}
+          {fmt$rate(service.unitPrice)}
           {unit && <span className="muted" style={{ fontWeight: 400, fontSize: "var(--type-sm)" }}> / {unit.replace("per ", "")}</span>}
         </span>
         <span className="caret" style={{ color: "var(--ink-3)" }} aria-hidden="true">{open ? "▾" : "▸"}</span>
