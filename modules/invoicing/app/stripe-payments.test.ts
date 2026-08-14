@@ -210,6 +210,24 @@ describe("CreatePaymentUseCase", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("conflict");
   });
+
+  // TWO different states shared one message. A shop that finished Stripe's form and is waiting on
+  // verification was told to "complete onboarding" — work it had already done, with no step left to
+  // take. Summit Plumbing sat in exactly that state.
+  it("tells a shop that has NOT connected Stripe to connect it", async () => {
+    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), okGateway, notOnboarded).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.message).toMatch(/connect stripe/i);
+  });
+
+  it("tells a shop whose details are IN with Stripe that it is being verified — not to redo onboarding", async () => {
+    const r = await new CreatePaymentUseCase(new FakeRepo(invoice()), okGateway, chargesDisabled).exec({ orgId: ORG, invoiceId: asInvoiceId(INV) });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.error.message).toMatch(/verif/i);
+      expect(r.error.message).not.toMatch(/complete onboarding/i);
+    }
+  });
 });
 
 describe("isRetriableStripeError", () => {
