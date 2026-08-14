@@ -65,6 +65,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   const addCompany = useAppStore((s) => s.addCompany);
   const storeSources = useAppStore((s) => s.sources);
   const addSource = useAppStore((s) => s.addSource);
+  const removeSource = useAppStore((s) => s.removeSource);
   const mergedSources = mergeSources(DEFAULT_SOURCES, storeSources);
 
   const utils = api.useUtils();
@@ -521,17 +522,39 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
             onToggle={() => toggleRow("source")}
           >
             <div className="qa-srclist" style={{ marginTop: "0" }}>
-              {mergedSources.map((s) => (
-                <button
-                  key={s.label}
-                  type="button"
-                  className={`qa-srcopt${source === s.label ? " on" : ""}`}
-                  onClick={() => selectSource(s.label)}
-                >
-                  <span>{s.label}</span>
-                  {source === s.label ? <span className="qa-srcok">✓</span> : null}
-                </button>
-              ))}
+              {mergedSources.map((s) => {
+                // A source this shop added can be taken back out from here — the only other place
+                // that was possible was a Settings card, and a list you can add to but not correct
+                // fills up with typos ("Refferal") that nobody can reach.
+                const own = storeSources.find((c) => c.label === s.label);
+                return (
+                  <div key={s.label} className="qa-srcrow">
+                    <button
+                      type="button"
+                      className={`qa-srcopt${source === s.label ? " on" : ""}`}
+                      onClick={() => selectSource(s.label)}
+                    >
+                      <span>{s.label}</span>
+                      {source === s.label ? <span className="qa-srcok">✓</span> : null}
+                    </button>
+                    {own ? (
+                      <button
+                        type="button"
+                        className="qa-srcdel"
+                        aria-label={`Remove ${s.label} from the source list`}
+                        onClick={() => {
+                          // Leads already tagged with it keep their tag — this removes the CHOICE,
+                          // not the history, which is why it needs no confirmation.
+                          removeSource(own.id);
+                          if (source === s.label) setSource("");
+                        }}
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
               {showAddSource ? (
                 <div className="cfrow" style={{ padding: "var(--space-2) var(--space-3)" }}>
                   <input

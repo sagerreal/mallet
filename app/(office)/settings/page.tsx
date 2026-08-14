@@ -98,12 +98,10 @@ function SecCompany() {
       <SalesTaxCard />
 
       <SetGroup>How the shop runs</SetGroup>
-      {/* The source list arrived from its own "Channels" tab, which held nothing else. It is not a
-          connection to anything — it is this shop's own vocabulary for where a lead came from, so it
-          belongs with how the company describes itself. The two real lead CONNECTIONS (the
-          marketplaces and the website form) are in Integrations. */}
-      <SecChannels />
-      {/* Last: a shop sets this once, on the day it moves in. */}
+      {/* The source list is NOT here any more. It is edited in the picker that uses it — the Lead
+          source row of the new-customer modal — which is where a wrong or missing source is
+          noticed. A settings page you have to remember to visit is how "Refferal" survives for a
+          year. */}
       <TimezoneCard />
     </>
   );
@@ -826,91 +824,6 @@ function SecIntegrations() {
   );
 }
 
-function SecChannels() {
-  const sources = useAppStore((s) => s.sources);
-  const leads = useAppStore((s) => s.leads);
-  const addSource = useAppStore((s) => s.addSource);
-  const removeSource = useAppStore((s) => s.removeSource);
-
-  const [srcName, setSrcName] = useState("");
-  const [srcError, setSrcError] = useState<string | null>(null);
-
-  // Custom sources hydrate via settings.get, per-source lead counts via customers.list — both
-  // mirrored from their hydrators (deduped). Until they land, the summary under-counts and every
-  // source claims "0 leads", so those cells hold shape as skeletons instead.
-  const settingsQ = api.v1.settings.get.useQuery(undefined, { staleTime: HYDRATOR_STALE_MS, refetchOnWindowFocus: false });
-  const settingsLoading = !settingsQ.isFetched && !settingsQ.isError;
-  // Facets describe the whole BOOK (server aggregate) — the store's page under-counted
-  // every source once the book passed one hydrator page.
-  const facetsQ = api.v1.customers.facets.useQuery(undefined, { refetchOnWindowFocus: false });
-  const facetCount = (label: string): number =>
-    facetsQ.data?.sources.find((x: { source: string }) => x.source === label)?.n ?? 0;
-  const leadsLoading = !facetsQ.isFetched && !facetsQ.isError;
-  const leadCountCell = (label: string) => {
-    if (leadsLoading)
-      return <span className="sk" style={{ display: "inline-block", width: 48, height: 10 }} aria-hidden="true" />;
-    const n = facetCount(label);
-    return <>{n} lead{n === 1 ? "" : "s"}</>;
-  };
-
-  async function handleAddSource() {
-    const result = await addSource(srcName);
-    if (result.ok) {
-      setSrcName("");
-      setSrcError(null);
-    } else if (result.reason === "duplicate") {
-      setSrcError("That source is already in your list.");
-    } else if (result.reason === "failed") {
-      setSrcError("Couldn’t add that source — check your connection and try again.");
-    } else {
-      setSrcError(null); // empty input — no-op, no error needed
-    }
-  }
-
-  return (
-    <>
-      {/* The marketplaces and the website form moved to Integrations. What is left here is the
-          SOURCE LIST: not a connection to anything, just the vocabulary this shop tags leads with. */}
-      <FoldCard mark={<MarkSources />} title="Source list" summary={settingsLoading ? "…" : `${DEFAULT_SOURCES.length + sources.length} sources`}>
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-1)" }}>
-          Where your leads come from — tag each lead with one. Built-in sources are always available; add your own below.
-        </p>
-        <div>
-          {DEFAULT_SOURCES.map((label) => {
-                        return (
-              <div key={label} className="stage-row">
-                <span style={{ fontWeight: 600, flex: 1 }}>{label}</span>
-                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(label)}</span>
-                <span style={{ fontSize: "var(--type-xs)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".04em", color: "var(--ink-3)", background: "var(--manila)", border: "1px solid var(--manila-line)", borderRadius: "var(--radius-pill)", padding: "var(--space-2xs) var(--space-2)" }}>
-                  Built-in
-                </span>
-              </div>
-            );
-          })}
-          {sources.map((s) => {
-                        return (
-              <div key={s.id} className="stage-row">
-                <span style={{ fontWeight: 700, flex: 1 }}>{s.label}</span>
-                <span className="muted" style={{ fontSize: "var(--type-sm)", minWidth: 62, textAlign: "right" }}>{leadCountCell(s.label)}</span>
-                <button className="btn sm ghost" aria-label={`Remove ${s.label}`} onClick={() => removeSource(s.id)}>✕</button>
-              </div>
-            );
-          })}
-        </div>
-        <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-4)" }}>
-          <input type="text" id="setSrcName" placeholder="Add a source — e.g. Home show, Truck wrap" value={srcName}
-            onChange={(e) => { setSrcName(e.target.value); if (srcError) setSrcError(null); }}
-            onKeyDown={(e) => { if (e.key === "Enter") void handleAddSource(); }}
-            style={{ flex: 1, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "var(--space-2) var(--space-3)", fontFamily: "inherit", fontSize: "var(--type-base)" }} />
-          <button className="btn" onClick={() => void handleAddSource()}>+ Add</button>
-        </div>
-        {srcError && (
-          <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{srcError}</p>
-        )}
-      </FoldCard>
-    </>
-  );
-}
 // ============================================================================
 // Main page
 // ============================================================================
