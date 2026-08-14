@@ -389,13 +389,13 @@ describe("My day — which day a row is actually from", () => {
     expect(container.querySelector(".mdc-when .md-day")).toBeNull();
   });
 
-  // THE DEFECT: this row sorts to the top of the list and used to be indistinguishable from the
-  // first stop of the morning.
-  it("puts the DAY on a job carried over from yesterday", () => {
+  // A carried-over stop used to sit here wearing yesterday's date. It now stays on yesterday,
+  // where the pager reaches it in one tap — today's list is today's.
+  it("does NOT show a job carried over from yesterday", () => {
     withVisits([visit({ scheduledDate: "2026-06-30", scheduledStart: "08:30" })]);
     render(<MyDayPage />);
-    expect(screen.getByText("Tue 30")).toBeTruthy();
-    expect(screen.getByText("8:30a")).toBeTruthy();
+    expect(screen.queryByText("Tue 30")).toBeNull();
+    expect(screen.queryByText("8:30a")).toBeNull();
   });
 
   // The other direction the same predicate allows, which nobody had considered: an open job the
