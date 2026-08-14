@@ -6,6 +6,7 @@ import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb, db } from "@mallet/shared/db/client";
 import { SignupStore } from "@mallet/identity";
 import type { Principal, Role, VerifiedToken } from "@mallet/identity";
+import { LAST_OWNER_REFUSAL } from "../domain/role-change";
 import { appRouter } from "@/trpc/root";
 import type { Context } from "@/trpc/init";
 
@@ -273,7 +274,7 @@ suite("v1.identity (live RLS)", () => {
     expect(row!.role).toBe("office");
   });
 
-  it("setMemberRole refuses to demote the last owner (FORBIDDEN)", async () => {
+  it("setMemberRole refuses to demote the last owner (CONFLICT — the org's invariant, not the caller's role)", async () => {
     const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('LastOwner Org') returning id`;
     createdOrgIds.push(org!.id);
     const [owner] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'solo@x.com', 'owner') returning id`;
@@ -282,7 +283,7 @@ suite("v1.identity (live RLS)", () => {
 
     await expect(
       appRouter.createCaller(ctx).v1.identity.setMemberRole({ userId: owner!.id, role: "tech" }),
-    ).rejects.toMatchObject({ code: "FORBIDDEN", message: "cannot remove the last owner" });
+    ).rejects.toMatchObject({ code: "CONFLICT", message: LAST_OWNER_REFUSAL });
   });
 
   it("setMemberRole: office caller promoting themselves to owner → FORBIDDEN", async () => {

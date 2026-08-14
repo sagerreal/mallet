@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
+import { initTRPC } from "@trpc/server";
+import { z } from "zod";
 import { validation, conflict, notFound } from "@mallet/shared/types";
 import { APP_ERROR_FIELD, appErrorField } from "@/lib/trpc/error-map";
-import { toTRPCError, withAppErrorTag, scrubInternalError } from "./errors";
+import { INPUT_VALIDATION_FIELD, isInputValidationError } from "@/lib/trpc/input-validation";
+import { toTRPCError, withAppErrorTag, scrubInternalError, flattenInputValidation, formatAppError } from "./errors";
 
 // A domain refusal carries a tag as well as a sentence. These tests follow that tag from the
 // use-case's error, through the throw, onto the wire, and back out on the client — because a
@@ -73,5 +76,57 @@ describe("an internal error says nothing about our internals", () => {
     // The real message is not lost: it is logged server-side by the route handler's onError.
     const shape = scrubInternalError({ message: "ECONNREFUSED 10.0.0.4:5432", data: { code: "INTERNAL_SERVER_ERROR" } });
     expect(shape.message).not.toContain("10.0.0.4");
+  });
+});
+
+// BAD_REQUEST is a PASS_THROUGH code on the client, which is right for a domain refusal — somebody
+// wrote that sentence for a shop owner. An INPUT rejection wears the same code and is not a
+// sentence at all: tRPC puts the serialized Zod issue array in the message. That is why a settings
+// field one character over its cap, a text over 1600, and a blank price cell in a supplier sheet
+// all printed JSON. The split has to happen once, here, or every caller guesses (see the thread
+// modal, which reported every BAD_REQUEST as a missing phone number).
+describe("an input rejection reads as a sentence, a domain refusal is left alone", () => {
+  it("replaces the serialized issues and tags the shape so a client can branch", () => {
+    const parsed = z.object({ label: z.string().max(200) }).safeParse({ label: "x".repeat(201) });
+    const cause = parsed.success ? null : parsed.error;
+
+    const shape = flattenInputValidation({ message: String(cause), data: { code: "BAD_REQUEST" } }, cause);
+
+    expect(shape.message).toBe("Label is too long — 200 characters maximum.");
+    expect(shape.data).toEqual({ code: "BAD_REQUEST", [INPUT_VALIDATION_FIELD]: true });
+  });
+
+  it("leaves a hand-authored refusal exactly as it was written", () => {
+    const thrown = toTRPCError(validation("Pick a customer from the list before sending.", "leadId"));
+    const shape = { message: thrown.message, data: { code: "BAD_REQUEST" } };
+
+    expect(flattenInputValidation(shape, thrown.cause)).toBe(shape);
+  });
+
+  // The end-to-end proof. A hand-built cause would keep passing even if tRPC stopped putting the
+  // ZodError on `cause` — this rejects real input through a real procedure and feeds the formatter
+  // exactly what tRPC feeds it.
+  it("holds for the error a real procedure actually throws", async () => {
+    const t = initTRPC.create();
+    const appRouter = t.router({
+      send: t.procedure.input(z.object({ body: z.string().max(1600) })).mutation(() => "sent"),
+    });
+    const caller = t.createCallerFactory(appRouter)({});
+
+    const error = (await caller
+      .send({ body: "x".repeat(1601) })
+      .then(() => null, (e: unknown) => e)) as { code: string; message: string; cause: unknown };
+
+    // This is what a shop owner was shown, verbatim.
+    expect(error.code).toBe("BAD_REQUEST");
+    expect(error.message).toMatch(/too_big|maximum/);
+
+    const shape = formatAppError({
+      shape: { message: error.message, data: { code: "BAD_REQUEST" } },
+      error,
+    } as never) as { message: string; data: Record<string, unknown> };
+
+    expect(shape.message).toBe("Body is too long — 1600 characters maximum.");
+    expect(isInputValidationError({ data: shape.data })).toBe(true);
   });
 });

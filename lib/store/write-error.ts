@@ -46,29 +46,53 @@ function humanize(action: string): string {
 }
 
 /**
+ * What to say about a rolled-back write.
+ *
+ * The SERVER's sentence when it authored one — a domain refusal knows why it refused, and "check
+ * your connection" is actively misleading when the real cause is a duplicate phone number. The
+ * generic line stays as the fallback for genuine transport failures, which is the only case where
+ * checking a connection is useful advice.
+ */
+function failureMessage(action: string, err: unknown): string {
+  return userMessage(
+    err,
+    `Couldn't ${humanize(action)} — your change was undone. Check your connection and try again.`,
+  );
+}
+
+function devLog(action: string, err: unknown): void {
+  if (process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line no-console
+    console.error(`[store] ${action} failed — rolled back`, err);
+  }
+}
+
+/**
+ * The outcome of a write the CALLER waits on — an explicit Save button that has to decide between
+ * confirming and reporting. Most store writes are fire-and-forget and use the announcer instead.
+ */
+export type WriteOutcome = { ok: true } | { ok: false; message: string };
+
+/**
+ * Build the failure a caller will show ITSELF, next to the control that failed.
+ *
+ * Does not fire the announcer: one failure said twice, in two places, reads as two failures. It
+ * still logs in dev, so a rollback is never invisible to whoever is debugging it.
+ */
+export function writeFailure(action: string, err: unknown): { ok: false; message: string } {
+  devLog(action, err);
+  return { ok: false, message: failureMessage(action, err) };
+}
+
+/**
  * Report a rolled-back write. Call from the `.catch()` that restores the
  * snapshot — it replaces the old NODE_ENV-guarded console.error.
  */
 export function reportWriteError(action: string, err: unknown): void {
   seq += 1;
-  // The SERVER's sentence when it authored one — a domain refusal knows why it refused, and
-  // "check your connection" is actively misleading when the real cause is a duplicate phone
-  // number. The generic line stays as the fallback for genuine transport failures, which is the
-  // only case where checking a connection is useful advice.
-  const event: WriteError = {
-    action,
-    message: userMessage(
-      err,
-      `Couldn't ${humanize(action)} — your change was undone. Check your connection and try again.`,
-    ),
-    seq,
-    tone: "error",
-  };
+  const event: WriteError = { action, message: failureMessage(action, err), seq, tone: "error" };
 
-  if (process.env.NODE_ENV !== "production") {
-    // eslint-disable-next-line no-console
-    console.error(`[store] ${action} failed — rolled back`, err);
-  }
+  devLog(action, err);
 
   for (const listener of listeners) listener(event);
 }

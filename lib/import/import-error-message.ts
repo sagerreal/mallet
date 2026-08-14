@@ -8,7 +8,14 @@
  * array as its message — so one blank price cell in a supplier sheet put a wall of JSON
  * ("expected": "number", "code": "invalid_type", paths and all) in front of the person importing.
  * A validation failure has to name the columns to look at instead.
+ *
+ * The server formatter now flattens those issues for every surface (see trpc/errors.ts), so this
+ * file keeps only what is specific to importing: copy that names the COLUMNS, which the generic
+ * sentence cannot — it sees `rows.12.unitPriceCents`, not the header the person is looking at.
+ * Recognising the rejection is the same question everywhere, so it is the shared predicate.
  */
+
+import { isInputValidationError } from "@/lib/trpc/input-validation";
 
 /** Shown when the server rejected the shape of the rows rather than failing partway through. */
 export const IMPORT_VALIDATION_COPY =
@@ -18,19 +25,8 @@ export const IMPORT_VALIDATION_COPY =
 export const IMPORT_STOPPED_COPY =
   "Import stopped partway. Saved rows were kept — click Import to finish the rest.";
 
-/**
- * A serialized Zod payload, not prose. tRPC gives an array of issues for a batch rejection and
- * occasionally a bare object for a single one, so both openers count — and the issue keys have to
- * be present, otherwise a legitimate message that merely starts with a bracket would be swallowed.
- */
-function isSerializedValidationError(message: string): boolean {
-  const trimmed = message.trimStart();
-  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return false;
-  return /"code"\s*:|"expected"\s*:|"invalid_type"/.test(trimmed);
-}
-
 /** The sentence to show for a failed import chunk. */
 export function importErrorMessage(err: unknown): string {
   if (!(err instanceof Error)) return IMPORT_STOPPED_COPY;
-  return isSerializedValidationError(err.message) ? IMPORT_VALIDATION_COPY : err.message;
+  return isInputValidationError(err) ? IMPORT_VALIDATION_COPY : err.message;
 }

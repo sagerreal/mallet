@@ -148,12 +148,27 @@ describe("settings-slice persistence", () => {
     expect(await store.get().addSource("Home show")).toEqual({ ok: true });
   });
 
-  it("addSource returns {ok:false, reason:'failed'} and rolls back when the persist rejects", async () => {
+  it("addSource carries the refusal's own sentence back, not just 'failed'", async () => {
+    // Collapsing every failure to a bare reason left the picker with nothing to say, so a refused
+    // add discarded the typed name in silence. The server knows why it refused; the caller needs it.
+    mockCreateSource.mockRejectedValueOnce(
+      Object.assign(new Error("Label is too long — 200 characters maximum."), {
+        data: { code: "BAD_REQUEST" },
+      }),
+    );
+    const store = makeStore();
+    const r = await store.get().addSource("Home show");
+    expect(r).toEqual({ ok: false, reason: "failed", message: "Label is too long — 200 characters maximum." });
+    expect(store.get().sources.some((x) => x.label === "Home show")).toBe(false); // rolled back
+  });
+
+  it("addSource still has something to say when the failure carries no sentence", async () => {
     mockCreateSource.mockRejectedValueOnce(new Error("boom"));
     const store = makeStore();
     const r = await store.get().addSource("Home show");
-    expect(r).toEqual({ ok: false, reason: "failed" });
-    expect(store.get().sources.some((x) => x.label === "Home show")).toBe(false); // rolled back
+    expect(r).toMatchObject({ ok: false, reason: "failed" });
+    expect((r as { message: string }).message.length).toBeGreaterThan(0);
+    expect((r as { message: string }).message).not.toContain("boom");
   });
 
   it("removeSource rolls back on rejection", async () => {

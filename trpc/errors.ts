@@ -1,6 +1,7 @@
 import { TRPCError } from "@trpc/server";
 import type { AppError, Result } from "@mallet/shared/types";
 import { APP_ERROR_FIELD } from "@/lib/trpc/error-map";
+import { INPUT_VALIDATION_FIELD, inputValidationMessage, zodIssuesOf } from "@/lib/trpc/input-validation";
 
 const CODE_BY_KIND: Record<AppError["kind"], TRPCError["code"]> = {
   validation: "BAD_REQUEST",
@@ -63,6 +64,42 @@ const INTERNAL_MESSAGE = "Something went wrong on our end. Try again.";
 export const scrubInternalError = <S extends { message: string; data: { code?: unknown } }>(
   shape: S,
 ): S => (shape.data.code === "INTERNAL_SERVER_ERROR" ? { ...shape, message: INTERNAL_MESSAGE } : shape);
+
+/**
+ * Turns a rejected INPUT into a sentence, and marks it as one.
+ *
+ * A domain refusal and an input rejection both leave as BAD_REQUEST, which the client passes
+ * through — right for the refusal (a human wrote that sentence for a human), wrong for the
+ * rejection, whose message IS the serialized Zod issue array. That is how a settings field one
+ * character over its cap, a text over 1600 and a blank price cell in a supplier sheet all put
+ * `[{"code":"too_big","maximum":200,…}]` in front of a shop owner.
+ *
+ * Only a Zod cause is rewritten, so every hand-authored refusal keeps its own wording. The tag is
+ * what lets a surface with better copy than the generic sentence — the import modal knows the
+ * columns to name — branch on a fact instead of pattern-matching prose.
+ */
+export const flattenInputValidation = <S extends { message: string; data?: unknown }>(
+  shape: S,
+  cause: unknown,
+): S => {
+  const issues = zodIssuesOf(cause);
+  if (issues === null) return shape;
+  const data = { ...(shape.data as object | undefined), [INPUT_VALIDATION_FIELD]: true };
+  // The cast is the price of widening tRPC's fixed shape by one key; the value is a superset of S.
+  return { ...shape, message: inputValidationMessage(issues), data } as S;
+};
+
+/**
+ * The whole error formatter, in order: tag a domain refusal, flatten an input rejection, strip an
+ * internal error's message. Each step is a no-op for the errors the others own.
+ */
+export const formatAppError = <S extends { message: string; data: { code?: unknown } }>({
+  shape,
+  error,
+}: {
+  shape: S;
+  error: { cause?: unknown };
+}): S => scrubInternalError(flattenInputValidation(withAppErrorTag(shape, error.cause), error.cause));
 
 // Unwrap a use-case Result at the API boundary: success value through, AppError mapped to the
 // right tRPC/HTTP status. Keeps domain errors out of the transport layer.

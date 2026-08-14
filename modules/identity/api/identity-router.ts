@@ -10,6 +10,7 @@ import { router, authedNoPrincipal, anyRole, ownerOrOffice } from "@/trpc/init";
 import { getSupabaseAdmin } from "@/lib/supabase/admin";
 import { normCert } from "@mallet/shared/dispatch/skill-gate";
 import { ROLES, type Principal } from "../domain/principal";
+import { LAST_OWNER_REFUSAL } from "../domain/role-change";
 import { ProvisionOrgNumberUseCase } from "@mallet/a2p";
 import { playbookFor, TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
 import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
@@ -406,7 +407,10 @@ export const createIdentityRouter = () =>
 
           const ownerCount = Number(countRows[0]?.value ?? 0);
           if (ownerCount <= 1) {
-            throw new TRPCError({ code: "FORBIDDEN", message: "cannot remove the last owner" });
+            // CONFLICT, not FORBIDDEN: the caller is allowed to change roles — the ORG is what
+            // cannot be left ownerless. FORBIDDEN also maps client-side to fixed copy about the
+            // caller's role, which would bury the one sentence that says how to get past this.
+            throw new TRPCError({ code: "CONFLICT", message: LAST_OWNER_REFUSAL });
           }
         }
 

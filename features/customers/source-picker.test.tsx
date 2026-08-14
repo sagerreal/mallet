@@ -88,6 +88,37 @@ describe("correcting the list from inside the picker", () => {
     expect(onPick).toHaveBeenCalledWith("");
   });
 
+  /**
+   * A refused add used to clear the box and close the row with no message at all — the typed name
+   * simply disappeared. The reason the server gives is the only thing that makes the next attempt
+   * different from the last one, so it has to reach the row that failed.
+   */
+  it("says why the add was refused and keeps the name to fix", async () => {
+    addSource.mockResolvedValueOnce({ ok: false, reason: "failed", message: "Label is too long — 200 characters maximum." });
+    picker();
+    fireEvent.click(screen.getByRole("button", { name: /Add a new source/ }));
+    fireEvent.change(screen.getByPlaceholderText("Source name"), { target: { value: "Home show" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    expect(await screen.findByText("Label is too long — 200 characters maximum.")).toBeTruthy();
+    expect(screen.getByDisplayValue("Home show")).toBeTruthy();
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
+  it("clears the refusal once the add lands", async () => {
+    addSource.mockResolvedValueOnce({ ok: false, reason: "failed", message: "Couldn't add source." });
+    picker();
+    fireEvent.click(screen.getByRole("button", { name: /Add a new source/ }));
+    fireEvent.change(screen.getByPlaceholderText("Source name"), { target: { value: "Home show" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    await screen.findByText("Couldn't add source.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+
+    await vi.waitFor(() => expect(onPick).toHaveBeenCalledWith("Home show"));
+    expect(screen.queryByText("Couldn't add source.")).toBeNull();
+  });
+
   it("ignores a blank name instead of adding an empty source", () => {
     picker();
     fireEvent.click(screen.getByRole("button", { name: /Add a new source/ }));
