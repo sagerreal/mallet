@@ -83,7 +83,7 @@ const MATRIX: readonly Row[] = [
   // Idle: only taps that MEAN "I am starting something" may open. Exit taps are no-ops, so a
   // stray Done after the day ended can never put the technician back on the clock.
   row("idle", "start_day", false, SHOP),
-  row("idle", "enroute", false, TRAVEL_A),
+  row("idle", "enroute", false, JOB_ON_A), // On my way STARTS the job
   row("idle", "arrived", false, JOB_ON_A),
   row("idle", "done", false, NO, true),
   row("idle", "break", false, ON_BREAK),
@@ -92,7 +92,7 @@ const MATRIX: readonly Row[] = [
 
   // Shop running.
   row("shop", "start_day", false, NO, true), // already there
-  row("shop", "enroute", true, TRAVEL_A),
+  row("shop", "enroute", true, JOB_ON_A),
   row("shop", "arrived", true, JOB_ON_A),
   row("shop", "done", false, NO, true), // nothing to finish; already shop
   row("shop", "break", true, ON_BREAK),
@@ -101,7 +101,8 @@ const MATRIX: readonly Row[] = [
 
   // Travel running.
   row("travel", "start_day", false, NO, true), // would destroy travel attribution
-  row("travel", "enroute", false, NO, true), // same job, already travelling
+  // A legacy travel row still exists on old days; setting off now moves it onto the job.
+  row("travel", "enroute", true, JOB_ON_A),
   row("travel", "arrived", true, JOB_ON_A),
   row("travel", "done", true, SHOP),
   row("travel", "break", true, ON_BREAK),
@@ -110,7 +111,7 @@ const MATRIX: readonly Row[] = [
 
   // Job running.
   row("job", "start_day", false, NO, true), // would destroy job attribution
-  row("job", "enroute", true, TRAVEL_A),
+  row("job", "enroute", false, NO, true), // same job — On my way and Arrived are one segment
   row("job", "arrived", false, NO, true), // same job, already on site
   row("job", "done", true, SHOP),
   row("job", "break", true, ON_BREAK),
@@ -119,7 +120,7 @@ const MATRIX: readonly Row[] = [
 
   // Break running.
   row("break", "start_day", false, NO, true), // use End break
-  row("break", "enroute", true, TRAVEL_A),
+  row("break", "enroute", true, JOB_ON_A),
   row("break", "arrived", true, JOB_ON_A),
   row("break", "done", true, SHOP),
   row("break", "break", false, NO, true), // already on a break
@@ -390,10 +391,12 @@ describe("job attribution", () => {
   });
 
   it("switching directly from one job to another closes the first", () => {
+    // Setting off for a DIFFERENT job still closes the one he was on — the job changes, so the
+    // segment must. Only the same job makes On my way a no-op.
     const open = openEntry("job", JOB_A);
     const plan = planOf(tap({ tap: "enroute", open, at: at(mins(5)), jobId: JOB_B }));
     expect(plan.close).toMatchObject({ id: open.id });
-    expect(plan.open).toMatchObject({ kind: "travel", jobId: JOB_B });
+    expect(plan.open).toMatchObject({ kind: "job", jobId: JOB_B });
   });
 
   it.each(["enroute", "arrived"] as const)("%s without a job is refused", (t) => {

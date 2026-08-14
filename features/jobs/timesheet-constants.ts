@@ -26,7 +26,15 @@ export const TS_KINDS: Record<string, string> = {
 };
 
 /** The kinds recorded by a CLOCK — they carry a start and an end. */
-export const TS_KIND_KEYS = ["job", "travel", "break", "shop"] as const;
+/**
+ * The kinds the office can put an entry INTO. Travel is absent: On my way starts job time now, so
+ * nothing writes a travel row and offering one would create a kind the clock never produces.
+ *
+ * Rows worked before that change are still travel, and the editor adds the option back for those —
+ * an entry whose own kind is missing from the control shows no selection at all, which reads as
+ * broken and leaves no way to move it off.
+ */
+export const TS_KIND_KEYS = ["job", "shop", "break"] as const;
 
 /**
  * The kinds that are paid ABSENCE — a date and a length, no punch times.

@@ -131,8 +131,15 @@ const targetFor = (tap: ClockTap, jobId: string | null): Segment | null => {
   switch (tap) {
     case "start_day":
       return SHOP;
+    // ON MY WAY STARTS THE JOB. Driving to a job is a cost OF that job — the truck rolling to the
+    // customer's house is time the shop pays for and the job caused. Splitting it into its own
+    // state made a fourth thing to explain, kept drive time out of job costing, and put a seam in
+    // the middle of one continuous stretch of work.
+    //
+    // `arrived` targets the same segment, so isAlreadyIn() makes it a NO-OP: one job row runs from
+    // the moment he sets off. The visit still records enroute_at separately, so when he left and
+    // when he got there is not lost — it is just not a separate KIND of paid time.
     case "enroute":
-      return { kind: "travel", jobId };
     case "arrived":
       return { kind: "job", jobId };
     // Finishing a job and finishing a break both resume unassigned shop time. Carrying the job

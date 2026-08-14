@@ -276,11 +276,11 @@ describe("SetClockStateUseCase — from an idle clock", () => {
     expect(outcome.repo.writeCount).toBe(1);
   });
 
-  it("On my way with no day open starts travel on that job — the morning punch nobody made", async () => {
+  it("On my way with no day open starts JOB time on that job — the morning punch nobody made", async () => {
     const outcome = await tapWith({ tap: "enroute", jobId: JOB_A });
 
     const result = succeeded(outcome);
-    expect(result.opened?.props.kind).toBe("travel");
+    expect(result.opened?.props.kind).toBe("job");
     expect(result.opened?.props.jobId).toBe(JOB_A);
     expect(result.closed).toEqual([]);
   });
@@ -330,13 +330,13 @@ describe("SetClockStateUseCase — from an idle clock", () => {
 describe("SetClockStateUseCase — from shop time", () => {
   const shop = () => running({ kind: "shop" });
 
-  it("On my way closes the shop segment and opens travel to the job", async () => {
+  it("On my way closes the regular segment and opens JOB time on that job", async () => {
     const outcome = await tapWith({ tap: "enroute", jobId: JOB_A }, { open: shop() });
 
     const result = succeeded(outcome);
     expect(result.closed[0]?.props.endTime).toBe(LOCAL_NOW_HHMM);
     expect(result.closed[0]?.props.running).toBe(false);
-    expect(result.opened?.props.kind).toBe("travel");
+    expect(result.opened?.props.kind).toBe("job");
     expect(result.opened?.props.startTime).toBe(LOCAL_NOW_HHMM);
   });
 
@@ -387,10 +387,12 @@ describe("SetClockStateUseCase — from shop time", () => {
 // From travel and job time
 // ---------------------------------------------------------------------------
 
-describe("SetClockStateUseCase — from travel", () => {
+describe("SetClockStateUseCase — from a legacy travel row", () => {
+  // Nothing writes `travel` any more (On my way starts job time), but days worked before that
+  // change still hold these rows and the clock has to close them correctly.
   const travel = () => running({ kind: "travel", jobId: JOB_A });
 
-  it("Arrived closes travel and opens job time on the same job", async () => {
+  it("Arrived closes a legacy travel row and opens job time on the same job", async () => {
     const outcome = await tapWith({ tap: "arrived", jobId: JOB_A }, { open: travel() });
 
     const result = succeeded(outcome);
@@ -400,7 +402,7 @@ describe("SetClockStateUseCase — from travel", () => {
     expect(result.opened?.props.jobId).toBe(JOB_A);
   });
 
-  it("Done closes travel and resumes unassigned shop time", async () => {
+  it("Done closes a legacy travel row and resumes unassigned regular time", async () => {
     const outcome = await tapWith({ tap: "done" }, { open: travel() });
 
     const result = succeeded(outcome);
@@ -435,12 +437,12 @@ describe("SetClockStateUseCase — from job time", () => {
     expect(succeeded(outcome).closed[0]?.props.jobId).toBe(JOB_A);
   });
 
-  it("On my way to the next job closes job time and opens travel to that job", async () => {
+  it("On my way to the next job closes the first job and opens the next", async () => {
     const outcome = await tapWith({ tap: "enroute", jobId: JOB_B }, { open: onJobA() });
 
     const result = succeeded(outcome);
     expect(result.closed[0]?.props.jobId).toBe(JOB_A);
-    expect(result.opened?.props.kind).toBe("travel");
+    expect(result.opened?.props.kind).toBe("job");
     expect(result.opened?.props.jobId).toBe(JOB_B);
   });
 
