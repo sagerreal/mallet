@@ -24,6 +24,7 @@ interface Status {
 
 let statusData: Status | undefined;
 const refreshMutate = vi.fn();
+const beginMutate = vi.fn();
 const invalidate = vi.fn();
 
 vi.mock("@/lib/trpc/client", () => ({
@@ -33,7 +34,7 @@ vi.mock("@/lib/trpc/client", () => ({
       settings: {
         payments: {
           status: { useQuery: () => ({ data: statusData, isLoading: false }) },
-          beginOnboarding: { useMutation: () => ({ mutate: vi.fn(), isPending: false }) },
+          beginOnboarding: { useMutation: () => ({ mutate: beginMutate, isPending: false }) },
           refresh: { useMutation: () => ({ mutate: refreshMutate, isPending: false }) },
         },
       },
@@ -108,5 +109,51 @@ describe("PaymentsCard — the headline tracks whether money can move", () => {
 
     expect(screen.queryByText("Connected ✓")).toBeNull();
     expect(screen.queryByText(/customers can.t pay yet/i)).toBeNull();
+  });
+});
+
+describe("PaymentsCard — getting back into Stripe", () => {
+  beforeEach(() => {
+    refreshMutate.mockClear();
+    beginMutate.mockClear();
+    statusData = undefined;
+  });
+
+  // An EXPRESS account's outstanding requirement — an ID document, a bank account — can only be
+  // satisfied through Stripe's OWN hosted flow. The platform is refused by the API outright:
+  // "This application does not have the required permissions for this endpoint." So while charges
+  // are off, a way back into that flow is the only control that can change the answer; "Check
+  // again" alone is a button that re-reads a state nothing is moving.
+  const VERIFYING: Status = {
+    hasAccount: true, detailsSubmitted: true, chargesEnabled: false, payoutsEnabled: false,
+  };
+
+  it("offers the way back into Stripe while charges are still off", () => {
+    statusData = VERIFYING;
+    render(<PaymentsCard />);
+
+    fireEvent.click(screen.getByRole("button", { name: /finish verification/i }));
+    expect(beginMutate).toHaveBeenCalled();
+  });
+
+  it("says Stripe may want something, rather than implying it always resolves itself", () => {
+    statusData = VERIFYING;
+    render(<PaymentsCard />);
+
+    expect(screen.getByText(/if Stripe needs anything/i)).toBeTruthy();
+  });
+
+  it("keeps Check again alongside it — the flag can land without any shop action", () => {
+    statusData = VERIFYING;
+    render(<PaymentsCard />);
+
+    expect(screen.getByRole("button", { name: /check again/i })).toBeTruthy();
+  });
+
+  it("offers neither once the shop is live", () => {
+    statusData = { hasAccount: true, detailsSubmitted: true, chargesEnabled: true, payoutsEnabled: true };
+    render(<PaymentsCard />);
+
+    expect(screen.queryByRole("button", { name: /finish verification/i })).toBeNull();
   });
 });
