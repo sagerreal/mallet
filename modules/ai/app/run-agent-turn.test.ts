@@ -242,4 +242,61 @@ describe("runAgentTurn", () => {
       expect(firstMsg.blocks[2]).toEqual({ type: "text", text: "describe both" });
     }
   });
+  // ---- contextPreamble: the org facts, prefetched instead of asked for ----
+
+  it("prepends the context preamble to the user's first message", async () => {
+    const llm = new FakeLlm([text("Hello.")]);
+    await runAgentTurn({
+      llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute,
+      userMessage: "how many customers do I have?",
+      contextPreamble: "[Context: Summit Plumbing. Today is 2026-08-13.]",
+    });
+
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    expect(firstMsg.kind).toBe("text");
+    if (firstMsg.kind === "text") {
+      expect(firstMsg.text).toBe("[Context: Summit Plumbing. Today is 2026-08-13.]\n\nhow many customers do I have?");
+    }
+  });
+
+  it("does NOT repeat the preamble on a resumed turn — the transcript already carries it", async () => {
+    // Every approval round trip re-enters this function. Re-prepending would stack a copy of the
+    // org's context onto the conversation on each pass, growing the prompt for nothing.
+    const llm = new FakeLlm([text("Done.")]);
+    await runAgentTurn({
+      llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute,
+      priorMessages: [{ role: "user", kind: "text", text: "[Context: Summit Plumbing.]\n\nfirst question" }],
+      userMessage: "follow-up",
+      contextPreamble: "[Context: Summit Plumbing.]",
+    });
+
+    const sent = llm.requests[0]!.messages;
+    const followUp = sent[sent.length - 1]!;
+    if (followUp.kind === "text") expect(followUp.text).toBe("follow-up");
+    expect(sent.filter((m) => m.kind === "text" && m.text.includes("[Context:"))).toHaveLength(1);
+  });
+
+  it("carries the preamble on a multimodal first turn too — a photo question still needs today's date", async () => {
+    const llm = new FakeLlm([text("A leaking valve.")]);
+    await runAgentTurn({
+      llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute,
+      userMessage: "what is this?",
+      userBlocks: [{ type: "image", mediaType: "image/jpeg", dataBase64: "img==" }],
+      contextPreamble: "[Context: Summit Plumbing.]",
+    });
+
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    expect(firstMsg.kind).toBe("user_blocks");
+    if (firstMsg.kind === "user_blocks") {
+      expect(firstMsg.blocks[1]).toEqual({ type: "text", text: "[Context: Summit Plumbing.]\n\nwhat is this?" });
+    }
+  });
+
+  it("without a preamble the message is unchanged", async () => {
+    const llm = new FakeLlm([text("Hello.")]);
+    await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute: recordingExecute().execute, userMessage: "hi" });
+
+    const firstMsg = llm.requests[0]!.messages[0]!;
+    if (firstMsg.kind === "text") expect(firstMsg.text).toBe("hi");
+  });
 });

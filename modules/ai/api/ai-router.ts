@@ -1,7 +1,10 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOfficeNoTx } from "@/trpc/init";
-import { withTenant } from "@mallet/shared/db/tx";
+import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
+import { eq } from "drizzle-orm";
+import { orgs, orgSettings } from "@mallet/shared/db/schema";
+import type { OrgId } from "@mallet/shared/types";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import type { Principal } from "@mallet/identity";
 import type { AppDeps } from "@/trpc/deps";
@@ -37,8 +40,41 @@ const transcriptSchema = z.array(
 );
 
 // The unified agent's system prompt. Byte-identical across tenants (RLS scopes data at execution,
-// never by varying the prompt) so the cached prefix always hits. No org name / no timestamps — call
-// `get_context` at the start of a fresh conversation to learn those.
+// never by varying the prompt) so the cached prefix always hits. No org name / no timestamps —
+// those are prefetched and prepended to the first USER message, which is outside the cached prefix.
+/**
+ * The three facts the assistant always needs and can never work out: who the shop is, what today is
+ * IN THEIR timezone, and what that timezone is.
+ *
+ * These were a tool the model had to call before it could answer anything, which cost a full model
+ * round trip — at the largest model, with thinking, in silence — to learn what two cheap queries
+ * already knew. Prefetched here and prepended to the user's first message instead.
+ *
+ * The org's OWN timezone, not UTC: toISOString() rolls over at midnight UTC, which is 5pm Pacific,
+ * so every evening the agent believed it was already tomorrow and scheduled onto the wrong day.
+ */
+const orgPreamble = async (orgId: OrgId, clock: { now: () => Date }): Promise<string> => {
+  // Its own short read-only tx, closed before the slow LLM round trip — the same shape the
+  // estimate-context read uses above.
+  const { orgName, timezone } = await withTenant(orgId, async (tx: TenantTx) => {
+    const [orgRow] = await tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+    const [tzRow] = await tx
+      .select({ timezone: orgSettings.timezone })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, orgId))
+      .limit(1);
+    return { orgName: orgRow?.name ?? null, timezone: tzRow?.timezone ?? "America/Los_Angeles" };
+  });
+  // en-CA formats as YYYY-MM-DD — the ISO date shape without hand-assembling parts.
+  const todayISO = new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(clock.now());
+  return `[Context: you are working for ${orgName ?? "your organization"}. Today is ${todayISO} in the shop's timezone, ${timezone}.]`;
+};
+
 const SYSTEM_PROMPT = [
   "You are Artie, Mallet's operations assistant for a field-service business (plumbers, electricians, HVAC, and similar trades).",
   "You help the office get work done by USING TOOLS in a loop — look things up, then take actions — not by guessing.",
@@ -49,7 +85,6 @@ const SYSTEM_PROMPT = [
   "3. PAUSE for confirmation. When a write tool is queued, briefly state what you are about to do and why; then wait.",
   "",
   "## Read tools (run immediately, no approval needed)",
-  "- get_context — org name + today's date; call this at the start of a new conversation.",
   "- customer_list / customer_get — customers and leads.",
   "- invoice_list / invoice_get — invoices (INV-…) with status and balance.",
   "- estimate_list / estimate_get — quotes (EST-…) with status and total.",
@@ -447,7 +482,16 @@ const drive = async (
       system: SYSTEM_PROMPT,
       tools: meta,
       execute,
-      effort: "high",
+      contextPreamble: await orgPreamble(ctx.principal.orgId, ctx.deps.clock),
+      /**
+       * MEDIUM, not high.
+       *
+       * Every turn in the loop ran at `high` — including the ones whose entire job is "which tool
+       * do I call next", where the extra deliberation buys nothing and is paid for in silence,
+       * because the endpoint returns only when the whole turn is done. The office asks this thing
+       * short operational questions; high effort on a lookup is latency the user watches.
+       */
+      effort: "medium",
       userMessage: turn.userMessage,
       priorMessages: turn.priorMessages,
       approvedToolUseIds: turn.approvedToolUseIds,
