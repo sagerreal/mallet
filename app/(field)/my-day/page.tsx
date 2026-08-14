@@ -202,9 +202,6 @@ export default function MyDayPage() {
   const todayCards = deriveDayCards(viewingToday ? items : [], todayISO());
   const dayView = deriveDayView(viewingToday ? [] : items, viewDate);
   const upcoming = viewingToday ? todayCards.upcoming : dayView.open;
-  // Only today's view separates these: a past or future day IS its own date, so everything on it is
-  // "that day's work" and calling any of it overdue would be nonsense.
-  const overdue = viewingToday ? todayCards.overdue : [];
   const finished = viewingToday ? todayCards.finished : dayView.finished;
 
   // A dead fetch is not a free afternoon: rows already in hand stay (stale beats a wall), and an
@@ -363,9 +360,7 @@ export default function MyDayPage() {
         </div>
       ) : (
         <div key={viewDate} className={`mdp-pane ${slideDir.current === "back" ? "slide-back" : slideDir.current === "fwd" ? "slide-fwd" : ""}`}>
-          {/* Overdue counts as content: a day whose only work is late is not an empty day, and
-              "No open jobs assigned to you" over three overdue stops is the opposite of true. */}
-          {overdue.length === 0 && upcoming.length === 0 && finished.length === 0 ? (
+          {upcoming.length === 0 && finished.length === 0 ? (
             <div className="card agenda">
               <div className="empty-att">
                 {viewingToday
@@ -377,14 +372,6 @@ export default function MyDayPage() {
             </div>
           ) : (
             <>
-              {/* Booked before today and still open. First, because it is the work that has been
-                  waiting longest — and named, because under "Upcoming" it read as this morning. */}
-              {overdue.length > 0 ? (
-                <>
-                  <h2 className="mdc-sec mdc-late">Overdue</h2>
-                  <div className="mdc-rail">{overdue.map(renderCard)}</div>
-                </>
-              ) : null}
               {upcoming.length > 0 || viewingToday ? (
                 <h2 className="mdc-sec">{viewingToday ? "Upcoming" : dayOffset < 0 ? "Not finished" : "Scheduled"}</h2>
               ) : null}

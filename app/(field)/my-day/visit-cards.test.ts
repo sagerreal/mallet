@@ -163,50 +163,48 @@ describe("deriveDayCards", () => {
 });
 
 /**
- * The bug: a stop booked Tuesday, still open on Friday, sat under a heading that says Today.
+ * TODAY'S LIST IS TODAY'S.
  *
- * The server returns ALL open work on purpose — a job booked Tuesday and never done is still owed —
- * so the fix is not to hide it. It is to stop calling it Upcoming.
+ * The server returns all open work (`openOrCompletedBetween`) because the office needs it, but a
+ * technician's route is one day. A stop booked Tuesday and still open on Friday belongs to Tuesday
+ * — the pager reaches it in one tap, under "Not finished".
  */
 describe("deriveDayCards — work booked before today", () => {
-  it("puts a stop booked on an earlier day in OVERDUE, not upcoming", () => {
+  it("keeps a stop booked on an earlier day OFF today's list", () => {
     const cards = deriveDayCards([job({ visits: [visit({ scheduledDate: "2026-08-11" })] })], TODAY);
-    expect(cards.overdue).toHaveLength(1);
     expect(cards.upcoming).toHaveLength(0);
+    expect(cards.finished).toHaveLength(0);
   });
 
-  it("leaves today's own stops in upcoming", () => {
+  it("keeps today's own stops", () => {
     const cards = deriveDayCards([job({ visits: [visit({ scheduledDate: TODAY })] })], TODAY);
-    expect(cards.overdue).toHaveLength(0);
     expect(cards.upcoming).toHaveLength(1);
   });
 
-  it("does not call a FUTURE booking overdue", () => {
+  it("keeps a FUTURE booking — the office scheduled it ahead and it has not passed", () => {
     const cards = deriveDayCards([job({ visits: [visit({ scheduledDate: "2026-08-20" })] })], TODAY);
-    expect(cards.overdue).toHaveLength(0);
     expect(cards.upcoming).toHaveLength(1);
   });
 
-  it("never calls a finished stop overdue — it is finished", () => {
+  it("keeps an UNSCHEDULED job — there is no day to page back to, so dropping it would lose it", () => {
+    const cards = deriveDayCards([job({ status: "scheduled", visits: [] })], TODAY);
+    expect(cards.upcoming).toHaveLength(1);
+  });
+
+  it("still shows a stop booked earlier that was FINISHED today", () => {
+    // The finished bucket keys on when it ended, not when it was booked — that is today's work.
     const cards = deriveDayCards(
       [job({ visits: [visit({ scheduledDate: "2026-08-11", status: "complete", completedAt: `${TODAY}T15:00:00Z` })] })],
       TODAY,
     );
-    expect(cards.overdue).toHaveLength(0);
     expect(cards.finished).toHaveLength(1);
   });
 
-  it("leaves an UNSCHEDULED job in upcoming — unplanned is not late", () => {
-    const cards = deriveDayCards([job({ status: "scheduled", visits: [] })], TODAY);
-    expect(cards.overdue).toHaveLength(0);
-    expect(cards.upcoming).toHaveLength(1);
-  });
-
-  it("puts the longest-waiting stop first", () => {
+  it("drops several old stops at once without touching today's", () => {
     const cards = deriveDayCards(
-      [job({ visits: [visit({ scheduledDate: "2026-08-11" }), visit({ scheduledDate: "2026-08-05" })] })],
+      [job({ visits: [visit({ scheduledDate: "2026-08-05" }), visit({ scheduledDate: "2026-08-11" }), visit({ scheduledDate: TODAY })] })],
       TODAY,
     );
-    expect(cards.overdue.map((c) => c.day)).toEqual(["2026-08-05", "2026-08-11"]);
+    expect(cards.upcoming.map((c) => c.day)).toEqual([TODAY]);
   });
 });
