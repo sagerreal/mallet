@@ -163,6 +163,41 @@ describe("MoneyLedger — the filter is on the page, not behind a button", () =>
   });
 });
 
+// ---------------------------------------------------------------------------
+// The Active/Archived pair on a phone.
+//
+// The toolbar's copy is `display:none` under 760px (`.toolbar .view-seg` — SectionTabs is the
+// mobile page identity, so the desktop control row goes with the header). Money never grew the
+// `.mob-ctrl` replacement Customers has, so on a phone there was no way into the Archived set at
+// all: a voided invoice was unreachable from the only screen that lists them.
+// ---------------------------------------------------------------------------
+
+describe("MoneyLedger — the Archived set is reachable on a phone", () => {
+  beforeEach(() => {
+    moneyState = {
+      readyJobs: [], invoiceRows: [{ id: "i1" }], total: 1,
+      isFetched: true, isError: false, isLoading: false, isRefetching: false, bandCounts: undefined,
+    };
+    vi.clearAllMocks();
+  });
+
+  it("renders the set toggle outside the toolbar, in the mobile control row", () => {
+    render(<MoneyLedger />);
+    const ctrl = document.querySelector(".mob-ctrl");
+    expect(ctrl).toBeTruthy();
+    expect(
+      within(ctrl as HTMLElement).getByRole("group", { name: "Show active or archived invoices" }),
+    ).toBeTruthy();
+  });
+
+  it("switches the set from it — the chip row goes inert, as it does on the desktop toggle", () => {
+    render(<MoneyLedger />);
+    const ctrl = document.querySelector(".mob-ctrl") as HTMLElement;
+    fireEvent.click(within(ctrl).getByRole("button", { name: "Archived" }));
+    expect(screen.getByTestId("bandfilter").getAttribute("data-disabled")).toBe("true");
+  });
+});
+
 describe("MoneyLedger — Remind actually sends", () => {
   beforeEach(() => {
     advanceReminder.mockReset();

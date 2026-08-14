@@ -171,13 +171,25 @@ function restoreInv(invoices: Invoice[], prior: Invoice): Invoice[] {
  * flapped. The incoming row still wins on everything the list DOES carry (status, total, the
  * balance, the customer, follow-up state); it just stops erasing what it never knew.
  *
- * The merged row stays `partial`, because it still isn't a full server read — a surface that
- * must decide from lines/history keeps fetching the real record.
+ * A SUMMARY MAY NEVER DEMOTE A FULL RECORD. `partial` is a statement about structure — "no
+ * lines, no job link, no payment history" — so it survives this fold only when the row it lands
+ * on is a summary too. Re-stamping it on a record the modal's fetch or a mutation reconcile had
+ * already filled put that untrue statement in front of the surfaces that WAIT on it: the invoice
+ * sheet re-opens `invoicing.get` for any partial row, React Query answered from its 30-second
+ * cache — the read taken BEFORE the payment — and the sheet adopted that over the settled record.
+ * A payment the office had just recorded came back as "Due now · Charge a card" and stayed there
+ * until a reload, because no partial row was left to trigger another fetch.
+ *
+ * Dropping the flag moves no figure. `paidTotal` is `total − due` on both summary mappers and the
+ * summary's own `depPaid` is 0, so the parts-derived balance a full record uses lands exactly on
+ * the server's `due`.
  */
 function mergeIncomingInvoice(prior: Invoice, incoming: Invoice): Invoice {
   if (!incoming.partial) return incoming;
+  const { partial, ...header } = incoming;
   return {
-    ...incoming,
+    ...header,
+    ...(prior.partial ? { partial } : {}),
     // The job link — the field surfaces find a job's bill through it, and it is the field the
     // list used to null on every refetch.
     jobId: incoming.jobId ?? prior.jobId,
@@ -244,6 +256,8 @@ export interface InvoicesSlice {
    * Replace the invoices array with a server snapshot — called by the hydrator. Summary rows
    * are merged onto what the store already holds rather than clobbering it (see
    * mergeIncomingInvoice): a list row carries no lines, no payment history and no job link.
+   * Rows the server has never seen (origin !== "db") are kept — the snapshot describes the
+   * server's book, and a store-local draft was never in it.
    */
   setInvoices: (invoices: Invoice[]) => void;
   /** Put an invoice fetched by id into the store, without a network write. See adoptLead. */
@@ -335,12 +349,24 @@ export const createInvoicesSlice: StateCreator<InvoicesSlice, [], [], InvoicesSl
 
   // Hydrator path: the snapshot is authoritative for which invoices exist and for every field
   // it carries, but a summary row must not erase the fields it cannot carry (mergeIncomingInvoice).
+  //
+  // It is authoritative over the SERVER's book only. A store-local invoice ("+ New → New
+  // invoice", or a create still in flight) has no DB row, so no list can mention it — and it was
+  // being deleted by the first refetch that arrived while the sheet was open on it. The modal
+  // then found no row, fell through to its fetch-on-miss path and answered "Couldn't load this
+  // invoice" about the invoice being typed into it; a createFromJob caught mid-flight lost its
+  // reconcile target the same way, so a successfully created invoice was written nowhere.
   setInvoices: (invoices) =>
     set((s) => ({
-      invoices: invoices.map((incoming) => {
-        const prior = s.invoices.find((i) => i.id === incoming.id);
-        return prior ? mergeIncomingInvoice(prior, incoming) : incoming;
-      }),
+      invoices: [
+        ...s.invoices.filter(
+          (i) => i.origin !== "db" && !invoices.some((incoming) => incoming.id === i.id),
+        ),
+        ...invoices.map((incoming) => {
+          const prior = s.invoices.find((i) => i.id === incoming.id);
+          return prior ? mergeIncomingInvoice(prior, incoming) : incoming;
+        }),
+      ],
     })),
 
   // ---------------------------------------------------------------------------
