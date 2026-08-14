@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatMoney, formatDate, fmtPhone, fmt$ } from "./format";
+import { formatMoney, formatDate, fmtPhone, fmt$, fmt$rate } from "./format";
 
 describe("format", () => {
   it("renders integer cents as dollars", () => {
@@ -35,5 +35,29 @@ describe("fmtPhone", () => {
   it("passes unrecognizable input through untouched", () => {
     expect(fmtPhone("ext. 44")).toBe("ext. 44");
     expect(fmtPhone("")).toBe("");
+  });
+});
+
+describe("fmt$rate — a rate is whatever precision it actually has", () => {
+  // fmt$ was right while a service meant "$2,400 water heater install". The moment a shop prices
+  // per square foot it is wrong: a painter's whole book sits between $0.16 and $3.30 a unit.
+  it("keeps the cents on a sub-dollar rate instead of showing $0", () => {
+    expect(fmt$rate(0.16)).toBe("$0.16");
+  });
+
+  it("keeps the cents on a rate that has them", () => {
+    expect(fmt$rate(2.25)).toBe("$2.25");
+  });
+
+  it("leaves a whole-dollar rate alone — no gratuitous .00", () => {
+    expect(fmt$rate(123)).toBe("$123");
+  });
+
+  it("still groups thousands", () => {
+    expect(fmt$rate(2400)).toBe("$2,400");
+  });
+
+  it("handles a negative rate the way fmt$ does", () => {
+    expect(fmt$rate(-41)).toBe("-$41");
   });
 });

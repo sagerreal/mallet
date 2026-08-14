@@ -103,6 +103,18 @@ export const fmt$ = (dollars: number): string => {
 export const fmt$2 = (dollars: number): string =>
   dollars.toLocaleString("en-US", { style: "currency", currency: "USD" });
 
+// A RATE, which is whatever precision it actually has: cents when it has cents, whole dollars
+// when it does not. "$123 / each" and "$2.25 / sq ft" in the same list, both true.
+//
+// fmt$ was the right formatter while a service meant "$2,400 water heater install". It is the
+// wrong one the moment a shop prices per square foot: a painter's whole book lives between $0.16
+// and $3.30 a unit, so fmt$ showed exterior power washing — $0.16/sq ft, a real rate on a real
+// job — as "$0", and 2-coat walls at $2.25 as "$2". Neither is a rounding nicety; both are the
+// wrong number on the screen the shop quotes from. fmt$2 everywhere would fix that and put ".00"
+// on every flat-rate line to do it, so this splits the difference at the only place it matters.
+export const fmt$rate = (dollars: number): string =>
+  Number.isInteger(dollars) ? fmt$(dollars) : fmt$2(dollars);
+
 // US phone pretty-printer for display surfaces: E.164 (or any 10/11-digit US
 // string) → "(925) 555-0100". Anything unrecognizable passes through untouched —
 // display must never eat a number it can't parse.

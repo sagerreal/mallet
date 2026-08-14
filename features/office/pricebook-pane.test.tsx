@@ -11,6 +11,8 @@ interface Store {
   terms: unknown[];
   markup: number;
   toggles: { measurementEstimating: boolean };
+  trade: string;
+  assemblies: unknown[];
   addService: () => void;
   updateService: () => void;
   archiveService: () => void;
@@ -70,6 +72,8 @@ const store = (services: Store["services"]): Store => ({
   terms: [],
   markup: 35,
   toggles: { measurementEstimating: false },
+  trade: "plumbing",
+  assemblies: [{ id: "a1" }],
   addService: vi.fn(),
   updateService: vi.fn(),
   archiveService: vi.fn(),
@@ -129,5 +133,37 @@ describe("PricebookPane — the four list states", () => {
     expect(screen.queryByText("No services yet")).toBeNull();
     expect(screen.getByRole("alert")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+  });
+});
+
+// ASSEMBLIES IS A DIFFERENT FEATURE THAT SHARED A SWITCH. Its catalog is seven paving and roofing
+// recipes priced off an aerial site trace — driveway replacement, sealcoat, shingle reroof — with
+// no vocabulary for a wall, a ceiling or a door. It was gated on `measurementEstimating`, which a
+// painting shop MUST have on for the room scan, so Cedarline Painting opened its pricebook onto a
+// paving contractor's book.
+describe("PricebookPane — who sees Assemblies", () => {
+  beforeEach(() => {
+    q = { isFetched: true, isError: false, isRefetching: false, refetch: vi.fn() };
+  });
+
+  const paneFor = (trade: string) => {
+    storeState = { ...store([{ id: "s1", name: "Interior wall painting", position: 0 }]), trade };
+    render(<PricebookPane />);
+  };
+
+  it("never shows it to a painter, who has the measurement switch on for the scan", () => {
+    paneFor("painting");
+    expect(screen.queryByRole("button", { name: /Assemblies/ })).toBeNull();
+  });
+
+  it("still shows it to a roofer, whose recipes those are", () => {
+    paneFor("roofing");
+    expect(screen.getByRole("button", { name: /Assemblies/ })).toBeTruthy();
+  });
+
+  it("leaves the painter their own two segments", () => {
+    paneFor("painting");
+    expect(screen.getByRole("button", { name: /Services/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /Materials/ })).toBeTruthy();
   });
 });

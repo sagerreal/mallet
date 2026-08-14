@@ -7,7 +7,7 @@ import { Segmented } from "./segmented";
 import { COMPACT_INPUT, Field, useGroupLabel, useFieldId } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { useAppStore } from "@/lib/store/app-store";
-import { fmt$ } from "@/lib/format";
+import { fmt$rate } from "@/lib/format";
 import type { ServiceLane } from "@mallet/settings";
 import {
   LANE_OPTIONS,
@@ -341,7 +341,7 @@ function ExpandedEditor({
           )}
           {lane === "flat" && linkedService && (
             <span style={{ fontWeight: 700, fontSize: "var(--type-md)" }}>
-              {fmt$(linkedService.unitPrice)}
+              {fmt$rate(linkedService.unitPrice)}
               <span className="muted" style={{ fontWeight: 400, fontSize: "var(--type-sm)" }}> · from your pricebook</span>
             </span>
           )}
@@ -359,7 +359,7 @@ function ExpandedEditor({
               onChange={(v) => updateBookingService(index, "pricebookServiceId", v)}
               options={[
                 { value: "", label: "— custom price —" },
-                ...pricebookServices.map((p) => ({ value: p.id, label: `${p.name} (${fmt$(p.unitPrice)})` })),
+                ...pricebookServices.map((p) => ({ value: p.id, label: `${p.name} (${fmt$rate(p.unitPrice)})` })),
               ]}
               {...pricebookLink.controlProps}
               compact
