@@ -160,10 +160,14 @@ export function MessagesInbox({ canSeeCustomers, meUserId }: MessagesInboxProps)
             threadId={selected.thread.id}
             kind={selected.thread.kind}
             title={threadTitle(selected.thread, meUserId)}
+            /* An INTERNAL pill sits directly beside this. "never seen by a customer" next to a
+               pill reading INTERNAL is the same fact twice, and it ran the header to 94px before
+               a single message. The member count stays — that is information the pill does not
+               carry; a DM gets nothing, because there the pill has already said all of it. */
             subtitle={
               selected.thread.kind === "group"
-                ? `${selected.thread.members.length} people · never seen by a customer`
-                : "Internal — never seen by a customer"
+                ? `${selected.thread.members.length} people`
+                : ""
             }
             onClose={() => setSelected(null)}
           />
@@ -287,9 +291,12 @@ function TeamList({
                   {t.kind === "group" ? String(t.members.length) : initialsOf(name)}
                 </span>
                 <div className="msg-main">
+                  {/* No "Team" tag. The segmented control picks ONE kind and each list renders
+                      only its own, so the tag labelled a set that was already entirely team — and
+                      a tech, who has no customer inbox at all, got it on every row they will ever
+                      see. On a phone it took the width the NAME needed, and the names truncated. */}
                   <div className="msg-nm">
                     <span className="msg-nmtxt">{name}</span>
-                    <span className="msg-tag">Team</span>
                     {unread ? <span className="msg-badge">{t.unreadCount}</span> : null}
                   </div>
                   <div className="msg-snip">{previewOf(t, meUserId)}</div>
