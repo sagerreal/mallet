@@ -41,6 +41,7 @@ import type { Estimate, Lead } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
 import { fmtPhone } from "@/lib/format";
 import { AddressInput } from "@/components/ui/address-input";
+import { SourcePicker } from "@/features/customers/source-picker";
 import { ModalLoading } from "../modal-loading";
 
 /**
@@ -319,6 +320,22 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
           expandable
         >
           <EmailBody lead={lead} />
+        </SheetRow>
+
+        {/* Lead source has ONE home now, and this is it for an existing customer. It used to be a
+            line of TEXT in the header that rendered nothing at all when empty — so a customer typed
+            in a hurry with the source skipped had no way back, even though the API has always
+            accepted the change. */}
+        <SheetRow
+          label="Lead source"
+          value={lead.source?.trim() ? lead.source : "Add"}
+          valueIsHint={!lead.source?.trim()}
+          expandable
+        >
+          <SourcePicker
+            value={lead.source ?? ""}
+            onPick={(source) => updateLead(lead.id, { source })}
+          />
         </SheetRow>
 
         <SheetRow
