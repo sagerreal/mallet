@@ -7,6 +7,7 @@ import { useMe } from "@/features/identity/hooks";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { useAppStore } from "@/lib/store/app-store";
 import { NewMenu } from "@/components/shell/new-menu";
+import { NavPending } from "@/components/shell/nav-pending";
 import { useNavCounts } from "@/components/shell/use-nav-counts";
 import { signOut } from "@/features/auth/hooks";
 import {
@@ -106,6 +107,8 @@ function NavItem({ href, icon, label, count, active, inert }: NavItemProps) {
       {icon}
       <span>{label}</span>
       {count ? <span className="cnt">{count}</span> : null}
+      {/* Inside the Link on purpose — see nav-pending.tsx. */}
+      <NavPending />
     </Link>
   );
 }
@@ -165,6 +168,9 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
   const customerCount = navCounts.customers;
   const jobsCount = navCounts.jobs;
   const moneyCount = navCounts.money ?? 0;
+  // The one nav item that carried no badge. A tech's whole app is the three field rows below, so
+  // without this there was no unread signal anywhere on their device.
+  const messageCount = navCounts.messages ?? 0;
   const searchParams = useSearchParams();
   const tab = searchParams.get("tab");
 
@@ -276,7 +282,13 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
             Tech users go straight here; office/owner get them after the office block. */}
         <NavItem href="/my-day" icon={<MyDayIcon />} label="My day" active={isActive("/my-day")} />
         <NavItem href="/my-hours" icon={<ClockIcon />} label="My hours" active={isActive("/my-hours")} />
-        <NavItem href="/messages" icon={<ChatIcon />} label="Messages" active={isActive("/messages")} />
+        <NavItem
+          href="/messages"
+          icon={<ChatIcon />}
+          label="Messages"
+          count={messageCount > 0 ? messageCount : undefined}
+          active={isActive("/messages")}
+        />
       </div>
 
       {/* Account row */}

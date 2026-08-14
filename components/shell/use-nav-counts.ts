@@ -26,6 +26,8 @@ export interface NavCounts {
   readonly customers: number | undefined;
   /** Invoices with money still owed. */
   readonly money: number | undefined;
+  /** Unread TEAM messages addressed to me, summed across my conversations. */
+  readonly messages: number | undefined;
 }
 
 export function useNavCounts(): NavCounts {
@@ -46,9 +48,23 @@ export function useNavCounts(): NavCounts {
   // fall outside that window — so the badge showed nothing while three invoices were unpaid.
   const money = api.v1.invoicing.count.useQuery({ unpaidOnly: true }, opts);
 
+  // Messages was the only nav item with no badge, so a tech — whose entire shell is My day, My
+  // hours and Messages — had no unread signal anywhere in the app. NOT gated on role: team chat
+  // is `anyRole`, and a tech is precisely who this badge is for.
+  //
+  // The list itself rather than a count procedure, unlike the three above: a person's threads are
+  // their own DMs and groups (bounded by membership, not by the org's book), and it is the same
+  // query key the Messages inbox uses — so the shell reads its cache instead of standing up a
+  // second source of truth for one number.
+  const teamThreads = api.v1.teamChat.listThreads.useQuery(undefined, {
+    staleTime: HYDRATOR_STALE_MS,
+    refetchOnWindowFocus: true,
+  });
+
   return {
     jobs: jobs.data?.total,
     customers: customers.data?.total,
     money: money.data?.total,
+    messages: teamThreads.data?.reduce((n, t) => n + t.unreadCount, 0),
   };
 }

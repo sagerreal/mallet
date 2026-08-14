@@ -137,7 +137,9 @@ export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["ide
   const fieldTabs: Tab[] = [
     { href: "/my-day", label: "My day", icon: <MyDayIcon />, active: pathname.startsWith("/my-day") },
     { href: "/my-hours", label: "My hours", icon: <ClockIcon />, active: pathname.startsWith("/my-hours") },
-    { href: "/messages", label: "Messages", icon: <ChatIcon />, active: pathname.startsWith("/messages") },
+    // Unread team messages — the tab bar IS a tech's navigation, so this is the only place their
+    // device can tell them a teammate wrote.
+    { href: "/messages", label: "Messages", icon: <ChatIcon />, active: pathname.startsWith("/messages"), count: navCounts.messages ?? 0 },
     { href: "/account", label: "More", icon: <MoreIcon />, active: pathname.startsWith("/account") },
   ];
 

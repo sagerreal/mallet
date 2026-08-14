@@ -131,6 +131,25 @@ describe("QuotesLedger — the other three list states", () => {
 // Owen, Aug 11: change requests need an APPARENT home. The chip appears — with its count —
 // only when a sent quote carries one; a permanent "(0)" chip would be furniture for a state
 // that is usually empty.
+/**
+ * Below 760px the stylesheet drops the header row and stacks each `<td>` — `.list-tbl tbody td`
+ * prints its own label from `attr(data-label)` and right-aligns the value. Without the attribute
+ * the labels vanished and every value jammed against the right edge under nothing: a pill and
+ * three bare figures in a column, with no way to tell which one was the total.
+ */
+describe("QuotesLedger — the phone layout's column labels", () => {
+  it("labels all five cells and heads the stack with the customer", () => {
+    const { container } = render(<QuotesLedger />);
+    const headers = Array.from(container.querySelectorAll("thead th")).map((th) => th.textContent);
+    const row = container.querySelector("tbody tr")!;
+    const labels = Array.from(row.querySelectorAll("td")).map((td) => td.getAttribute("data-label"));
+
+    // The labels ARE the headers — asserted as one list so the two cannot drift apart.
+    expect(labels).toEqual(headers);
+    expect(row.querySelector("td[data-primary]")!.textContent).toContain("Dana Alvarez");
+  });
+});
+
 describe("QuotesLedger — the Changes-asked chip", () => {
   it("absent while nobody has asked for anything", () => {
     render(<QuotesLedger />);

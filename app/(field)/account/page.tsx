@@ -6,40 +6,16 @@
  * (tech, office, owner). Always shows the three field surfaces. Shows an
  * "Office" section for owner/office roles so an owner-operator can navigate
  * back to the back-office from the field shell.
+ *
+ * The destinations come from components/shell/more-links, shared with /more. They used to be a
+ * second hand-written copy and had drifted: Front Desk and Pricebook were missing outright here,
+ * so an owner who reached this page from the field shell could not get to either.
  */
 
-import Link from "next/link";
 import { useMe } from "@/features/identity/hooks";
 import { SignOutButton } from "@/components/shell/sign-out-button";
 import { CallbackNumberForm } from "@/features/settings/callback-number-form";
-
-const FIELD_LINKS: Array<{ href: string; label: string }> = [
-  { href: "/my-day", label: "My day" },
-  { href: "/my-hours", label: "My hours" },
-  { href: "/messages", label: "Messages" },
-];
-
-const OFFICE_LINKS: Array<{ href: string; label: string }> = [
-  { href: "/dashboard", label: "Home" },
-  { href: "/customers", label: "Customers" },
-  { href: "/jobs", label: "Jobs" },
-  { href: "/money", label: "Money" },
-  { href: "/settings", label: "Settings" },
-];
-
-function MenuGroup({ label, links }: { label: string; links: Array<{ href: string; label: string }> }) {
-  return (
-    <div className="moregroup">
-      <div className="morelabel">{label}</div>
-      {links.map((l) => (
-        <Link key={l.href} href={l.href} className="morerow">
-          <span>{l.label}</span>
-          <span className="morechev" aria-hidden="true">›</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
+import { MenuGroup, OFFICE_LINKS, FIELD_LINKS } from "@/components/shell/more-links";
 
 export default function FieldAccountPage() {
   const me = useMe();

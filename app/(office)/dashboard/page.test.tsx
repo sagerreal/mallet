@@ -130,6 +130,38 @@ describe("Office page — one tab bar, four panes", () => {
     expect(await screen.findByTestId("cl-pane")).toBeTruthy();
   });
 
+  /**
+   * The tab switch rewrote the URL with replaceState, so the visit it replaced was the one Back
+   * would have returned to — pressing Back from a tab left Office entirely instead of undoing
+   * the switch. On the phone shell, where Back is a chrome button in the topbar, that reads as
+   * the app throwing you out.
+   */
+  it("records the tab switch in history rather than overwriting the entry", async () => {
+    const pushState = vi.spyOn(window.history, "pushState");
+    const replaceState = vi.spyOn(window.history, "replaceState");
+    render(<OfficePage />);
+    fireEvent.click(screen.getByRole("tab", { name: /Pricebook/ }));
+    expect(await screen.findByTestId("pb-pane")).toBeTruthy();
+    expect(pushState).toHaveBeenCalledWith(null, "", "/dashboard?tab=pricebook");
+    expect(replaceState).not.toHaveBeenCalled();
+    pushState.mockRestore();
+    replaceState.mockRestore();
+  });
+
+  it("follows Back to the previous tab — the URL and the pane move together", async () => {
+    render(<OfficePage />);
+    fireEvent.click(screen.getByRole("tab", { name: /Pricebook/ }));
+    expect(await screen.findByTestId("pb-pane")).toBeTruthy();
+
+    // What a browser Back does: the URL reverts, then popstate fires. Without a listener the
+    // pane would stay on Pricebook while the address bar claimed Today.
+    window.history.replaceState(null, "", "/dashboard");
+    fireEvent.popState(window);
+
+    expect(screen.getByTestId("board")).toBeTruthy();
+    expect(screen.queryByTestId("pb-pane")).toBeNull();
+  });
+
   it("deep-links: ?tab=pricebook opens the Pricebook pane directly", async () => {
     window.history.replaceState(null, "", "/dashboard?tab=pricebook");
     render(<OfficePage />);

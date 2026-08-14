@@ -7,41 +7,14 @@
  * four, so this page is how office users reach the Field surfaces (My day / My
  * hours / Messages — e.g. an owner-operator who also works jobs), Settings, and
  * their account / sign-out. Reachable via the "More" tab; harmless on desktop.
+ *
+ * The destinations come from components/shell/more-links, shared with the field shell's own
+ * /account page — the two lists were separate copies and had drifted apart.
  */
 
-import Link from "next/link";
 import { useMe } from "@/features/identity/hooks";
 import { SignOutButton } from "@/components/shell/sign-out-button";
-
-const OFFICE_LINKS: Array<{ href: string; label: string }> = [
-  { href: "/dashboard", label: "Office" },
-  { href: "/dashboard?tab=frontdesk", label: "Front Desk" },
-  { href: "/customers", label: "Customers" },
-  { href: "/jobs", label: "Jobs" },
-  { href: "/dashboard?tab=pricebook", label: "Pricebook" },
-  { href: "/money", label: "Money" },
-  { href: "/settings", label: "Settings" },
-];
-
-const FIELD_LINKS: Array<{ href: string; label: string }> = [
-  { href: "/my-day", label: "My day" },
-  { href: "/my-hours", label: "My hours" },
-  { href: "/messages", label: "Messages" },
-];
-
-function MenuGroup({ label, links }: { label: string; links: Array<{ href: string; label: string }> }) {
-  return (
-    <div className="moregroup">
-      <div className="morelabel">{label}</div>
-      {links.map((l) => (
-        <Link key={l.href} href={l.href} className="morerow">
-          <span>{l.label}</span>
-          <span className="morechev" aria-hidden="true">›</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
+import { MenuGroup, OFFICE_LINKS, FIELD_LINKS } from "@/components/shell/more-links";
 
 export default function MorePage() {
   const me = useMe();
