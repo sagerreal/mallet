@@ -30,6 +30,12 @@ const makeCapture = (overrides: Partial<RoomCaptureProps> = {}): RoomCapture => 
 };
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in room-quantities-reader tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in room-quantities-reader tests");
+  }
   private byJob = new Map<string, RoomCaptureWithQuantities[]>();
 
   seed(jobId: string, rooms: RoomCaptureWithQuantities[]): void {
@@ -92,7 +98,7 @@ describe("MeasurementRoomQuantitiesReader", () => {
       { kind: "walls_sqft", value: 120.5, derivedValue: 120.5, status: "derived" },
       { kind: "doors_count", value: 2, derivedValue: 2, status: "derived" },
     ];
-    repo.seed("job-1", [{ capture: makeCapture({ roomName: "Living Room" }), quantities }]);
+    repo.seed("job-1", [{ capture: makeCapture({ roomName: "Living Room" }), quantities, deductions: [] }]);
     const reader = new MeasurementRoomQuantitiesReader(repo);
 
     const result = await reader.readForJob(asJobId("job-1"));
@@ -115,7 +121,7 @@ describe("MeasurementRoomQuantitiesReader", () => {
       { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm" },
       { kind: "crown_lnft", value: 40, derivedValue: 40, status: "derived" },
     ];
-    repo.seed("job-2", [{ capture: makeCapture({ roomName: "Bedroom" }), quantities }]);
+    repo.seed("job-2", [{ capture: makeCapture({ roomName: "Bedroom" }), quantities, deductions: [] }]);
     const reader = new MeasurementRoomQuantitiesReader(repo);
 
     const result = await reader.readForJob(asJobId("job-2"));
@@ -134,7 +140,7 @@ describe("MeasurementRoomQuantitiesReader", () => {
     const quantities: StoredQuantity[] = [
       { kind: "walls_sqft", value: 200, derivedValue: 180, status: "override" },
     ];
-    repo.seed("job-3", [{ capture: makeCapture({ roomName: "Hallway" }), quantities }]);
+    repo.seed("job-3", [{ capture: makeCapture({ roomName: "Hallway" }), quantities, deductions: [] }]);
     const reader = new MeasurementRoomQuantitiesReader(repo);
 
     const result = await reader.readForJob(asJobId("job-3"));

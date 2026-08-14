@@ -41,6 +41,12 @@ const makeCapture = (overrides: Partial<SiteCaptureProps> = {}): SiteCapture => 
 };
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in site-quantities-reader tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in site-quantities-reader tests");
+  }
   private byJob = new Map<string, SiteCapture[]>();
 
   seed(jobId: string, captures: SiteCapture[]): void {

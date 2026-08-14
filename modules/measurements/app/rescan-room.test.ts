@@ -69,13 +69,19 @@ const makeOldCapture = (overrides: Partial<RoomCaptureProps> = {}): RoomCapture 
 // ── FakeMeasurementRepository ────────────────────────────────────────────────
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in rescan-room tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in rescan-room tests");
+  }
   private byId = new Map<string, RoomCaptureWithQuantities>();
   supersedeCalls: { oldId: string; next: RoomCapture; quantities: readonly PaintingQuantity[] }[] = [];
   throwOnSupersede = false;
   throwOnSupersedeError: Error | null = null;
 
   seed(capture: RoomCapture, quantities: RoomCaptureWithQuantities["quantities"] = []): void {
-    this.byId.set(capture.props.id, { capture, quantities });
+    this.byId.set(capture.props.id, { capture, quantities, deductions: [] });
   }
 
   async createCapture(): Promise<void> {

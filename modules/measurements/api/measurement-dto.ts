@@ -2,6 +2,7 @@ import { z } from "zod";
 import { edgeTotalsFt, isClassified, roofComplexity } from "@/lib/measure/edge-classes";
 import type { RoomCaptureWithQuantities } from "../domain/measurement-repository";
 import type { SiteCapture, SitePolygon } from "../domain/site-capture";
+import { deriveDeductionSqft, wallDimensions, netWallsSqft } from "../domain/wall-deductions";
 
 // Heavy fields (geometry, rawPayload) are deliberately excluded from the list DTO — a
 // `getGeometry` procedure can be added later for the floor-plan outline UI when it needs them.
@@ -12,6 +13,34 @@ export const quantityDTO = z.object({
   status: z.enum(["derived", "override", "confirmed", "needs_confirm"]),
 });
 
+/**
+ * One deduction, with its area DERIVED on this read.
+ *
+ * `sqft` is never stored and never accepted from the client — it is computed from the capture's
+ * own geometry every time (wall-deductions.ts), so a re-scan re-derives instead of leaving a stale
+ * number priced into an estimate. Null means the deduction cannot be answered yet (a band with no
+ * height), which the UI must show as unresolved rather than as zero.
+ */
+export const deductionDTO = z.object({
+  id: z.string().uuid(),
+  reason: z.string(),
+  kind: z.enum(["whole_wall", "band"]),
+  wallIndexes: z.array(z.number().int().nonnegative()),
+  heightM: z.number().nullable(),
+  sqft: z.number().nullable(),
+});
+
+/**
+ * The walls a room has, so the picker can list them without a second read or any geometry on the
+ * client. Width/height are FEET — the client never sees metres, and never does the conversion.
+ */
+export const wallSummaryDTO = z.object({
+  index: z.number().int().nonnegative(),
+  widthFt: z.number(),
+  heightFt: z.number(),
+  sqft: z.number(),
+});
+
 export const roomCaptureDTO = z.object({
   id: z.string().uuid(),
   jobId: z.string().uuid(),
@@ -19,6 +48,15 @@ export const roomCaptureDTO = z.object({
   source: z.enum(["roomplan_v1", "manual"]),
   capturedAt: z.string(),
   quantities: z.array(quantityDTO),
+  deductions: z.array(deductionDTO),
+  /** Empty for a manual room, which has no geometry and therefore no walls to point at. */
+  walls: z.array(wallSummaryDTO),
+  /**
+   * walls_sqft less every deduction, floored at zero — the number an estimate prices from.
+   * Null whenever the gross is null (walls still needs_confirm): there is nothing to subtract
+   * from, and 0 would present an unmeasured room as fully deducted.
+   */
+  netWallsSqft: z.number().nullable(),
 });
 
 const latLngDTO = z.object({ lat: z.number(), lng: z.number() });
@@ -126,8 +164,42 @@ export const toSiteCaptureDTO = (capture: SiteCapture): SiteCaptureDTO => {
   };
 };
 
+const METERS_TO_FEET = 3.280839895;
+const SQ_METERS_TO_SQFT = 10.763910417;
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+
 export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDTO => {
   const p = room.capture.props;
+  const geometry = p.geometry;
+
+  // Derived here, on every read, from the capture's own geometry — the whole reason a deduction
+  // stores inputs rather than an area. A manual room has no geometry: no walls to point at, and
+  // no deduction can resolve, so both lists come back empty rather than half-answered.
+  const deductions = geometry
+    ? room.deductions.map((d) => ({
+        id: d.id,
+        reason: d.reason,
+        kind: d.kind,
+        wallIndexes: [...d.wallIndexes],
+        heightM: d.heightM,
+        sqft: deriveDeductionSqft(geometry, d),
+      }))
+    : [];
+
+  const walls = geometry
+    ? geometry.walls.map((w, index) => {
+        const { widthM, heightM, areaM2 } = wallDimensions(w);
+        return {
+          index,
+          widthFt: round1(widthM * METERS_TO_FEET),
+          heightFt: round1(heightM * METERS_TO_FEET),
+          sqft: round1(areaM2 * SQ_METERS_TO_SQFT),
+        };
+      })
+    : [];
+
+  const grossWalls = room.quantities.find((q) => q.kind === "walls_sqft")?.value ?? null;
+
   return {
     id: p.id,
     jobId: p.jobId,
@@ -140,5 +212,8 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
       derivedValue: q.derivedValue,
       status: q.status,
     })),
+    deductions,
+    walls,
+    netWallsSqft: netWallsSqft(grossWalls, deductions.map((d) => d.sqft)),
   };
 };

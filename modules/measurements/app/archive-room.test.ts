@@ -8,6 +8,12 @@ const CAPTURE_ID = "44444444-4444-4444-4444-444444444444";
 const MISSING_ID = "99999999-9999-9999-9999-999999999999";
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in archive-room tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in archive-room tests");
+  }
   archiveCallCount = 0;
   archiveLastArg: string | null = null;
   archiveReturns = 1;

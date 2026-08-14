@@ -111,6 +111,7 @@ export class CreateManualRoomUseCase {
 
     logger.info({ captureId: capture.props.id, jobId: cmd.jobId, orgId }, "measurements.manual_room_created");
 
-    return ok({ capture, quantities: storedQuantities });
+    // A manual room has no geometry, so it has no walls to point at and can never carry one.
+    return ok({ capture, quantities: storedQuantities, deductions: [] });
   }
 }

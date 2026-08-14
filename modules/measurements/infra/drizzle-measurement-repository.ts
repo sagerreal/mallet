@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, isNull } from "drizzle-orm";
-import { roomCaptures, paintingRoomQuantities, siteCaptures } from "@mallet/shared/db/schema";
+import { roomCaptures, paintingRoomQuantities, siteCaptures, roomDeductions } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
@@ -11,7 +11,9 @@ import {
   SupersedeTargetError,
   DuplicateCaptureError,
   JobNotFoundError,
+  CaptureNotFoundError,
   type MeasurementRepository,
+  type StoredDeduction,
   type RoomCaptureWithQuantities,
   type QuantityStatus,
 } from "../domain/measurement-repository";
@@ -42,6 +44,8 @@ import {
   toDomainSiteCapture,
   toStoredQuantity,
   toCaptureWithQuantities,
+  toStoredDeduction,
+  type RoomDeductionRow,
   CorruptCaptureError,
   type RoomCaptureRow,
   type SiteCaptureRow,
@@ -361,7 +365,11 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
       byCapture.set(q.captureId, arr);
     }
 
-    return rows.map((row) => toCaptureWithQuantities(row, byCapture.get(row.id) ?? []));
+    const dedByCapture = await this.deductionsFor(captureIds);
+
+    return rows.map((row) =>
+      toCaptureWithQuantities(row, byCapture.get(row.id) ?? [], dedByCapture.get(row.id) ?? []),
+    );
   }
 
   // listByJob's variant of attachQuantities: one unreadable capture (corrupt geometry/props —
@@ -398,9 +406,85 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
       byCapture.set(q.captureId, arr);
     }
 
+    const dedByCapture = await this.deductionsFor(captureIds);
+
     return healthy.map(({ row, capture }) => ({
       capture,
       quantities: (byCapture.get(row.id) ?? []).map(toStoredQuantity),
+      deductions: (dedByCapture.get(row.id) ?? []).map(toStoredDeduction),
     }));
+  }
+
+  /**
+   * Live deductions for a page of captures, keyed by capture id — ONE IN-clause read, never one
+   * per room. A job's room list is the screen an estimator reloads most, and a per-room query
+   * here would be exactly the N+1 the quantity loader above already avoids.
+   *
+   * Ordered by createdAt then id so the same room's deductions cannot come back in a different
+   * order between two reads — the estimate renders them as a list, and a shuffling list reads as
+   * a changed estimate.
+   */
+  private async deductionsFor(captureIds: readonly string[]): Promise<Map<string, RoomDeductionRow[]>> {
+    const byCapture = new Map<string, RoomDeductionRow[]>();
+    if (captureIds.length === 0) return byCapture;
+
+    const rows = await this.tx
+      .select()
+      .from(roomDeductions)
+      .where(
+        and(
+          eq(roomDeductions.orgId, this.orgId),
+          inArray(roomDeductions.captureId, [...captureIds]),
+          isNull(roomDeductions.deletedAt),
+        ),
+      )
+      .orderBy(roomDeductions.createdAt, roomDeductions.id);
+
+    for (const r of rows) {
+      const arr = byCapture.get(r.captureId) ?? [];
+      arr.push(r);
+      byCapture.set(r.captureId, arr);
+    }
+    return byCapture;
+  }
+
+  async addDeduction(captureId: string, deduction: StoredDeduction): Promise<void> {
+    try {
+      await this.tx.insert(roomDeductions).values({
+        id: deduction.id,
+        orgId: this.orgId,
+        captureId,
+        reason: deduction.reason,
+        kind: deduction.kind,
+        // Stored as inputs, never as an area — see StoredDeduction. Spread to a plain array so a
+        // readonly domain value cannot be handed to the driver as a frozen reference.
+        wallIndexes: [...deduction.wallIndexes],
+        heightM: deduction.heightM,
+      });
+    } catch (e: unknown) {
+      // 23503 = foreign_key_violation; scoped to the capture FK by name so an unrelated FK
+      // violation on this statement isn't misclassified. Same contract as createCapture's
+      // JobNotFound: a typed error, never a raw driver failure surfacing to the app layer.
+      const { code, constraint } = pgErrorInfo(e);
+      if (code === "23503" && (constraint === null || constraint === "room_deductions_capture_fk")) {
+        throw new CaptureNotFoundError(captureId);
+      }
+      throw e;
+    }
+  }
+
+  async archiveDeduction(deductionId: string): Promise<number> {
+    const rows = await this.tx
+      .update(roomDeductions)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(
+        and(
+          eq(roomDeductions.id, deductionId),
+          eq(roomDeductions.orgId, this.orgId),
+          isNull(roomDeductions.deletedAt),
+        ),
+      )
+      .returning();
+    return rows.length;
   }
 }

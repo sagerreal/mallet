@@ -7,7 +7,9 @@
 
 import type {
   RoomCard,
+  RoomDeduction,
   RoomQuantity,
+  RoomWall,
   SiteCard,
   SiteComplexity,
   SiteEdgeTotals,
@@ -24,6 +26,13 @@ interface RoomCaptureDtoShape {
   source: "roomplan_v1" | "manual";
   capturedAt: string;
   quantities: readonly RoomQuantity[];
+  // Optional on the WIRE, required in the store. A rolling deploy puts new client code in front
+  // of an older server for a few minutes; that response has no deductions key, and reading
+  // `.map` off it would take down the whole room list. Absent degrades to "none recorded yet",
+  // which is visibly wrong for a moment and self-corrects, rather than a crash that is not.
+  deductions?: readonly RoomDeduction[];
+  walls?: readonly RoomWall[];
+  netWallsSqft?: number | null;
 }
 
 // The subset of SiteCaptureDTO this mapper needs — structural for the same
@@ -93,5 +102,22 @@ export function roomCaptureDtoToStore(dto: RoomCaptureDtoShape): RoomCard {
       derivedValue: q.derivedValue,
       status: q.status,
     })),
+    // Copied field-by-field, not spread: the store's shape is its own contract, and a widened
+    // DTO must not silently deposit unknown keys in the store.
+    deductions: (dto.deductions ?? []).map((d) => ({
+      id: d.id,
+      reason: d.reason,
+      kind: d.kind,
+      wallIndexes: [...d.wallIndexes],
+      heightM: d.heightM,
+      sqft: d.sqft,
+    })),
+    walls: (dto.walls ?? []).map((w) => ({
+      index: w.index,
+      widthFt: w.widthFt,
+      heightFt: w.heightFt,
+      sqft: w.sqft,
+    })),
+    netWallsSqft: dto.netWallsSqft ?? null,
   };
 }

@@ -102,6 +102,10 @@ export class RescanRoomUseCase {
 
     logger.info({ captureId: next.props.id, supersedes: cmd.captureId, orgId }, "measurements.room_rescanned");
 
-    return ok({ capture: next, quantities: storedQuantities });
+    // Deductions are DELIBERATELY not carried over. They key on WALL INDEXES into the geometry
+    // they were made against; a re-scan produces different geometry, where index 2 may be a
+    // different wall or no wall at all. Carrying them would silently deduct the wrong surface, so
+    // the painter re-taps against what was actually scanned.
+    return ok({ capture: next, quantities: storedQuantities, deductions: [] });
   }
 }

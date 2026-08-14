@@ -24,6 +24,7 @@ import { ModalLoading } from "./modal-loading";
 import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useRoomScanAvailability, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
 import { ScanUnavailable } from "@/components/shared/scan-unavailable";
+import { RoomDeductions } from "./room-deductions";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -501,6 +502,8 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
   const me = useMe();
   const isOffice = me.data?.role === "owner" || me.data?.role === "office";
   const setRoomQuantity = useAppStore((s) => s.setRoomQuantity);
+  const addDeduction = useAppStore((s) => s.addDeduction);
+  const removeDeduction = useAppStore((s) => s.removeDeduction);
   const renameRoom = useAppStore((s) => s.renameRoom);
   const archiveRoom = useAppStore((s) => s.archiveRoom);
   const close = useCloseModal();
@@ -543,6 +546,15 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
             />
           );
         })}
+
+        {/* Wall area the scan measured but nobody paints. Sits under the quantities because it
+            modifies one of them — the net it prints IS what an estimate prices from. */}
+        <RoomDeductions
+          room={room}
+          readOnly={!isOffice}
+          onAdd={(d) => addDeduction(jobId, room.id, d)}
+          onRemove={(id) => removeDeduction(jobId, room.id, id)}
+        />
 
         {/* A scanned room always offers Re-scan. When this device/platform cannot scan, the
             control is disabled and says why — the old fallback here printed "Re-scan replaces

@@ -46,12 +46,18 @@ const makeCapture = (overrides: Partial<RoomCaptureProps> = {}): RoomCapture => 
 // ── FakeMeasurementRepository ────────────────────────────────────────────────
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in confirm-quantity tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in confirm-quantity tests");
+  }
   private byId = new Map<string, RoomCaptureWithQuantities>();
   setQuantityCalls: { captureId: string; kind: PaintingQuantityKind; value: number | null; status: QuantityStatus }[] = [];
   setQuantityReturns = 1;
 
   seed(capture: RoomCapture, quantities: RoomCaptureWithQuantities["quantities"] = []): void {
-    this.byId.set(capture.props.id, { capture, quantities });
+    this.byId.set(capture.props.id, { capture, quantities, deductions: [] });
   }
 
   async createCapture(): Promise<void> {

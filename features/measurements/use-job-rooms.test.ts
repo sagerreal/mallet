@@ -21,6 +21,9 @@ vi.mock("@/lib/trpc/vanilla", () => ({
 const JOB = "job-1";
 
 const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
+  deductions: [],
+  walls: [],
+  netWallsSqft: null,
   id: "room-1",
   jobId: JOB,
   roomName: "Kitchen",

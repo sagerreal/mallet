@@ -53,6 +53,20 @@ export interface MeasurementsSlice {
   /** Routes to overrideQuantity or confirmQuantity based on the quantity's current status. */
   setRoomQuantity: (jobId: string, captureId: string, kind: RoomQuantityKind, value: number) => void;
   renameRoom: (jobId: string, captureId: string, roomName: string) => void;
+  /**
+   * Record wall area this room does NOT get painted. `heightFt` is null for a whole-wall
+   * deduction. NOT optimistic, deliberately: the square footage is derived server-side from the
+   * capture's geometry, so the client cannot predict the number it is about to show — an
+   * optimistic net would flash a wrong figure on a screen whose whole job is being right about
+   * area. The whole room comes back and replaces itself.
+   */
+  addDeduction: (
+    jobId: string,
+    captureId: string,
+    deduction: { reason: string; kind: "whole_wall" | "band"; wallIndexes: number[]; heightFt: number | null },
+  ) => Promise<void>;
+  /** Put deducted wall area back. Same server-derived reason for not being optimistic. */
+  removeDeduction: (jobId: string, captureId: string, deductionId: string) => Promise<void>;
   archiveRoom: (jobId: string, captureId: string) => void;
   /**
    * Runs a native RoomPlan scan, persists it server-side, and adopts the resulting
@@ -74,6 +88,11 @@ function findQuantity(
   kind: RoomQuantityKind,
 ): RoomQuantity | undefined {
   return rooms.find((r) => r.id === captureId)?.quantities.find((q) => q.kind === kind);
+}
+
+/** Replace one whole room by id, immutably. Unknown id leaves the list untouched. */
+function withRoom(rooms: RoomCard[], next: RoomCard): RoomCard[] {
+  return rooms.map((r) => (r.id === next.id ? next : r));
 }
 
 /** Replace a single quantity on a single room, immutably. */
@@ -110,6 +129,11 @@ export const createMeasurementsSlice: StateCreator<
       roomName: roomName.trim() || "Room",
       source: "manual",
       capturedAt: new Date().toISOString(),
+      // A manual room has no geometry: no walls to point at, so it can never carry a deduction,
+      // and its wall area is edited directly instead.
+      deductions: [],
+      walls: [],
+      netWallsSqft: null,
       quantities: quantities.map((q) => ({
         kind: q.kind,
         value: q.value,
@@ -189,6 +213,32 @@ export const createMeasurementsSlice: StateCreator<
         reportWriteError("overrideQuantity", err);
         set((s) => ({ roomsByJob: { ...s.roomsByJob, [jobId]: snapshot } }));
       });
+  },
+
+  addDeduction: async (jobId, captureId, deduction) => {
+    try {
+      const dto = await trpcVanilla.v1.measurements.addDeduction.mutate({ captureId, ...deduction });
+      set((s) => ({
+        roomsByJob: { ...s.roomsByJob, [jobId]: withRoom(s.roomsByJob[jobId] ?? [], roomCaptureDtoToStore(dto)) },
+      }));
+    } catch (err: unknown) {
+      // Rethrown after reporting: the caller renders the failure inline on the sheet, because a
+      // deduction that silently did not save changes what the job costs.
+      reportWriteError("addDeduction", err);
+      throw err;
+    }
+  },
+
+  removeDeduction: async (jobId, captureId, deductionId) => {
+    try {
+      const dto = await trpcVanilla.v1.measurements.removeDeduction.mutate({ captureId, deductionId });
+      set((s) => ({
+        roomsByJob: { ...s.roomsByJob, [jobId]: withRoom(s.roomsByJob[jobId] ?? [], roomCaptureDtoToStore(dto)) },
+      }));
+    } catch (err: unknown) {
+      reportWriteError("removeDeduction", err);
+      throw err;
+    }
   },
 
   confirmQuantity: (jobId, captureId, kind, value) => {

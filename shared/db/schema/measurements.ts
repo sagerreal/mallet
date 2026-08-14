@@ -132,3 +132,48 @@ export const paintingRoomQuantities = pgTable(
     ),
   ],
 );
+
+// Wall area a room does NOT get painted, selected by TAP on the scan the painter already took.
+//
+// walls_sqft is reported GROSS (derive-painting.ts: openings are never deducted, because you cut
+// in around a window and the cutting is the cost). Tile is the opposite — a band nobody paints and
+// nobody cuts around. Before this the only lever was overriding walls_sqft with a hand-worked
+// number, which lost the REASON; a deduction keeps it, so an estimate can show its own arithmetic.
+//
+// INPUTS ONLY. wall_indexes + height_m are what the painter chose; the square footage is derived
+// server-side from the capture's geometry on every read, never trusted from the client — same law
+// as site_captures.area_sqft. That also means a re-scan re-derives instead of going stale.
+//
+// kind='whole_wall' → height_m IS NULL (the whole wall goes). kind='band' → height_m is required
+// (tile wainscot: Σ wall widths × height, clamped per wall). Enforced by check constraint, not by
+// hope.
+export const roomDeductions = pgTable(
+  "room_deductions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    captureId: uuid("capture_id").notNull(),
+    reason: text("reason").notNull(), // "Tile wainscot", "Shower surround" — shown on the estimate
+    kind: text("kind").notNull(), // 'whole_wall' | 'band'
+    wallIndexes: jsonb("wall_indexes").notNull(), // int[] into NormalizedGeometry.walls
+    heightM: numeric("height_m", { precision: 8, scale: 4, mode: "number" }), // band only
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("room_deductions_org_id_uq").on(t.orgId, t.id),
+    foreignKey({
+      name: "room_deductions_capture_fk",
+      columns: [t.orgId, t.captureId],
+      foreignColumns: [roomCaptures.orgId, roomCaptures.id],
+    }).onDelete("cascade"),
+    index("room_deductions_org_capture_idx").on(t.orgId, t.captureId, t.deletedAt),
+    check("room_deductions_kind_ck", sql`${t.kind} in ('whole_wall','band')`),
+    check(
+      "room_deductions_height_ck",
+      sql`(${t.kind} = 'whole_wall' and ${t.heightM} is null) or (${t.kind} = 'band' and ${t.heightM} > 0)`,
+    ),
+    check("room_deductions_reason_ck", sql`length(btrim(${t.reason})) between 1 and 60`),
+  ],
+);

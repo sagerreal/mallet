@@ -44,6 +44,9 @@ const flush = () => new Promise((r) => setTimeout(r, 0));
 const JOB = "job-1";
 
 const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
+  deductions: [],
+  walls: [],
+  netWallsSqft: null,
   id: "room-1",
   jobId: JOB,
   roomName: "Kitchen",

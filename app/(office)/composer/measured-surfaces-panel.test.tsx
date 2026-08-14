@@ -156,6 +156,9 @@ const seededProps = {
 };
 
 const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
+  deductions: [],
+  walls: [],
+  netWallsSqft: null,
   id: "r1",
   jobId: "j1",
   roomName: "Living room",

@@ -96,6 +96,7 @@ export class IngestScanUseCase {
 
     logger.info({ captureId: capture.props.id, jobId: cmd.jobId, orgId }, "measurements.scan_ingested");
 
-    return ok({ capture, quantities: storedQuantities });
+    // A brand-new capture carries no deductions yet.
+    return ok({ capture, quantities: storedQuantities, deductions: [] });
   }
 }
