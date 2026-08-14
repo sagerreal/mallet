@@ -41,9 +41,23 @@ export function jobHasPricing(job: Pick<Job, "pricing">): boolean {
   return rates.discBps > 0 || rates.taxBps > 0;
 }
 
-/** Σ of the job's lines in integer cents, extended per line like the wire. Redacted rates read 0. */
+/**
+ * Σ of the job's lines in integer cents, extended per line like the wire. Redacted rates read 0.
+ *
+ * EXTEND FIRST, ROUND SECOND. The other order — round the rate to cents, then multiply by the
+ * quantity — turns a fractional quantity into fractional cents, and `money()` throws on those by
+ * contract. Nothing catches it on this path, so opening a job with 1.5 hours of labour at an odd
+ * cent rate took the WHOLE SHEET to the error boundary (seen in production as
+ * `Money must be integer cents, got 241495.5` — 1.5 x $1,609.97). Half-hours are ordinary in the
+ * trades; this was reachable by typing a normal number into a normal field.
+ *
+ * This order is also what the server has always used — `invoice-line.ts` extends with
+ * `money(Math.round(quantity * rate))` — and what the client's own price builder already did.
+ * This function was the single place that disagreed, so it was the one that could disagree about
+ * a total, too: rounding per-rate loses the half-cent the server keeps until the extension.
+ */
 function jobLineSubtotalCents(job: Pick<Job, "lines">): number {
-  return (job.lines ?? []).reduce((sum, l) => sum + (l.q ?? 1) * Math.round((l.r ?? 0) * 100), 0);
+  return (job.lines ?? []).reduce((sum, l) => sum + Math.round((l.q ?? 1) * (l.r ?? 0) * 100), 0);
 }
 
 /**
