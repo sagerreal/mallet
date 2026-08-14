@@ -26,7 +26,7 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
-import { useCloseModal, useOpenModal, useLeads, useAppStore } from "@/lib/store/app-store";
+import { useCloseModal, useOpenModal, useLeads, useAppStore, useActiveModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead } from "@/lib/store/types";
@@ -96,11 +96,24 @@ export function NewJobModalContent() {
   const liveLeads = leads.filter((l) => !l.archived);
 
 
+  // OPENED FROM A CUSTOMER. The customer sheet's "Create a job" passes the lead it was standing
+  // in, so the job lands on that customer instead of asking for a name the app already knows —
+  // retyping it invites picking the wrong one and attaching the job to somebody else.
+  //
+  // Seeded lazily rather than in an effect: modal-host unmounts this content when the sheet
+  // closes (Modal returns null), so every open mounts fresh and the initialiser runs exactly once.
+  // The submit path resolves the customer by NAME (matchLead), so seeding the field is enough to
+  // link the job — no separate id to thread through.
+  const activeModal = useActiveModal();
+  const openedForLead = leads.find((l) => l.id === activeModal?.params?.leadId);
+
   // Core fields
   const [title, setTitle] = useState("");
-  const [customer, setCustomer] = useState("");
-  const [phone, setPhone] = useState("");
-  const [addr, setAddr] = useState("");
+  const [customer, setCustomer] = useState(() => openedForLead?.name ?? "");
+  const [phone, setPhone] = useState(() =>
+    openedForLead?.phone && openedForLead.phone !== "—" ? openedForLead.phone : "",
+  );
+  const [addr, setAddr] = useState(() => openedForLead?.address ?? "");
   const [notes, setNotes] = useState("");
 
   // Visits (unplaced hours rows) — default one row at the unpriced length; the priced

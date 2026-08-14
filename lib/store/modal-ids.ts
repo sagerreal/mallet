@@ -10,7 +10,6 @@ export const MODAL = {
   THREAD: "thread",
   /** A staff conversation (DM or group) — internal, never customer-visible. */
   TEAM_CHAT: "team-chat",
-  VISIT: "visit",
   CLEAN_UP: "clean-up",
   SWEEP: "sweep",
   QUOTE_SWEEP: "quote-sweep",

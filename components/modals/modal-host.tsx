@@ -123,8 +123,6 @@ const CustInvoiceModalContent = dynamicModal(loadCustInvoiceModalContent, "lg");
 const loadCloseOutModalContent = () => import("./close-out-modal").then((m) => ({ default: m.CloseOutModalContent }));
 const CloseOutModalContent = dynamicModal(loadCloseOutModalContent, "lg");
 
-const loadVisitModalContent = () => import("./visit-modal").then((m) => ({ default: m.VisitModalContent }));
-const VisitModalContent = dynamicModal(loadVisitModalContent, "md");
 
 const loadCleanUpModalContent = () => import("./placeholder-modals").then((m) => ({ default: m.CleanUpModalContent }));
 const CleanUpModalContent = dynamicModal(loadCleanUpModalContent, "md");
@@ -158,7 +156,7 @@ const SiteTracerModalContent = dynamicModal(loadSiteTracerModalContent, "lg");
  * dynamic() wrappers use, so a new modal added above is one identifier away from being
  * preloaded — and a missed one degrades to today's skeleton, never to breakage.
  */
-const MODAL_LOADERS = [loadLeadModal, loadNewCustomerModal, loadTeamChatModalContent, loadSweepModalContent, loadQuoteSweepModalContent, loadThreadModalContent, loadCallModalContent, loadEstimateModalContent, loadJobModalContent, loadNewJobModalContent, loadPriceBuilderModalContent, loadTechQuoteModalContent, loadInvoiceModalContent, loadTechJobModalContent, loadCustQuoteModalContent, loadCustInvoiceModalContent, loadCloseOutModalContent, loadVisitModalContent, loadCleanUpModalContent, loadCompanyViewModalContent, loadImportCustomersModalContent, loadImportServicesModalContent, loadImportJobsModalContent, loadImportMaterialsModalContent, loadImportCompaniesModalContent, loadRoomCardModalContent, loadSiteTracerModalContent];
+const MODAL_LOADERS = [loadLeadModal, loadNewCustomerModal, loadTeamChatModalContent, loadSweepModalContent, loadQuoteSweepModalContent, loadThreadModalContent, loadCallModalContent, loadEstimateModalContent, loadJobModalContent, loadNewJobModalContent, loadPriceBuilderModalContent, loadTechQuoteModalContent, loadInvoiceModalContent, loadTechJobModalContent, loadCustQuoteModalContent, loadCustInvoiceModalContent, loadCloseOutModalContent, loadCleanUpModalContent, loadCompanyViewModalContent, loadImportCustomersModalContent, loadImportServicesModalContent, loadImportJobsModalContent, loadImportMaterialsModalContent, loadImportCompaniesModalContent, loadRoomCardModalContent, loadSiteTracerModalContent];
 
 // ---------------------------------------------------------------------------
 
@@ -221,9 +219,6 @@ export function ModalHost() {
         <ThreadModalContent />
       </Modal>
 
-      <Modal instant={switching} open={id === MODAL.VISIT} onClose={close}>
-        <VisitModalContent />
-      </Modal>
 
       <Modal instant={switching} open={id === MODAL.CLEAN_UP} onClose={close}>
         <CleanUpModalContent />

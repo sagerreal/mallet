@@ -14,6 +14,9 @@ const updateJob = vi.fn();
 let storeChecklists: unknown[] = [];
 // Live leads feeding the customer picker — set per test, reset in beforeEach.
 let storeLeads: unknown[] = [];
+// Params the sheet was opened with. The customer sheet opens this modal with a leadId so the
+// job lands on the customer you were standing in.
+let activeParams: Record<string, unknown> = {};
 
 // close mock at module scope — reassigned in beforeEach so each test gets a fresh spy.
 // Declared before vi.mock so the factory closure captures the binding (not the value).
@@ -42,6 +45,7 @@ vi.mock("@/lib/trpc/vanilla", () => ({
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush, replace: vi.fn() }) }));
 
 vi.mock("@/lib/store/app-store", () => ({
+  useActiveModal: () => ({ id: "new-job", params: activeParams }),
   useCloseModal: () => closeMock,
   useOpenModal: () => openModalMock,
   usePushModal: () => pushModalMock,
@@ -68,6 +72,7 @@ describe("NewJobModalContent — the unpriced exit (Create job)", () => {
     addVisit.mockReset();
     closeMock = vi.fn();
     storeLeads = [];
+    activeParams = {};
   });
 
   it("awaits the persisted lead, then creates a real estimate-kind JOB on the SERVER id", async () => {
@@ -1028,5 +1033,45 @@ describe("NewJobModalContent — the two exits", () => {
     await waitFor(() => expect(screen.getByText(/the customer was saved, but the job wasn't/i)).toBeTruthy());
     expect(routerPush).not.toHaveBeenCalled();
     expect(closeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("NewJobModalContent — opened from a customer", () => {
+  beforeEach(() => {
+    storeLeads = [];
+    storeChecklists = [];
+    activeParams = {};
+  });
+
+  it("prefills the customer, phone and address from the leadId it was opened with", () => {
+    // The customer sheet's "Create a job" opens this modal. Landing on a blank customer field
+    // when you were standing in ZZ Bob Tester's sheet means retyping a name the app already knows,
+    // and picking the wrong one attaches the job to a different customer.
+    storeLeads = [
+      { id: "lead-9", name: "ZZ Bob Tester", phone: "7818328282", address: "12 Elm St", archived: false },
+    ];
+    activeParams = { leadId: "lead-9" };
+
+    render(<NewJobModalContent />);
+
+    expect((screen.getByPlaceholderText("search or add") as HTMLInputElement).value).toBe("ZZ Bob Tester");
+  });
+
+  it("opens blank when there is no leadId", () => {
+    storeLeads = [{ id: "lead-9", name: "ZZ Bob Tester", phone: "7818328282", archived: false }];
+    activeParams = {};
+
+    render(<NewJobModalContent />);
+
+    expect((screen.getByPlaceholderText("search or add") as HTMLInputElement).value).toBe("");
+  });
+
+  it("opens blank when the leadId is not in the book", () => {
+    storeLeads = [];
+    activeParams = { leadId: "lead-missing" };
+
+    render(<NewJobModalContent />);
+
+    expect((screen.getByPlaceholderText("search or add") as HTMLInputElement).value).toBe("");
   });
 });
