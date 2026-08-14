@@ -195,6 +195,16 @@ export interface WeekSummary {
   readonly missingDays: readonly string[];
   /** Names the overtime rule the figures were computed with. */
   readonly rulePhrase: string;
+  /**
+   * Is one of this week's shifts still on the clock?
+   *
+   * The figures above deliberately do NOT count it — an unfinished stretch is not yet hours, which
+   * is the right answer for a timesheet and the wrong one for a man looking at his own day at 3pm.
+   * My day measures that open stretch against now (features/field/day-segments.ts), so the two
+   * screens legitimately state different totals for the same day. This is what lets the headline
+   * say so, instead of leaving him to decide which screen is broken.
+   */
+  readonly shiftRunning: boolean;
 }
 
 export interface WeekSummaryArgs {
@@ -243,5 +253,6 @@ export function weekSummary(args: WeekSummaryArgs): WeekSummary {
       todayISO: args.todayISO,
     }),
     rulePhrase: overtimeRulePhrase(args.policy),
+    shiftRunning: shifts.some((s) => s.running),
   };
 }

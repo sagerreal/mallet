@@ -27,7 +27,9 @@
 
 import { memo } from "react";
 import type { Invoice, Job, Lead } from "@/lib/store/types";
-import { fmt$ } from "@/lib/format";
+// fmt$2, never fmt$: this block states the balance the technician is about to collect, and the
+// close-out it opens prints the same balance to the cent. Rounded, the two disagreed.
+import { fmt$2 } from "@/lib/format";
 import { invDue, jobTotal, pricesHidden } from "./helpers";
 
 export interface DoneBlockProps {
@@ -125,7 +127,7 @@ export function ScopeHandoffBlock({
     <>
       {showFeeButton ? (
         <button className="tjpaid-btn2" onClick={onCollectFee}>
-          {feeAmount ? `Collect the visit fee — ${fmt$(feeAmount)}` : "Collect the visit fee →"}
+          {feeAmount ? `Collect the visit fee — ${fmt$2(feeAmount)}` : "Collect the visit fee →"}
         </button>
       ) : null}
       {feeError ? (
@@ -213,7 +215,7 @@ function DoneBlockFn({
     return (
       <div className="tjpaid ok">
         <div className="tjpaid-top">
-          <b>✓ Paid · {fmt$(invoice.total ?? 0)}</b>
+          <b>✓ Paid · {fmt$2(invoice.total ?? 0)}</b>
         </div>
         {onOpenInvoice ? (
           <div className="tjpaid-sub">
@@ -257,7 +259,7 @@ function DoneBlockFn({
       <div className="tjpaid">
         <div className="tjpaid-top">
           <b>✓ Job done</b>
-          <span className="tjpaid-amt fig">{fmt$(due)}</span>
+          <span className="tjpaid-amt fig">{fmt$2(due)}</span>
         </div>
         {chargeError ? (
           <div className="tjpaid-sub" role="alert" style={{ color: "var(--red)" }}>
@@ -281,7 +283,7 @@ function DoneBlockFn({
       <div className="tjpaid">
         <div className="tjpaid-top">
           <b>✓ Job done</b>
-          <span className="tjpaid-amt fig">{fmt$(due)}</span>
+          <span className="tjpaid-amt fig">{fmt$2(due)}</span>
         </div>
       </div>
     );

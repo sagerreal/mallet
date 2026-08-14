@@ -21,7 +21,7 @@ import { useState, type ReactNode } from "react";
 import { todayISO, addDaysISO } from "@/lib/clock";
 import { api } from "@/lib/trpc/client";
 import { useMe } from "@/features/identity/hooks";
-import { myHoursListInput, MY_HOURS_STALE_MS } from "@/features/field/my-hours-input";
+import { myHoursListInput, myHoursWeekBounds, MY_HOURS_STALE_MS } from "@/features/field/my-hours-input";
 import { shouldShowFirstRun, shouldShowLoadFailed, isFirstLoad } from "@/lib/first-run";
 import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -120,6 +120,12 @@ interface WeekViewProps {
 /** The populated surface. Owns which week is shown and which row is open — nothing else needs it. */
 function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, addButton, addForm, unreported, onAcceptDay, onEnterOwn, overtimePolicy, canEditOwnTimes }: WeekViewProps) {
   const [weekStartISO, setWeekStartISO] = useState(() => weekStart(today));
+  /**
+   * The weeks this page can actually answer for — derived from the same window `myHoursListInput`
+   * fetches, so the navigator and its data cannot drift apart. Without it the arrows walked out
+   * of the fetched array and the register reported worked weeks as "No shifts recorded".
+   */
+  const bounds = myHoursWeekBounds(today);
   const [editingId, setEditingId] = useState<string | null>(null);
   /**
    * PAID and OVERTIME come from the shop's own rule, not a compiled-in forty. This page reported
@@ -189,11 +195,21 @@ function WeekView({ entries, today, myUserId, writes, openEntry, suggestEndFor, 
         rulePhrase={summary.rulePhrase}
         missingDays={weekMissing.map((d) => d.date)}
         canEditOwnTimes={canEditOwnTimes}
+        shiftRunning={summary.shiftRunning}
       />
       <HoursWeekNav
         weekStartISO={weekStartISO}
         thisWeekISO={weekStart(today)}
-        onNav={(weeks) => setWeekStartISO((prev) => addDaysISO(prev, weeks * DAYS_PER_WEEK))}
+        firstWeekISO={bounds.first}
+        lastWeekISO={bounds.last}
+        onNav={(weeks) =>
+          setWeekStartISO((prev) => {
+            const next = addDaysISO(prev, weeks * DAYS_PER_WEEK);
+            // Clamped here as well as disabled in the pager: the bound belongs to the data, and a
+            // second way in (a keyboard repeat, a future caller) must not be able to step past it.
+            return next < bounds.first ? bounds.first : next > bounds.last ? bounds.last : next;
+          })
+        }
         onThisWeek={() => setWeekStartISO(weekStart(today))}
         actions={
           <>

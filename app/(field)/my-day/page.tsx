@@ -30,7 +30,10 @@ import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { useMyDayInput } from "@/features/field/my-day-input";
 import { todayISO, addDaysISO } from "@/lib/clock";
-import { fmt$ } from "@/lib/format";
+// fmt$2, never fmt$: this card names the sum a technician is about to take at the door, and the
+// close-out it opens prints the balance to the cent. Rounded to whole dollars they disagreed, and
+// the man holding the cash was short the difference.
+import { fmt$2 } from "@/lib/format";
 import { useAppStore } from "@/lib/store/app-store";
 import { deriveDayCards, type DayCard } from "./visit-cards";
 import type { CardMoney } from "./job-card";
@@ -43,6 +46,9 @@ import { useEffect, useRef, useState } from "react";
 type JobSummary = RouterOutputs["v1"]["field"]["myDay"]["items"][number];
 type FieldCustomer = RouterOutputs["v1"]["field"]["myDay"]["customers"][number];
 type VisitSummary = JobSummary["visits"][number];
+
+/** How many times an interrupted "On my way" is re-sent before the tech is told. See below. */
+const ENROUTE_RETRIES = 2;
 
 
 
@@ -147,9 +153,18 @@ export default function MyDayPage() {
   });
 
   // ── visit-level actions — the same writes the job sheet makes ─────────────
+  /**
+   * NOT OPTIMISTIC, alone among the taps on this card. The others assert a local state change; this
+   * one asserts that the CUSTOMER WAS TEXTED, and the optimistic patch removed the button on the
+   * tap — so a request the phone never finished sending (backgrounded, out of signal, reloaded)
+   * left a card claiming the text had gone, with the only contradiction a toast that died with the
+   * page. The circle stays until the server confirms; an interrupted tap is still there to tap.
+   *
+   * Retried because the endpoint is explicitly idempotent (field-router: a repeat tap is a no-op
+   * the clock resolves for itself), and a truck between cells is the ordinary case out here.
+   */
   const enrouteMutation = api.v1.field.setVisitEnroute.useMutation({
-    onMutate: ({ jobId, visitId }) =>
-      patchVisit(jobId, visitId, { enrouteAt: new Date().toISOString() }),
+    retry: ENROUTE_RETRIES,
     onSuccess: () => void refetch(),
     onError: (err) => { void refetch(); reportWriteError("field.setVisitEnroute", err); },
   });
@@ -217,17 +232,17 @@ export default function MyDayPage() {
       if (bill?.status === "paid")
         return {
           kind: "paid",
-          label: bill.amountPaid ? `Paid ✓ · ${fmt$(bill.amountPaid.cents / 100)}` : "Paid ✓",
+          label: bill.amountPaid ? `Paid ✓ · ${fmt$2(bill.amountPaid.cents / 100)}` : "Paid ✓",
         };
       if (bill?.status === "void") return null;
       if (job.invRequested)
-        return { kind: "office", amount: job.total ? fmt$(job.total.cents / 100) : null };
+        return { kind: "office", amount: job.total ? fmt$2(job.total.cents / 100) : null };
       // Due = the job's figure less what the ledger already took — both redaction-aligned
       // (a price-blind tech gets both as null and a plain label).
       const dueCents = job.total ? Math.max(0, job.total.cents - (bill?.amountPaid?.cents ?? 0)) : null;
       return {
         kind: "collect",
-        label: dueCents !== null && dueCents > 0 ? `Take payment · ${fmt$(dueCents / 100)}` : "Take payment",
+        label: dueCents !== null && dueCents > 0 ? `Take payment · ${fmt$2(dueCents / 100)}` : "Take payment",
       };
     };
     const money = cardMoney();

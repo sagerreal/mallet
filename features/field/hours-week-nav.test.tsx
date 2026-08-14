@@ -34,13 +34,19 @@ describe("weekRange", () => {
 });
 
 describe("the pager", () => {
-  const nav = (weekStartISO: string) => {
+  // The window My hours fetches, expressed in weeks — the arrows may not leave it.
+  const FIRST_WEEK = "2026-04-13";
+  const LAST_WEEK = "2026-07-06";
+
+  const nav = (weekStartISO: string, bounds = { first: FIRST_WEEK, last: LAST_WEEK }) => {
     const onNav = vi.fn();
     const onThisWeek = vi.fn();
     render(
       <HoursWeekNav
         weekStartISO={weekStartISO}
         thisWeekISO={THIS_WEEK}
+        firstWeekISO={bounds.first}
+        lastWeekISO={bounds.last}
         onNav={onNav}
         onThisWeek={onThisWeek}
       />,
@@ -64,6 +70,20 @@ describe("the pager", () => {
     const { onThisWeek } = nav("2026-06-08");
     fireEvent.click(screen.getByRole("button", { name: "Back to this week" }));
     expect(onThisWeek).toHaveBeenCalledTimes(1);
+  });
+
+  // An arrow past the fetched window rendered a week the page had no rows for and called it "No
+  // shifts recorded" — so the edge is refused where it is drawn, not just clamped where it is read.
+  it("refuses the arrow at each end of the window", () => {
+    nav(FIRST_WEEK);
+    expect(screen.getByRole("button", { name: "Previous week" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Next week" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("refuses the forward arrow on the last week the window reaches", () => {
+    nav(LAST_WEEK);
+    expect(screen.getByRole("button", { name: "Next week" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Previous week" }).hasAttribute("disabled")).toBe(false);
   });
 
   it("names the week as a heading, so a reader arriving at the register knows which one it is", () => {

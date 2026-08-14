@@ -128,7 +128,15 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
 
-  const leadId = activeModal?.params?.leadId as string | undefined;
+  /**
+   * ONLY WHEN THIS SHEET IS THE ONE ON SCREEN. ModalHost mounts the customer sheet on every page
+   * and tells it whether it is open; `activeModal` is whatever is on TOP of the stack. Reading the
+   * id without checking which modal that is meant any other sheet carrying a leadId — Call, Text,
+   * New quote — resolved a subject here and woke all four of the reads below behind it. On a
+   * technician's phone those are ownerOrOffice procedures, so tapping Call fired four 403s at a
+   * surface he was not looking at.
+   */
+  const leadId = open ? (activeModal?.params?.leadId as string | undefined) : undefined;
   const lead = leads.find((l) => l.id === leadId);
 
   // FETCH-ON-MISS. The Customers list is served by the database a page at a time, so it shows

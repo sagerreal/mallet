@@ -21,6 +21,7 @@ const summary = (over: Partial<Parameters<typeof HoursSummary>[0]> = {}) =>
       rulePhrase="past 40h this week"
       missingDays={[]}
       canEditOwnTimes
+      shiftRunning={false}
       {...over}
     />,
   );
@@ -97,5 +98,25 @@ describe("the missing-days cell", () => {
     summary({ missingDays: ["2026-06-30"] });
     expect(cell("Days missing hours").textContent).toContain("day");
     expect(cell("Days missing hours").textContent).not.toContain("days missing hours1day");
+  });
+});
+
+/**
+ * TWO SCREENS, ONE DAY. My day counts the stretch the technician is standing in; a timesheet
+ * cannot, because an unfinished stretch is not yet hours. Both are right and they disagree, and at
+ * 3pm on a Wednesday nothing on either screen said so — which on the page that tells a man what he
+ * earned reads as one of them being broken.
+ */
+describe("the week with a shift still running", () => {
+  it("says the open shift is not in the figure yet", () => {
+    summary({ shiftRunning: true, weeklyThresholdHours: 40 });
+    expect(cell("Regular hours").textContent).toContain("of a 40h week");
+    expect(cell("Regular hours").textContent).toMatch(/open shift/i);
+  });
+
+  it("says nothing extra once the week is clocked out", () => {
+    summary({ shiftRunning: false, weeklyThresholdHours: 40 });
+    expect(cell("Regular hours").textContent).toContain("of a 40h week");
+    expect(cell("Regular hours").textContent).not.toMatch(/open shift/i);
   });
 });

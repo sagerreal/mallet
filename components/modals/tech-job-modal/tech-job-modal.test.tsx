@@ -269,7 +269,7 @@ describe("TechJobModalContent — owner/office", () => {
     // Three, and each is right: the close-out hero's amount, the work-order line, and the work
     // order's Total. A finished job keeps its work order now — that is when someone checks what
     // was sold — so the figure legitimately appears more than once.
-    expect(screen.getAllByText("$285").length).toBe(3);
+    expect(screen.getAllByText("$285.00").length).toBe(3);
     expect(screen.queryByText(/No price set/)).toBeNull();
   });
 
@@ -456,7 +456,7 @@ describe("TechJobModalContent — tech", () => {
     ];
     render(<TechJobModalContent />);
     expect(screen.getByText("Take payment →")).toBeTruthy();
-    expect(screen.getByText("$300")).toBeTruthy();
+    expect(screen.getByText("$300.00")).toBeTruthy();
     // …and the office-only hand-off is not offered, because job.invRequested is v1.jobs.update.
     expect(screen.queryByText(/Send to the office/)).toBeNull();
   });
@@ -477,8 +477,8 @@ describe("TechJobModalContent — tech", () => {
     expect(screen.queryByText(/Charge/)).toBeNull();
   });
 
-  // A1: the invoice's own balance is ALWAYS theirs to read — you cannot collect $840 without
-  // displaying "$840" — but the per-line breakdown still follows the shop's techSeesPrice.
+  // A1: the invoice's own balance is ALWAYS theirs to read — you cannot collect $840.00 without
+  // displaying "$840.00" — but the per-line breakdown still follows the shop's techSeesPrice.
   it("hide-prices shop: the BALANCE renders, the redacted line rates do not", () => {
     mockSeesPrice = false;
     mockJobs = [
@@ -494,14 +494,14 @@ describe("TechJobModalContent — tech", () => {
       { id: "inv-1", num: "INV-1", jobId: "job-1", leadId: "lead-1", cust: "Dana", phone: "", title: "x", lines: [], total: 840, depPaid: 0, payments: [], status: "sent", age: 0, archived: false } as unknown as Invoice,
     ];
     render(<TechJobModalContent />);
-    expect(screen.getByText("$840")).toBeTruthy();
+    expect(screen.getByText("$840.00")).toBeTruthy();
     expect(screen.getByText("Take payment →")).toBeTruthy();
     // The nulled rate is never drawn as a price of any kind — least of all as $0.
-    expect(screen.queryByText(/\$0\b/)).toBeNull();
+    expect(screen.queryByText(/\$0.00\b/)).toBeNull();
   });
 
   // The PR-C1 failure this whole third state exists for: with no invoice loaded yet, a redacted
-  // job sums to $0 and the old code offered "Send to the office to bill" — an office write the
+  // job sums to $0.00 and the old code offered "Send to the office to bill" — an office write the
   // technician cannot make, on a job they were sent out to collect on.
   it("hide-prices shop, no invoice yet: offers the bill, never 'No price set'", () => {
     mockSeesPrice = false;
@@ -615,13 +615,13 @@ describe("TechJobModalContent — work order", () => {
   it("heads the section with the count and the total, and closes with a Total row", () => {
     mockJobs = [makeJob({ lines: priced })];
     render(<TechJobModalContent />);
-    expect(screen.getByText("2 items · $570")).toBeTruthy();
+    expect(screen.getByText("2 items · $570.00")).toBeTruthy();
     // The header figure and the Total row are computed from the same rendered lines, so they
     // cannot disagree with the numbers between them.
     expect(screen.getByText("Total")).toBeTruthy();
-    expect(screen.getByText("$570")).toBeTruthy();
-    expect(screen.getByText("$325")).toBeTruthy();
-    expect(screen.getByText("$245")).toBeTruthy();
+    expect(screen.getByText("$570.00")).toBeTruthy();
+    expect(screen.getByText("$325.00")).toBeTruthy();
+    expect(screen.getByText("$245.00")).toBeTruthy();
   });
 
   // A plain service call has unpriced scope lines, so jobMode() reads "service" — and the old
@@ -630,12 +630,12 @@ describe("TechJobModalContent — work order", () => {
     mockJobs = [makeJob({ lines: [{ d: "Clear kitchen drain", q: 1, r: 0 }] })];
     render(<TechJobModalContent />);
     expect(screen.getByText("Clear kitchen drain")).toBeTruthy();
-    expect(screen.getByText("1 item · $0")).toBeTruthy();
+    expect(screen.getByText("1 item · $0.00")).toBeTruthy();
   });
 
   // STATE 3, and the one that matters: a redacted rate is null, not zero. A shop that hides
   // prices from its techs must not have its priced job summarised as free.
-  it("says prices are withheld rather than printing a fabricated $0", () => {
+  it("says prices are withheld rather than printing a fabricated $0.00", () => {
     mockRole = "tech";
     mockJobs = [
       makeJob({
@@ -649,7 +649,7 @@ describe("TechJobModalContent — work order", () => {
     expect(screen.getByText("2 items")).toBeTruthy();
     expect(screen.getByText(/Prices aren’t shown on your device/)).toBeTruthy();
     expect(screen.queryByText("Total")).toBeNull();
-    expect(screen.queryByText("$0")).toBeNull();
+    expect(screen.queryByText("$0.00")).toBeNull();
   });
 
   it("shows no figures when the org toggle is off, even with rates in hand", () => {
@@ -657,14 +657,14 @@ describe("TechJobModalContent — work order", () => {
     mockJobs = [makeJob({ lines: priced })];
     render(<TechJobModalContent />);
     expect(screen.getByText("2 items")).toBeTruthy();
-    expect(screen.queryByText("$570")).toBeNull();
+    expect(screen.queryByText("$570.00")).toBeNull();
   });
 
   // Line COST is never rendered on this surface, for any role, under any toggle.
   it("never renders a line's cost", () => {
     mockJobs = [makeJob({ lines: [{ d: "Replace T&P relief valve", q: 1, r: 325, c: 140 }] })];
     render(<TechJobModalContent />);
-    expect(screen.queryByText("$140")).toBeNull();
+    expect(screen.queryByText("$140.00")).toBeNull();
   });
 });
 
@@ -1202,7 +1202,7 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
     mockOrgFee = 129;
     mockJobs = [doneEstimate()];
     render(<TechJobModalContent />);
-    expect(screen.getByText("Collect the visit fee — $129")).toBeTruthy();
+    expect(screen.getByText("Collect the visit fee — $129.00")).toBeTruthy();
     // The quiet handoff is never blocked by the secondary fee action.
     expect(screen.getByText("Open the Quote tab →")).toBeTruthy();
   });
@@ -1278,7 +1278,7 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
       } as unknown as Invoice,
     ];
     render(<TechJobModalContent />);
-    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+    expect(screen.getByText("Collect the visit fee — $89.00")).toBeTruthy();
   });
 
   it("owner: an unsent draft fee invoice keeps the button visible — a tap resumes it", () => {
@@ -1293,7 +1293,7 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
       } as unknown as Invoice,
     ];
     render(<TechJobModalContent />);
-    expect(screen.getByText("Collect the visit fee — $89")).toBeTruthy();
+    expect(screen.getByText("Collect the visit fee — $89.00")).toBeTruthy();
   });
 
   it("owner: hides the fee button when the org fee is 0/unset", () => {
@@ -1312,7 +1312,7 @@ describe("TechJobModalContent — collecting the visit fee on a declined estimat
       mockJobs = [doneEstimate()];
       render(<TechJobModalContent />);
 
-      fireEvent.click(screen.getByText(role === "owner" ? "Collect the visit fee — $89" : "Collect the visit fee →"));
+      fireEvent.click(screen.getByText(role === "owner" ? "Collect the visit fee — $89.00" : "Collect the visit fee →"));
 
       await vi.waitFor(() => {
         expect(mockRaiseVisitFee).toHaveBeenCalledWith("job-1");

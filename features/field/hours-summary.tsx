@@ -37,6 +37,8 @@ export interface HoursSummaryProps {
   readonly missingDays: readonly string[];
   /** False when the shop keeps changes with the office — then "add the hours" is not on offer. */
   readonly canEditOwnTimes: boolean;
+  /** Is a shift still on the clock? Then the figure above is short by it — see the sub-line. */
+  readonly shiftRunning: boolean;
 }
 
 /** One cell. Kept local: three cells with one shape is the whole point of the strip. */
@@ -77,6 +79,7 @@ export function HoursSummary({
   rulePhrase,
   missingDays,
   canEditOwnTimes,
+  shiftRunning,
 }: HoursSummaryProps) {
   // Capped at 100 so a 48-hour regular week (a full week plus a paid holiday) does not draw a bar
   // past its own track. The FIGURE stays uncapped — the bar is the only thing that has an end.
@@ -84,10 +87,17 @@ export function HoursSummary({
 
   return (
     <div className="summary">
+      {/* THE OPEN SHIFT IS NAMED, NOT COUNTED. A stretch still running is not yet hours, so it is
+          absent from this figure — while My day, two taps away, measures it against the clock. Both
+          are right and they disagree, and unexplained that reads as one of them being broken. */}
       <Cell
         label="Regular hours"
         value={hmLabel(regularHours)}
-        sub={`of a ${weeklyThresholdHours}h week`}
+        sub={
+          shiftRunning
+            ? `of a ${weeklyThresholdHours}h week · your open shift isn't counted until you clock out`
+            : `of a ${weeklyThresholdHours}h week`
+        }
         bar={filled}
       />
       <Cell label="Overtime" value={hmLabel(overtimeHours)} sub={rulePhrase} />

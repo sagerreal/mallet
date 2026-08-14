@@ -51,6 +51,9 @@ export interface HoursWeekNavProps {
   readonly onThisWeek: () => void;
   /** The week's own controls (add, submit) — supplied by the page so this stays a pager. */
   readonly actions?: React.ReactNode;
+  /** The oldest and newest week the page holds data for. Both Mondays; see myHoursWeekBounds. */
+  readonly firstWeekISO: string;
+  readonly lastWeekISO: string;
 }
 
 export function HoursWeekNav({
@@ -59,12 +62,24 @@ export function HoursWeekNav({
   onNav,
   onThisWeek,
   actions,
+  firstWeekISO,
+  lastWeekISO,
 }: HoursWeekNavProps) {
   const away = weekStartISO !== thisWeekISO;
+  // Refused AT THE EDGE rather than silently clamped: an arrow that keeps its look and does nothing
+  // reads as the app having stopped responding. Disabled, it says the history ends here.
+  const canBack = weekStartISO > firstWeekISO;
+  const canFwd = weekStartISO < lastWeekISO;
 
   return (
     <div className="weeknav">
-      <button type="button" className="wk-ic" onClick={() => onNav(-1)} aria-label="Previous week">
+      <button
+        type="button"
+        className="wk-ic"
+        onClick={() => onNav(-1)}
+        disabled={!canBack}
+        aria-label="Previous week"
+      >
         ‹
       </button>
       {/* The heading, and the only h2 on the page: it names what the sheet below is showing, so a
@@ -73,7 +88,13 @@ export function HoursWeekNav({
         <span className="wk-word">{weekWord(weekStartISO, thisWeekISO)}</span>
         <span className="wk-range">{weekRange(weekStartISO)}</span>
       </h2>
-      <button type="button" className="wk-ic" onClick={() => onNav(1)} aria-label="Next week">
+      <button
+        type="button"
+        className="wk-ic"
+        onClick={() => onNav(1)}
+        disabled={!canFwd}
+        aria-label="Next week"
+      >
         ›
       </button>
       {away ? (

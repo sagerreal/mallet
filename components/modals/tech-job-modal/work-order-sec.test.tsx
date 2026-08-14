@@ -55,9 +55,10 @@ describe("WorkOrderSec — stored discount/tax render as the billed breakdown", 
   it("keeps the plain Total row when the job stores no rates", () => {
     render(<WorkOrderSec job={makeJob()} seesPrice />);
     expect(screen.getByText("Total")).toBeTruthy();
-    // The line's own amount and the Total row both read "$100" — the point is that no
-    // breakdown (and no cent-formatted chain figure) appears without stored rates.
-    expect(screen.getAllByText("$100").length).toBeGreaterThanOrEqual(2);
+    // The line's own amount and the Total row both read "$100.00" — cent-exact like every other
+    // figure on this sheet, because the technician reads this one and collects the other. What is
+    // absent without stored rates is the BREAKDOWN, not the cents.
+    expect(screen.getAllByText("$100.00").length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Subtotal")).toBeNull();
   });
 
