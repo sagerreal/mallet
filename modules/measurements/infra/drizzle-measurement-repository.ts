@@ -7,6 +7,7 @@ import type { RoomCapture } from "../domain/room-capture";
 import type { SiteCapture } from "../domain/site-capture";
 import { toWireGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantity, PaintingQuantityKind } from "../domain/derive-painting";
+import type { TrimRunKind } from "../domain/trim-area";
 import {
   SupersedeTargetError,
   DuplicateCaptureError,
@@ -146,6 +147,29 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
     const rows = await this.tx
       .update(paintingRoomQuantities)
       .set({ value: patch.value, status: patch.status, updatedAt: new Date() })
+      .where(
+        and(
+          eq(paintingRoomQuantities.captureId, captureId),
+          eq(paintingRoomQuantities.kind, kind),
+          eq(paintingRoomQuantities.orgId, this.orgId),
+          inArray(paintingRoomQuantities.captureId, liveCaptureIds),
+        ),
+      )
+      .returning();
+    return rows.length;
+  }
+
+  async setTrimHeight(captureId: string, kind: TrimRunKind, heightIn: number | null): Promise<number> {
+    // Same soft-delete guard as setQuantity: a quantity row has no deletedAt of its own, so
+    // without this subquery the UPDATE would silently "succeed" against an archived room.
+    const liveCaptureIds = this.tx
+      .select({ id: roomCaptures.id })
+      .from(roomCaptures)
+      .where(and(eq(roomCaptures.orgId, this.orgId), isNull(roomCaptures.deletedAt)));
+
+    const rows = await this.tx
+      .update(paintingRoomQuantities)
+      .set({ heightIn, updatedAt: new Date() })
       .where(
         and(
           eq(paintingRoomQuantities.captureId, captureId),

@@ -289,6 +289,86 @@ suite("DrizzleMeasurementRepository against live Supabase RLS", () => {
     expect(affected).toBe(0);
   });
 
+  /**
+   * Trim height, against the real column and the real CHECK. The unit tests prove the rules; only
+   * this proves the DB agrees with them — a constraint that disagreed would fail in production on
+   * the first painter who typed a number, not in CI.
+   */
+  it("setTrimHeight stores a typed height without touching the run or its status", async () => {
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+    const { capture, quantities } = buildCapture(orgA, jobA, { roomName: "Trim room" });
+    const baseboard = quantities.find((q) => q.kind === "baseboard_lnft")!;
+
+    const affected = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      await repo.createCapture(capture, quantities);
+      return repo.setTrimHeight(capture.props.id, "baseboard_lnft", 5.25);
+    });
+    expect(affected).toBe(1);
+
+    const after = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      return repo.getCapture(capture.props.id);
+    });
+
+    const stored = after!.quantities.find((q) => q.kind === "baseboard_lnft")!;
+    expect(stored.heightIn).toBe(5.25);
+    // Typing a height is not confirming the run — the row is exactly as the derivation left it.
+    expect(stored.value).toBe(baseboard.value);
+    expect(stored.derivedValue).toBe(baseboard.derivedValue);
+    expect(stored.status).toBe(baseboard.status);
+  });
+
+  it("setTrimHeight clears the height with null — back to pricing by the foot", async () => {
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+    const { capture, quantities } = buildCapture(orgA, jobA, { roomName: "Trim room 2" });
+
+    const stored = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleMeasurementRepository(tx, orgA);
+      await repo.createCapture(capture, quantities);
+      await repo.setTrimHeight(capture.props.id, "crown_lnft", 7);
+      await repo.setTrimHeight(capture.props.id, "crown_lnft", null);
+      const room = await repo.getCapture(capture.props.id);
+      return room!.quantities.find((q) => q.kind === "crown_lnft")!;
+    });
+    expect(stored.heightIn).toBeNull();
+  });
+
+  it("the DB itself refuses a height on a kind that is not a run", async () => {
+    // Defence in depth: the use-case refuses this, but the constraint is what makes it impossible.
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+    const { capture, quantities } = buildCapture(orgA, jobA, { roomName: "Trim room 3" });
+
+    await expect(
+      withTenant(orgA, async (tx) => {
+        const repo = new DrizzleMeasurementRepository(tx, orgA);
+        await repo.createCapture(capture, quantities);
+        // Cast past the type guard on purpose — this is the check that the DB, not TypeScript,
+        // is what stops a bad write.
+        return repo.setTrimHeight(capture.props.id, "walls_sqft" as "baseboard_lnft", 5.25);
+      }),
+    ).rejects.toThrow();
+  });
+
+  it("the DB itself refuses a height that is zero or wainscot-tall", async () => {
+    const orgA = asOrgId(orgAId);
+    const jobA = asJobId(jobAId);
+
+    for (const [i, bad] of [0, -4, 36].entries()) {
+      const { capture, quantities } = buildCapture(orgA, jobA, { roomName: `Trim bad ${i}` });
+      await expect(
+        withTenant(orgA, async (tx) => {
+          const repo = new DrizzleMeasurementRepository(tx, orgA);
+          await repo.createCapture(capture, quantities);
+          return repo.setTrimHeight(capture.props.id, "baseboard_lnft", bad);
+        }),
+      ).rejects.toThrow();
+    }
+  });
+
   it("renameRoom and archive mutate/soft-delete only within the owning org", async () => {
     const orgA = asOrgId(orgAId);
     const jobA = asJobId(jobAId);

@@ -52,6 +52,16 @@ export interface MeasurementsSlice {
   confirmQuantity: (jobId: string, captureId: string, kind: RoomQuantityKind, value: number) => void;
   /** Routes to overrideQuantity or confirmQuantity based on the quantity's current status. */
   setRoomQuantity: (jobId: string, captureId: string, kind: RoomQuantityKind, value: number) => void;
+  /**
+   * Records how tall a room's baseboard or crown is (inches), or clears it with null. Separate
+   * from setRoomQuantity because a height is not the measurement — see SetTrimHeightUseCase.
+   */
+  setTrimHeight: (
+    jobId: string,
+    captureId: string,
+    kind: RoomQuantityKind,
+    heightIn: number | null,
+  ) => void;
   renameRoom: (jobId: string, captureId: string, roomName: string) => void;
   /**
    * Record wall area this room does NOT get painted. `heightFt` is null for a whole-wall
@@ -139,6 +149,8 @@ export const createMeasurementsSlice: StateCreator<
         value: q.value,
         derivedValue: null,
         status: "confirmed",
+        // A manual room's form has no height field — it is set afterwards from the room card.
+        heightIn: null,
       })),
     };
 
@@ -271,6 +283,36 @@ export const createMeasurementsSlice: StateCreator<
       })
       .catch((err: unknown) => {
         reportWriteError("confirmQuantity", err);
+        set((s) => ({ roomsByJob: { ...s.roomsByJob, [jobId]: snapshot } }));
+      });
+  },
+
+  setTrimHeight: (jobId, captureId, kind, heightIn) => {
+    const snapshot = get().roomsByJob[jobId] ?? [];
+
+    // Optimistic: the height alone. Deliberately NOT the run or its status — typing how tall
+    // the base is must not also confirm a number nobody has checked.
+    set((s) => ({
+      roomsByJob: {
+        ...s.roomsByJob,
+        [jobId]: withQuantity(s.roomsByJob[jobId] ?? [], captureId, kind, { heightIn }),
+      },
+    }));
+
+    trpcVanilla.v1.measurements.setTrimHeight
+      .mutate({ captureId, kind, heightIn })
+      .then((dto) => {
+        set((s) => ({
+          roomsByJob: {
+            ...s.roomsByJob,
+            [jobId]: withQuantity(s.roomsByJob[jobId] ?? [], captureId, kind, {
+              heightIn: dto.heightIn,
+            }),
+          },
+        }));
+      })
+      .catch((err: unknown) => {
+        reportWriteError("setTrimHeight", err);
         set((s) => ({ roomsByJob: { ...s.roomsByJob, [jobId]: snapshot } }));
       });
   },

@@ -81,6 +81,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
     throw new Error("setQuantity not used in ingest tests");
   }
 
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in ingest tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in ingest tests");
   }

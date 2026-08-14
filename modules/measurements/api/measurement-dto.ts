@@ -11,6 +11,9 @@ export const quantityDTO = z.object({
   value: z.number().nullable(),
   derivedValue: z.number().nullable(),
   status: z.enum(["derived", "override", "confirmed", "needs_confirm"]),
+  // Inches, and only ever set on baseboard_lnft/crown_lnft. Null means nobody has said how tall
+  // the trim is — which is why the room offers a length and not an area.
+  heightIn: z.number().nullable(),
 });
 
 /**
@@ -211,6 +214,7 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
       value: q.value,
       derivedValue: q.derivedValue,
       status: q.status,
+      heightIn: q.heightIn,
     })),
     deductions,
     walls,

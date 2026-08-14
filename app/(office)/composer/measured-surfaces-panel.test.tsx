@@ -165,8 +165,8 @@ const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
   source: "roomplan_v1",
   capturedAt: "2026-08-01T12:00:00.000Z",
   quantities: [
-    { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived" },
-    { kind: "doors_count", value: null, derivedValue: 2, status: "derived" },
+    { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived", heightIn: null },
+    { kind: "doors_count", value: null, derivedValue: 2, status: "derived", heightIn: null },
   ],
   ...overrides,
 });
@@ -367,7 +367,7 @@ describe("MeasuredSurfacesPanel — room rows (the rooms home since the job moda
       j1: [
         room({
           quantities: [
-            { kind: "baseboard_lnft", value: null, derivedValue: 88, status: "needs_confirm" },
+            { kind: "baseboard_lnft", value: null, derivedValue: 88, status: "needs_confirm", heightIn: null },
           ],
         }),
       ],

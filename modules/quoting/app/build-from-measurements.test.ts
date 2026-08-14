@@ -74,6 +74,38 @@ const build = (
     new FakeRateServicesReader(services),
   );
 
+describe("the run→area pairing duplicated in build-from-measurements", () => {
+  it("matches measurements' own map exactly", async () => {
+    // The map is duplicated rather than imported: the measurements barrel is the only sanctioned
+    // import path and a RUNTIME import of it pulls createMeasurementRouter's config validator,
+    // which throws without DB env and takes this whole file down. Test files are exempt from the
+    // deep-import boundary rule, so the pin lives here — the copy cannot silently drift.
+    const { TRIM_AREA_KIND_BY_RUN } = await import("@mallet/measurements/domain/trim-area");
+    const rooms: RoomQuantitiesForJob[] = Object.entries(TRIM_AREA_KIND_BY_RUN).map(
+      ([run, area]) => ({
+        roomName: run,
+        hasUnconfirmed: false,
+        quantities: [
+          { kind: run as "baseboard_lnft", value: 10, status: "confirmed" as const },
+          { kind: area as "baseboard_sqft", value: 5, status: "confirmed" as const },
+        ],
+      }),
+    );
+    // If the copy did not know a pair, both halves would price and the room would bill twice.
+    const services = Object.entries(TRIM_AREA_KIND_BY_RUN).flatMap(([run, area], i) => [
+      service({ id: asServiceId(`4444444${i}-4444-4444-4444-444444444444`), measuredBy: run as "baseboard_lnft" }),
+      service({ id: asServiceId(`5555555${i}-5555-5555-5555-555555555555`), measuredBy: area as "baseboard_sqft" }),
+    ]);
+    const result = await build(rooms, [], services).exec({ jobId: JOB });
+    expect(isOk(result)).toBe(true);
+    if (!isOk(result)) return;
+    expect(result.value.seedLines).toHaveLength(Object.keys(TRIM_AREA_KIND_BY_RUN).length);
+    expect(result.value.seedLines.map((l) => l.measuredKind).sort()).toEqual(
+      Object.values(TRIM_AREA_KIND_BY_RUN).sort(),
+    );
+  });
+});
+
 describe("BuildFromMeasurementsUseCase", () => {
   it("returns notFound when the job does not exist", async () => {
     const useCase = build([], [], [], null);
@@ -385,6 +417,129 @@ describe("BuildFromMeasurementsUseCase", () => {
   });
 
   // ---- sourceNames filter (the composer's per-surface "Seed lines") --------
+  /**
+   * A trim run whose height has been typed arrives here TWICE — the length the scanner traced
+   * and the face area that length and height make. They are the same baseboard, so exactly one
+   * may become a line.
+   */
+  describe("a trim run that has both a length and a typed-height area", () => {
+    const bothBases: RoomQuantitiesForJob[] = [
+      {
+        roomName: "Doctors office",
+        hasUnconfirmed: false,
+        quantities: [
+          { kind: "baseboard_lnft", value: 38.4, status: "confirmed" },
+          { kind: "baseboard_sqft", value: 16.8, status: "confirmed" },
+        ],
+      },
+    ];
+
+    it("prices the AREA when the shop sells trim by the square foot", async () => {
+      const useCase = build(
+        bothBases,
+        [],
+        [service({ name: "Trim painting", measuredBy: "baseboard_sqft", unitPriceCents: 700 })],
+      );
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines).toHaveLength(1);
+      expect(result.value.seedLines[0]?.measuredKind).toBe("baseboard_sqft");
+      expect(result.value.seedLines[0]?.quantity).toBe(16.8);
+    });
+
+    it("falls back to the RUN when the shop only sells trim by the foot", async () => {
+      // Typing a height must never cost a per-foot painter their baseboard line.
+      const useCase = build(
+        bothBases,
+        [],
+        [service({ name: "Baseboard", measuredBy: "baseboard_lnft", unitPriceCents: 250 })],
+      );
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines).toHaveLength(1);
+      expect(result.value.seedLines[0]?.measuredKind).toBe("baseboard_lnft");
+      expect(result.value.seedLines[0]?.quantity).toBe(38.4);
+    });
+
+    it("never bills both — a shop with a service for each still gets ONE line", async () => {
+      // The double-bill this whole function exists to prevent: 38.4 feet AND 16.8 sq ft of the
+      // same baseboard, on the same quote, to the same customer.
+      const useCase = build(bothBases, [], [
+        service({ id: asServiceId("44444444-4444-4444-4444-444444444444"), name: "Baseboard", measuredBy: "baseboard_lnft" }),
+        service({ id: asServiceId("55555555-5555-5555-5555-555555555555"), name: "Trim painting", measuredBy: "baseboard_sqft" }),
+      ]);
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines).toHaveLength(1);
+      expect(result.value.seedLines[0]?.measuredKind).toBe("baseboard_sqft");
+    });
+
+    it("does not report the unused basis as a gap", async () => {
+      // A per-foot shop is not "missing" a per-square-foot baseboard service.
+      const useCase = build(bothBases, [], [service({ name: "Baseboard", measuredBy: "baseboard_lnft" })]);
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.gaps).toEqual([]);
+    });
+
+    it("reports ONE gap when the shop prices neither basis", async () => {
+      // Two gaps for one baseboard would read as two things to go fix.
+      const useCase = build(bothBases, [], [service({ measuredBy: "walls_sqft" })]);
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.gaps).toEqual([{ kind: "baseboard_lnft", label: "Baseboard" }]);
+    });
+
+    it("leaves a run with NO typed height exactly as it was", async () => {
+      const runOnly: RoomQuantitiesForJob[] = [
+        {
+          roomName: "Hall",
+          hasUnconfirmed: false,
+          quantities: [{ kind: "crown_lnft", value: 29.3, status: "confirmed" }],
+        },
+      ];
+      const useCase = build(runOnly, [], [service({ name: "Crown", measuredBy: "crown_lnft" })]);
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines).toHaveLength(1);
+      expect(result.value.seedLines[0]?.measuredKind).toBe("crown_lnft");
+      expect(result.value.seedLines[0]?.quantity).toBe(29.3);
+    });
+
+    it("resolves baseboard and crown independently", async () => {
+      // One room can price its base by the square foot and its crown by the foot.
+      const rooms: RoomQuantitiesForJob[] = [
+        {
+          roomName: "Doctors office",
+          hasUnconfirmed: false,
+          quantities: [
+            { kind: "baseboard_lnft", value: 38.4, status: "confirmed" },
+            { kind: "baseboard_sqft", value: 16.8, status: "confirmed" },
+            { kind: "crown_lnft", value: 42, status: "confirmed" },
+            { kind: "crown_sqft", value: 24.5, status: "confirmed" },
+          ],
+        },
+      ];
+      const useCase = build(rooms, [], [
+        service({ id: asServiceId("44444444-4444-4444-4444-444444444444"), name: "Trim painting", measuredBy: "baseboard_sqft" }),
+        service({ id: asServiceId("55555555-5555-5555-5555-555555555555"), name: "Crown", measuredBy: "crown_lnft" }),
+      ]);
+      const result = await useCase.exec({ jobId: JOB });
+      expect(isOk(result)).toBe(true);
+      if (!isOk(result)) return;
+      expect(result.value.seedLines.map((l) => l.measuredKind).sort()).toEqual([
+        "baseboard_sqft",
+        "crown_lnft",
+      ]);
+    });
+  });
+
   describe("sourceNames filter", () => {
     const rooms: RoomQuantitiesForJob[] = [
       {

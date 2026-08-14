@@ -101,6 +101,7 @@ export function roomCaptureDtoToStore(dto: RoomCaptureDtoShape): RoomCard {
       value: q.value,
       derivedValue: q.derivedValue,
       status: q.status,
+      heightIn: q.heightIn,
     })),
     // Copied field-by-field, not spread: the store's shape is its own contract, and a widened
     // DTO must not silently deposit unknown keys in the store.

@@ -56,8 +56,8 @@ const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
   source: "manual",
   capturedAt: "2026-07-30T12:00:00.000Z",
   quantities: [
-    { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived" },
-    { kind: "doors_count", value: 2, derivedValue: null, status: "confirmed" },
+    { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived", heightIn: null },
+    { kind: "doors_count", value: 2, derivedValue: null, status: "confirmed", heightIn: null },
   ],
   ...overrides,
 });
@@ -219,8 +219,8 @@ describe("roomNeedsConfirm", () => {
   it("is true when any quantity is needs_confirm", () => {
     expect(
       roomNeedsConfirm([
-        { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived" },
-        { kind: "baseboard_lnft", value: null, derivedValue: 88, status: "needs_confirm" },
+        { kind: "walls_sqft", value: null, derivedValue: 562, status: "derived", heightIn: null },
+        { kind: "baseboard_lnft", value: null, derivedValue: 88, status: "needs_confirm", heightIn: null },
       ]),
     ).toBe(true);
   });
@@ -241,7 +241,7 @@ describe("panelRows", () => {
       [
         room({
           quantities: [
-            { kind: "walls_sqft", value: null, derivedValue: 562, status: "needs_confirm" },
+            { kind: "walls_sqft", value: null, derivedValue: 562, status: "needs_confirm", heightIn: null },
           ],
         }),
       ],

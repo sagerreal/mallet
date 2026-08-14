@@ -106,6 +106,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
     throw new Error("setQuantity not used in rescan tests");
   }
 
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in rescan tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in rescan tests");
   }
@@ -215,7 +219,7 @@ describe("RescanRoomUseCase", () => {
 
   it("derives fresh quantities from the new geometry rather than inheriting old overrides", async () => {
     repo.seed(makeOldCapture(), [
-      { kind: "walls_sqft", value: 999, derivedValue: 500, status: "override" },
+      { kind: "walls_sqft", value: 999, derivedValue: 500, status: "override", heightIn: null },
     ]);
 
     const result = await useCase.exec(baseCmd(), ORG);

@@ -22,6 +22,7 @@ interface Store {
   roomsByJob: Record<string, RoomCard[]>;
   jobs: Job[];
   setRoomQuantity: ReturnType<typeof vi.fn>;
+  setTrimHeight: ReturnType<typeof vi.fn>;
   renameRoom: ReturnType<typeof vi.fn>;
   archiveRoom: ReturnType<typeof vi.fn>;
   addManualRoom: ReturnType<typeof vi.fn>;
@@ -70,7 +71,7 @@ function job(overrides: Partial<Job> = {}): Job {
 }
 
 function quantity(overrides: Partial<RoomQuantity> = {}): RoomQuantity {
-  return { kind: "walls_sqft", value: 562, derivedValue: 560, status: "derived", ...overrides };
+  return { kind: "walls_sqft", value: 562, derivedValue: 560, status: "derived", heightIn: null, ...overrides };
 }
 
 function room(overrides: Partial<RoomCard> = {}): RoomCard {
@@ -102,6 +103,7 @@ beforeEach(() => {
     roomsByJob: { [JOB_ID]: [room()] },
     jobs: [job()],
     setRoomQuantity: vi.fn(),
+    setTrimHeight: vi.fn(),
     renameRoom: vi.fn(),
     archiveRoom: vi.fn(),
     addManualRoom: vi.fn(),
@@ -755,5 +757,179 @@ describe("taking or refusing a trim calculation", () => {
     expect(screen.getByRole("button", { name: "None in this room" })).toBeTruthy();
     // and nothing to "use" — the scanner never measured one
     expect(screen.queryByRole("button", { name: /^Use measured/ })).toBeNull();
+  });
+});
+
+/**
+ * HOW TALL THE TRIM IS.
+ *
+ * The scanner reports a perimeter, so trim has only ever been a length — and a length is not the
+ * work: 38.4 feet of 3¼" colonial base and 38.4 feet of 7" craftsman base are the same number and
+ * a different job. The height is TYPED rather than picked, because real millwork runs 2¼", 3¼",
+ * 4", 5¼", 7", and plenty of commercial work is a 4" rubber cove that matches no preset list.
+ */
+describe("trim height", () => {
+  const trimRoom = (over: Partial<RoomQuantity> = {}) =>
+    room({
+      quantities: [
+        quantity(),
+        quantity({ kind: "baseboard_lnft", value: 38.4, derivedValue: 38.4, status: "confirmed", ...over }),
+        quantity({ kind: "crown_lnft", value: 42, derivedValue: 42, status: "confirmed" }),
+      ],
+    });
+
+  const openBaseboard = () => {
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Baseboard \(ln ft\)/ }));
+  };
+
+  it("offers a height field on a run", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    expect(screen.getByLabelText("Height (inches)")).toBeTruthy();
+  });
+
+  it("offers one on crown too", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
+    expect(screen.getByLabelText("Height (inches)")).toBeTruthy();
+  });
+
+  it("offers NONE on a kind that is already an area or a count", () => {
+    // Walls and ceilings are areas; a door is not taller in square feet. A height field there
+    // would be asking for a number nothing could use.
+    storeState.roomsByJob[JOB_ID] = [
+      room({
+        quantities: [
+          quantity({ kind: "walls_sqft" }),
+          quantity({ kind: "soffit_sqft", value: 24, derivedValue: null, status: "confirmed" }),
+          quantity({ kind: "doors_count", value: 2, derivedValue: 2, status: "derived" }),
+        ],
+      }),
+    ];
+    render(<RoomCardModalContent />);
+    for (const label of [/^Walls \(sq ft\)/, /^Soffit \/ bulkhead \(sq ft\)/, /^Doors/]) {
+      fireEvent.click(screen.getByRole("button", { name: label }));
+      expect(screen.queryByLabelText("Height (inches)")).toBeNull();
+    }
+  });
+
+  it("takes a typed height, not a preset", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const field = screen.getByLabelText("Height (inches)");
+    fireEvent.change(field, { target: { value: "5.25" } });
+    fireEvent.blur(field);
+    expect(storeState.setTrimHeight).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "baseboard_lnft", 5.25);
+  });
+
+  it("commits on Enter as well as blur", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const field = screen.getByLabelText("Height (inches)");
+    fireEvent.change(field, { target: { value: "7" } });
+    fireEvent.keyDown(field, { key: "Enter" });
+    expect(storeState.setTrimHeight).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "baseboard_lnft", 7);
+  });
+
+  it("shows the arithmetic the height produces", () => {
+    // The reason for asking, shown where it is entered — 38.4 × 5.25 / 12 = 16.8.
+    storeState.roomsByJob[JOB_ID] = [trimRoom({ heightIn: 5.25 })];
+    openBaseboard();
+    expect(screen.getByText(/16\.8 sq ft of face/)).toBeTruthy();
+  });
+
+  it("shows the recorded height on the collapsed row", () => {
+    // A card that shows only "38.4" has thrown away the distinction the moment the row closes.
+    storeState.roomsByJob[JOB_ID] = [trimRoom({ heightIn: 5.25 })];
+    render(<RoomCardModalContent />);
+    expect(screen.getByText("5.25\u2033")).toBeTruthy();
+  });
+
+  it("clears the height when the field is emptied — back to pricing by the foot", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom({ heightIn: 5.25 })];
+    openBaseboard();
+    const field = screen.getByLabelText("Height (inches)");
+    fireEvent.change(field, { target: { value: "" } });
+    fireEvent.blur(field);
+    expect(storeState.setTrimHeight).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "baseboard_lnft", null);
+  });
+
+  it("does not write when the height has not changed", () => {
+    // Otherwise simply tapping out of the field fires a mutation.
+    storeState.roomsByJob[JOB_ID] = [trimRoom({ heightIn: 5.25 })];
+    openBaseboard();
+    fireEvent.blur(screen.getByLabelText("Height (inches)"));
+    expect(storeState.setTrimHeight).not.toHaveBeenCalled();
+  });
+
+  it("points at the None control instead of accepting a zero height", () => {
+    // Zero is not a short baseboard — it is the absence of one, and that is a confirmed zero RUN.
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const field = screen.getByLabelText("Height (inches)");
+    fireEvent.change(field, { target: { value: "0" } });
+    fireEvent.blur(field);
+    expect(screen.getByText('Use "None in this room" if there is no trim here.')).toBeTruthy();
+    expect(storeState.setTrimHeight).not.toHaveBeenCalled();
+  });
+
+  it("refuses a height that is really wainscot", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const field = screen.getByLabelText("Height (inches)");
+    fireEvent.change(field, { target: { value: "36" } });
+    fireEvent.blur(field);
+    expect(screen.getByText(/that's wainscot/)).toBeTruthy();
+    expect(storeState.setTrimHeight).not.toHaveBeenCalled();
+  });
+
+  it("names a value that is not a number", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const field = screen.getByLabelText("Height (inches)");
+    fireEvent.change(field, { target: { value: "tall" } });
+    fireEvent.blur(field);
+    expect(screen.getByText('"tall" is not a number.')).toBeTruthy();
+    expect(storeState.setTrimHeight).not.toHaveBeenCalled();
+  });
+
+  /**
+   * Caught in a browser, not here: with two fields in one expander, moving from the run into the
+   * height fired the run's onBlur, which committed AND closed — the row collapsed out from under
+   * the painter mid-entry. The unit tests fired blur with no relatedTarget, so every one of them
+   * passed through the bug.
+   */
+  it("stays open when focus moves from the run into the height field", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const run = screen.getByLabelText("Baseboard (ln ft)");
+    const height = screen.getByLabelText("Height (inches)");
+
+    fireEvent.blur(run, { relatedTarget: height });
+
+    // Still open — the height field is the proof.
+    expect(screen.getByLabelText("Height (inches)")).toBeTruthy();
+  });
+
+  it("still closes when focus leaves the row entirely", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    openBaseboard();
+    const run = screen.getByLabelText("Baseboard (ln ft)");
+
+    fireEvent.change(run, { target: { value: "40" } });
+    fireEvent.blur(run, { relatedTarget: null });
+
+    expect(storeState.setRoomQuantity).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "baseboard_lnft", 40);
+    expect(screen.queryByLabelText("Height (inches)")).toBeNull();
+  });
+
+  it("gives a tech no height field — writing numbers into the record is desk work", () => {
+    // Same authority as confirm/override, which are already ownerOrOffice.
+    mockRoleRef.role = "tech";
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    render(<RoomCardModalContent />);
+    expect(screen.queryByLabelText("Height (inches)")).toBeNull();
   });
 });

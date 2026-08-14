@@ -5,6 +5,7 @@ import { describe, it, expect } from "vitest";
 // measurements module's actual source of truth.
 import { derivePaintingQuantities } from "@mallet/measurements/domain/derive-painting";
 import type { NormalizedGeometry } from "@mallet/measurements/domain/normalized-geometry";
+import { TRIM_AREA_KINDS } from "@mallet/measurements/domain/trim-area";
 import { MEASURED_BY_KINDS } from "./service";
 
 // Minimal-but-valid geometry — derivePaintingQuantities always emits exactly one entry per
@@ -18,12 +19,27 @@ const EMPTY_GEOMETRY: NormalizedGeometry = {
 };
 
 describe("MEASURED_BY_KINDS pinning", () => {
-  it("stays in exact sync with measurements' PaintingQuantityKind", () => {
-    const measurementsKinds = derivePaintingQuantities(EMPTY_GEOMETRY)
-      .map((q) => q.kind)
-      .sort();
+  it("stays in exact sync with measurements' room kinds plus the two trim areas", () => {
+    // Two sources, deliberately. Every ROOM kind is priceable — that half is pinned against the
+    // derivation, so a new kind there cannot silently go unpriceable. The trim AREAS are not room
+    // kinds and never will be: nothing derives or stores a `baseboard_sqft`, it is computed from
+    // the measured run and the typed height. They are priceable all the same, because a shop that
+    // bids trim by the square foot has to be able to point a service at one.
+    const expected = [
+      ...derivePaintingQuantities(EMPTY_GEOMETRY).map((q) => q.kind),
+      ...TRIM_AREA_KINDS,
+    ].sort();
     const pricebookKinds = [...MEASURED_BY_KINDS].sort();
-    expect(pricebookKinds).toEqual(measurementsKinds);
+    expect(pricebookKinds).toEqual(expected);
+  });
+
+  it("prices both bases of a trim run — by the foot and by the square foot", () => {
+    // The pair is what lets the same 38.4 feet of baseboard be quoted either way;
+    // BuildFromMeasurementsUseCase guarantees only one of them ever becomes a line.
+    expect(MEASURED_BY_KINDS).toContain("baseboard_lnft");
+    expect(MEASURED_BY_KINDS).toContain("baseboard_sqft");
+    expect(MEASURED_BY_KINDS).toContain("crown_lnft");
+    expect(MEASURED_BY_KINDS).toContain("crown_sqft");
   });
 
   it("has no duplicates", () => {

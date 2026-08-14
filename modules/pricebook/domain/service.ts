@@ -6,9 +6,9 @@ import { validation, ok, err } from "@mallet/shared/types";
 // without DB env in unit tests). `import type` is erased at compile time — verbatimModuleSyntax
 // guarantees no runtime import statement survives — so this never triggers that barrel
 // evaluation despite going through the same specifier.
-import type { PaintingQuantityKind, SiteQuantityKind } from "@mallet/measurements";
+import type { PaintingQuantityKind, SiteQuantityKind, TrimAreaKind } from "@mallet/measurements";
 
-export type { PaintingQuantityKind, SiteQuantityKind };
+export type { PaintingQuantityKind, SiteQuantityKind, TrimAreaKind };
 
 // Compile-time pin: if derive-painting.ts's PaintingQuantityKind ever adds/removes a literal,
 // this exhaustiveness map fails to typecheck (`Record<PaintingQuantityKind, true>` requires
@@ -32,13 +32,24 @@ const SITE_KIND_SET: Record<SiteQuantityKind, true> = {
   site_lnft: true,
 };
 
-// The 6 kinds a measured-by service can be priced per unit of, for UI/validation consumers.
-export const MEASURED_BY_KINDS: readonly PaintingQuantityKind[] = Object.keys(
-  MEASURED_BY_KIND_SET,
-) as PaintingQuantityKind[];
+// And for the trim AREAS. These are a pricing basis, not a room quantity: nothing writes a
+// `baseboard_sqft` row and no scan derives one — the number is computed from the measured run
+// and the typed height on the way out. A shop points a per-sq-ft trim service at these; a shop
+// that bids trim by the foot never sees them.
+const TRIM_AREA_KIND_SET: Record<TrimAreaKind, true> = {
+  baseboard_sqft: true,
+  crown_sqft: true,
+};
 
-/** The measured quantities (room OR site) a per-unit service can price against. */
-export type MeasuredQuantityKind = PaintingQuantityKind | SiteQuantityKind;
+// The room-quantity kinds a measured-by service can be priced per unit of, plus the two trim
+// areas those runs turn into — the list the pricebook UI offers.
+export const MEASURED_BY_KINDS: readonly (PaintingQuantityKind | TrimAreaKind)[] = [
+  ...(Object.keys(MEASURED_BY_KIND_SET) as PaintingQuantityKind[]),
+  ...(Object.keys(TRIM_AREA_KIND_SET) as TrimAreaKind[]),
+];
+
+/** The measured quantities (room, trim area OR site) a per-unit service can price against. */
+export type MeasuredQuantityKind = PaintingQuantityKind | TrimAreaKind | SiteQuantityKind;
 
 /** What a service's price is PER: a measured room/site quantity, or an hour of labor. */
 export type ServicePricedBy = MeasuredQuantityKind | "hour";
@@ -53,6 +64,7 @@ export type ServicePricedBy = MeasuredQuantityKind | "hour";
 export const isMeasuredByKind = (v: string): v is ServicePricedBy =>
   v === "hour" ||
   Object.prototype.hasOwnProperty.call(MEASURED_BY_KIND_SET, v) ||
+  Object.prototype.hasOwnProperty.call(TRIM_AREA_KIND_SET, v) ||
   Object.prototype.hasOwnProperty.call(SITE_KIND_SET, v);
 
 export interface ServiceProps {

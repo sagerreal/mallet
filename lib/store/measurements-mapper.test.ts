@@ -10,8 +10,8 @@ describe("roomCaptureDtoToStore", () => {
       source: "roomplan_v1" as const,
       capturedAt: "2026-07-01T00:00:00.000Z",
       quantities: [
-        { kind: "walls_sqft" as const, value: 120, derivedValue: 118, status: "derived" as const },
-        { kind: "doors_count" as const, value: null, derivedValue: 2, status: "needs_confirm" as const },
+        { kind: "walls_sqft" as const, value: 120, derivedValue: 118, status: "derived" as const, heightIn: null },
+        { kind: "doors_count" as const, value: null, derivedValue: 2, status: "needs_confirm" as const, heightIn: null },
       ],
       deductions: [
         {
@@ -39,15 +39,15 @@ describe("roomCaptureDtoToStore", () => {
       walls: [{ index: 0, widthFt: 10, heightFt: 8, sqft: 80 }],
       netWallsSqft: 24,
       quantities: [
-        { kind: "walls_sqft", value: 120, derivedValue: 118, status: "derived" },
-        { kind: "doors_count", value: null, derivedValue: 2, status: "needs_confirm" },
+        { kind: "walls_sqft", value: 120, derivedValue: 118, status: "derived", heightIn: null },
+        { kind: "doors_count", value: null, derivedValue: 2, status: "needs_confirm", heightIn: null },
       ],
     });
   });
 
   it("does not mutate the input quantities array (defensive copy)", () => {
     const quantities = [
-      { kind: "walls_sqft" as const, value: 1, derivedValue: 1, status: "confirmed" as const },
+      { kind: "walls_sqft" as const, value: 1, derivedValue: 1, status: "confirmed" as const, heightIn: null },
     ];
     const dto = {
       id: "r",
@@ -77,7 +77,7 @@ describe("roomCaptureDtoToStore — a response from an older server", () => {
     roomName: "Bathroom",
     source: "roomplan_v1" as const,
     capturedAt: "2026-08-14T00:00:00.000Z",
-    quantities: [{ kind: "walls_sqft" as const, value: 142, derivedValue: 142, status: "derived" as const }],
+    quantities: [{ kind: "walls_sqft" as const, value: 142, derivedValue: 142, status: "derived" as const, heightIn: null }],
   };
 
   it("degrades to none-recorded rather than throwing", () => {

@@ -104,9 +104,11 @@ export class CreateManualRoomUseCase {
     // getCapture()/list() read of the same capture.
     const storedQuantities: StoredQuantity[] = ALL_PAINTING_QUANTITY_KINDS.map((kind) => {
       const value = provided.get(kind);
+      // heightIn null on every kind: a manual room carries only what was typed into the form,
+      // and the form has no height field — it is set afterwards from the room card.
       return value === undefined
-        ? { kind, value: null, derivedValue: null, status: "needs_confirm" as const }
-        : { kind, value, derivedValue: null, status: "confirmed" as const };
+        ? { kind, value: null, derivedValue: null, status: "needs_confirm" as const, heightIn: null }
+        : { kind, value, derivedValue: null, status: "confirmed" as const, heightIn: null };
     }).sort((a, b) => a.kind.localeCompare(b.kind));
 
     logger.info({ captureId: capture.props.id, jobId: cmd.jobId, orgId }, "measurements.manual_room_created");
