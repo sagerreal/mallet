@@ -74,3 +74,43 @@ describe("jobHasPricing — drives whether a breakdown replaces the plain total"
     expect(jobHasPricing({ pricing: { disc: 0, tax: 0 } })).toBe(false);
   });
 });
+
+/**
+ * A FRACTIONAL QUANTITY CRASHED THE WHOLE SHEET.
+ *
+ * `jobLineSubtotalCents` rounded the RATE to integer cents and then multiplied by the quantity,
+ * so 1.5 hours of labour at an odd cent rate produced fractional cents — and `money()` throws on
+ * a non-integer by contract. The throw is not caught anywhere on this path: opening the job took
+ * the entire page to the error boundary ("Something went wrong"), reproduced on production as
+ * `Money must be integer cents, got 241495.5`.
+ *
+ * Half-hours and half-units are ordinary in the trades, so this was reachable by typing a normal
+ * number into a normal field.
+ *
+ * The server has always extended first and rounded second — `invoice-line.ts` does
+ * `money(Math.round(quantity * rate))` — and the client's own price builder already agreed
+ * (`Math.round(r * q * 100)`). This file was the one place that inverted the order.
+ */
+describe("fractional quantities", () => {
+  it("does not throw on a half-hour line at an odd cent rate", () => {
+    // 1.5 × $1,609.97 = 241,495.5 cents if you round the rate first. The exact production crash.
+    expect(() => jobPricedTotals({ lines: [{ id: "l", d: "Labour", q: 1.5, r: 1609.97, c: 0 }] as never }))
+      .not.toThrow();
+  });
+
+  it("extends THEN rounds, matching the server's invoice-line math", () => {
+    const t = jobPricedTotals({ lines: [{ id: "l", d: "Labour", q: 1.5, r: 1609.97, c: 0 }] as never });
+    // 1.5 * 160997 = 241495.5 → 241496, never 241495.5 and never 1.5 * 160997 truncated.
+    expect(t.subtotal).toBe(Math.round(1.5 * 1609.97 * 100));
+  });
+
+  it("still totals whole quantities exactly as before", () => {
+    const t = jobPricedTotals({ lines: [{ id: "l", d: "Part", q: 3, r: 12.34, c: 0 }] as never });
+    expect(t.subtotal).toBe(3702);
+  });
+
+  it("survives a line whose quantity and rate are both fractional", () => {
+    expect(() => jobPricedTotals({ lines: [{ id: "l", d: "Pipe", q: 2.75, r: 3.33, c: 0 }] as never }))
+      .not.toThrow();
+  });
+});
