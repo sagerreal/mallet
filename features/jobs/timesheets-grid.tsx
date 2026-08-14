@@ -32,12 +32,24 @@ const STATUS_LABEL: Record<TsRowStatus, string> = {
   empty: "Nothing yet",
 };
 
+/**
+ * `daily` shows the seven days; `summary` trades them for Regular / Overtime.
+ *
+ * Two readings of one week. Daily is for finding the day that looks wrong; summary is the shape
+ * payroll is keyed from, and putting them behind a toggle beats making somebody do the subtraction.
+ */
+export type TsGridMode = "daily" | "summary";
+
 export interface TimesheetsGridProps {
   readonly rows: readonly TsCrewRow[];
   readonly weekDates: string[];
+  readonly mode: TsGridMode;
   /** The one open row, or null. One at a time: the grid's value is comparing people. */
   readonly openTechId: string | null;
   readonly onToggle: (techId: string) => void;
+  /** Tech ids ticked for a batch action. Empty means the checkbox column is idle, not hidden. */
+  readonly selected: ReadonlySet<string>;
+  readonly onSelect: (techId: string, checked: boolean) => void;
   /** The expanded body — the panel supplies the entry rows and their editing. */
   readonly renderDetail: (techId: string) => ReactNode;
 }
@@ -45,34 +57,61 @@ export interface TimesheetsGridProps {
 interface TsGridRowProps {
   readonly row: TsCrewRow;
   readonly weekDates: string[];
+  readonly mode: TsGridMode;
   readonly open: boolean;
   readonly onToggle: () => void;
+  readonly checked: boolean;
+  readonly onSelect: (checked: boolean) => void;
 }
 
-function TsGridRow({ row, weekDates, open, onToggle }: TsGridRowProps) {
+function TsGridRow({ row, weekDates, mode, open, onToggle, checked, onSelect }: TsGridRowProps) {
   const empty = row.status === "empty";
+  const approved = row.status === "approved";
   return (
-    <button
-      type="button"
-      className={open ? "tsg-row tsg-open" : "tsg-row"}
-      aria-expanded={open}
-      onClick={onToggle}
-    >
+    <div className={open ? "tsg-row tsg-open" : "tsg-row"}>
+      {/* The tick sits OUTSIDE the row button. A checkbox nested in a button is not operable by
+          keyboard and toggling it would also open the row — two actions on one press. An approved
+          week has nothing left to approve, so its box is disabled rather than silently ignored. */}
+      <label className="tsg-tickcell">
+        <input
+          type="checkbox"
+          checked={checked}
+          disabled={approved || empty}
+          onChange={(e) => onSelect(e.target.checked)}
+          aria-label={`Select ${row.name}`}
+        />
+      </label>
+
+      <button
+        type="button"
+        className="tsg-rowbtn"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
       <span className="tsg-who">
         <span className="tsg-avatar" aria-hidden="true">{row.initials}</span>
         <span className="tsg-name">{row.name}</span>
       </span>
 
-      {row.dayHours.map((h, i) => (
-        <span
-          key={weekDates[i] ?? i}
-          className={
-            h === null ? "tsg-cell tsg-none" : row.otDays.has(i) ? "tsg-cell tsg-otday" : "tsg-cell"
-          }
-        >
-          {h === null ? "—" : h.toFixed(1)}
-        </span>
-      ))}
+      {mode === "daily" ? (
+        row.dayHours.map((h, i) => (
+          <span
+            key={weekDates[i] ?? i}
+            className={
+              h === null ? "tsg-cell tsg-none" : row.otDays.has(i) ? "tsg-cell tsg-otday" : "tsg-cell"
+            }
+          >
+            {h === null ? "—" : h.toFixed(1)}
+          </span>
+        ))
+      ) : (
+        <>
+          {/* Regular is the uncapped remainder — what is actually being paid at the base rate,
+              never "capped at the threshold", which states a smaller number than the cheque. */}
+          <span className="tsg-sum">{(row.paid - row.ot).toFixed(2)}</span>
+          <span className={row.ot > 0 ? "tsg-sum tsg-hasot" : "tsg-sum"}>{row.ot.toFixed(2)}</span>
+        </>
+      )}
 
       {/* A week with nothing in it says so in the Status column; a 0.00 total there would read as
           "worked a zero-hour week", which is a different and untrue claim. */}
@@ -91,29 +130,49 @@ function TsGridRow({ row, weekDates, open, onToggle }: TsGridRowProps) {
         <span className={`tsg-pill tsg-${row.status}`}>{STATUS_LABEL[row.status]}</span>
       </span>
 
-      <span className="tsg-chev" aria-hidden="true">{open ? "⌄" : "›"}</span>
-    </button>
+        <span className="tsg-chev" aria-hidden="true">{open ? "⌄" : "›"}</span>
+      </button>
+    </div>
   );
 }
 
-export function TimesheetsGrid({ rows, weekDates, openTechId, onToggle, renderDetail }: TimesheetsGridProps) {
+export function TimesheetsGrid({
+  rows,
+  weekDates,
+  mode,
+  openTechId,
+  onToggle,
+  selected,
+  onSelect,
+  renderDetail,
+}: TimesheetsGridProps) {
   if (rows.length === 0) {
     return <div className="empty-att">No crew match that filter.</div>;
   }
 
   return (
-    <div className="tsg">
+    <div className={mode === "summary" ? "tsg tsg-sum-mode" : "tsg"}>
       <div className="tsg-row tsg-head" aria-hidden="true">
-        <span className="tsg-who">Technician</span>
-        {DAY_HEADS.map((d, i) => (
-          <span key={weekDates[i] ?? i} className="tsg-cell" title={tsDayShort(weekDates[i] ?? "")}>
-            {d}
-          </span>
-        ))}
-        <span className="tsg-total">Total</span>
-        <span className="tsg-issues">Issues</span>
-        <span className="tsg-statuscell">Status</span>
-        <span className="tsg-chev" />
+        <span className="tsg-tickcell" />
+        <span className="tsg-rowbtn">
+          <span className="tsg-who">Technician</span>
+          {mode === "daily" ? (
+            DAY_HEADS.map((d, i) => (
+              <span key={weekDates[i] ?? i} className="tsg-cell" title={tsDayShort(weekDates[i] ?? "")}>
+                {d}
+              </span>
+            ))
+          ) : (
+            <>
+              <span className="tsg-sum">Regular</span>
+              <span className="tsg-sum">Overtime</span>
+            </>
+          )}
+          <span className="tsg-total">Total</span>
+          <span className="tsg-issues">Issues</span>
+          <span className="tsg-statuscell">Status</span>
+          <span className="tsg-chev" />
+        </span>
       </div>
 
       {rows.map((row) => (
@@ -121,8 +180,11 @@ export function TimesheetsGrid({ rows, weekDates, openTechId, onToggle, renderDe
           <TsGridRow
             row={row}
             weekDates={weekDates}
+            mode={mode}
             open={openTechId === row.techId}
             onToggle={() => onToggle(row.techId)}
+            checked={selected.has(row.techId)}
+            onSelect={(checked) => onSelect(row.techId, checked)}
           />
           {openTechId === row.techId && <div className="tsg-detail">{renderDetail(row.techId)}</div>}
         </div>

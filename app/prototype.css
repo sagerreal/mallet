@@ -1899,23 +1899,50 @@
      whatever it sets, which is invisible in the DOM and cost a day's debugging once already. */
   .tsg{background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius);overflow:hidden}
   .tsg-toolbar{display:flex;align-items:center;gap:var(--space-3);flex-wrap:wrap;margin-bottom:var(--space-4)}
+  .tsg-toolbar-gap{flex:1 1 auto}
+
+  /* Batch bar — anchored above the grid, never floating: a bar that hovers covers the rows its
+     count refers to. */
+  .tsg-batch{display:flex;align-items:center;gap:var(--space-3);background:var(--ink);color:var(--card);
+    border-radius:var(--radius-sm);padding:var(--space-2) var(--space-4);margin-bottom:var(--space-3);
+    font-size:var(--type-base);flex-wrap:wrap}
+  .tsg-batch b{font-weight:700}
+  /* .btn.ghost is drawn for a light card — --ink-2 on the bar's near-black ground fails contrast
+     (axe caught it). On this one dark surface it takes the paper colour instead. */
+  .tsg-batch .btn.ghost{color:var(--card);border-color:color-mix(in srgb,var(--card) 40%,transparent)}
+  .tsg-batch .btn.ghost:hover{border-color:var(--card);background:color-mix(in srgb,var(--card) 12%,transparent)}
+  .tsg-batch-gap{flex:1 1 auto}
+  .tsg-batch-note{font-size:var(--type-base);color:var(--ink-2);margin:0 0 var(--space-3)}
+  .tsg-batch-held{color:var(--amber)}
   .tsg-search{min-width:200px;flex:0 1 240px}
   .tsg-chips{display:flex;gap:var(--space-2);flex-wrap:wrap}
 
   /* One shared template so the head and every row line up. The day columns are fixed because they
      hold one number each; only the name flexes. */
-  .tsg-row{display:grid;grid-template-columns:minmax(150px,1.6fr) repeat(7,52px) 104px 74px 130px 30px;
-    align-items:center;gap:var(--space-2);width:100%;padding:var(--space-3) var(--space-4);
-    border-bottom:1px solid var(--line-2);font-size:var(--type-md);text-align:left;
-    background:none;border-left:none;border-right:none;border-top:none;font-family:inherit;color:var(--ink)}
+  /* The tick sits outside the row button — a checkbox inside a button is not keyboard-operable and
+     one press would do two things — so the row is a 2-column shell and the button carries the grid. */
+  .tsg-row{display:grid;grid-template-columns:34px 1fr;align-items:center;
+    border-bottom:1px solid var(--line-2);font-size:var(--type-md);padding-left:var(--space-3)}
   .tsg-row:last-child{border-bottom:none}
-  button.tsg-row{cursor:pointer}
-  button.tsg-row:hover{background:var(--paper)}
-  button.tsg-row:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  .tsg-tickcell{display:flex;align-items:center;justify-content:center;align-self:stretch}
+  .tsg-tickcell input{cursor:pointer}
+  .tsg-tickcell input:disabled{cursor:default;opacity:.4}
+  .tsg-rowbtn{display:grid;grid-template-columns:minmax(150px,1.6fr) repeat(7,52px) 104px 74px 130px 30px;
+    align-items:center;gap:var(--space-2);width:100%;padding:var(--space-3) var(--space-4);
+    font-size:var(--type-md);text-align:left;background:none;border:none;font-family:inherit;
+    color:var(--ink);font-weight:inherit}
+  button.tsg-rowbtn{cursor:pointer}
+  button.tsg-rowbtn:hover{background:var(--paper)}
+  button.tsg-rowbtn:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+  /* Summary trades the seven day cells for two wider ones. */
+  .tsg-sum-mode .tsg-rowbtn{grid-template-columns:minmax(150px,1.6fr) 104px 104px 104px 74px 130px 30px}
+  .tsg-sum{text-align:right;font-variant-numeric:tabular-nums}
+  .tsg-hasot{color:var(--amber);font-weight:700}
   .tsg-head{font-family:var(--font-mono);font-size:var(--type-xs);letter-spacing:.08em;
     text-transform:uppercase;color:var(--ink-3);font-weight:700;background:var(--paper)}
+  .tsg-head .tsg-rowbtn{padding-top:var(--space-2);padding-bottom:var(--space-2)}
   .tsg-open{background:var(--manila)}
-  button.tsg-open:hover{background:var(--manila)}
+  .tsg-open button.tsg-rowbtn:hover{background:var(--manila)}
 
   .tsg-who{display:flex;align-items:center;gap:var(--space-3);min-width:0}
   .tsg-name{font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1954,8 +1981,9 @@
   @media (max-width:900px){
     /* The seven day columns are the first thing to go: the week total, the issue count and the
        status are what the row is scanned for, and they still fit. */
-    .tsg-row{grid-template-columns:minmax(120px,1.6fr) 92px 62px 118px 26px}
-    .tsg-cell{display:none}
+    .tsg-rowbtn{grid-template-columns:minmax(120px,1.6fr) 92px 62px 118px 26px}
+    .tsg-sum-mode .tsg-rowbtn{grid-template-columns:minmax(120px,1.6fr) 92px 62px 118px 26px}
+    .tsg-cell,.tsg-sum{display:none}
     .tsg-detail{padding-left:var(--space-4)}
   }
 
