@@ -741,6 +741,7 @@ export interface ActiveCall {
 export type RoomQuantityKind =
   | "walls_sqft"
   | "ceiling_sqft"
+  | "soffit_sqft"
   | "baseboard_lnft"
   | "crown_lnft"
   | "doors_count"

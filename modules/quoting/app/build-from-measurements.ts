@@ -56,6 +56,7 @@ export interface BuildFromMeasurementsResult {
 const KIND_LABELS: Record<MeasuredQuantityKind, string> = {
   walls_sqft: "Walls",
   ceiling_sqft: "Ceiling",
+  soffit_sqft: "Soffit / bulkhead",
   baseboard_lnft: "Baseboard",
   crown_lnft: "Crown",
   doors_count: "Doors",

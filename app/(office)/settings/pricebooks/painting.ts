@@ -69,6 +69,17 @@ const PAINTING_SERVICES: readonly SeedServiceInput[] = [
     measuredBy: "ceiling_sqft",
   },
   {
+    // Priced ABOVE open wall on purpose. A soffit is two planes meeting at an outside corner with a
+    // cut-in along both edges, worked overhead off a ladder — the sqft goes slowly. Painters quote
+    // these by the foot in the field; per sqft keeps it on the same measured footing as everything
+    // else here, and the painter enters the area because the scanner cannot see a soffit at all.
+    name: "Soffit / bulkhead painting",
+    categoryName: "Interior Walls & Ceilings",
+    unitPriceCents: 315,
+    costCents: 145,
+    measuredBy: "soffit_sqft",
+  },
+  {
     // Per sq ft of wall surface. HomeGuide 2026: $0.80–$3.00/sqft, midpoint $1.90.
     name: "Wallpaper removal",
     categoryName: "Interior Walls & Ceilings",

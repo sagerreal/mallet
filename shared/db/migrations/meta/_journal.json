@@ -1114,6 +1114,13 @@
       "when": 1786638394116,
       "tag": "0158_job_time_runs_beside_the_shift",
       "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1786734391624,
+      "tag": "0159_goofy_snowbird",
+      "breakpoints": true
     }
   ]
 }

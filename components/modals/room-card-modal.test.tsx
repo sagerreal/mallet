@@ -648,3 +648,42 @@ describe("RoomCardModalContent — a room still loading is not 'removed'", () =>
     expect(screen.getByText(/no longer available/)).toBeTruthy();
   });
 });
+
+// ---------------------------------------------------------------------------
+// SOFFITS. The scanner cannot see one — RoomPlan reports walls, the floor and openings, and a boxed
+// bulkhead is none of them. So the row exists on every room and is always the painter's own number.
+// ---------------------------------------------------------------------------
+
+describe("the soffit row", () => {
+  const withSoffit = (value: number | null) =>
+    room({
+      quantities: [
+        quantity(),
+        quantity({ kind: "soffit_sqft", value, derivedValue: null, status: value == null ? "needs_confirm" : "confirmed" }),
+        quantity({ kind: "crown_lnft", value: null, derivedValue: 46, status: "needs_confirm" }),
+      ],
+    });
+
+  it("asks to be added rather than showing a measured-looking zero", () => {
+    storeState.roomsByJob[JOB_ID] = [withSoffit(null)];
+    render(<RoomCardModalContent />);
+    const row = screen.getByText("Soffit / bulkhead (sq ft)").closest("div");
+    expect(row?.textContent).toContain("Add");
+  });
+
+  it("warns that a soffit breaks the crown suggestion, where the suggestion is accepted", () => {
+    // Crown is offered as the FLOOR perimeter on a flat-ceiling convention. A soffit is exactly the
+    // case where the ceiling outline is not the floor's.
+    storeState.roomsByJob[JOB_ID] = [withSoffit(42)];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByText("Crown (ln ft)"));
+    expect(screen.getByText(/not simply the floor perimeter/)).toBeTruthy();
+  });
+
+  it("says nothing about crown when the room has no soffit", () => {
+    storeState.roomsByJob[JOB_ID] = [withSoffit(null)];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByText("Crown (ln ft)"));
+    expect(screen.queryByText(/not simply the floor perimeter/)).toBeNull();
+  });
+});

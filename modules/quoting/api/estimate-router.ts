@@ -340,6 +340,7 @@ const buildFromMeasurementsInput = z.object({
 const measuredKindDTO = z.enum([
   "walls_sqft",
   "ceiling_sqft",
+  "soffit_sqft",
   "baseboard_lnft",
   "crown_lnft",
   "doors_count",
