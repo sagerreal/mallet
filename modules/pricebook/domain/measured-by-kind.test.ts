@@ -26,8 +26,17 @@ describe("MEASURED_BY_KINDS pinning", () => {
     expect(pricebookKinds).toEqual(measurementsKinds);
   });
 
-  it("has exactly 6 kinds, no duplicates", () => {
-    expect(MEASURED_BY_KINDS.length).toBe(6);
-    expect(new Set(MEASURED_BY_KINDS).size).toBe(6);
+  it("has no duplicates", () => {
+    // The COUNT is deliberately not hard-coded: the test above already pins membership against the
+    // derivation, so a literal here only ever goes stale when a kind is legitimately added (it did,
+    // when soffit_sqft landed). What this still has to catch is a kind listed twice.
+    expect(new Set(MEASURED_BY_KINDS).size).toBe(MEASURED_BY_KINDS.length);
+  });
+
+  it("includes soffit_sqft — the one kind that can never be derived", () => {
+    // Named explicitly because it is the exception the whole set has to tolerate: RoomPlan reports
+    // walls, the floor and openings, so a boxed soffit arrives as nothing at all and is priced only
+    // from a number the painter enters.
+    expect(MEASURED_BY_KINDS).toContain("soffit_sqft");
   });
 });

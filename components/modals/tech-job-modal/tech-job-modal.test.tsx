@@ -79,6 +79,8 @@ function mockStoreState(): Record<string, unknown> {
     leads: mockLeads,
     invoices: mockInvoices,
     toggles: { techSeesPrice: mockSeesPrice },
+    // The Quote tab's "Rooms measured" row counts from here.
+    roomsByJob: {},
     setVisitStatus: mockSetVisitStatus,
     updateJob: mockUpdateJob,
     appendJobNote: mockAppendJobNote,
@@ -120,6 +122,7 @@ useAppStoreMock.getState = mockStoreState;
 // The sheet links to /ask?jobId= (Ask moved to its own tab), so it holds a router now.
 const askPush = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: askPush }) }));
+vi.mock("@/features/measurements/use-job-rooms", () => ({ useJobRooms: () => ({ isLoading: false }) }));
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "tech-job", params: { jobId: "job-1" } }),
   useOpenModal: () => mockOpenModal,

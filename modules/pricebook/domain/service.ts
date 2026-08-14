@@ -14,10 +14,11 @@ export type { PaintingQuantityKind, SiteQuantityKind };
 // this exhaustiveness map fails to typecheck (`Record<PaintingQuantityKind, true>` requires
 // every member present, and an extra key here would be a type error too) — stronger than a
 // runtime-only assertion, and it does not require importing the measurements module barrel.
-// This is the single source of the 6-kind membership list; MEASURED_BY_KINDS is derived from it.
+// This is the single source of the membership list; MEASURED_BY_KINDS is derived from it.
 const MEASURED_BY_KIND_SET: Record<PaintingQuantityKind, true> = {
   walls_sqft: true,
   ceiling_sqft: true,
+  soffit_sqft: true,
   baseboard_lnft: true,
   crown_lnft: true,
   doors_count: true,

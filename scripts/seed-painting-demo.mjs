@@ -98,6 +98,9 @@ const CATEGORIES = [
 const SERVICES = [
   { slug: "svc-walls", cat: "cat-interior", name: "Interior wall painting (2 coats)", price: 225, cost: 105, measuredBy: "walls_sqft" },
   { slug: "svc-ceiling", cat: "cat-interior", name: "Ceiling painting", price: 200, cost: 95, measuredBy: "ceiling_sqft" },
+  // Priced ABOVE open wall: two planes meeting at an outside corner, cut in on both edges, worked
+  // overhead. The scanner cannot see a soffit at all, so this is always the painter's own number.
+  { slug: "svc-soffit", cat: "cat-interior", name: "Soffit / bulkhead painting", price: 315, cost: 145, measuredBy: "soffit_sqft" },
   { slug: "svc-wallpaper", cat: "cat-prep", name: "Wallpaper removal", price: 190, cost: 90, measuredBy: "walls_sqft" },
   { slug: "svc-popcorn", cat: "cat-prep", name: "Popcorn ceiling removal", price: 177, cost: 84, measuredBy: "ceiling_sqft" },
   { slug: "svc-base", cat: "cat-trim", name: "Baseboard / trim painting", price: 250, cost: 115, measuredBy: "baseboard_lnft" },

@@ -74,11 +74,24 @@ interface QuantityDef {
 const QUANTITY_DEFS: readonly QuantityDef[] = [
   { kind: "walls_sqft", label: "Walls (sq ft)", unit: "sqft" },
   { kind: "ceiling_sqft", label: "Ceiling (sq ft)", unit: "sqft" },
+  // Directly under Ceiling, because that is where a soffit IS — a box hung off it. The scanner
+  // cannot see one, so this row is always the painter's own number.
+  { kind: "soffit_sqft", label: "Soffit / bulkhead (sq ft)", unit: "sqft" },
   { kind: "baseboard_lnft", label: "Baseboard (ln ft)", unit: "lnft" },
   { kind: "crown_lnft", label: "Crown (ln ft)", unit: "lnft" },
   { kind: "doors_count", label: "Doors", unit: "count" },
   { kind: "windows_count", label: "Windows", unit: "count" },
 ];
+
+/**
+ * The kinds whose EXISTENCE the scanner cannot see, so "none" is a real answer worth one tap.
+ *
+ * A soffit belongs here for the same reason as trim: plenty of rooms have none, and leaving the row
+ * unanswered is indistinguishable from not having looked. Walls, ceiling, doors and windows are
+ * measured or counted — "none" is not a thing you tell the app about them.
+ */
+const TRIM_KINDS: readonly RoomQuantityKind[] = ["baseboard_lnft", "crown_lnft", "soffit_sqft"];
+const isTrim = (kind: RoomQuantityKind): boolean => TRIM_KINDS.includes(kind);
 
 /** 1 decimal for sq ft / ln ft, whole numbers for counts. */
 export function formatQuantity(value: number, unit: QuantityUnit): string {
@@ -182,12 +195,15 @@ function QuantityRow({
   def,
   quantity,
   source,
+  note,
   readOnly,
   onCommit,
 }: {
   def: QuantityDef;
   quantity: RoomQuantity;
   source: RoomCard["source"];
+  /** A caveat about THIS row's suggestion, shown where it is about to be accepted. */
+  note?: string | null;
   /** Techs read the numbers; confirming/overriding them into the record is desk work
    *  (v1.measurements.confirmQuantity / overrideQuantity stay ownerOrOffice). */
   readOnly: boolean;
@@ -276,11 +292,69 @@ function QuantityRow({
           }}
         />
       </Field>
+      {/* THE TWO ANSWERS A TRIM ROW ACTUALLY HAS.
+          Accepting the calculated perimeter used to mean noticing the number was already in the box
+          and pressing Enter; recording "this room has no crown" meant knowing that typing a zero
+          would do it. Neither reads as an option, so both are buttons:
+            · the calculation, named and carrying its number — the scanner's perimeter, taken.
+            · None in this room — the honest answer for rubber cove base or a ceiling with no crown,
+              and a CONFIRMED zero rather than a row nobody answered. */}
+      {(quantity.derivedValue != null || isTrim(def.kind)) && (
+        <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-3)" }}>
+          {quantity.derivedValue != null && (
+            <button
+              type="button"
+              className="btn sm"
+              onClick={() => {
+                onCommit(def.kind, quantity.derivedValue as number);
+                setOpen(false);
+                setError(null);
+              }}
+            >
+              Use measured {formatQuantity(quantity.derivedValue, def.unit)}
+            </button>
+          )}
+          {isTrim(def.kind) && (
+            <button
+              type="button"
+              className="btn sm ghost"
+              onClick={() => {
+                onCommit(def.kind, 0);
+                setOpen(false);
+                setError(null);
+              }}
+            >
+              None in this room
+            </button>
+          )}
+        </div>
+      )}
+      {note && (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
+          {note}
+        </p>
+      )}
       {error && (
         <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{error}</p>
       )}
     </SheetRow>
   );
+}
+
+/**
+ * A soffit invalidates the crown suggestion.
+ *
+ * Crown is offered as the FLOOR perimeter, on the flat-ceiling convention that the ceiling outline
+ * matches the floor's. A boxed soffit is exactly the case where it does not — the crown either dies
+ * into the soffit or runs around it, and either way the number is not the floor's perimeter. Said
+ * where the suggestion is about to be accepted, rather than left for the painter to discover on
+ * site.
+ */
+function crownNote(room: RoomCard): string | null {
+  const soffit = room.quantities.find((q) => q.kind === "soffit_sqft");
+  const hasSoffit = soffit?.value != null && soffit.value > 0;
+  if (!hasSoffit) return null;
+  return "This room has a soffit, so the crown run is not simply the floor perimeter — check whether it dies into the soffit or wraps it.";
 }
 
 // ---- room name row (rename, view mode) ---------------------------------------
@@ -463,6 +537,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
               def={def}
               quantity={quantity}
               source={room.source}
+              note={def.kind === "crown_lnft" ? crownNote(room) : null}
               readOnly={!isOffice}
               onCommit={commitQuantity}
             />
@@ -502,6 +577,7 @@ function CreateRoom({ jobId, jobName }: { jobId: string; jobName: string | undef
   const [drafts, setDrafts] = useState<Record<RoomQuantityKind, string>>({
     walls_sqft: "",
     ceiling_sqft: "",
+    soffit_sqft: "",
     baseboard_lnft: "",
     crown_lnft: "",
     doors_count: "",

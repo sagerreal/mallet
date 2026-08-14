@@ -182,3 +182,29 @@ describe("derivePaintingQuantities", () => {
     expect(findQuantity(qs, "windows_count").value).toBe(0);
   });
 });
+
+// ---------------------------------------------------------------------------
+// SOFFITS. RoomPlan reports walls, the floor and openings. A boxed soffit — a bulkhead over a
+// doorway, around a kitchen, hiding ductwork — is none of those, so neither its vertical faces nor
+// its underside are anywhere in the payload. A real doctor's-office scan came back with 400.4 sqft
+// of wall and the soffit above the door simply absent.
+// ---------------------------------------------------------------------------
+
+describe("soffits are not observable", () => {
+  it("is always present as a row, so 'never measured' is visible rather than missing", () => {
+    const qs = derivePaintingQuantities(room4x3x2p4());
+    expect(qs.map((q) => q.kind)).toContain("soffit_sqft");
+  });
+
+  it("carries NO value and NO suggestion — a zero would claim the scanner looked", () => {
+    // Every other needs_confirm kind offers a derivedValue to accept. There is nothing honest to
+    // offer here: the geometry never arrived.
+    const soffit = findQuantity(derivePaintingQuantities(room4x3x2p4()), "soffit_sqft");
+    expect(soffit).toEqual({ kind: "soffit_sqft", value: null, derivedValue: null, status: "needs_confirm" });
+  });
+
+  it("never prices until the painter enters it", () => {
+    // A null value never prices — the same law that keeps unconfirmed trim out of a quote.
+    expect(findQuantity(derivePaintingQuantities(room4x3x2p4()), "soffit_sqft")?.value).toBeNull();
+  });
+});

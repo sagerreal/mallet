@@ -104,7 +104,7 @@ export const paintingRoomQuantities = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     orgId: uuid("org_id").notNull(),
     captureId: uuid("capture_id").notNull(),
-    kind: text("kind").notNull(), // walls_sqft|ceiling_sqft|baseboard_lnft|crown_lnft|doors_count|windows_count
+    kind: text("kind").notNull(), // walls_sqft|ceiling_sqft|soffit_sqft|baseboard_lnft|crown_lnft|doors_count|windows_count
     value: numeric("value", { precision: 12, scale: 2, mode: "number" }), // null = needs_confirm
     derivedValue: numeric("derived_value", { precision: 12, scale: 2, mode: "number" }), // null for manual rooms
     status: text("status").notNull(), // derived|override|confirmed|needs_confirm
@@ -121,7 +121,10 @@ export const paintingRoomQuantities = pgTable(
     }).onDelete("cascade"),
     check(
       "painting_room_quantities_kind_ck",
-      sql`${t.kind} in ('walls_sqft','ceiling_sqft','baseboard_lnft','crown_lnft','doors_count','windows_count')`,
+      // soffit_sqft is MANUAL-ONLY and has no derivation: RoomPlan models walls, the floor and
+      // openings, so a boxed soffit's faces and underside are not in the payload at all. It is the
+      // painter's number or it is nothing.
+      sql`${t.kind} in ('walls_sqft','ceiling_sqft','soffit_sqft','baseboard_lnft','crown_lnft','doors_count','windows_count')`,
     ),
     check(
       "painting_room_quantities_status_ck",

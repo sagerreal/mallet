@@ -243,7 +243,7 @@ describe("RoomCardModalContent — view mode", () => {
 
   it("commits a typed value on blur via setRoomQuantity", () => {
     render(<RoomCardModalContent />);
-    fireEvent.click(screen.getByText("Walls (sq ft)"));
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
     const input = screen.getByLabelText("Walls (sq ft)");
     fireEvent.change(input, { target: { value: "600" } });
     fireEvent.blur(input);
@@ -252,7 +252,7 @@ describe("RoomCardModalContent — view mode", () => {
 
   it("commits a typed value on Enter", () => {
     render(<RoomCardModalContent />);
-    fireEvent.click(screen.getByText("Walls (sq ft)"));
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
     const input = screen.getByLabelText("Walls (sq ft)");
     fireEvent.change(input, { target: { value: "600" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -261,7 +261,7 @@ describe("RoomCardModalContent — view mode", () => {
 
   it("invalid input shows the named error and keeps the row open without calling the store", () => {
     render(<RoomCardModalContent />);
-    fireEvent.click(screen.getByText("Walls (sq ft)"));
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
     const input = screen.getByLabelText("Walls (sq ft)");
     fireEvent.change(input, { target: { value: "2..4" } });
     fireEvent.blur(input);
@@ -273,7 +273,7 @@ describe("RoomCardModalContent — view mode", () => {
 
   it("empty input on blur closes the row without calling the store", () => {
     render(<RoomCardModalContent />);
-    fireEvent.click(screen.getByText("Walls (sq ft)"));
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
     const input = screen.getByLabelText("Walls (sq ft)");
     fireEvent.change(input, { target: { value: "" } });
     fireEvent.blur(input);
@@ -317,7 +317,7 @@ describe("RoomCardModalContent — view mode, TECH role", () => {
 
   it("quantity rows are read-only — tapping one opens no editor", () => {
     render(<RoomCardModalContent />);
-    fireEvent.click(screen.getByText("Walls (sq ft)"));
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
     expect(screen.queryByLabelText("Walls (sq ft)")).toBeNull();
     expect(storeState.setRoomQuantity).not.toHaveBeenCalled();
   });
@@ -646,5 +646,111 @@ describe("RoomCardModalContent — a room still loading is not 'removed'", () =>
     useJobRoomsMock.mockReturnValue({ isLoading: false });
     render(<RoomCardModalContent />);
     expect(screen.getByText(/no longer available/)).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// SOFFITS. The scanner cannot see one — RoomPlan reports walls, the floor and openings, and a boxed
+// bulkhead is none of them. So the row exists on every room and is always the painter's own number.
+// ---------------------------------------------------------------------------
+
+describe("the soffit row", () => {
+  const withSoffit = (value: number | null) =>
+    room({
+      quantities: [
+        quantity(),
+        quantity({ kind: "soffit_sqft", value, derivedValue: null, status: value == null ? "needs_confirm" : "confirmed" }),
+        quantity({ kind: "crown_lnft", value: null, derivedValue: 46, status: "needs_confirm" }),
+      ],
+    });
+
+  it("asks to be added rather than showing a measured-looking zero", () => {
+    storeState.roomsByJob[JOB_ID] = [withSoffit(null)];
+    render(<RoomCardModalContent />);
+    const row = screen.getByText("Soffit / bulkhead (sq ft)").closest("div");
+    expect(row?.textContent).toContain("Add");
+  });
+
+  it("warns that a soffit breaks the crown suggestion, where the suggestion is accepted", () => {
+    // Crown is offered as the FLOOR perimeter on a flat-ceiling convention. A soffit is exactly the
+    // case where the ceiling outline is not the floor's.
+    storeState.roomsByJob[JOB_ID] = [withSoffit(42)];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
+    expect(screen.getByText(/not simply the floor perimeter/)).toBeTruthy();
+  });
+
+  it("says nothing about crown when the room has no soffit", () => {
+    storeState.roomsByJob[JOB_ID] = [withSoffit(null)];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
+    expect(screen.queryByText(/not simply the floor perimeter/)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE TWO ANSWERS A TRIM ROW HAS. Accepting the calculated perimeter used to mean noticing the
+// number was already in the box and pressing Enter; recording "this room has no crown" meant
+// knowing to type a zero. Neither reads as an option, so both are buttons.
+// ---------------------------------------------------------------------------
+
+describe("taking or refusing a trim calculation", () => {
+  const trimRoom = () =>
+    room({
+      quantities: [
+        quantity(),
+        quantity({ kind: "crown_lnft", value: null, derivedValue: 46, status: "needs_confirm" }),
+        quantity({ kind: "baseboard_lnft", value: null, derivedValue: 38.4, status: "needs_confirm" }),
+      ],
+    });
+
+  it("offers the measured perimeter as a named action carrying its number", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
+    expect(screen.getByRole("button", { name: "Use measured 46.0" })).toBeTruthy();
+  });
+
+  it("commits that number when it is taken", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Use measured 46.0" }));
+    expect(storeState.setRoomQuantity).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "crown_lnft", 46);
+  });
+
+  it("offers None for a room that simply has no crown", () => {
+    // A bathroom with rubber cove base and no crown: the honest answer is zero, and it must be one
+    // tap rather than knowledge that typing 0 works.
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
+    expect(screen.getByRole("button", { name: "None in this room" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "None in this room" }));
+    // A CONFIRMED zero, not an unanswered row — so it stops asking and never prices.
+    expect(storeState.setRoomQuantity).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "crown_lnft", 0);
+  });
+
+  it("does NOT offer None on a measured kind — walls are not a thing you have none of", () => {
+    storeState.roomsByJob[JOB_ID] = [trimRoom()];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+    expect(screen.queryByRole("button", { name: "None in this room" })).toBeNull();
+  });
+
+  it("offers None on the soffit row, which is the commonest answer", () => {
+    storeState.roomsByJob[JOB_ID] = [
+      room({
+        quantities: [
+          quantity(),
+          quantity({ kind: "soffit_sqft", value: null, derivedValue: null, status: "needs_confirm" }),
+        ],
+      }),
+    ];
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Soffit \/ bulkhead/ }));
+    expect(screen.getByRole("button", { name: "None in this room" })).toBeTruthy();
+    // and nothing to "use" — the scanner never measured one
+    expect(screen.queryByRole("button", { name: /^Use measured/ })).toBeNull();
   });
 });

@@ -8,6 +8,7 @@ const METERS_TO_FEET = 3.280839895;
 export type PaintingQuantityKind =
   | "walls_sqft"
   | "ceiling_sqft"
+  | "soffit_sqft"
   | "baseboard_lnft"
   | "crown_lnft"
   | "doors_count"
@@ -47,6 +48,11 @@ const round1 = (n: number): number => Math.round(n * 10) / 10;
  *    a suggestion (derivedValue) — never as a confident value. A bathroom with rubber cove
  *    base and no crown must not show 29.3 lnft of crown as fact (Owen, Jul 30 2026).
  *  - 'opening' kind counts as neither a door nor a window.
+ *  - SOFFITS ARE NOT OBSERVABLE AT ALL. RoomPlan reports walls, the floor and openings; a boxed
+ *    soffit is none of them, so neither its faces nor its underside are in the payload — a real
+ *    doctor's-office scan returned 400.4 sqft of wall with the soffit simply missing. It therefore
+ *    ships with value AND derivedValue null: there is no suggestion to make, and a zero would read
+ *    as "measured, none present" rather than "never looked".
  */
 export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantity[] {
   const floorPerimeterM = polygonPerimeter(g.floorPolygon.vertices);
@@ -84,6 +90,8 @@ export function derivePaintingQuantities(g: NormalizedGeometry): PaintingQuantit
       derivedValue: ceilingSqft,
       status: ceilingNeedsConfirm ? "needs_confirm" : "derived",
     },
+    // No derivedValue: unlike trim, there is not even a convention to suggest from.
+    { kind: "soffit_sqft", value: null, derivedValue: null, status: "needs_confirm" },
     { kind: "baseboard_lnft", value: null, derivedValue: baseboardLnft, status: "needs_confirm" },
     { kind: "crown_lnft", value: null, derivedValue: crownLnft, status: "needs_confirm" },
     { kind: "doors_count", value: doorsCount, derivedValue: doorsCount, status: "derived" },

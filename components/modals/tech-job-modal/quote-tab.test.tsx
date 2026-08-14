@@ -22,6 +22,7 @@ import type { MeasurementGate } from "@/lib/measurement-gate";
 // ---------------------------------------------------------------------------
 
 let mockJobs: Job[] = [];
+let mockRoomsByJob: Record<string, unknown[]> = {};
 let mockMeasurementEstimating: MeasurementGate = "unknown";
 let mockScan: RoomScanAvailability = { status: "no-native-app" };
 
@@ -46,6 +47,8 @@ vi.mock("@/lib/store/app-store", () => ({
       laborRates: [],
       brand: { name: "E2E Plumbing" },
       toggles: { measurementEstimating: mockMeasurementEstimating, techSeesPrice: true },
+      // The "Rooms measured" row counts from here. Seeded per-test where the count matters.
+      roomsByJob: mockRoomsByJob,
       setVisitNotes: mockSetVisitNotes,
       adoptJobPhotoPath: mockAdoptJobPhotoPath,
       signJobQuote: mockSignJobQuote,
@@ -58,6 +61,9 @@ vi.mock("@/lib/store/app-store", () => ({
   useCloseModal: () => mockClose,
 }));
 
+// Hydration is the room card's job in a browser; here the store IS the source, so the hook is a
+// no-op rather than a reason to stand up a tRPC provider for a count.
+vi.mock("@/features/measurements/use-job-rooms", () => ({ useJobRooms: () => ({ isLoading: false }) }));
 vi.mock("@/lib/native/room-scan", () => ({
   useRoomScanAvailability: () => mockScan,
 }));
@@ -126,7 +132,7 @@ beforeEach(() => {
 // render that surface and open the relevant row for the scope/photos/scan suites below.
 const estChooserJob = (overrides: Partial<Job> = {}) =>
   makeJob({ svc: "estimate", kind: "estimate", visits: [makeVisit()], ...overrides });
-function renderChooserWithRow(row: "Scope" | "Photos", job = estChooserJob(), readOnly = false) {
+function renderChooserWithRow(row: "Scope" | "Photos" | "Rooms measured", job = estChooserJob(), readOnly = false) {
   mockJobs = [job];
   const r = render(<QuoteTab job={job} scopeVisit={job.visits[0]} readOnly={readOnly} onSigned={mockOnSigned} />);
   fireEvent.click(screen.getByRole("button", { name: new RegExp("^" + row) }));
@@ -367,7 +373,9 @@ describe("QuoteTab — scan a room", () => {
   function renderScanRow(scan: RoomScanAvailability, readOnly = false) {
     mockMeasurementEstimating = "on";
     mockScan = scan;
-    return renderChooserWithRow("Photos", estChooserJob(), readOnly);
+    // The scan lives in its OWN row now, above Scope — it used to be nested inside Photos, which
+    // put a painting shop's primary action two taps deep under a camera label.
+    return renderChooserWithRow("Rooms measured", estChooserJob(), readOnly);
   }
 
   it("state 1 — live on a LiDAR device, drilling into the room-card scan mode", () => {
@@ -446,7 +454,7 @@ describe("QuoteTab — scan a room", () => {
   it("renders DISABLED with its reason when settings have NOT loaded — visible, never live", () => {
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
-    renderChooserWithRow("Photos");
+    renderChooserWithRow("Rooms measured");
 
     const button = screen.getByRole("button", { name: "Scan a room" });
     expect(button).toHaveProperty("disabled", true);
@@ -462,7 +470,7 @@ describe("QuoteTab — scan a room", () => {
   it("an unknown gate cannot open the room card — no estimate job is created", () => {
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
-    renderChooserWithRow("Photos");
+    renderChooserWithRow("Rooms measured");
     fireEvent.click(screen.getByRole("button", { name: "Scan a room" }));
     expect(mockPushModal).not.toHaveBeenCalled();
   });
@@ -470,7 +478,7 @@ describe("QuoteTab — scan a room", () => {
   it("the DEVICE still outranks an unknown gate — a browser is told to open the app", () => {
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "no-native-app" };
-    renderChooserWithRow("Photos");
+    renderChooserWithRow("Rooms measured");
     expect(
       screen.getByText("Open the Mallet iPhone app to scan — a browser cannot reach the LiDAR sensor."),
     ).toBeTruthy();
@@ -479,7 +487,7 @@ describe("QuoteTab — scan a room", () => {
   it("an unknown gate outranks a CLOSED job — reopening it would not make the scan work", () => {
     mockMeasurementEstimating = "unknown";
     mockScan = { status: "ready" };
-    renderChooserWithRow("Photos", estChooserJob({ status: "done", visits: [makeVisit({ status: "done" })] }), true);
+    renderChooserWithRow("Rooms measured", estChooserJob({ status: "done", visits: [makeVisit({ status: "done" })] }), true);
     expect(
       screen.getByText("Couldn't load this shop's settings — reload the page to scan a room."),
     ).toBeTruthy();
@@ -514,7 +522,7 @@ describe("QuoteTab — closed job", () => {
     const job = estChooserJob({ status: "done", visits: [makeVisit({ scopeNotes: "as found", status: "done" })] });
     mockMeasurementEstimating = "on";
     mockScan = { status: "ready" };
-    renderChooserWithRow("Photos", job, true);
+    renderChooserWithRow("Rooms measured", job, true);
 
     const button = screen.getByRole("button", { name: "Scan a room" });
     expect(button).toHaveProperty("disabled", true);

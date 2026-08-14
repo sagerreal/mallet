@@ -6,7 +6,7 @@ import type { SiteCapture, SitePolygon } from "../domain/site-capture";
 // Heavy fields (geometry, rawPayload) are deliberately excluded from the list DTO — a
 // `getGeometry` procedure can be added later for the floor-plan outline UI when it needs them.
 export const quantityDTO = z.object({
-  kind: z.enum(["walls_sqft", "ceiling_sqft", "baseboard_lnft", "crown_lnft", "doors_count", "windows_count"]),
+  kind: z.enum(["walls_sqft", "ceiling_sqft", "soffit_sqft", "baseboard_lnft", "crown_lnft", "doors_count", "windows_count"]),
   value: z.number().nullable(),
   derivedValue: z.number().nullable(),
   status: z.enum(["derived", "override", "confirmed", "needs_confirm"]),
