@@ -175,8 +175,20 @@ const renamedRoomDTO = z.object({
 // Field access: room capture is FIELD work — the person standing in the room scans it. The
 // scan/room-CRUD procedures below are anyRole with the same assignment gate the field router
 // uses (a tech may act only on jobs they are ON — Job.isAssignedTo, the domain's rule).
-// Owner/office pass through. Quantity confirm/override and the whole site-tracer surface stay
-// ownerOrOffice: resolving numbers into the record and aerial takeoff are desk work.
+// Owner/office pass through.
+//
+// CONFIRM AND OVERRIDE ARE FIELD WORK TOO, and it took a real scan to see why. They were desk
+// work on the reasoning that "resolving numbers into the record" is an office act. But look at
+// what the derivation deliberately refuses to answer: baseboard and crown ship as needs_confirm
+// with only a suggestion, and a soffit ships with no suggestion at all, precisely BECAUSE trim
+// existence is not observable from the geometry (derive-painting.ts's own law: "a bathroom with
+// rubber cove base and no crown must not show 29.3 lnft of crown as fact"). The only person who
+// can see whether that bathroom has cove base is standing in it holding the phone that scanned
+// it — the same person, and the same argument, that already made addDeduction anyRole.
+//
+// Leaving them ownerOrOffice meant a tech could rename the capture, add a deduction, or archive
+// the whole room, but not answer the one question the scan asked them. The site tracer stays
+// ownerOrOffice: aerial takeoff genuinely is desk work.
 const assertOnJobIfTech = async (
   tx: TenantTx,
   principal: Principal,
@@ -324,11 +336,12 @@ export const createMeasurementRouter = () =>
         return toRoomCaptureDTO(orThrow(await reloadCapture(repo, input.captureId)));
       }),
 
-    overrideQuantity: ownerOrOffice
+    overrideQuantity: anyRole
       .input(overrideQuantityInput)
       .output(quantityDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
         const useCase = new OverrideQuantityUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
           { captureId: input.captureId, kind: input.kind, value: input.value },
@@ -337,11 +350,12 @@ export const createMeasurementRouter = () =>
         return orThrow(result);
       }),
 
-    confirmQuantity: ownerOrOffice
+    confirmQuantity: anyRole
       .input(confirmQuantityInput)
       .output(quantityDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
         const useCase = new ConfirmQuantityUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
           { captureId: input.captureId, kind: input.kind, value: input.value },

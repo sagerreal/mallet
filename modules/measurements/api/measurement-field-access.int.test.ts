@@ -13,8 +13,10 @@ import type { Context } from "@/trpc/init";
 // same assignment gate the field router uses. These tests prove the new boundary end-to-end:
 //   • a tech ASSIGNED to the job can ingest a scan / add a manual room / list / rename / archive
 //   • an UNASSIGNED tech is FORBIDDEN on every one of those
-//   • quantity confirm/override and the site-tracer surface remain office-only (FORBIDDEN for
-//     any tech, assigned or not) — resolving numbers into the record is desk work.
+//   • an ASSIGNED tech can confirm and override a quantity — the scan asks a question only the
+//     person in the room can answer, and an UNASSIGNED tech still cannot
+//   • the site-tracer surface remains office-only (FORBIDDEN for any tech) — aerial takeoff
+//     genuinely is desk work.
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
@@ -158,18 +160,70 @@ suite("v1.measurements — field (tech) access boundary (live RLS)", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("quantity confirm/override stay OFFICE-only — even the assigned tech is refused", async () => {
+  // THE SCAN ASKS A QUESTION ONLY THE FIELD CAN ANSWER. derive-painting deliberately ships
+  // baseboard and crown as needs_confirm with a suggestion, and a soffit with no suggestion at
+  // all, because trim existence is not observable from geometry — "a bathroom with rubber cove
+  // base and no crown must not show 29.3 lnft of crown as fact". The only person who can see the
+  // cove base is the one holding the phone that just scanned it. While these were office-only, an
+  // assigned tech could rename the capture, add a deduction, and archive the whole room, but not
+  // answer the one question the scan had put to them.
+  // From a SCANNED room, not a manual one: a manual entry is already a human's number and comes
+  // back confirmed, so confirming it again is a conflict (the domain is right about that). The
+  // rows that actually need an answer only exist on a scan — baseboard ships needs_confirm with
+  // the perimeter convention as a suggestion, which is exactly the tap Owen could not make.
+  it("an ASSIGNED tech confirms the baseboard run the scan would not guess", async () => {
+    const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+    const scan = await caller.v1.measurements.ingestScan({
+      jobId,
+      roomName: "Bathroom",
+      capturedAt: new Date("2026-08-14T20:40:00Z").toISOString(),
+      rawPayload: { raw: "payload" },
+      geometry,
+    });
+    const baseboard = scan.quantities.find((q) => q.kind === "baseboard_lnft");
+    expect(baseboard?.status).toBe("needs_confirm");
+
+    const confirmed = await caller.v1.measurements.confirmQuantity({
+      captureId: scan.id,
+      kind: "baseboard_lnft",
+      value: Number(baseboard?.derivedValue ?? 36.2),
+    });
+
+    expect(confirmed.status).toBe("confirmed");
+  });
+
+  it("an ASSIGNED tech overrides a number the scan got wrong", async () => {
     const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
     const room = await caller.v1.measurements.createManualRoom({
       jobId,
-      roomName: "Office-only checks",
+      roomName: "Tech overrides",
       quantities: [{ kind: "walls_sqft", value: 100 }],
     });
+
+    const overridden = await caller.v1.measurements.overrideQuantity({
+      captureId: room.id,
+      kind: "walls_sqft",
+      value: 110,
+    });
+
+    expect(Number(overridden.value)).toBe(110);
+  });
+
+  // The role opened up; the ASSIGNMENT gate did not.
+  it("an UNASSIGNED tech still cannot confirm or override", async () => {
+    const owner = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+    const stranger = appRouter.createCaller(ctxFor(otherTechId, orgId, "tech"));
+    const room = await owner.v1.measurements.createManualRoom({
+      jobId,
+      roomName: "Not yours",
+      quantities: [{ kind: "walls_sqft", value: 100 }],
+    });
+
     await expect(
-      caller.v1.measurements.overrideQuantity({ captureId: room.id, kind: "walls_sqft", value: 110 }),
+      stranger.v1.measurements.overrideQuantity({ captureId: room.id, kind: "walls_sqft", value: 110 }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
-      caller.v1.measurements.confirmQuantity({ captureId: room.id, kind: "walls_sqft", value: 100 }),
+      stranger.v1.measurements.confirmQuantity({ captureId: room.id, kind: "walls_sqft", value: 100 }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
