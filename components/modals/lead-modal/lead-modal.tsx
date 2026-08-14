@@ -29,7 +29,7 @@ import { SheetRow } from "../sheet-row";
 import { LeadSheetHeader, PhoneCell } from "./lead-header";
 import { NotesBody, latestNoteSnippet } from "./lead-notes";
 import { TasksBody, openTaskLabel } from "./tasks-card";
-import { DetailsBody, CleanUpBody } from "./more-details";
+import { DetailsBody, CleanUpBody, EmailBody, detailsSummary } from "./more-details";
 import {
   useCloseModal,
   useActiveModal,
@@ -115,6 +115,8 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   const pushModal = usePushModal();
   const router = useRouter();
   const leads = useAppStore((s) => s.leads);
+  // For the Details row's summary — the linked business is what is left in that drawer.
+  const companies = useAppStore((s) => s.companies);
   const adoptLead = useAppStore((s) => s.adoptLead);
   const adoptEstimateRecord = useAppStore((s) => s.adoptEstimateRecord);
   const adoptLeadNotes = useAppStore((s) => s.adoptLeadNotes);
@@ -277,14 +279,19 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         )}
       </div>
 
-      {/* WORK — quotes and site visits, rows not cards, only when they exist. */}
+      {/* QUOTES — rows not cards, only when they exist. Called "Work" until the rows below were
+          grouped; two headings reading "Work" on one sheet named two different things. It renders
+          QuoteRows off leadEstimates, so this is also just the more accurate word. */}
       {hasWork && (
         <>
-          <div className="sheet-worklab">Work</div>
+          <div className="sheet-worklab">Quotes</div>
           <QuoteRows estimates={leadEstimates} />
         </>
       )}
 
+      {/* CONTACT — the ways to reach this customer. These carry their value in the collapsed row,
+          which is how the sheet is read without opening anything. */}
+      <div className="sheet-worklab">Contact</div>
       <div className="sheet-rows">
         {/* Phone has ONE home in every state — it used to live here when empty and
             in the header when filled, which left nowhere obvious to edit it. */}
@@ -302,6 +309,18 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
           />
         </SheetRow>
 
+        {/* Email sits beside Phone, not inside Details: it is a way to reach the customer, and
+            burying it left the sheet showing an email as the summary of a drawer that also holds
+            the company and arbitrary custom fields. */}
+        <SheetRow
+          label="Email"
+          value={lead.email?.trim() ? lead.email : "Add"}
+          valueIsHint={!lead.email?.trim()}
+          expandable
+        >
+          <EmailBody lead={lead} />
+        </SheetRow>
+
         <SheetRow
           label="Service address"
           value={lead.address?.trim() ? lead.address : "Add"}
@@ -310,7 +329,11 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         >
           <AddressBody lead={lead} />
         </SheetRow>
+      </div>
 
+      {/* WORK — what is outstanding on this customer. */}
+      <div className="sheet-worklab">Work</div>
+      <div className="sheet-rows">
         <SheetRow
           label="Notes"
           value={latestNoteSnippet(lead) ?? "Add"}
@@ -330,11 +353,14 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         >
           <TasksBody lead={lead} />
         </SheetRow>
+      </div>
 
+      {/* Everything else. With email promoted, the summary is what is actually still in here. */}
+      <div className="sheet-rows">
         <SheetRow
           label="Details"
-          value={lead.email?.trim() ? lead.email : "Add"}
-          valueIsHint={!lead.email?.trim()}
+          value={detailsSummary(lead, companies)}
+          valueIsHint={detailsSummary(lead, companies) === "Add"}
           expandable
         >
           <DetailsBody lead={lead} />

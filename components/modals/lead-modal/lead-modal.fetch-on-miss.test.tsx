@@ -20,6 +20,7 @@ interface StoreShape {
   adoptLead: (lead: unknown) => void;
   updateLead: (id: string, patch: unknown) => void;
   estimates: unknown[];
+  companies: unknown[];
   tasks: unknown[];
   jobs: unknown[];
   techs: unknown[];
@@ -63,7 +64,7 @@ const NOT_AVAILABLE = /no longer available/i;
 
 describe("opening a customer outside the loaded page", () => {
   beforeEach(() => {
-    store = { leads: [], adoptLead, updateLead: vi.fn(), estimates: [], tasks: [], jobs: [], techs: [] };
+    store = { leads: [], adoptLead, updateLead: vi.fn(), estimates: [], companies: [], tasks: [], jobs: [], techs: [] };
     leadQuery = { data: undefined, isLoading: true, isError: false };
     vi.clearAllMocks();
   });
@@ -114,7 +115,7 @@ describe("Lead sheet — the create-a-job action", () => {
         id: "lead-off-page", name: "ZZ Bob Tester", phone: "7818328282", stage: "New customer",
         archived: false, value: 0, unread: false, age: 1, source: "", job: "", address: "",
       }],
-      adoptLead, updateLead: vi.fn(), estimates: [], tasks: [], jobs: [], techs: [],
+      adoptLead, updateLead: vi.fn(), estimates: [], companies: [], tasks: [], jobs: [], techs: [],
     };
     leadQuery = { data: undefined, isLoading: false, isError: false };
   });
@@ -134,5 +135,57 @@ describe("Lead sheet — the create-a-job action", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Create a job" }));
 
     expect(pushModal).toHaveBeenCalledWith("new-job", { leadId: "lead-off-page" });
+  });
+});
+
+describe("Lead sheet — grouped rows", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    store = {
+      leads: [{
+        id: "lead-off-page", name: "ZZ Bob Tester", phone: "7818328282", stage: "New customer",
+        archived: false, value: 0, unread: false, age: 1, source: "", job: "", address: "",
+        email: "bob@example.com",
+      }],
+      adoptLead, updateLead: vi.fn(), estimates: [], companies: [], tasks: [], jobs: [], techs: [],
+    };
+    leadQuery = { data: undefined, isLoading: false, isError: false };
+  });
+
+  it("puts Email at the top level, beside Phone, instead of inside Details", async () => {
+    // Email is a way to reach the customer, exactly like Phone — it had no business sitting one
+    // tap deeper in a drawer that also holds the company and arbitrary custom fields.
+    render(<LeadModal open />);
+
+    expect(await screen.findByText("Email")).toBeTruthy();
+    // The collapsed row shows its value, which is the whole point of this sheet's grammar.
+    expect(screen.getByText("bob@example.com")).toBeTruthy();
+  });
+
+  it("groups the rows: Contact, Work, Details, Clean up", async () => {
+    render(<LeadModal open />);
+
+    expect(await screen.findByText("Contact")).toBeTruthy();
+    expect(screen.getByText("Work")).toBeTruthy();
+  });
+
+  it("does not label the quotes section 'Work' too", async () => {
+    // The quotes section used to be headed "Work", which would now collide with the Notes/Tasks
+    // group — two different Works on one sheet.
+    store.estimates = [];
+    render(<LeadModal open />);
+    await screen.findByText("Contact");
+
+    expect(screen.queryAllByText("Work")).toHaveLength(1);
+  });
+
+  it("summarises Details by what is left in it, not by the email", async () => {
+    // The Details row's collapsed value WAS the email. With email promoted, showing it there
+    // would point at a field that no longer lives inside.
+    render(<LeadModal open />);
+    await screen.findByText("Details");
+
+    const detailsRow = screen.getByText("Details").closest("div");
+    expect(detailsRow?.textContent).not.toContain("bob@example.com");
   });
 });

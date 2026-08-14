@@ -77,17 +77,6 @@ export function DetailsBody({ lead }: MoreDetailsProps) {
 
   return (
     <>
-          {/* Email (service address now lives up top in the header) */}
-          <Field label="Email">
-            <input
-              key={lead.email ?? ""}
-              type="email"
-              placeholder="customer@email.com"
-              defaultValue={lead.email ?? ""}
-              onBlur={(e) => updateLead(lead.id, { email: e.target.value })}
-            />
-          </Field>
-
           {/* Business / company — linked to the real Companies book (find-or-create). */}
           <Field label="Business">
             <input
@@ -228,4 +217,37 @@ export function CleanUpBody({ lead }: MoreDetailsProps) {
       </button>
     </div>
   );
+}
+
+/**
+ * The Email row's body. Promoted out of DetailsBody to sit beside Phone: both are ways to reach
+ * the customer, and the sheet's collapsed rows are meant to show the value without being opened.
+ */
+export function EmailBody({ lead }: { lead: Lead }) {
+  const updateLead = useAppStore((s) => s.updateLead);
+  return (
+    <Field label="Email">
+      <input
+        key={lead.email ?? ""}
+        type="email"
+        placeholder="customer@email.com"
+        defaultValue={lead.email ?? ""}
+        onBlur={(e) => updateLead(lead.id, { email: e.target.value })}
+      />
+    </Field>
+  );
+}
+
+/**
+ * What the collapsed Details row says. It used to show the email, which now lives one group up —
+ * pointing at a field this drawer no longer holds. What is left is the business and any custom
+ * fields, so the summary names whichever of those exists.
+ */
+export function detailsSummary(lead: Lead, companies: { id: string; name: string }[]): string {
+  const business = companies.find((c) => c.id === lead.companyId)?.name?.trim();
+  const custom = lead.customFields?.length ?? 0;
+  if (business && custom > 0) return `${business} · ${custom} field${custom === 1 ? "" : "s"}`;
+  if (business) return business;
+  if (custom > 0) return `${custom} field${custom === 1 ? "" : "s"}`;
+  return "Add";
 }
