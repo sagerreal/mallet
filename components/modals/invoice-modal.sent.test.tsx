@@ -160,3 +160,53 @@ describe("InvoiceModalContent — a SENT invoice", () => {
     expect(screen.getByText(/no card on file/i)).toBeTruthy();
   });
 });
+
+describe("InvoiceModalContent — choosing how the invoice goes out", () => {
+  beforeEach(() => {
+    sendReminder.mockClear();
+    sendReminder.mockResolvedValue({});
+    mockLeads = [];
+    queryState = { data: undefined, isError: false };
+    mockInvoices = [
+      inv({ status: "sent", total: 200, depPaid: 0, payments: [], leadId: "lead-1",
+        phone: "+15550001234", email: "ada@example.com" } as Partial<Invoice>),
+    ];
+  });
+
+  // A QUOTE has a text/email toggle; an invoice picked for you — text when a number exists, else
+  // email — with no way to say otherwise. A customer who reads email and ignores texts had no
+  // route, and the office had no way to say so.
+  it("lets the office send by email even when a phone number exists", async () => {
+    render(<InvoiceModalContent />);
+    fireEvent.click(screen.getByText("Resend invoice"));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Email" }));
+    fireEvent.click(screen.getByRole("button", { name: /send it again/i }));
+
+    await waitFor(() =>
+      expect(sendReminder).toHaveBeenCalledWith(expect.objectContaining({ channel: "email" })),
+    );
+  });
+
+  it("still defaults to text when there is a number — the faster path stays the default", async () => {
+    render(<InvoiceModalContent />);
+    fireEvent.click(screen.getByText("Resend invoice"));
+
+    fireEvent.click(await screen.findByRole("button", { name: /send it again/i }));
+
+    await waitFor(() =>
+      expect(sendReminder).toHaveBeenCalledWith(expect.objectContaining({ channel: "sms" })),
+    );
+  });
+
+  it("does not offer Text at all when the customer has no number", async () => {
+    mockInvoices = [
+      inv({ status: "sent", total: 200, depPaid: 0, payments: [], leadId: "lead-1",
+        phone: "", email: "ada@example.com" } as Partial<Invoice>),
+    ];
+    render(<InvoiceModalContent />);
+    fireEvent.click(screen.getByText("Resend invoice"));
+
+    expect(screen.queryByRole("button", { name: "Text" })).toBeNull();
+  });
+});

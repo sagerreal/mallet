@@ -61,6 +61,14 @@ export interface PublicInvoiceContext {
   readonly chargesEnabled: boolean;
   /** The shop's address/phone/email/website/licence, from org_settings via the settings use-case. */
   readonly business: PublicInvoiceBusiness;
+  /**
+   * What the customer signed, when a signature exists. Null on a hand-made bill nobody approved.
+   *
+   * The OVERAGE half deliberately does not travel: a bill exceeding its authorisation is a warning
+   * for the shop to act on BEFORE sending, not an accusation to hand the customer. This is the
+   * citation only — who signed, when, which document, and for how much.
+   */
+  readonly authorization: PublicInvoiceAuthorization | null;
   /** leads.name for the invoice's own lead. Null only when the lead is gone. */
   readonly customerName: string | null;
   /** leads.address — null on most leads, and omitted from the document when it is. */
@@ -97,6 +105,15 @@ export interface PublicInvoiceBusiness {
 
 // The redacted shape the unauthenticated customer page renders: display lines WITHOUT cost,
 // money in integer cents, plus the two flags the Pay button needs.
+/** The signature a bill rests on, as the customer's own copy states it. */
+export interface PublicInvoiceAuthorization {
+  readonly signerName: string;
+  readonly signedAt: Date;
+  /** The document signed — "EST-1044", or the job's own reference. */
+  readonly documentRef: string;
+  readonly authorizedCents: number;
+}
+
 export interface PublicInvoiceView {
   readonly num: string;
   readonly title: string | null;
@@ -123,6 +140,8 @@ export interface PublicInvoiceView {
    * name, not the shop's address or licence, not the invoice date. See PublicInvoiceContext.
    */
   readonly business: PublicInvoiceBusiness;
+  /** The signature this bill rests on — see PublicInvoiceContext.authorization. */
+  readonly authorization: PublicInvoiceAuthorization | null;
   readonly customerName: string | null;
   readonly serviceAddress: string | null;
   /** When the bill was raised — invoices.created_at, always present. */
@@ -144,7 +163,7 @@ export const toPublicInvoiceView = (
   context: PublicInvoiceContext,
 ): PublicInvoiceView => {
   const p = invoice.props;
-  const { orgName, chargesEnabled, business, customerName, serviceAddress, serviceAt, wording } =
+  const { orgName, chargesEnabled, business, customerName, serviceAddress, serviceAt, wording, authorization } =
     context;
   return {
     num: p.num,
@@ -178,6 +197,7 @@ export const toPublicInvoiceView = (
     orgName,
     chargesEnabled,
     business,
+    authorization,
     customerName,
     serviceAddress,
     // The bill's own creation stamp. Always present — an invoice cannot exist without one.
