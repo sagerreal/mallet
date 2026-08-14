@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { and, count, eq } from "drizzle-orm";
+import { and, count, eq, sql } from "drizzle-orm";
 import { orgs, users, orgInvites } from "@mallet/shared/db/schema";
 import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
 import { asOrgId, asUserId, isOk } from "@mallet/shared/types";
@@ -460,6 +460,31 @@ export const createIdentityRouter = () =>
       .mutation(async ({ ctx, input }) => {
         if (input.role === "owner" && ctx.principal.role !== "owner") {
           throw new TRPCError({ code: "FORBIDDEN", message: "only an owner can invite an owner" });
+        }
+
+        // ALREADY ON THE TEAM IS NOT AN INVITE. Only org_invites was consulted below, so inviting
+        // a teammate inserted a second row and the Team tab listed the same person once as a
+        // member and once as pending — while Supabase refused the send outright (the address
+        // already has an auth account), so no email went either. Neither fact reached the owner.
+        //
+        // Scoped and cased exactly like the members list this contradicts: the caller's org, and
+        // an address is the same address whatever the shift key did.
+        const [alreadyMember] = await ctx.tx
+          .select({ id: users.id })
+          .from(users)
+          .where(
+            and(
+              eq(users.orgId, ctx.principal.orgId),
+              sql`lower(${users.email}) = ${input.email.toLowerCase()}`,
+            ),
+          )
+          .limit(1);
+
+        if (alreadyMember) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "That email is already on your team. Change their role from the member list instead.",
+          });
         }
 
         // Upsert: if a pending invite for this email already exists in the org, update its role.

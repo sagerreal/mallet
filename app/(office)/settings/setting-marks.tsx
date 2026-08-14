@@ -165,13 +165,6 @@ export const MarkSchedule = () => (
   </Glyph>
 );
 
-/** The vocabulary leads get tagged with. */
-export const MarkSources = () => (
-  <Glyph>
-    <path d="M3.5 6.5h17M3.5 12h11M3.5 17.5h6" />
-  </Glyph>
-);
-
 /** This person, as opposed to the company. */
 export const MarkYou = () => (
   <Glyph>

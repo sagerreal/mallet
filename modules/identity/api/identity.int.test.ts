@@ -359,6 +359,45 @@ suite("v1.identity (live RLS)", () => {
     expect(row!.role).toBe("tech");
   });
 
+  /**
+   * The same person cannot be both on the team and waiting to join it.
+   *
+   * The invite path only ever looked at org_invites, so inviting a teammate who was already a
+   * member inserted a second row: the Team tab then listed them once as a member and once as a
+   * pending invite, and Supabase refuses to invite an address that already has an auth account —
+   * so nothing was sent either. Nobody was told any of that; the form reported success.
+   */
+  it("inviteMember refuses an email already on the team, and writes no invite", async () => {
+    const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('Invite Dup Org') returning id`;
+    createdOrgIds.push(org!.id);
+    const [owner] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'dup-owner@test.com', 'owner') returning id`;
+    await admin`insert into users (org_id, auth_user_id, email, role) values (${org!.id}, ${randomUUID()}, 'dup-tech@test.com', 'tech')`;
+
+    const ctx: Context = { ...principalCtx(org!.id, "owner"), principal: { userId: asUserId(owner!.id), orgId: asOrgId(org!.id), role: "owner" } };
+
+    // Mixed case on purpose: an address is the same address whatever the shift key did.
+    await expect(
+      appRouter.createCaller(ctx).v1.identity.inviteMember({ email: "Dup-Tech@test.com", role: "office" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    const rows = await admin<{ id: string }[]>`select id from org_invites where org_id = ${org!.id}`;
+    expect(rows.length).toBe(0);
+  });
+
+  it("inviteMember still accepts an address that belongs to another org's member", async () => {
+    // Membership is per-org. A subcontractor on another shop's books is a stranger to this one.
+    const [orgA] = await admin<{ id: string }[]>`insert into orgs (name) values ('Invite Cross Org A') returning id`;
+    const [orgB] = await admin<{ id: string }[]>`insert into orgs (name) values ('Invite Cross Org B') returning id`;
+    createdOrgIds.push(orgA!.id, orgB!.id);
+    const [owner] = await admin<{ id: string }[]>`insert into users (org_id, auth_user_id, email, role) values (${orgA!.id}, ${randomUUID()}, 'cross-owner@test.com', 'owner') returning id`;
+    await admin`insert into users (org_id, auth_user_id, email, role) values (${orgB!.id}, ${randomUUID()}, 'cross-tech@test.com', 'tech')`;
+
+    const ctx: Context = { ...principalCtx(orgA!.id, "owner"), principal: { userId: asUserId(owner!.id), orgId: asOrgId(orgA!.id), role: "owner" } };
+
+    const invite = await appRouter.createCaller(ctx).v1.identity.inviteMember({ email: "cross-tech@test.com", role: "tech" });
+    expect(invite.status).toBe("pending");
+  });
+
   it("signup with invited email joins the inviting org with invited role and correct is_field_crew", async () => {
     const [org] = await admin<{ id: string }[]>`insert into orgs (name) values ('Invite Join Org') returning id`;
     createdOrgIds.push(org!.id);

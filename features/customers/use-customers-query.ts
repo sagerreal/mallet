@@ -136,17 +136,28 @@ export function useCustomersQueryState() {
   const [sortCol, setSortCol] = useState<string | null>(null);
   const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
 
-  /** Clicking the active column flips direction; a new column starts on its natural default. */
-  const toggleSortCol = useCallback((col: string) => {
-    setSortCol((prev) => {
-      if (prev !== col) {
+  /**
+   * Clicking the active column flips direction; a new column starts on its natural default.
+   *
+   * The direction change is kept OUT of the setSortCol updater. React invokes an updater twice in
+   * dev, so a nested setSortDir queued two flips per click: Name stuck on descending from the
+   * second click on. In production the single flip ran null → "asc", and since `null` already
+   * renders as ascending the second click changed nothing on screen at all.
+   */
+  const toggleSortCol = useCallback(
+    (col: string) => {
+      if (sortCol !== col) {
+        setSortCol(col);
+        // null, not "asc": the server picks the sort's own natural default (created descending
+        // reads as "newest first", which is not what an ascending arrow would claim).
         setSortDir(null);
-        return col;
+        return;
       }
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      return prev;
-    });
-  }, []);
+      // Flip AWAY from what is on screen. null shows the ascending arrow, so it must go to desc.
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    },
+    [sortCol],
+  );
 
   const clear = useCallback(() => {
     setGroup("");
