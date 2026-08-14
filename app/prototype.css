@@ -492,29 +492,56 @@
   .askpage-err{align-self:flex-start;max-width:86%;background:var(--red-bg);color:var(--red);
     border:1px solid color-mix(in srgb,var(--red) 28%,transparent);border-radius:var(--radius-md);
     padding:var(--space-2) var(--space-3);font-size:var(--type-base);line-height:1.5}
-  .askpage-composer{flex:none;display:flex;align-items:center;gap:var(--space-2);
+  .askpage-composer{flex:none;display:flex;flex-direction:column;gap:var(--space-2);
     padding:var(--space-3) var(--space-4);background:var(--card);border-top:1px solid var(--line)}
+  .askpage-controls{display:flex;align-items:center;gap:var(--space-2)}
   .askpage-input{flex:1;min-width:0;min-height:var(--control-h-lg);border-radius:var(--radius-md);
     padding:0 var(--space-3);font-size:var(--type-md);font-family:inherit;background:var(--paper);color:var(--ink)}
   .askpage-send{flex:none;width:var(--control-h-lg);height:var(--control-h-lg);
     border-radius:var(--radius-md);border:1px solid var(--pri-bg);background:var(--pri-bg);
     color:var(--pri-fg);font-size:var(--type-lg);line-height:1;cursor:pointer}
   .askpage-send:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .askpage-turn{display:flex;flex-direction:column;gap:var(--space-2)}
+  /* Push-to-talk. Quiet until it is listening, then it carries the same live-state red the app
+     uses everywhere else for "recording now" — the tech needs to know at a glance, one-handed. */
+  .askpage-mic{flex:none;width:var(--control-h-lg);height:var(--control-h-lg);
+    display:flex;align-items:center;justify-content:center;
+    border-radius:var(--radius-md);border:1px solid var(--line);background:var(--paper);
+    color:var(--ink-2);cursor:pointer}
+  .askpage-mic svg{width:20px;height:20px}
+  .askpage-mic.on{border-color:var(--red);background:var(--red-bg);color:var(--red)}
+  .askpage-mic:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .askpage-mic[aria-disabled="true"]{opacity:.5}
+  /* Camera. Same quiet square as the mic — two peers either side of the input, not a primary
+     action competing with Send. */
+  .askpage-cam{flex:none;width:var(--control-h-lg);height:var(--control-h-lg);
+    display:flex;align-items:center;justify-content:center;
+    border-radius:var(--radius-md);border:1px solid var(--line);background:var(--paper);
+    color:var(--ink-2);cursor:pointer}
+  .askpage-cam svg{width:20px;height:20px}
+  .askpage-cam:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .askpage-cam[aria-disabled="true"]{opacity:.5}
+  /* Uploading. A spinner in the button's own footprint, so nothing reflows mid-shot. */
+  .askpage-camwait{width:16px;height:16px;border-radius:var(--radius-pill);
+    border:2px solid var(--line);border-top-color:var(--ink-2);animation:askspin .7s linear infinite}
+  @keyframes askspin{to{transform:rotate(360deg)}}
+  @media (prefers-reduced-motion:reduce){.askpage-camwait{animation:none}}
+  /* The file input is driven by the camera button; it must not be reachable or visible on its own. */
+  .askpage-file{display:none}
+  /* Attached shots — thumbnails, because the tech is checking he shot the right thing. */
+  .askpage-shots{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-2)}
+  .askpage-shot{position:relative;display:block;width:56px;height:56px}
+  .askpage-shot img{width:100%;height:100%;object-fit:cover;
+    border-radius:var(--radius-sm);border:1px solid var(--line)}
+  .askpage-shot button{position:absolute;top:-6px;right:-6px;width:20px;height:20px;
+    display:flex;align-items:center;justify-content:center;
+    border-radius:var(--radius-pill);border:1px solid var(--line);background:var(--card);
+    color:var(--ink-2);font-size:var(--type-xs);line-height:1;cursor:pointer;padding:0}
+  .askpage-shot button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .askpage-shoterr{color:var(--red);font-size:var(--type-sm)}
   /* Which job this conversation can see. Absent on the general chat — a header saying "no job"
      on the tab's own screen is noise, not information. */
   .askpage-scope{flex:none;background:var(--manila);border-bottom:1px solid var(--manila-line);
     color:var(--manila-ink);padding:var(--space-2) var(--space-4);font-size:var(--type-base)}
-  /* EXTRA WORK — the proposed add-on. Amber, because it is money the office has not agreed to yet. */
-  .askpage-found{align-self:flex-start;max-width:86%;background:var(--amber-bg);color:var(--amber);
-    border:1px solid color-mix(in srgb,var(--amber) 34%,transparent);border-radius:var(--radius-lg);
-    padding:var(--space-3);font-size:var(--type-base);line-height:1.45;
-    display:flex;flex-direction:column;gap:var(--space-1);align-items:flex-start}
-  .askpage-found b{font-size:var(--type-xs);letter-spacing:.08em;text-transform:uppercase}
-  .askpage-add{margin-top:var(--space-1);border:1px solid currentColor;background:transparent;
-    color:inherit;border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3);
-    font-family:inherit;font-size:var(--type-sm);font-weight:700;cursor:pointer;min-height:var(--control-h-sm)}
-  .askpage-add:focus-visible{outline:2px solid currentColor;outline-offset:2px}
 
   /* ---- texting not switched on yet (features/a2p) ------------------------------------------
      ONE banner explains and links; every blocked control gets ONE clause. Manila because this is
@@ -2748,36 +2775,13 @@
   .tjpaid-sub{font-size:var(--type-sm);color:var(--ink-2);margin-top:var(--space-2)}
   /* ---- field copilot section ---- */
   /* transcript: user messages right-aligned, assistant left */
-  .cp-transcript{display:flex;flex-direction:column;gap:var(--space-2);margin-bottom:var(--space-3);max-height:340px;overflow-y:auto}
-  .cp-msg{font-size:var(--type-base);line-height:1.5;padding:var(--space-2) var(--space-3);border-radius:var(--radius);max-width:88%;word-break:break-word}
-  .cp-msg-user{align-self:flex-end;background:var(--green-900);color:var(--pri-fg);border-bottom-right-radius:4px}
-  .cp-msg-assistant{align-self:flex-start;background:var(--paper);color:var(--ink);border-bottom-left-radius:4px}
-  .cp-msg-assistant-wrap{display:flex;flex-direction:column;gap:var(--space-2);align-items:flex-start}
   /* found-work card: in-flow, no floating */
-  .cp-found-card{border:1.5px solid var(--line);border-radius:var(--radius);padding:var(--space-3);display:flex;flex-direction:column;gap:var(--space-2);background:var(--card);width:100%}
-  .cp-found-label{font-size:var(--type-xs);font-weight:800;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
-  .cp-found-desc{font-size:var(--type-base);font-weight:600;color:var(--ink)}
-  .cp-found-card .tjpaid-btn2{margin-top:0;width:100%}
-  .cp-found-added{color:var(--ink-3);border-color:var(--line)}
   /* photo chips */
-  .cp-chips{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-bottom:var(--space-2)}
   .cp-chip{display:inline-flex;align-items:center;gap:var(--space-1);padding:var(--space-1) var(--space-2);border:1.5px solid var(--line);border-radius:var(--radius-sm);font-size:var(--type-sm);font-weight:600;background:var(--paper)}
-  .cp-chip-remove{background:none;border:none;cursor:pointer;padding:0 var(--space-2xs);font-size:var(--type-md);color:var(--ink-3);line-height:1;font-family:inherit}
-  .cp-chip-remove:hover{color:var(--ink)}
   /* input row */
-  .cp-input-row{display:flex;gap:var(--space-2);align-items:center}
-  .cp-cam-btn{width:auto;margin-top:0;padding:var(--space-2) var(--space-3);flex:0 0 auto;font-size:var(--type-lg);line-height:1;border-radius:var(--radius-sm)}
-  .cp-mic-btn{width:auto;margin-top:0;padding:var(--space-2) var(--space-3);flex:0 0 auto;font-size:var(--type-lg);line-height:1;border-radius:var(--radius-sm)}
   /* listening: filled + a slow breathing pulse so the tech sees it's live */
-  .cp-mic-on{background:var(--green-100);border-color:var(--green-600);animation:cp-mic-pulse 1.3s ease-in-out infinite}
-  @keyframes cp-mic-pulse{0%,100%{opacity:1}50%{opacity:.55}}
-  .cp-ask-btn{flex:0 0 auto;white-space:nowrap}
   /* inline error */
-  .cp-error{font-size:var(--type-base);color:var(--red);margin-bottom:var(--space-2)}
   /* press states — Feel Kit consistent */
-  .cp-cam-btn:active{transform:scale(.96)}
-  .cp-mic-btn:active{transform:scale(.96)}
-  .cp-ask-btn:active{transform:scale(.97)}
   /* scheduler sheet — duration (with basis) + crew + slot suggestions */
   .sched-blk{margin-bottom:var(--space-5)}
   .sched-q{font-weight:700;font-size:var(--type-base);margin-bottom:var(--space-2)}
@@ -3325,7 +3329,7 @@
   .att-item.clickable:active{transform:scale(.996)}
 
   /* Chips / filter pills: a quick squish on tap. */
-  .chip:active,.cbar .chip:active,.iph-chip:active,.cp-chip-remove:active{transform:scale(.94)}
+  .chip:active,.cbar .chip:active,.iph-chip:active:active{transform:scale(.94)}
 
   /* Scrim fade: modal.tsx mounts the overlay fresh with .open, so a transition would never
      fire — an entry ANIMATION (like .modal's existing modalin) fades the scrim in step with

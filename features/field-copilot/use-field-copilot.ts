@@ -1,20 +1,28 @@
 /**
  * features/field-copilot/use-field-copilot.ts
- * Local state manager for the Copilot section in the tech job modal.
+ * Local state manager for the tech's Ask screen.
  *
  * Responsibilities:
  *   - Maintain the conversation transcript (for multi-turn follow-ups).
  *   - Drive v1.fieldCopilot.run (trpcVanilla — stays out of the React query layer).
- *   - Maintain attached photo IDs (≤ 3 cap) from the camera flow.
- *   - Parse the FOUND WORK marker out of each reply per the documented contract.
+ *   - Hold the attached photos (≤ 3) and own their preview object-URL lifecycle.
  *
- * The FOUND WORK parser is a PURE exported function so it can be unit-tested
- * in isolation without mounting the hook.
+ * TWO KINDS OF ATTACHMENT, because a photo means two different things:
+ *   - `job`    — uploaded to the job's execution record first, sent as an id. It is EVIDENCE:
+ *                it outlives the question and the office can see it on the job.
+ *   - `inline` — sent as bytes with the question and never stored. It is part of the QUESTION:
+ *                a part number at the supply house, a nameplate in a crawlspace. There is no job
+ *                to file it against, and inventing one would put junk on a job record.
+ * The Ask screen picks by whether a job is open; nothing else in the app changes.
+ *
+ * NO FOUND-WORK PARSER. Replies used to carry a `FOUND WORK:` marker that this hook stripped into
+ * a one-tap "add to change order" card. Change orders are now the way a tech proposes extra work,
+ * so the marker was a second, weaker pipeline for the same thing — the prompt no longer emits it.
  */
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 
 // ---------------------------------------------------------------------------
@@ -24,90 +32,39 @@ export function stripMdEmphasis(text: string): string {
   return text.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/(^|\s)\*([^*\n]+)\*(?=\s|[.,;:!?]|$)/g, "$1$2");
 }
 
-// FOUND WORK marker parser — pure, unit-tested
-// ---------------------------------------------------------------------------
-
-/** The marker prefix the copilot prompt instructs the model to emit. */
-const FOUND_WORK_PREFIX = "FOUND WORK:";
-
 /**
- * Parse the FOUND WORK marker from a copilot reply.
+ * The device's own calendar date as `YYYY-MM-DD`.
  *
- * Contract (mirrors field-copilot-prompt.ts top-of-file comment):
- *   - One marker per reply max.
- *   - The marker is a STANDALONE line at the END of the response.
- *   - The description is the text after "FOUND WORK: " (trimmed).
- *   - Descriptions > 80 characters are IGNORED (malformed / prompt leak).
- *   - If the marker is not the last non-empty line it is IGNORED (not at end).
- *
- * Returns:
- *   { displayText, foundWork } where:
- *     - displayText — the reply with the marker line stripped.
- *     - foundWork   — the parsed description, or null if no valid marker.
+ * NOT `toISOString().slice(0,10)`, which is UTC and rolls over mid-evening in the Americas —
+ * the exact hours a tech is most likely to be asking what is left of the day.
  */
-export function parseFoundWork(text: string): {
-  displayText: string;
-  foundWork: string | null;
-} {
-  const lines = text.split("\n");
-
-  // Find the last non-empty line.
-  let lastNonEmptyIdx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    if ((lines[i] ?? "").trim() !== "") {
-      lastNonEmptyIdx = i;
-      break;
-    }
-  }
-
-  if (lastNonEmptyIdx === -1) {
-    return { displayText: text, foundWork: null };
-  }
-
-  const lastLine = (lines[lastNonEmptyIdx] ?? "").trim();
-
-  if (!lastLine.startsWith(FOUND_WORK_PREFIX)) {
-    return { displayText: text, foundWork: null };
-  }
-
-  const description = lastLine.slice(FOUND_WORK_PREFIX.length).trim();
-
-  // Ignore malformed markers: description > 80 chars.
-  if (description.length > 80) {
-    return { displayText: text, foundWork: null };
-  }
-
-  // Strip the marker line and any trailing empty lines after it.
-  const displayLines = lines.slice(0, lastNonEmptyIdx);
-  // Trim trailing blank lines from the display text.
-  while (displayLines.length > 0 && (displayLines[displayLines.length - 1] ?? "").trim() === "") {
-    displayLines.pop();
-  }
-
-  return {
-    displayText: displayLines.join("\n"),
-    foundWork: description || null,
-  };
+function localDate(now: Date = new Date()): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 }
 
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
 
+/** The image types the copilot endpoint accepts inline. Mirrors the router's enum. */
+export type InlineMediaType = "image/jpeg" | "image/png" | "image/webp";
+
 export interface CopilotMessage {
   readonly role: "user" | "assistant";
-  /** The display text (marker stripped for assistant messages). */
   readonly text: string;
-  /** Parsed found-work description when the assistant reply carried the marker. */
-  readonly foundWork: string | null;
 }
 
-export interface AttachedPhoto {
-  /** The server-side photo ID (from addPhoto response). */
-  readonly id: string;
-  /** Short display label shown in the chip ("📷 1", "📷 2", …). */
-  readonly label: string;
+interface AttachedBase {
+  /** Chip identity for detach — not the server id, which inline photos do not have. */
+  readonly key: string;
+  /** Object URL for the thumbnail. Created AND revoked by this hook, never by the caller. */
+  readonly previewUrl: string;
 }
+
+export type AttachedPhoto =
+  | (AttachedBase & { readonly kind: "job"; readonly id: string })
+  | (AttachedBase & { readonly kind: "inline"; readonly dataBase64: string; readonly mediaType: InlineMediaType });
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -119,22 +76,27 @@ export interface UseFieldCopilotReturn {
   /** User-facing error message, or null. */
   error: string | null;
   attachedPhotos: AttachedPhoto[];
+  /** True at the 3-photo cap — the caller disables the camera rather than failing the tap. */
+  photosFull: boolean;
   /** Call with the text the user typed. Resets the error. */
   ask: (message: string) => Promise<void>;
-  /** Add a photo ID chip (max 3). */
-  attachPhoto: (id: string) => void;
-  /** Remove a photo chip by ID. */
-  detachPhoto: (id: string) => void;
+  /** Attach a photo already persisted to the job's execution record. */
+  attachJobPhoto: (id: string, blob: Blob) => void;
+  /** Attach photo bytes that ride with this question only and are never stored. */
+  attachInlinePhoto: (dataBase64: string, mediaType: InlineMediaType, blob: Blob) => void;
+  /** Remove a photo chip by key. */
+  detachPhoto: (key: string) => void;
   /** Clear error manually (e.g. on input focus). */
   clearError: () => void;
 }
+
+const MAX_PHOTOS = 3;
 
 /**
  * @param jobId  The job this conversation is about, or `undefined` for the Ask tab's general
  *               chat. The server branches on it: with a job it loads the scope, checklist and
  *               callback history; without one it answers from trade knowledge and the shop's own
- *               service context. Photos require a job — the endpoint refuses them otherwise,
- *               because a photo is a row on a job's execution record.
+ *               service context.
  */
 export function useFieldCopilot(jobId?: string): UseFieldCopilotReturn {
   const [messages, setMessages] = useState<CopilotMessage[]>([]);
@@ -144,6 +106,20 @@ export function useFieldCopilot(jobId?: string): UseFieldCopilotReturn {
   // Server-serializable transcript for multi-turn context.
   const [transcript, setTranscript] = useState<unknown[]>([]);
 
+  // Every object URL this hook has minted and not yet revoked. A ref, not state: unmount must be
+  // able to free them without the effect re-running on every attach.
+  const liveUrls = useRef<Set<string>>(new Set());
+  const revoke = useCallback((url: string) => {
+    if (liveUrls.current.delete(url)) URL.revokeObjectURL(url);
+  }, []);
+  useEffect(() => {
+    const urls = liveUrls.current;
+    return () => {
+      for (const url of urls) URL.revokeObjectURL(url);
+      urls.clear();
+    };
+  }, []);
+
   const ask = useCallback(
     async (message: string) => {
       const trimmed = message.trim();
@@ -152,10 +128,12 @@ export function useFieldCopilot(jobId?: string): UseFieldCopilotReturn {
       setError(null);
       setPending(true);
 
-      const userMsg: CopilotMessage = { role: "user", text: trimmed, foundWork: null };
-      setMessages((prev) => [...prev, userMsg]);
+      setMessages((prev) => [...prev, { role: "user", text: trimmed }]);
 
-      const photoIds = attachedPhotos.map((p) => p.id);
+      const photoIds = attachedPhotos.filter((p) => p.kind === "job").map((p) => p.id);
+      const inline = attachedPhotos
+        .filter((p) => p.kind === "inline")
+        .map((p) => ({ dataBase64: p.dataBase64, mediaType: p.mediaType }));
 
       try {
         const result = await trpcVanilla.v1.fieldCopilot.run.mutate({
@@ -165,20 +143,19 @@ export function useFieldCopilot(jobId?: string): UseFieldCopilotReturn {
           message: trimmed,
           transcript: transcript as Parameters<typeof trpcVanilla.v1.fieldCopilot.run.mutate>[0]["transcript"],
           photoIds: photoIds.length > 0 ? photoIds : undefined,
+          photos: inline.length > 0 ? inline : undefined,
+          // The DEVICE's calendar date, not the server's. "What have I got today" is a question
+          // about where the van is; a tech in PDT at 6pm is already on tomorrow's date in UTC.
+          today: localDate(),
         });
 
-        const { displayText, foundWork } = parseFoundWork(stripMdEmphasis(result.text));
-
-        const assistantMsg: CopilotMessage = {
-          role: "assistant",
-          text: displayText,
-          foundWork,
-        };
-
-        setMessages((prev) => [...prev, assistantMsg]);
+        setMessages((prev) => [...prev, { role: "assistant", text: stripMdEmphasis(result.text) }]);
         setTranscript(result.transcript);
-        // Clear photos after a successful ask (they are included in the turn).
-        setAttachedPhotos([]);
+        // Photos rode with this turn — clear them, freeing their previews.
+        setAttachedPhotos((prev) => {
+          for (const p of prev) revoke(p.previewUrl);
+          return [];
+        });
       } catch (err: unknown) {
         // Surface actionable message to the user; do not swallow.
         const message =
@@ -186,32 +163,67 @@ export function useFieldCopilot(jobId?: string): UseFieldCopilotReturn {
             ? err.message
             : "Something went wrong — please try again.";
         setError(message);
-        // Roll back the optimistic user message so the input stays editable.
+        // Roll back the optimistic user message so the input stays editable. The photos stay
+        // attached: the question did not go through, so re-taking them would be busywork.
         setMessages((prev) => prev.slice(0, -1));
       } finally {
         setPending(false);
       }
     },
-    [jobId, pending, attachedPhotos, transcript],
+    [jobId, pending, attachedPhotos, transcript, revoke],
   );
 
-  const attachPhoto = useCallback((id: string) => {
-    setAttachedPhotos((prev) => {
-      if (prev.length >= 3 || prev.some((p) => p.id === id)) return prev;
-      const label = `📷 ${prev.length + 1}`;
-      return [...prev, { id, label }];
-    });
-  }, []);
+  /** Mints the preview URL and appends, honouring the cap. Returns the unchanged list when full. */
+  const append = useCallback(
+    (blob: Blob, make: (base: AttachedBase) => AttachedPhoto) => {
+      const previewUrl = URL.createObjectURL(blob);
+      let accepted = false;
+      setAttachedPhotos((prev) => {
+        if (prev.length >= MAX_PHOTOS) return prev;
+        accepted = true;
+        return [...prev, make({ key: crypto.randomUUID(), previewUrl })];
+      });
+      // At the cap the URL was never handed to a chip, so nothing would ever revoke it.
+      if (!accepted) URL.revokeObjectURL(previewUrl);
+      else liveUrls.current.add(previewUrl);
+    },
+    [],
+  );
 
-  const detachPhoto = useCallback((id: string) => {
-    setAttachedPhotos((prev) => {
-      const next = prev.filter((p) => p.id !== id);
-      // Re-number labels.
-      return next.map((p, i) => ({ ...p, label: `📷 ${i + 1}` }));
-    });
-  }, []);
+  const attachJobPhoto = useCallback(
+    (id: string, blob: Blob) => append(blob, (base) => ({ ...base, kind: "job", id })),
+    [append],
+  );
+
+  const attachInlinePhoto = useCallback(
+    (dataBase64: string, mediaType: InlineMediaType, blob: Blob) =>
+      append(blob, (base) => ({ ...base, kind: "inline", dataBase64, mediaType })),
+    [append],
+  );
+
+  const detachPhoto = useCallback(
+    (key: string) => {
+      setAttachedPhotos((prev) => {
+        const gone = prev.find((p) => p.key === key);
+        if (gone) revoke(gone.previewUrl);
+        return prev.filter((p) => p.key !== key);
+      });
+    },
+    [revoke],
+  );
 
   const clearError = useCallback(() => setError(null), []);
 
-  return { messages, pending, error, attachedPhotos, ask, attachPhoto, detachPhoto, clearError };
+  return {
+    messages,
+    pending,
+    error,
+    attachedPhotos,
+    photosFull: attachedPhotos.length >= MAX_PHOTOS,
+    ask,
+    attachJobPhoto,
+    attachInlinePhoto,
+    detachPhoto,
+    clearError,
+  };
 }

@@ -19,7 +19,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { asOrgId, asJobId } from "@mallet/shared/types";
+import { asOrgId, asJobId, asUserId } from "@mallet/shared/types";
 import type { FieldToolScope, FieldToolDeps } from "../infra/tools/field-read-tools";
 import { buildFieldTools } from "../infra/tools/field-read-tools";
 import { buildFieldPrompt } from "../app/field-copilot-prompt";
@@ -72,6 +72,9 @@ class ScriptedLlm implements LlmClient {
 
 const ORG_ID = asOrgId("00000000-0000-0000-0000-000000000001");
 const JOB_ID = asJobId("00000000-0000-0000-0000-000000000003");
+const USER_ID = asUserId("00000000-0000-0000-0000-000000000004");
+// A fixed day: get_my_day reads the CALLER's today, so a test must pin it rather than drift.
+const TODAY = "2026-08-14";
 
 const usd = (cents: number) => ({ cents, currency: "USD" as const });
 
@@ -111,7 +114,13 @@ const makeDeps = (): FieldToolDeps => ({
   withTx: (_orgId, fn) => fn({} as Parameters<FieldToolDeps["withTx"]>[1] extends (tx: infer TX) => unknown ? TX : never),
 });
 
-const makeScope = (seesPrice: boolean): FieldToolScope => ({ orgId: ORG_ID, jobId: JOB_ID, seesPrice });
+const makeScope = (seesPrice: boolean): FieldToolScope => ({
+  orgId: ORG_ID,
+  jobId: JOB_ID,
+  seesPrice,
+  userId: USER_ID,
+  today: TODAY,
+});
 
 function mockClass<T extends abstract new (...a: never[]) => unknown>(
   ctor: T,

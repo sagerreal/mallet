@@ -4,13 +4,13 @@
 // the FieldToolDeps.withTx closure. The key assertions are REDACTION: no cost
 // anywhere, no rate/total when !seesPrice, no ballpark/price/serviceFee ever.
 //
-// See the FOUND WORK marker contract at the top of field-read-tools.ts.
+// The registry emits NO found-work marker — change orders replaced it.
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { randomUUID } from "node:crypto";
-import { asOrgId, asJobId } from "@mallet/shared/types";
+import { asOrgId, asJobId, asUserId } from "@mallet/shared/types";
 import type { FieldToolScope, FieldToolDeps } from "./field-read-tools";
-import { buildFieldTools } from "./field-read-tools";
+import { buildFieldTools, buildOrgOnlyFieldTools } from "./field-read-tools";
 
 // ---------------------------------------------------------------------------
 // Mocks — must be declared before any imports that pull the mocked modules
@@ -25,11 +25,21 @@ vi.mock("@mallet/settings", () => ({
   DrizzleSettingsRepository: vi.fn(),
 }));
 
+vi.mock("../../../customers/infra/drizzle-lead-repository", () => ({
+  DrizzleLeadRepository: vi.fn(),
+}));
+
+vi.mock("../../../jobs/app/list-jobs", () => ({
+  ListJobsUseCase: vi.fn(),
+}));
+
 // money-redaction is a pure module — import the real thing
 // (No mock needed; it has no DB deps)
 
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { DrizzleSettingsRepository } from "@mallet/settings";
+import { DrizzleLeadRepository } from "../../../customers/infra/drizzle-lead-repository";
+import { ListJobsUseCase } from "../../../jobs/app/list-jobs";
 // toJobSummaryDTO is mocked above; we control its output in each test
 import { toJobSummaryDTO } from "@mallet/jobs";
 
@@ -39,6 +49,9 @@ import { toJobSummaryDTO } from "@mallet/jobs";
 
 const orgId = asOrgId(randomUUID());
 const jobId = asJobId(randomUUID());
+const userId = asUserId(randomUUID());
+// get_my_day reads the CALLER's today — pinned so the assertions cannot drift with the clock.
+const today = "2026-08-14";
 
 const usd = (cents: number) => ({ cents, currency: "USD" as const });
 
@@ -159,7 +172,7 @@ const makeDeps = (): FieldToolDeps => ({
 });
 
 /** Build scope for a tech who cannot see prices. */
-const makeScope = (seesPrice: boolean): FieldToolScope => ({ orgId, jobId, seesPrice });
+const makeScope = (seesPrice: boolean): FieldToolScope => ({ orgId, jobId, seesPrice, userId, today });
 
 function mockClass<T extends abstract new (...a: never[]) => unknown>(
   ctor: T,
@@ -175,12 +188,12 @@ function mockClass<T extends abstract new (...a: never[]) => unknown>(
 // ---------------------------------------------------------------------------
 
 describe("buildFieldTools — registry shape", () => {
-  it("returns exactly 3 tools", () => {
+  it("returns exactly 4 tools", () => {
     const tools = buildFieldTools(makeDeps())(makeScope(true));
-    expect(tools).toHaveLength(3);
+    expect(tools).toHaveLength(4);
   });
 
-  it("all three tools are mutating: false", () => {
+  it("every tool is mutating: false", () => {
     const tools = buildFieldTools(makeDeps())(makeScope(true));
     for (const tool of tools) {
       expect(tool.meta.mutating, `${tool.meta.name} should not be mutating`).toBe(false);
@@ -191,6 +204,7 @@ describe("buildFieldTools — registry shape", () => {
     const tools = buildFieldTools(makeDeps())(makeScope(true));
     const names = tools.map((t) => t.meta.name);
     expect(names).toContain("get_my_job");
+    expect(names).toContain("get_my_day");
     expect(names).toContain("get_org_service_context");
     expect(names).toContain("get_callback_history");
   });
@@ -542,6 +556,8 @@ describe("get_callback_history", () => {
       orgId,
       jobId: customJobId ?? jobId,
       seesPrice,
+      userId,
+      today,
     };
     const tools = buildFieldTools(makeDeps())(scope);
     const tool = tools.find((t) => t.meta.name === "get_callback_history");
@@ -730,5 +746,152 @@ describe("get_callback_history", () => {
       const parsed = JSON.parse(result.summary) as { originalJob?: Record<string, unknown> };
       expect("total" in (parsed.originalJob ?? {}), "total must not be in originalJob context").toBe(false);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// get_my_day — the caller's own route
+// ---------------------------------------------------------------------------
+
+describe("get_my_day", () => {
+  const toolOf = (seesPrice = true) =>
+    buildFieldTools(makeDeps())(makeScope(seesPrice)).find((t) => t.meta.name === "get_my_day")!;
+
+  /** A job the ListJobsUseCase page can carry. Only the two ids the tool reads are real. */
+  const jobRow = (leadId: string, id = randomUUID()) => ({ props: { id, leadId } });
+
+  const wire = (rows: ReturnType<typeof jobRow>[], dto: Record<string, unknown>) => {
+    mockClass(ListJobsUseCase, { exec: vi.fn().mockResolvedValue({ items: rows }) });
+    mockClass(DrizzleJobRepository, {
+      listExecutionForJobs: vi.fn().mockResolvedValue(new Map()),
+    });
+    mockClass(DrizzleLeadRepository, {
+      findByIds: vi.fn().mockResolvedValue([{ props: { id: "lead-1", name: "Dana Whitfield" } }]),
+    });
+    vi.mocked(toJobSummaryDTO).mockReturnValue(dto as ReturnType<typeof toJobSummaryDTO>);
+  };
+
+  const fullDto = {
+    num: "JOB-1007",
+    title: "Water heater swap",
+    customerName: null,
+    addr: "12 Alder St",
+    status: "scheduled",
+    total: { cents: 84_500, currency: "USD" },
+    visits: [
+      { status: "canceled", scheduledStart: "07:00", durationMinutes: 30 },
+      { status: "scheduled", scheduledStart: "09:30", durationMinutes: 90 },
+    ],
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("scopes the read to the CALLER and the named day, and drops canceled work", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    const result = await toolOf().execute({});
+    expect(result.ok).toBe(true);
+
+    const exec = vi.mocked(ListJobsUseCase).mock.results[0]?.value.exec;
+    expect(exec).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filter: { assignedUserId: userId, visitFrom: today, visitTo: today, excludeCanceled: true },
+      }),
+    );
+  });
+
+  it("reads the first LIVE visit's clock, never the canceled one above it", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    const result = await toolOf().execute({});
+    const stop = JSON.parse((result as { summary: string }).summary).stops[0];
+    expect(stop.scheduledStart).toBe("09:30");
+    expect(stop.durationMinutes).toBe(90);
+  });
+
+  // The name is resolved from the batched lead read and handed to the DTO builder — asserted on
+  // the call, because the builder is mocked here and would otherwise swallow the wiring.
+  it("resolves the customer name from the batched lead read", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    await toolOf().execute({});
+    expect(vi.mocked(toJobSummaryDTO)).toHaveBeenCalledWith(
+      expect.anything(),
+      undefined,
+      "Dana Whitfield",
+    );
+  });
+
+  it("withholds the total when the tech cannot see prices", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    const shown = JSON.parse((await toolOf(true).execute({}) as { summary: string }).summary);
+    expect(shown.stops[0]).toHaveProperty("total");
+
+    wire([jobRow("lead-1")], fullDto);
+    const hidden = JSON.parse((await toolOf(false).execute({}) as { summary: string }).summary);
+    expect(hidden.stops[0]).not.toHaveProperty("total");
+  });
+
+  it("says so plainly when the day is empty", async () => {
+    wire([], fullDto);
+    const result = await toolOf().execute({});
+    expect((result as { summary: string }).summary).toContain("No stops scheduled");
+    expect((result as { summary: string }).summary).toContain("today");
+  });
+
+  it("reads another day when the model names one", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    await toolOf().execute({ date: "2026-08-15" });
+    const exec = vi.mocked(ListJobsUseCase).mock.results[0]?.value.exec;
+    expect(exec).toHaveBeenCalledWith(
+      expect.objectContaining({ filter: expect.objectContaining({ visitFrom: "2026-08-15" }) }),
+    );
+  });
+
+  // A model-supplied date is client input. Out of reach it must be refused, not turned into a
+  // scan of the shop's whole history.
+  it("refuses a date far outside the caller's own reach, without touching the DB", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    const result = await toolOf().execute({ date: "2019-01-01" });
+    expect(result.ok).toBe(false);
+    expect(vi.mocked(ListJobsUseCase)).not.toHaveBeenCalled();
+  });
+
+  it("refuses an impossible-but-well-formed date rather than rolling it over", async () => {
+    wire([jobRow("lead-1")], fullDto);
+    // The Date constructor turns 2026-02-30 into March 2 — a round-trip check catches it.
+    const result = await toolOf().execute({ date: "2026-02-30" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("exposes only `date` to the model — never a user or org id", () => {
+    const schema = toolOf().meta.inputSchema as { properties?: Record<string, unknown> };
+    expect(Object.keys(schema.properties ?? {})).toEqual(["date"]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildOrgOnlyFieldTools — the Ask tab's general chat
+// ---------------------------------------------------------------------------
+
+describe("buildOrgOnlyFieldTools", () => {
+  const noJobScope = { orgId, seesPrice: true, userId, today };
+
+  it("keeps the two tools that are not job-scoped", () => {
+    const names = buildOrgOnlyFieldTools(makeDeps())(noJobScope).map((t) => t.meta.name);
+    expect(names).toEqual(["get_my_day", "get_org_service_context"]);
+  });
+
+  /** Both close over a verified jobId; there is none, and a placeholder would read the wrong job. */
+  it("withholds every job-scoped tool", () => {
+    const names = buildOrgOnlyFieldTools(makeDeps())(noJobScope).map((t) => t.meta.name);
+    expect(names).not.toContain("get_my_job");
+    expect(names).not.toContain("get_callback_history");
+  });
+
+  // The regression Owen hit: asking "what have I got today" on the Ask tab answered that it had
+  // no access to anything, because the agenda tool was not in the jobless registry.
+  it("can answer the schedule question the tab exists for", () => {
+    const tools = buildOrgOnlyFieldTools(makeDeps())(noJobScope);
+    expect(tools.find((t) => t.meta.name === "get_my_day")).toBeDefined();
   });
 });
