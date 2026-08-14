@@ -54,6 +54,7 @@ import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { SheetRow } from "./sheet-row";
+import { EditableSheetTitle } from "./editable-sheet-title";
 import { Trail } from "./trail";
 import { latestNoteSnippet } from "./lead-modal/lead-notes";
 import { NoteRow, gatherNotes } from "./lead-modal/note-row";
@@ -766,7 +767,17 @@ export function JobModalContent() {
       {/* Sticky header — the job as an h2 over one calm meta line
           (status pill · customer · phone). */}
       <div className="sheet-head">
-        <h2>{job.title?.trim() || custName}</h2>
+        {/* The heading IS the job name. It used to be a plain h2 with a "Job" row further down
+            holding the same string, so renaming meant scrolling past the name to find the row that
+            edits it. An untitled job still reads as the customer's name — that is the display
+            fallback, not the value being edited. */}
+        <EditableSheetTitle
+          value={job.title ?? ""}
+          display={job.title?.trim() || custName}
+          onCommit={(title) => updateJob(job.id, { title })}
+          label="Job name"
+          placeholder="Name this job"
+        />
         <div className="sheet-meta">
           <span className="stpill" style={{ color: status.c, background: status.bg }}>
             {status.l}
@@ -824,21 +835,6 @@ export function JobModalContent() {
             </Field>
           </SheetRow>
         )}
-
-        <SheetRow
-          label="Job"
-          value={job.title?.trim() ? job.title : "Add"}
-          valueIsHint={!job.title?.trim()}
-          expandable
-        >
-          <Field label="Job" style={{ margin: "0" }}>
-            <input
-              type="text"
-              defaultValue={job.title}
-              onBlur={(e) => updateJob(job.id, { title: e.target.value.trim() })}
-            />
-          </Field>
-        </SheetRow>
 
         {/* No Type row. The kind DERIVES from whether a price is committed — the New job
             foot decides it at create, and Build the price's save flips an unpriced job to
