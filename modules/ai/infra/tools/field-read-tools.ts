@@ -273,3 +273,27 @@ export const buildFieldTools = (deps: FieldToolDeps) =>
     buildGetOrgServiceContextTool(scope, deps),
     buildGetCallbackHistoryTool(scope, deps),
   ];
+
+/**
+ * The tools a conversation gets when NO job is open — the Ask tab's general chat.
+ *
+ * Only the org-scoped one survives. `get_my_job` and `get_callback_history` both close over a
+ * verified jobId; handing them a placeholder would either leak another tenant's job or fail at
+ * the first call, and offering the model a tool that cannot work is worse than not offering it.
+ *
+ * The scope keeps `orgId` and `seesPrice` — the price guardrail is about the ROLE, not the job,
+ * and applies to a general answer exactly as it does to a job-specific one.
+ */
+export const buildOrgOnlyFieldTools = (deps: FieldToolDeps) =>
+  (scope: Omit<FieldToolScope, "jobId">): FieldTool[] => [
+    buildGetOrgServiceContextTool({ ...scope, jobId: NO_JOB } as FieldToolScope, deps),
+  ];
+
+/**
+ * A structurally-valid JobId the org-scoped tool never reads.
+ *
+ * `get_org_service_context` queries by org alone — it takes the scope for `orgId` and
+ * `seesPrice`. Rather than widen `FieldToolScope.jobId` to nullable and push a null check into
+ * every tool that genuinely needs one, the one tool that ignores it gets a value it ignores.
+ */
+const NO_JOB = "00000000-0000-0000-0000-000000000000";

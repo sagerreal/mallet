@@ -31,6 +31,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { api } from "@/lib/trpc/client";
 import { STORE_VISIT_STATUS } from "@/lib/store/dto-mapper";
 import {
@@ -49,7 +50,6 @@ import type { VisitWriteSurface } from "@/lib/store/visit-status-write";
 import type { InvoiceWriteSurface } from "@/lib/store/invoice-write";
 import { isJobAssignedTo } from "@/lib/store/job-assignment";
 import { MODAL } from "@/lib/store/modal-ids";
-import { CopilotSection } from "@/features/field-copilot/copilot-section";
 import { currentVisit, custNameOf, invDue, isUnpricedEstimate, vPlaced } from "./helpers";
 import { TechHeader } from "./tech-header";
 import { VisitsSec } from "./visits-sec";
@@ -68,6 +68,7 @@ export function TechJobModalContent() {
   const activeModal = useActiveModal();
   const pushModal = usePushModal();
   const close = useCloseModal();
+  const router = useRouter();
 
   // Tabs for EVERY role: Job (the working spine) · Quote (scope + the price
   // builder — estimating part 3). The Quote tab is this surface's one pricing
@@ -607,12 +608,24 @@ export function TechJobModalContent() {
           every role. The old office-only PricingSec entry (a second door to the same
           builder) was removed with the role gate on the tabs. */}
 
-      {/* Copilot (field AI advisor — camera + ask + the extra-work card, whose accept stages a
-          proposed add-on for the change order). Tech only. The FOUND WORK display section that
-          used to follow is retired: change orders carry extra work (see the addAddonField note
-          above for where the model still lives). */}
+      {/* ASK MOVED TO ITS OWN TAB. This was a full transcript + composer + camera wedged into the
+          middle of the sheet — a chat with follow-ups, photos and long answers living in a panel
+          that had to share the screen with the job it was about. It is now /ask, a full screen on
+          the field tab bar, reachable from anywhere rather than only from an open job.
+          Nothing is lost: the link carries this job, so the scope, checklist, callback history and
+          the Extra Work card all still apply — with room to read them. */}
       {!isOffice && jobId && (
-        <CopilotSection job={job} addAddonField={addAddonField} />
+        <button
+          type="button"
+          className="sheet-row"
+          onClick={() => {
+            close();
+            router.push(`/ask?jobId=${jobId}`);
+          }}
+        >
+          <span>Ask about this job</span>
+          <span aria-hidden="true">›</span>
+        </button>
       )}
 
       {/* 7. Before you leave — attached checklist, INTERACTIVE (5c). */}
