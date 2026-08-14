@@ -18,6 +18,12 @@ const MINTED_ID = "ffffffff-ffff-ffff-ffff-ffffffffffff";
 // ── FakeMeasurementRepository ────────────────────────────────────────────────
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in create-manual-room tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in create-manual-room tests");
+  }
   createCaptureCalls: { capture: RoomCapture; quantities: readonly PaintingQuantity[] }[] = [];
   setQuantityCalls: { captureId: string; kind: PaintingQuantityKind; value: number | null; status: QuantityStatus }[] = [];
   setQuantityReturns = 1;

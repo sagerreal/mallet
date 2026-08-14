@@ -1,12 +1,19 @@
 import { asOrgId, asJobId } from "@mallet/shared/types";
-import { roomCaptures, paintingRoomQuantities, siteCaptures } from "@mallet/shared/db/schema";
+import { roomCaptures, paintingRoomQuantities, siteCaptures, roomDeductions } from "@mallet/shared/db/schema";
 import { RoomCapture, type RoomCaptureSource } from "../domain/room-capture";
 import { SiteCapture, parseSitePolygon, type SiteCaptureSource, type SiteSurface } from "../domain/site-capture";
 import { parseNormalizedGeometry } from "../domain/normalized-geometry";
 import type { PaintingQuantityKind } from "../domain/derive-painting";
-import type { StoredQuantity, QuantityStatus, RoomCaptureWithQuantities } from "../domain/measurement-repository";
+import type {
+  StoredQuantity,
+  QuantityStatus,
+  RoomCaptureWithQuantities,
+  StoredDeduction,
+} from "../domain/measurement-repository";
+import type { DeductionKind } from "../domain/wall-deductions";
 
 export type RoomCaptureRow = typeof roomCaptures.$inferSelect;
+export type RoomDeductionRow = typeof roomDeductions.$inferSelect;
 export type PaintingRoomQuantityRow = typeof paintingRoomQuantities.$inferSelect;
 export type SiteCaptureRow = typeof siteCaptures.$inferSelect;
 
@@ -103,10 +110,28 @@ export const toStoredQuantity = (row: PaintingRoomQuantityRow): StoredQuantity =
   status: row.status as QuantityStatus,
 });
 
+/**
+ * A deduction row → domain. `wall_indexes` is jsonb, so it arrives as `unknown`: anything that is
+ * not a finite integer is dropped rather than trusted. A malformed index would otherwise reach
+ * geometry lookup as NaN and silently derive a deduction of zero — a room priced for full walls
+ * with a deduction sitting visibly on it, which is the worst of both.
+ */
+export const toStoredDeduction = (row: RoomDeductionRow): StoredDeduction => ({
+  id: row.id,
+  reason: row.reason,
+  kind: row.kind as DeductionKind,
+  wallIndexes: Array.isArray(row.wallIndexes)
+    ? row.wallIndexes.filter((n): n is number => typeof n === "number" && Number.isInteger(n) && n >= 0)
+    : [],
+  heightM: row.heightM,
+});
+
 export const toCaptureWithQuantities = (
   row: RoomCaptureRow,
   quantityRows: readonly PaintingRoomQuantityRow[],
+  deductionRows: readonly RoomDeductionRow[] = [],
 ): RoomCaptureWithQuantities => ({
   capture: toDomainCapture(row),
   quantities: quantityRows.map(toStoredQuantity),
+  deductions: deductionRows.map(toStoredDeduction),
 });

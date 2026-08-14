@@ -81,6 +81,9 @@ function room(overrides: Partial<RoomCard> = {}): RoomCard {
     source: "roomplan_v1",
     capturedAt: "2026-07-29T00:00:00.000Z",
     quantities: [quantity()],
+    deductions: [],
+    walls: [],
+    netWallsSqft: null,
     ...overrides,
   };
 }

@@ -7,6 +7,12 @@ const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 const CAPTURE_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in archive-site-capture tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in archive-site-capture tests");
+  }
   archiveSiteCaptureCalls: string[] = [];
   archiveSiteCaptureReturns = 1;
 

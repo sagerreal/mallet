@@ -551,6 +551,62 @@
   .askpage-scope{flex:none;background:var(--manila);border-bottom:1px solid var(--manila-line);
     color:var(--manila-ink);padding:var(--space-2) var(--space-4);font-size:var(--type-base)}
 
+  /* ---- Not painted: wall area a room does not get (components/modals/room-deductions.tsx) ----
+     Sits inside the room sheet under the quantities, because it modifies one of them. Quiet by
+     default — a room with nothing tiled should read as one line, not a form. */
+  .rded{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3) 0;
+    border-top:1px solid var(--line)}
+  .rded-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-2)}
+  .rded-head>b{font-size:var(--type-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+  /* The number an estimate actually prices from — the point of the whole section, so it reads
+     as a total rather than as another row. */
+  .rded-net{font-size:var(--type-base);color:var(--ink-2)}
+  .rded-net b{color:var(--ink);font-variant-numeric:tabular-nums}
+  .rded-empty{margin:0;font-size:var(--type-base);color:var(--ink-2);line-height:1.45}
+  .rded-row{display:flex;align-items:center;gap:var(--space-2)}
+  .rded-what{display:flex;flex-direction:column;min-width:0;flex:1}
+  .rded-what>b{font-size:var(--type-base)}
+  .rded-detail{font-size:var(--type-sm);color:var(--ink-2)}
+  .rded-amt{font-variant-numeric:tabular-nums;font-weight:700;font-size:var(--type-base)}
+  .rded-x{flex:none;width:var(--control-h-sm);height:var(--control-h-sm);display:flex;
+    align-items:center;justify-content:center;border:1px solid var(--line);background:var(--card);
+    color:var(--ink-2);border-radius:var(--radius-sm);font-size:var(--type-sm);cursor:pointer;padding:0}
+  .rded-x:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .rded-x[aria-disabled="true"]{opacity:.5}
+  .rded-add{align-self:flex-start;border:1.5px solid var(--line);background:var(--card);
+    color:var(--ink);border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);
+    font-family:inherit;font-size:var(--type-base);font-weight:700;cursor:pointer;
+    min-height:var(--control-h-sm)}
+  .rded-add:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .rded-err{margin:0;color:var(--red);font-size:var(--type-sm)}
+  /* The form EXPANDS IN FLOW — anchored and flush, never a popover over the sheet. */
+  .rded-form{display:flex;flex-direction:column;gap:var(--space-2);padding:var(--space-3);
+    background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-md)}
+  .rded-lbl{font-size:var(--type-xs);letter-spacing:.08em;text-transform:uppercase;color:var(--ink-2)}
+  .rded-input{min-height:var(--control-h-md);border-radius:var(--radius-sm);
+    padding:0 var(--space-3);font-family:inherit;font-size:var(--type-base);
+    background:var(--card);color:var(--ink)}
+  .rded-presets{display:flex;flex-wrap:wrap;gap:var(--space-1)}
+  .rded-presets button{border:1px solid var(--line);background:var(--card);color:var(--ink-2);
+    border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3);font-family:inherit;
+    font-size:var(--type-sm);cursor:pointer;min-height:var(--control-h-sm)}
+  .rded-presets button[aria-pressed="true"]{background:var(--ink);color:var(--card);border-color:var(--ink)}
+  .rded-walls{display:flex;flex-direction:column;gap:var(--space-1)}
+  /* A whole row is the hit target — a tap on a phone is a thumb, not a 16px checkbox. */
+  .rded-wall{display:flex;align-items:center;gap:var(--space-2);min-height:var(--control-h-md);
+    font-size:var(--type-base);cursor:pointer}
+  .rded-preview{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-2);
+    padding-top:var(--space-1);font-size:var(--type-base)}
+  .rded-preview b{font-variant-numeric:tabular-nums}
+  .rded-actions{display:flex;gap:var(--space-2);justify-content:flex-end}
+  .rded-cancel,.rded-save{border-radius:var(--radius-pill);padding:var(--space-2) var(--space-4);
+    font-family:inherit;font-size:var(--type-base);font-weight:700;cursor:pointer;
+    min-height:var(--control-h-md)}
+  .rded-cancel{border:1.5px solid var(--line);background:var(--card);color:var(--ink-2)}
+  .rded-save{border:1px solid var(--pri-bg);background:var(--pri-bg);color:var(--pri-fg)}
+  .rded-save[aria-disabled="true"]{opacity:.5}
+  .rded-cancel:focus-visible,.rded-save:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
   /* ---- texting not switched on yet (features/a2p) ------------------------------------------
      ONE banner explains and links; every blocked control gets ONE clause. Manila because this is
      a standing condition of the shop's paperwork, not an error it just made — the red variant is

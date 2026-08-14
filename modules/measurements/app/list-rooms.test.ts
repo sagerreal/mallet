@@ -31,6 +31,12 @@ const makeCapture = (overrides: Partial<RoomCaptureProps> = {}): RoomCapture => 
 };
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in list-rooms tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in list-rooms tests");
+  }
   private byJob = new Map<string, RoomCaptureWithQuantities[]>();
   listByJobCallCount = 0;
   listByJobLastArg: string | null = null;
@@ -109,7 +115,7 @@ describe("ListRoomsUseCase", () => {
   });
 
   it("returns the repo's rooms as-is for a job that has captures", async () => {
-    const room = { capture: makeCapture(), quantities: [] };
+    const room = { capture: makeCapture(), quantities: [], deductions: [] };
     repo.seed(JOB, [room]);
 
     const result = await useCase.exec(baseCmd(), ORG);

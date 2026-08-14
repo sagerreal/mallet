@@ -2,7 +2,8 @@ import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import { router, ownerOrOffice, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
-import { asJobId } from "@mallet/shared/types";
+import { asJobId, notFound, ok, err } from "@mallet/shared/types";
+import type { Result, AppError } from "@mallet/shared/types";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { Principal } from "@mallet/identity";
 // Through the jobs barrel — the sanctioned cross-module seam (lint enforces index-only imports).
@@ -10,6 +11,7 @@ import type { Principal } from "@mallet/identity";
 // every side binds its classes lazily inside procedure bodies.
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { DrizzleMeasurementRepository } from "../infra/drizzle-measurement-repository";
+import type { RoomCaptureWithQuantities } from "../domain/measurement-repository";
 import { IngestScanUseCase } from "../app/ingest-scan";
 import { RescanRoomUseCase } from "../app/rescan-room";
 import { CreateManualRoomUseCase } from "../app/create-manual-room";
@@ -18,6 +20,8 @@ import { ConfirmQuantityUseCase } from "../app/confirm-quantity";
 import { ListRoomsUseCase } from "../app/list-rooms";
 import { RenameRoomUseCase } from "../app/rename-room";
 import { ArchiveRoomUseCase } from "../app/archive-room";
+import { AddDeductionUseCase } from "../app/add-deduction";
+import { ArchiveDeductionUseCase } from "../app/archive-deduction";
 import { CreateSiteCaptureUseCase } from "../app/create-site-capture";
 import { ListSiteCapturesUseCase } from "../app/list-site-captures";
 import { UpdateSiteCaptureUseCase } from "../app/update-site-capture";
@@ -95,6 +99,41 @@ const renameRoomInput = z.object({
 const archiveRoomInput = z.object({
   captureId: z.string().uuid(),
 });
+
+/** Feet in, metres stored — the painter's unit at the boundary, SI underneath. */
+const FEET_PER_METER = 3.280839895;
+
+// The client names WALLS and a HEIGHT. It never sends an area: that is derived from the
+// capture's own geometry on every read, so a re-scan re-derives instead of pricing a stale
+// number — the same law as site_captures.areaSqft.
+const addDeductionInput = z.object({
+  captureId: z.string().uuid(),
+  reason: z.string().min(1).max(60),
+  kind: z.enum(["whole_wall", "band"]),
+  wallIndexes: z.array(z.number().int().nonnegative()).min(1).max(64),
+  // Null for whole_wall. 10 metres is the ceiling the use-case enforces, restated here in feet so
+  // an obviously-wrong unit is refused at the boundary rather than inside.
+  heightFt: z.number().positive().max(32).nullable(),
+});
+
+const removeDeductionInput = z.object({
+  // Carried so the response can return the whole room, and so the tech's job assignment is
+  // checked against the capture rather than trusting a bare deduction id.
+  captureId: z.string().uuid(),
+  deductionId: z.string().uuid(),
+});
+
+/**
+ * Re-reads a capture after a deduction write so the response carries a freshly derived net.
+ * Returns a Result so the caller keeps the same orThrow shape as every other procedure.
+ */
+const reloadCapture = async (
+  repo: DrizzleMeasurementRepository,
+  captureId: string,
+): Promise<Result<RoomCaptureWithQuantities, AppError>> => {
+  const reloaded = await repo.getCapture(captureId);
+  return reloaded === null ? err(notFound("room capture not found")) : ok(reloaded);
+};
 
 // The client sends the trace (footprint/perimeter/polygon) or, for a manual entry, the typed
 // area — never both. The server derives the working area for a trace (pitchCorrectedArea in
@@ -240,6 +279,49 @@ export const createMeasurementRouter = () =>
         const useCase = new ListRoomsUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({ jobId: asJobId(input.jobId) }, ctx.principal.orgId);
         return orThrow(result).map(toRoomCaptureDTO);
+      }),
+
+    /**
+     * Record wall area that is NOT painted — the tile band, the fully-tiled shower wall.
+     *
+     * anyRole, and deliberately: the person standing in the bathroom holding the phone that just
+     * scanned it is the one who can see what is tiled. Gated on the tech being ON the job, same as
+     * renameRoom. The height arrives in FEET because that is what the picker offers and what a
+     * painter says; metres are an internal storage unit and never reach the client.
+     */
+    addDeduction: anyRole
+      .input(addDeductionInput)
+      .output(roomCaptureDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
+        const useCase = new AddDeductionUseCase(repo, ctx.deps.ids);
+        const result = await useCase.exec(
+          {
+            captureId: input.captureId,
+            reason: input.reason,
+            kind: input.kind,
+            wallIndexes: input.wallIndexes,
+            heightM: input.heightFt === null ? null : input.heightFt / FEET_PER_METER,
+          },
+          ctx.principal.orgId,
+        );
+        orThrow(result);
+        // The WHOLE room comes back, not the deduction: adding one changes netWallsSqft, and a
+        // caller that had to recompute the net client-side could disagree with the estimate.
+        return toRoomCaptureDTO(orThrow(await reloadCapture(repo, input.captureId)));
+      }),
+
+    /** Put deducted wall area back. anyRole for the same reason as addDeduction. */
+    removeDeduction: anyRole
+      .input(removeDeductionInput)
+      .output(roomCaptureDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
+        const useCase = new ArchiveDeductionUseCase(repo);
+        orThrow(await useCase.exec({ deductionId: input.deductionId }, ctx.principal.orgId));
+        return toRoomCaptureDTO(orThrow(await reloadCapture(repo, input.captureId)));
       }),
 
     overrideQuantity: ownerOrOffice

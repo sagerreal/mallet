@@ -1,6 +1,7 @@
 import type { RoomCapture } from "./room-capture";
 import type { SiteCapture } from "./site-capture";
 import type { PaintingQuantity, PaintingQuantityKind } from "./derive-painting";
+import type { DeductionKind } from "./wall-deductions";
 
 // Persistence-level status union — WIDER than the domain derivation union
 // (`PaintingQuantity["status"]` is only 'derived' | 'needs_confirm', the two states a pure
@@ -18,9 +19,26 @@ export interface StoredQuantity {
   readonly status: QuantityStatus;
 }
 
+/**
+ * A persisted deduction: wall area this room does NOT get painted, chosen by tap.
+ *
+ * INPUTS ONLY — wallIndexes + heightM are what the painter selected. The square footage is never
+ * stored: it is derived from the capture's own geometry on every read (wall-deductions.ts), so a
+ * re-scan re-derives instead of leaving a stale number priced into an estimate.
+ */
+export interface StoredDeduction {
+  readonly id: string;
+  readonly reason: string;
+  readonly kind: DeductionKind;
+  readonly wallIndexes: readonly number[];
+  readonly heightM: number | null;
+}
+
 export interface RoomCaptureWithQuantities {
   readonly capture: RoomCapture;
   readonly quantities: readonly StoredQuantity[];
+  /** Loaded with the capture — the room card needs them to show a net, so never a second read. */
+  readonly deductions: readonly StoredDeduction[];
 }
 
 // Thrown by `supersede` instead of silently no-op'ing: an unconditional UPDATE-then-INSERT
@@ -57,6 +75,16 @@ export class JobNotFoundError extends Error {
   }
 }
 
+// Thrown by `addDeduction` when the FK to room_captures (room_deductions_capture_fk) is violated
+// (Postgres 23503) — the capture doesn't resolve for this org. The app-layer use-case maps it to a
+// typed not-found Result rather than letting a raw FK violation surface.
+export class CaptureNotFoundError extends Error {
+  constructor(public readonly captureId: string) {
+    super(`room capture ${captureId} not found`);
+    this.name = "CaptureNotFoundError";
+  }
+}
+
 // The org is NEVER a parameter — it is implicit in the org-scoped transaction the repository
 // is constructed with, so a caller physically cannot address another tenant's captures.
 export interface MeasurementRepository {
@@ -89,6 +117,15 @@ export interface MeasurementRepository {
 
   // Returns the number of rows affected (0 = not found / wrong org / already deleted).
   renameRoom(captureId: string, roomName: string): Promise<number>;
+
+  // ── deductions (wall area that is not painted) ─────────────────────────────
+
+  // Throws CaptureNotFoundError when the (org_id, capture_id) FK doesn't resolve for this org.
+  addDeduction(captureId: string, deduction: StoredDeduction): Promise<void>;
+
+  // Soft-delete. Returns rows affected (0 = not found / wrong org / already deleted) — the same
+  // no-silent-fail contract as archive().
+  archiveDeduction(deductionId: string): Promise<number>;
 
   // Soft-delete. Returns the number of rows affected (0 = not found / wrong org / already
   // deleted) — same contract as CompanyRepository.archive.

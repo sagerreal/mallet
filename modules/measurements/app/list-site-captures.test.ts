@@ -30,6 +30,12 @@ const manualCapture = (id: string, name: string): SiteCapture => {
 };
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in list-site-captures tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in list-site-captures tests");
+  }
   listSiteCapturesCalls: string[] = [];
   captures: SiteCapture[] = [];
 

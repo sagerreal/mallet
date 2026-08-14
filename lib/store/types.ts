@@ -756,6 +756,30 @@ export interface RoomQuantity {
   status: RoomQuantityStatus;
 }
 
+/** Wall area a room does NOT get painted — tile band, fully-tiled shower wall. */
+export interface RoomDeduction {
+  id: string;
+  reason: string;
+  kind: "whole_wall" | "band";
+  wallIndexes: number[];
+  /** Band height in METRES as stored. The UI shows feet — see the room card. */
+  heightM: number | null;
+  /**
+   * Square feet, DERIVED by the server on every read from the capture's geometry. Never stored
+   * and never sent up. Null means the deduction cannot be answered yet (a band with no height) —
+   * show it as unresolved, never as zero, or a room reads as fully painted when it is not.
+   */
+  sqft: number | null;
+}
+
+/** One wall of a scanned room, so the picker can list walls without any geometry on the client. */
+export interface RoomWall {
+  index: number;
+  widthFt: number;
+  heightFt: number;
+  sqft: number;
+}
+
 export interface RoomCard {
   id: string;
   jobId: string;
@@ -763,6 +787,15 @@ export interface RoomCard {
   source: "roomplan_v1" | "manual";
   capturedAt: string; // ISO string
   quantities: RoomQuantity[];
+  deductions: RoomDeduction[];
+  /** Empty for a manual room — no geometry, so no walls to point at. */
+  walls: RoomWall[];
+  /**
+   * walls_sqft less every deduction, floored at zero — what an estimate prices from. Null
+   * whenever the gross is null (walls still needs_confirm): nothing to subtract from, and 0
+   * would present an unmeasured room as fully deducted.
+   */
+  netWallsSqft: number | null;
 }
 
 // ---- Site captures (aerial takeoff — outdoor surfaces) ----------------------

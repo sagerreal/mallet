@@ -18,6 +18,12 @@ const polygon: SitePolygon = {
 };
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in create-site-capture tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in create-site-capture tests");
+  }
   createSiteCaptureCalls: SiteCapture[] = [];
   createSiteCaptureThrows: Error | null = null;
 

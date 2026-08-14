@@ -46,6 +46,12 @@ const wireGeometry = {
 // ── FakeMeasurementRepository ────────────────────────────────────────────────
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async addDeduction(): Promise<void> {
+    throw new Error("addDeduction not used in ingest-scan tests");
+  }
+  async archiveDeduction(): Promise<number> {
+    throw new Error("archiveDeduction not used in ingest-scan tests");
+  }
   createCaptureCalls: { capture: RoomCapture; quantities: readonly PaintingQuantity[] }[] = [];
   throwOnCreate: Error | null = null;
   private byId = new Map<string, RoomCaptureWithQuantities>();
@@ -243,7 +249,7 @@ describe("IngestScanUseCase", () => {
       deletedAt: null,
     });
     if (!existingResult.ok) throw new Error("fixture setup failed");
-    repo.seed({ capture: existingResult.value, quantities: [] });
+    repo.seed({ capture: existingResult.value, quantities: [], deductions: []  });
 
     const result = await useCase.exec(baseCmd({ id: CLIENT_ID }), ORG);
 
