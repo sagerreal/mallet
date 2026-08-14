@@ -108,6 +108,16 @@ describe("Office page — one tab bar, four panes", () => {
     expect(screen.getByRole("tab", { name: "Checklists" })).toBeTruthy();
   });
 
+  it("carries otabs-page, the modifier that makes the bar visible at all", () => {
+    // A shop owner opened this page and never saw the tab row: the labels were 13px — smaller than
+    // the body copy under them — 40px above a 64px hero. `otabs-page` is the whole fix (17px labels
+    // on desktop, wrapping at body size on a phone) and `.otabs` alone silently restores the bar
+    // nobody could see. Pinned here because nothing else would notice it being dropped.
+    render(<OfficePage />);
+    const bar = screen.getByRole("tablist", { name: "Office" });
+    expect(bar.className.split(/\s+/)).toContain("otabs-page");
+  });
+
   it("tabbing over swaps the pane in place — no navigation", async () => {
     render(<OfficePage />);
     fireEvent.click(screen.getByRole("tab", { name: /Front Desk/ }));
