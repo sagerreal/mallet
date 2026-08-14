@@ -387,7 +387,11 @@ export const jobCompleteTool: AgentTool = {
     const parsed = parseTool(jobIdInput, input);
     if (!parsed.success) return invalid(parsed.error.issues);
     const uc = new CompleteJobUseCase(new DrizzleJobRepository(ctx.tx, ctx.orgId), ctx.deps.bus, ctx.deps.clock);
-    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId) });
+    // startIfScheduled: someone typing "mark JOB-… complete" has decided the work is done. Without
+    // this the tool refused every job in the org, because a job is SCHEDULED until a technician
+    // taps Start and the office is usually closing out work from yesterday. The office's own
+    // endpoint keeps the strict rule on purpose — see the flag's note.
+    const r = await uc.exec({ jobId: asJobId(parsed.data.jobId), startIfScheduled: true });
     if (!isOk(r)) return { ok: false, error: r.error.message };
     return { ok: true, summary: `Job ${r.value.props.num} marked complete.` };
   },

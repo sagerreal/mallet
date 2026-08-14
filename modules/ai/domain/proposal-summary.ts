@@ -108,6 +108,81 @@ const describeTimesheetApproveWeek = (args: Record<string, JsonValue>): string =
   return `Approve timesheet entries for a crew member on: ${dates}. SENSITIVE: payroll approval.`;
 };
 
+// --- job lifecycle -----------------------------------------------------------------------------
+// These had no renderer, so the card a person approved read "Run job_complete with input
+// {"jobId":"98add6a8-…"}" — the tool's internal name and a raw id, for the commonest action in the
+// product. Every mutating tool now has a case; `mutatingToolsAllDescribed` in the test file fails
+// the build if a new one arrives without one.
+
+const describeJobStart = (args: Record<string, JsonValue>): string =>
+  `Mark job ${String(args.jobId ?? "?")} as started — work is under way.`;
+
+const describeJobComplete = (args: Record<string, JsonValue>): string =>
+  `Mark job ${String(args.jobId ?? "?")} COMPLETE — the work is finished. Also closes any visit on it still open.`;
+
+const describeJobCancel = (args: Record<string, JsonValue>): string =>
+  `Cancel job ${String(args.jobId ?? "?")} — reason: ${String(args.reason ?? "?")}. The work will not happen.`;
+
+const describeJobReschedule = (args: Record<string, JsonValue>): string =>
+  `Move job ${String(args.jobId ?? "?")} to ${String(args.scheduledStart ?? "?")} – ${String(args.scheduledEnd ?? "?")}.`;
+
+const describeVisitPatch = (args: Record<string, JsonValue>): string => {
+  const parts = [
+    args.assigneeUserId === null ? "unassign the technician" : typeof args.assigneeUserId === "string" ? "change who is going" : null,
+    typeof args.scheduledDate === "string" ? `move it to ${args.scheduledDate}` : args.scheduledDate === null ? "take it off the schedule" : null,
+    typeof args.scheduledStart === "string" ? `start ${args.scheduledStart}` : null,
+  ].filter(Boolean);
+  const what = parts.length > 0 ? parts.join(", ") : "update it";
+  return `On job ${String(args.jobId ?? "?")}, visit ${String(args.visitId ?? "?")}: ${what}. This is what the board and the technician's day actually show.`;
+};
+
+// --- tasks -------------------------------------------------------------------------------------
+
+const describeTaskSetDone = (args: Record<string, JsonValue>): string =>
+  args.done === false
+    ? `Reopen task ${String(args.taskId ?? "?")}.`
+    : `Mark task ${String(args.taskId ?? "?")} done.`;
+
+const describeTaskUpdate = (args: Record<string, JsonValue>): string => {
+  const parts = [
+    typeof args.text === "string" ? `reword it to "${args.text}"` : null,
+    args.dueDate === null ? "clear its due date" : typeof args.dueDate === "string" ? `set it due ${args.dueDate}` : null,
+    args.leadId === null ? "unlink its customer" : typeof args.leadId === "string" ? "relink its customer" : null,
+  ].filter(Boolean);
+  return `Edit task ${String(args.taskId ?? "?")}: ${parts.length > 0 ? parts.join(", ") : "no visible change"}.`;
+};
+
+const describeTaskRemove = (args: Record<string, JsonValue>): string =>
+  `Delete task ${String(args.taskId ?? "?")}. DESTRUCTIVE — the record that it existed is lost; prefer marking it done.`;
+
+// --- customers and money -----------------------------------------------------------------------
+
+const describeCustomerUpdate = (args: Record<string, JsonValue>): string => {
+  // Named, not valued: a phone number or address on an approval card is PII on screen.
+  const fields = Object.keys(args).filter((k) => k !== "leadId");
+  return `Edit customer ${String(args.leadId ?? "?")} — changing: ${fields.length > 0 ? fields.join(", ") : "nothing"}.`;
+};
+
+const describeInvoiceUpdate = (args: Record<string, JsonValue>): string => {
+  const lines = Array.isArray(args.lines) ? (args.lines as readonly JsonValue[]).filter(isRecord) : null;
+  const linePart = lines
+    ? ` REPLACES all line items with ${lines.length} line(s), total ${money(lines.reduce((sum: number, l) => {
+        const line = l as InvoiceLine;
+        return sum + (line.quantity ?? 0) * (line.rateCents ?? 0);
+      }, 0))}.`
+    : "";
+  const fields = Object.keys(args).filter((k) => k !== "invoiceId" && k !== "lines");
+  return `Edit invoice ${String(args.invoiceId ?? "?")}${fields.length > 0 ? ` — changing: ${fields.join(", ")}` : ""}.${linePart}`;
+};
+
+const describeQuoteAccept = (args: Record<string, JsonValue>): string => {
+  const tier = typeof args.chosenTier === "string" ? ` (${args.chosenTier} tier)` : "";
+  return `Record estimate ${String(args.estimateId ?? "?")} as ACCEPTED${tier} — this also creates the job and puts it on the board.`;
+};
+
+const describeQuoteDecline = (args: Record<string, JsonValue>): string =>
+  `Record estimate ${String(args.estimateId ?? "?")} as DECLINED — reason: ${String(args.reason ?? "?")}. Moves the lead to lost.`;
+
 export const describeProposal = (tool: string, args: Record<string, JsonValue>): string => {
   switch (tool) {
     case "quote_draft":
@@ -138,6 +213,30 @@ export const describeProposal = (tool: string, args: Record<string, JsonValue>):
       return describeInvoiceVoid(args);
     case "timesheet_approve_week":
       return describeTimesheetApproveWeek(args);
+    case "job_start":
+      return describeJobStart(args);
+    case "job_complete":
+      return describeJobComplete(args);
+    case "job_cancel":
+      return describeJobCancel(args);
+    case "job_reschedule":
+      return describeJobReschedule(args);
+    case "visit_patch":
+      return describeVisitPatch(args);
+    case "task_set_done":
+      return describeTaskSetDone(args);
+    case "task_update":
+      return describeTaskUpdate(args);
+    case "task_remove":
+      return describeTaskRemove(args);
+    case "customer_update":
+      return describeCustomerUpdate(args);
+    case "invoice_update":
+      return describeInvoiceUpdate(args);
+    case "quote_accept":
+      return describeQuoteAccept(args);
+    case "quote_decline":
+      return describeQuoteDecline(args);
     default:
       return `Run ${tool} with input ${JSON.stringify(args)}`;
   }

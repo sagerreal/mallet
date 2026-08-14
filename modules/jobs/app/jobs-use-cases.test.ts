@@ -689,17 +689,61 @@ describe("Job lifecycle use-cases", () => {
     bus = new InMemoryEventBus();
   });
 
-  it("start then complete emits their events and enforces the machine", async () => {
+  it("start then complete emits their events", async () => {
     const id = await seedScheduledJob();
-    const complete = new CompleteJobUseCase(repo, bus, clock);
-    expect((await complete.exec({ jobId: id })).ok).toBe(false); // can't complete a scheduled job
-
     const started = await new StartJobUseCase(repo, bus, clock).exec({ jobId: id });
     expect(isOk(started) && started.value.props.status).toBe("in_progress");
-    const done = await complete.exec({ jobId: id });
+    const done = await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id });
     expect(isOk(done) && done.value.props.status).toBe("complete");
     expect(bus.recorded.some((e) => e.name === "job.started")).toBe(true);
     expect(bus.recorded.some((e) => e.name === "job.completed")).toBe(true);
+  });
+
+  // "MARK IT COMPLETE" MEANS THE WORK IS DONE — it is not a claim that somebody remembered to
+  // press Start first.
+  //
+  // complete() alone requires in_progress, and nothing in this business sits in in_progress at
+  // rest: a job is scheduled until the technician taps, and the office closing out yesterday's
+  // work is looking at a scheduled job. The field's own Done endpoint already knew this and
+  // pre-started the job itself (field-router). The office endpoint and the AI assistant called
+  // this use case raw, so every "mark JOB-… complete" from the chat died on
+  // "only an in-progress job can be completed" — verified against the live DB, where EVERY
+  // open Summit job refused.
+  //
+  // The rule belongs here, once, so all three callers behave the same way.
+  it("completes a SCHEDULED job when the caller opts in — this is what the chat needs", async () => {
+    const id = await seedScheduledJob();
+    const done = await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id, startIfScheduled: true });
+    expect(isOk(done) && done.value.props.status).toBe("complete");
+  });
+
+  it("still refuses a SCHEDULED job by default — the office guard is deliberate", async () => {
+    // A dispatcher closing a job nobody has been to is a mistake, not a shortcut. Only the caller
+    // that means "the work is done" passes the flag.
+    const id = await seedScheduledJob();
+    expect((await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id })).ok).toBe(false);
+  });
+
+  it("records the start it performed, so the event log does not show a job completing that never began", async () => {
+    const id = await seedScheduledJob();
+    await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id, startIfScheduled: true });
+    expect(bus.recorded.filter((e) => e.name === "job.started")).toHaveLength(1);
+    expect(bus.recorded.filter((e) => e.name === "job.completed")).toHaveLength(1);
+  });
+
+  it("still refuses a CANCELED job — auto-start must not resurrect terminal work", async () => {
+    const id = await seedScheduledJob();
+    await new CancelJobUseCase(repo, bus, clock).exec({ jobId: id, reason: "customer called off" });
+    const done = await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id, startIfScheduled: true });
+    expect(done.ok).toBe(false);
+  });
+
+  it("still refuses a job that is ALREADY complete — no second job.completed", async () => {
+    const id = await seedScheduledJob();
+    await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id, startIfScheduled: true });
+    const again = await new CompleteJobUseCase(repo, bus, clock).exec({ jobId: id, startIfScheduled: true });
+    expect(again.ok).toBe(false);
+    expect(bus.recorded.filter((e) => e.name === "job.completed")).toHaveLength(1);
   });
 
   it("start is idempotent (no duplicate job.started)", async () => {
