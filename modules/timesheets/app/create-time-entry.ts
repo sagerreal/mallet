@@ -60,6 +60,7 @@ export class CreateTimeEntryUseCase {
 
       const gate = await overlapGateError(this.entries, {
         id: cmd.id,
+        kind: cmd.kind,
         techUserId: cmd.techUserId,
         workDate: cmd.workDate,
         startTime: cmd.startTime,

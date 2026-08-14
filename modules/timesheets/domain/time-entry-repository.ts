@@ -39,7 +39,16 @@ export interface TimeEntryRepository {
    * "pick the most plausible of several" heuristic — two open segments would double-count a
    * technician's paid hours, and that is enforced below the application, not by this method.
    */
+  /**
+   * The running SHIFT segment — regular or break. Never the job row.
+   *
+   * Two lanes run at once now: the shift, which pays, and a job row noting what it is being spent
+   * on, which does not. Migration 0158 enforces one of each. This is the paying one.
+   */
   findOpenForTech(techUserId: UserId): Promise<TimeEntry | null>;
+
+  /** The running JOB row — the costing overlay, or null when the technician is not on a job. */
+  findOpenJobForTech(techUserId: UserId): Promise<TimeEntry | null>;
 
   /** How many entries match the filter — the whole set, so a page can say what it is a page of. */
   count(filter: TimeEntryFilter): Promise<number>;

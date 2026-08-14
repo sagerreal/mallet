@@ -14,6 +14,8 @@ import type { TimeEntryRepository } from "../domain/time-entry-repository";
 const DAY_ROWS_LIMIT = 200;
 
 export interface OverlapGateCandidate {
+  /** Job rows are costing, not paid time — exempt from this gate in both directions. */
+  readonly kind: string;
   /** The row being written. On update this is the entry's id; on create it is the
    *  client-authored id when one was sent — so a RETRIED create never clashes with its own
    *  already-landed row (the duplicate id is the database's unambiguous problem to name). */
@@ -50,11 +52,23 @@ export async function overlapGateError(
     return validation("This day has too many rows to check for overlaps — remove some first.", "workDate");
   }
 
-  // Time-off rows occupy no wall-clock window — a half-day of PTO beside an afternoon shift
-  // is legal, so only punched rows can collide.
+  /**
+   * JOB ROWS ARE NOT ON THIS TIMELINE.
+   *
+   * A job row says which job a stretch of the shift was spent on. It adds no paid hours and runs
+   * beside the regular time it describes, so it cannot double-count with anything — and refusing it
+   * for landing inside the shift it describes made the commonest office action impossible.
+   *
+   * Both directions: a job row is never refused, and never refuses anything else.
+   *
+   * Time-off rows occupy no wall-clock window — a half-day of PTO beside an afternoon shift is
+   * legal — so only punched, non-job rows can collide.
+   */
+  if (cand.kind === "job") return null;
+
   const punched = day.items
     .map((e) => e.props)
-    .filter((p): p is typeof p & { startTime: string } => p.startTime !== null);
+    .filter((p): p is typeof p & { startTime: string } => p.startTime !== null && p.kind !== "job");
   const clash = findOverlap(
     { id: cand.id, startTime: cand.startTime, endTime: cand.endTime, running: cand.running },
     punched,

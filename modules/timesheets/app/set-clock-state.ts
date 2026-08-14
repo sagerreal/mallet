@@ -22,6 +22,8 @@ import { weekStartOf } from "../domain/week-submission";
 import { reopenSubmissionForNewHours } from "./submit-week";
 import {
   planTap,
+  jobTargetFor,
+  CLOSE_JOB,
   MAX_OPEN_SEGMENT_MS,
   type ClockPlan,
   type ClockTap,
@@ -319,13 +321,71 @@ export class SetClockStateUseCase {
     if (!plan.ok) return err(plan.error);
 
     if (plan.value.noop) {
+      // The SHIFT has nothing to do — but the costing lane still might, and this is the commonest
+      // path there is: a technician already on the clock taps Arrived. Returning here skipped the
+      // job row entirely, which is the whole feature.
+      await this.applyJobLane(cmd, orgId, now);
       return ok({ noop: true, closed: [], opened: null, discardedEntryId: null, boundedClose: false });
     }
 
     const writes = planWrites(plan.value, openEntry, this.timeZone, now);
     if (!writes.ok) return err(writes.error);
 
-    return ok(await this.write(writes.value, cmd, orgId, now));
+    const result = await this.write(writes.value, cmd, orgId, now);
+
+    /**
+     * The COSTING lane, written after the shift and independently of it.
+     *
+     * A job row runs BESIDE the shift rather than replacing a slice of it: a technician on a job is
+     * on the clock and on that job, which is one fact about one hour. Migration 0158 allows exactly
+     * one running row in each lane, so the two never fight — and job rows are unpaid, so nothing
+     * here can double-count anybody's hours.
+     */
+    // `opened` deliberately stays the SHIFT row — what pays. The job row is a costing record; the
+    // field surface already learns which job is live from the visit's own status.
+    await this.applyJobLane(cmd, orgId, now);
+    return ok(result);
+  }
+
+  /** Open, close or leave the running job row. */
+  private async applyJobLane(
+    cmd: SetClockStateCommand,
+    orgId: string,
+    now: Date,
+  ): Promise<void> {
+    const target = jobTargetFor(cmd.tap, cmd.jobId);
+    if (target === null) return;
+
+    const openJob = await this.entries.findOpenJobForTech(cmd.techUserId);
+
+    // Already on this job — the tap is a repeat, and closing to reopen would split one stretch of
+    // work into two rows that each look like a separate visit.
+    if (target !== CLOSE_JOB && openJob !== null && openJob.props.jobId === target.jobId) return;
+
+    if (openJob !== null) {
+      const closing = closeRows(openJob, cmd.at, this.timeZone, now);
+      if (closing.ok) await this.finishSegment(closing.value, cmd, orgId);
+    }
+    if (target === CLOSE_JOB) return;
+
+    const opening = toOpeningRow({ ...target, startedAt: cmd.at }, this.timeZone);
+    if (!opening.ok) return;
+    await this.entries.create({
+      id: this.ids.newId(),
+      orgId,
+      techUserId: cmd.techUserId,
+      jobId: target.jobId,
+      workDate: opening.value.workDate,
+      kind: "job",
+      startTime: opening.value.startTime,
+      endTime: null,
+      minutes: null,
+      note: "",
+      src: "clock",
+      status: "draft",
+      running: true,
+      editedByUserId: null,
+    });
   }
 
   // The write ORDER is load-bearing: the database holds a partial unique index of one running entry

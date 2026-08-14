@@ -116,6 +116,10 @@ class FakeTimeEntryRepository implements TimeEntryRepository {
 
   // Added with the clock state machine: the use-cases under test never tap the clock, so it
   // is always idle here.
+  async findOpenJobForTech(): Promise<TimeEntry | null> {
+    return null;
+  }
+
   async findOpenForTech(): Promise<TimeEntry | null> {
     return null;
   }

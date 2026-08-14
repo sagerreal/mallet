@@ -10,6 +10,8 @@ import {
   type ClockTap,
   type OpenEntry,
   type TapInput,
+  jobTargetFor,
+  CLOSE_JOB,
 } from "./clock";
 
 const JOB_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
@@ -83,45 +85,46 @@ const MATRIX: readonly Row[] = [
   // Idle: only taps that MEAN "I am starting something" may open. Exit taps are no-ops, so a
   // stray Done after the day ended can never put the technician back on the clock.
   row("idle", "start_day", false, SHOP),
-  row("idle", "enroute", false, JOB_ON_A), // On my way STARTS the job
-  row("idle", "arrived", false, JOB_ON_A),
+  // On my way / Arrived open the SHIFT from idle (the morning punch costs no extra tap). The job
+  // itself goes to the costing lane — jobTargetFor — and runs beside this row, not instead of it.
+  row("idle", "enroute", false, SHOP),
+  row("idle", "arrived", false, SHOP),
   row("idle", "done", false, NO, true),
   row("idle", "break", false, ON_BREAK),
   row("idle", "end_break", false, NO, true),
   row("idle", "end_day", false, NO, true),
 
-  // Shop running.
+  // Shift running. A job tap leaves it exactly where it is — that is the whole change.
   row("shop", "start_day", false, NO, true), // already there
-  row("shop", "enroute", true, JOB_ON_A),
-  row("shop", "arrived", true, JOB_ON_A),
-  row("shop", "done", false, NO, true), // nothing to finish; already shop
+  row("shop", "enroute", false, NO, true),
+  row("shop", "arrived", false, NO, true),
+  row("shop", "done", false, NO, true), // the job closes in the costing lane; the shift carries on
   row("shop", "break", true, ON_BREAK),
   row("shop", "end_break", false, NO, true), // not on a break
   row("shop", "end_day", true, NO),
 
-  // Travel running.
-  row("travel", "start_day", false, NO, true), // would destroy travel attribution
-  // A legacy travel row still exists on old days; setting off now moves it onto the job.
-  row("travel", "enroute", true, JOB_ON_A),
-  row("travel", "arrived", true, JOB_ON_A),
+  // A legacy travel or job row in the SHIFT lane — days worked before this change still hold them,
+  // and the clock has to resolve them back onto regular time.
+  row("travel", "start_day", false, NO, true),
+  row("travel", "enroute", true, SHOP),
+  row("travel", "arrived", true, SHOP),
   row("travel", "done", true, SHOP),
   row("travel", "break", true, ON_BREAK),
-  row("travel", "end_break", false, NO, true), // not on a break
+  row("travel", "end_break", false, NO, true),
   row("travel", "end_day", true, NO),
 
-  // Job running.
-  row("job", "start_day", false, NO, true), // would destroy job attribution
-  row("job", "enroute", false, NO, true), // same job — On my way and Arrived are one segment
-  row("job", "arrived", false, NO, true), // same job, already on site
+  row("job", "start_day", false, NO, true),
+  row("job", "enroute", true, SHOP),
+  row("job", "arrived", true, SHOP),
   row("job", "done", true, SHOP),
   row("job", "break", true, ON_BREAK),
-  row("job", "end_break", false, NO, true), // not on a break
+  row("job", "end_break", false, NO, true),
   row("job", "end_day", true, NO),
 
   // Break running.
   row("break", "start_day", false, NO, true), // use End break
-  row("break", "enroute", true, JOB_ON_A),
-  row("break", "arrived", true, JOB_ON_A),
+  row("break", "enroute", true, SHOP),
+  row("break", "arrived", true, SHOP),
   row("break", "done", true, SHOP),
   row("break", "break", false, NO, true), // already on a break
   row("break", "end_break", true, SHOP),
@@ -390,13 +393,31 @@ describe("job attribution", () => {
     expect(plan.open).toMatchObject({ kind: "shop", jobId: null });
   });
 
-  it("switching directly from one job to another closes the first", () => {
-    // Setting off for a DIFFERENT job still closes the one he was on — the job changes, so the
-    // segment must. Only the same job makes On my way a no-op.
+  it("resolves a legacy job row in the SHIFT lane back onto regular time", () => {
+    // Days worked before job time moved to its own lane still hold job rows in the shift. Setting
+    // off closes that row and the shift resumes as regular; the job itself is handled by
+    // jobTargetFor, which the use case applies separately.
     const open = openEntry("job", JOB_A);
     const plan = planOf(tap({ tap: "enroute", open, at: at(mins(5)), jobId: JOB_B }));
     expect(plan.close).toMatchObject({ id: open.id });
-    expect(plan.open).toMatchObject({ kind: "job", jobId: JOB_B });
+    expect(plan.open).toMatchObject({ kind: "shop", jobId: null });
+  });
+
+  it("jobTargetFor opens the job that was tapped, and closes it on Done", () => {
+    expect(jobTargetFor("arrived", JOB_B)).toEqual({ kind: "job", jobId: JOB_B });
+    expect(jobTargetFor("enroute", JOB_B)).toEqual({ kind: "job", jobId: JOB_B });
+    expect(jobTargetFor("done", null)).toBe(CLOSE_JOB);
+  });
+
+  it("a break and the end of the day both close the job — he is not on it", () => {
+    // Leaving it open over lunch would charge the customer for his sandwich.
+    expect(jobTargetFor("break", null)).toBe(CLOSE_JOB);
+    expect(jobTargetFor("end_day", null)).toBe(CLOSE_JOB);
+  });
+
+  it("starting the day or ending a break says nothing about a job", () => {
+    expect(jobTargetFor("start_day", null)).toBeNull();
+    expect(jobTargetFor("end_break", null)).toBeNull();
   });
 
   it.each(["enroute", "arrived"] as const)("%s without a job is refused", (t) => {

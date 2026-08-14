@@ -127,6 +127,14 @@ interface Segment {
 const SHOP: Segment = Object.freeze({ kind: "shop", jobId: null });
 const BREAK: Segment = Object.freeze({ kind: "break", jobId: null });
 
+/**
+ * What the tap does to the SHIFT — the lane that pays.
+ *
+ * On my way and Arrived are absent on purpose: they name a job, and a job is not a slice of the
+ * shift. They open a row in the costing lane (jobTargetFor) and leave the shift running underneath,
+ * because a technician on a job is on the clock AND on that job — one fact about one hour, not two
+ * hours. From idle they still open the shift, so the morning punch costs no extra tap.
+ */
 const targetFor = (tap: ClockTap, jobId: string | null): Segment | null => {
   switch (tap) {
     case "start_day":
@@ -139,18 +147,44 @@ const targetFor = (tap: ClockTap, jobId: string | null): Segment | null => {
     // `arrived` targets the same segment, so isAlreadyIn() makes it a NO-OP: one job row runs from
     // the moment he sets off. The visit still records enroute_at separately, so when he left and
     // when he got there is not lost — it is just not a separate KIND of paid time.
+    // The shift is unaffected: it is already running, and the costing lane takes the job.
     case "enroute":
     case "arrived":
-      return { kind: "job", jobId };
-    // Finishing a job and finishing a break both resume unassigned shop time. Carrying the job
-    // forward would invent job-cost minutes nobody confirmed the tech spent on that job — and
-    // after a break, guessing they went back to the same job is exactly that invention.
+      return SHOP;
+    // Done closes the JOB, not the shift — he is still on the clock, just no longer on that job.
+    // End break resumes the shift itself.
     case "done":
     case "end_break":
       return SHOP;
     case "break":
       return BREAK;
     case "end_day":
+      return null;
+  }
+};
+
+/**
+ * What the tap does to the COSTING lane — the job row that runs beside the shift.
+ *
+ * `null` means leave it exactly as it is; `CLOSE_JOB` means end it and open nothing.
+ *
+ * Break closes the job: a man on his lunch is not on the job, and leaving it open would charge the
+ * customer for his sandwich. End day closes it for the obvious reason.
+ */
+export const CLOSE_JOB = Symbol("close-job");
+
+export const jobTargetFor = (tap: ClockTap, jobId: string | null): Segment | typeof CLOSE_JOB | null => {
+  switch (tap) {
+    case "enroute":
+    case "arrived":
+      return { kind: "job", jobId };
+    case "done":
+    case "break":
+    case "end_day":
+      return CLOSE_JOB;
+    // Starting the day, or coming back from lunch, says nothing about a job.
+    case "start_day":
+    case "end_break":
       return null;
   }
 };

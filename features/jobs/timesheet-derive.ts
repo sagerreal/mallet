@@ -82,8 +82,18 @@ export function tsHours(e: TimeEntry): number {
 }
 
 /** Paid hours — unpaid break excluded. */
+/**
+ * JOB TIME IS NOT PAID TIME.
+ *
+ * A job row records WHICH JOB part of a shift was spent on — costing, not time tracking — and it
+ * runs BESIDE the regular time it describes rather than replacing a slice of it. The shift is what
+ * pays. Counting both would pay a twelve-hour day as fifteen the moment three of its hours were
+ * attributed to a job.
+ *
+ * Breaks are unpaid for the ordinary reason.
+ */
 export function tsPaid(e: TimeEntry): number {
-  return e.kind === "break" ? 0 : tsHours(e);
+  return e.kind === "break" || e.kind === "job" ? 0 : tsHours(e);
 }
 
 /** Paid hours that were actually WORKED — the only hours that can create overtime. */
