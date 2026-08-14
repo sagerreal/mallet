@@ -1,4 +1,38 @@
+import { execSync } from "node:child_process";
 import type { NextConfig } from "next";
+
+/**
+ * The LAN addresses this machine answers on, for `allowedDevOrigins`.
+ *
+ * The native shell is a webview over a URL (see mallet-mobile/shell). Point it at the dev server to
+ * get a save-and-see loop on a real device or the simulator, and every request then arrives from
+ * `10.0.0.x` rather than localhost — which Next blocks for dev resources by default. The page still
+ * server-renders, so it LOOKS fine; the client bundle never loads, React never hydrates, and every
+ * button silently does nothing. That symptom reads as a broken app rather than a blocked origin.
+ *
+ * Computed rather than hard-coded because a laptop gets a new address on every network, and a stale
+ * one brings the silent-no-hydration failure back. Dev only — `allowedDevOrigins` is ignored in a
+ * production build.
+ */
+function lanHosts(): string[] {
+  if (process.env.NODE_ENV === "production") return [];
+  const found: string[] = [];
+  // Each interface in its OWN try: `ipconfig getifaddr` exits non-zero for an interface that is
+  // down or absent, and execSync throws on that — so asking for both in one command threw away a
+  // perfectly good address from the other. That failure is silent and looks exactly like the bug
+  // this function exists to prevent.
+  for (const iface of ["en0", "en1"]) {
+    try {
+      const ip = execSync(`ipconfig getifaddr ${iface}`, { stdio: ["ignore", "pipe", "ignore"] })
+        .toString()
+        .trim();
+      if (ip) found.push(ip);
+    } catch {
+      // Interface down or absent — the other one may still answer.
+    }
+  }
+  return found;
+}
 
 const securityHeaders = [
   // Prevent MIME-type sniffing — browsers must honour the declared Content-Type.
@@ -16,6 +50,8 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  // Lets the phone/simulator load the dev bundle over the LAN — see lanHosts().
+  allowedDevOrigins: lanHosts(),
   // Module boundaries are enforced by ESLint (see T0.2), not by separate packages — one deployable.
   reactStrictMode: true,
 
