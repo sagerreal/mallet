@@ -8,8 +8,7 @@ import { useState } from "react";
 import type { Checklist } from "@/lib/store/types";
 import type { NewChecklistItem } from "@/lib/store/slices/checklists-slice";
 import { useAppStore } from "@/lib/store/app-store";
-import { Segmented } from "@/app/(office)/settings/segmented";
-import { COMPACT_INPUT, Field, useGroupLabel } from "@/components/ui/input";
+import { ChecklistStepsEditor, type DraftItem } from "./checklist-steps-editor";
 const FIELD_MAX_WIDTH = 560;
 const CHIP_STYLE: React.CSSProperties = {
   fontSize: "var(--type-sm)",
@@ -21,17 +20,6 @@ const CHIP_STYLE: React.CSSProperties = {
   background: "var(--card)",
   whiteSpace: "nowrap",
 };
-
-const STEP_TYPE_OPTIONS = [
-  { value: "check" as const, label: "Check" },
-  { value: "photo" as const, label: "Photo" },
-] as const;
-
-interface DraftItem {
-  id: string;
-  text: string;
-  type: "check" | "photo";
-}
 
 export interface ChecklistEditorCardProps {
   checklist: Checklist;
@@ -107,7 +95,6 @@ function ExpandedEditor({
   const updateChecklist = useAppStore((s) => s.updateChecklist);
 
   const [draftName, setDraftName] = useState(checklist.name);
-  const stepsGroup = useGroupLabel();
   const [draftItems, setDraftItems] = useState<DraftItem[]>(
     checklist.items
       .slice()
@@ -127,28 +114,13 @@ function ExpandedEditor({
       return di.text !== orig.text || di.type !== orig.type || i !== orig.position;
     });
 
-  function handleAddStep() {
-    setDraftItems((prev) => [
-      ...prev,
-      { id: crypto.randomUUID(), text: "", type: "check" as const },
-    ]);
-  }
 
-  function handleRemoveStep(id: string) {
-    setDraftItems((prev) => prev.filter((it) => it.id !== id));
-  }
 
-  function handleStepText(id: string, text: string) {
-    setDraftItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, text } : it)),
-    );
-  }
 
-  function handleStepType(id: string, type: "check" | "photo") {
-    setDraftItems((prev) =>
-      prev.map((it) => (it.id === id ? { ...it, type } : it)),
-    );
-  }
+
+
+
+
 
   async function handleSave() {
     const items: NewChecklistItem[] = draftItems.map((it) => ({
@@ -180,61 +152,14 @@ function ExpandedEditor({
         borderBottom: isLast ? "none" : "1px solid var(--line-2, var(--line))",
       }}
     >
-      <div style={{ maxWidth: FIELD_MAX_WIDTH }}>
-        <Field label="Checklist name">
-          <input
-            type="text"
-            value={draftName}
-            onChange={(e) => setDraftName(e.target.value)}
-            style={COMPACT_INPUT}
-          />
-        </Field>
-
-        {/* Steps list — the label names the list of rows, and each row's text input
-            names itself by step number; there is no single control to point at. */}
-        {draftItems.length > 0 && (
-          <div style={{ marginBottom: "var(--space-3)" }}>
-            <label {...stepsGroup.labelProps} style={{ display: "block", fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>Steps</label>
-            <div {...stepsGroup.groupProps} style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-              {draftItems.map((item, stepIdx) => (
-                // Layout lives in .clstep (prototype.css): one line on desktop; at phone width
-                // the row wraps — full-width input, then Check/Photo + remove beneath — instead
-                // of pushing the type control off the right edge of the screen.
-                <div key={item.id} className="clstep">
-                  <input
-                    type="text"
-                    value={item.text}
-                    onChange={(e) => handleStepText(item.id, e.target.value)}
-                    placeholder="Step description"
-                    aria-label={`Step ${stepIdx + 1} description`}
-                    className="clstep-input"
-                    style={COMPACT_INPUT}
-                  />
-                  <Segmented
-                    value={item.type}
-                    onChange={(v) => handleStepType(item.id, v)}
-                    options={STEP_TYPE_OPTIONS}
-                    aria-label="Step type"
-                  />
-                  <button
-                    type="button"
-                    className="lineedit-tool"
-                    onClick={() => handleRemoveStep(item.id)}
-                    style={{ color: "var(--ink-3)", flexShrink: 0 }}
-                    aria-label="Remove step"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <button type="button" className="btn sm ghost" onClick={handleAddStep} style={{ marginBottom: "var(--space-4)" }}>
-          + Add step
-        </button>
-      </div>
+      <ChecklistStepsEditor
+        name={draftName}
+        onName={setDraftName}
+        items={draftItems}
+        onItems={setDraftItems}
+        disabled={saving}
+        style={{ maxWidth: FIELD_MAX_WIDTH }}
+      />
 
       {/* Footer: save left, remove right */}
       <div
