@@ -53,6 +53,15 @@ export interface DayCard {
 }
 
 export interface DayCards {
+  /**
+   * Booked for a day that has already passed and still not finished.
+   *
+   * The server returns ALL open work, not just today's (`openOrCompletedBetween`), and that is
+   * right — a job booked Tuesday and never done is still owed on Friday, and hiding it is how work
+   * goes missing. But it was landing in `upcoming` under a heading that says Today, so a technician
+   * read Tuesday's stops as this morning's route. Overdue is the same list, told the truth about.
+   */
+  readonly overdue: readonly DayCard[];
   readonly upcoming: readonly DayCard[];
   readonly finished: readonly DayCard[];
 }
@@ -93,6 +102,7 @@ const jobLevelStep = (status: string): CardStep =>
  * stop actually ended — the order the day was worked, not the order it was booked.
  */
 export function deriveDayCards(jobs: readonly DayCardJob[], today: string): DayCards {
+  const overdue: DayCard[] = [];
   const upcoming: DayCard[] = [];
   const finished: DayCard[] = [];
 
@@ -114,6 +124,8 @@ export function deriveDayCards(jobs: readonly DayCardJob[], today: string): DayC
         completedAt: j.completedAt,
         startedAt: null,
       };
+      // A job-level card carries no date, so it cannot be overdue — it is unscheduled, which is a
+      // different thing and belongs with the work still to plan.
       (step === 3 ? finished : upcoming).push(card);
       continue;
     }
@@ -138,12 +150,16 @@ export function deriveDayCards(jobs: readonly DayCardJob[], today: string): DayC
         if (v.completedAt == null || localDayOf(v.completedAt) === today) finished.push(card);
         continue;
       }
-      upcoming.push(card);
+      // An UNSCHEDULED stop is not late, it is unplanned — only a stop with a date behind it is.
+      (card.day !== null && card.day < today ? overdue : upcoming).push(card);
     }
   }
 
   const doneOrder = (c: DayCard) => c.completedAt ?? "";
+  // Oldest first: the stop that has been owed longest is the one to explain.
+  const dayOrder = (c: DayCard) => c.day ?? "";
   return {
+    overdue: [...overdue].sort((a, b) => (dayOrder(a) < dayOrder(b) ? -1 : dayOrder(a) > dayOrder(b) ? 1 : 0)),
     upcoming,
     finished: [...finished].sort((a, b) => (doneOrder(a) < doneOrder(b) ? -1 : doneOrder(a) > doneOrder(b) ? 1 : 0)),
   };
