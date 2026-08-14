@@ -5,6 +5,7 @@ import { TrpcProvider } from "@/lib/trpc/provider";
 import "./globals.css";
 import "./prototype.css";
 import { NativeReady } from "@/components/shell/native-ready";
+import { KeyboardInset } from "@/components/shell/keyboard-inset";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -58,6 +59,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       </head>
       <body>
         <NativeReady />
+        {/* Publishes --kb. iOS ignores interactiveWidget above, so every fixed bottom composer
+            needs the visual viewport to know where the keyboard actually is. */}
+        <KeyboardInset />
         <TrpcProvider>{children}</TrpcProvider>
       </body>
     </html>

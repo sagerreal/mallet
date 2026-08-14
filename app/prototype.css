@@ -14,6 +14,10 @@
        `viewportFit:"cover"` (app/layout.tsx) is what puts content under the notch. */
     --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
     --safe-l:env(safe-area-inset-left,0px); --safe-r:env(safe-area-inset-right,0px);
+    /* The on-screen keyboard's height, published by components/shell/keyboard-inset.tsx.
+       0px whenever it is closed, or wherever there is no VisualViewport to ask — so a fixed
+       composer written as `bottom:max(<resting>,var(--kb))` is unchanged until a keyboard opens. */
+    --kb:0px;
     /* monochrome / professional. --green-* kept as the neutral "fill" ramp; --accent==--pri-bg (near-black, warmed so it reads as INK on the manila chrome, not cool-black). --dot retired as a color → now warm ink (no green anywhere). */
     --green-900:#1A1510; --green-700:#3A352D; --green-600:#1A1510; --green-100:#ECE7DC; --green-50:#F4F1EA;
     --accent:#1A1510; --accent-2:#3A352D; --dot:var(--manila-ink); --pri-bg:#1A1510; --pri-fg:#FFFFFF;
@@ -468,14 +472,18 @@
      Messages reading pane does: the thread scrolls, the composer stays under the thumb.
      Not floating UI — a full-screen surface, not a panel over content. */
   @media (max-width:760px){
+    /* `max(resting, --kb)`: with the keyboard closed --kb is 0px and this is just the resting
+       clearance. With it open the surface sits on the keyboard instead — the tab bar it normally
+       clears is behind the keyboard anyway, so reserving space for it would only push the composer
+       further out of reach. See lib/mobile/use-keyboard-inset.ts for why iOS needs this at all. */
     .askpage{position:fixed;left:0;right:0;top:calc(54px + var(--safe-t));
-      bottom:calc(60px + var(--safe-b));z-index:30;background:var(--bg)}
+      bottom:max(calc(60px + var(--safe-b)),var(--kb));z-index:30;background:var(--bg)}
     /* A TECH has no command bar (the field layout renders it only for owner/office), so the only
        bottom chrome is the 60px tab bar. An office user visiting this field route DOES get the
        bar, and then the clearance is the 132px `main` reserves for both. Asking the DOM which
        chrome exists beats hard-coding the larger number and leaving a dead band on the tech's
        screen — the role that actually lives here. */
-    .appshell:has(.cmdline) .askpage{bottom:calc(132px + var(--safe-b))}
+    .appshell:has(.cmdline) .askpage{bottom:max(calc(132px + var(--safe-b)),var(--kb))}
   }
   .askpage-thread{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;
     gap:var(--space-3);padding:var(--space-4) var(--space-4) var(--space-5)}
@@ -2252,8 +2260,9 @@
       position:fixed;left:0;right:0;top:calc(54px + var(--safe-t));
       /* Clear BOTH pieces of fixed bottom chrome — the tab bar and the command line above it.
          132px is the same clearance `main` reserves on mobile, so the composer lands just above
-         them rather than underneath. */
-      bottom:calc(132px + var(--safe-b));
+         them rather than underneath. `max(…, --kb)` hands the space to the keyboard instead when
+         one is open: the chrome being cleared is behind it anyway. */
+      bottom:max(calc(132px + var(--safe-b)),var(--kb));
       z-index:40;border:0;border-radius:0;background:var(--card);
     }
     /* A TECH HAS NO ASK-MALLET BAR — the field layout renders it only for office roles — so the
@@ -2261,7 +2270,7 @@
        the composer. Derived from whether the bar is actually in the document rather than from a
        second hardcoded number, so it stays right if either piece of chrome changes. */
     .appshell:not(:has(.cmdline)) .msg-shell.reading .msg-pane-thread{
-      bottom:calc(60px + var(--safe-b));
+      bottom:max(calc(60px + var(--safe-b)),var(--kb));
     }
     .msg-shell.reading .msg-pane-thread .composer{padding-bottom:var(--space-4)}
     .msg-back{display:block}
