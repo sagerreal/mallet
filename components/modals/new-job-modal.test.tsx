@@ -282,10 +282,36 @@ describe("NewJobModalContent — the priced exit (Create & price it)", () => {
     expect(addJob).toHaveBeenCalledWith(
       expect.objectContaining({ leadId: "srv-lead-10" }),
     );
-    // The priced exit derives booked work: svc "service", never kind "estimate".
+    /**
+     * BOTH EXITS CREATE THE SAME JOB. The priced exit used to commit `svc: "service"` here —
+     * typing the job as booked work BEFORE any price existed — which contradicted the one-job-type
+     * model the price builder documents: "an unpriced job's kind flips estimate -> work on save …
+     * this save IS the fork."
+     *
+     * Forking at create meant bailing out of the builder with "Price later" left a job typed as a
+     * priced service call that was never priced (`kind=work svc=service lines=0` on production).
+     * The technician's Quote tab then routed to the editable builder instead of the
+     * "Quote it now / Send scope to the office" chooser, with no way back to it.
+     *
+     * The button now only decides WHERE THE USER LANDS NEXT, never what the job is.
+     */
     const [jobDraft] = addJob.mock.calls[0] as [{ svc: string; kind?: string }];
-    expect(jobDraft.svc).toBe("service");
-    expect(jobDraft.kind).not.toBe("estimate");
+    expect(jobDraft.kind).toBe("estimate");
+    expect(jobDraft.svc).toBe("");
+  });
+
+  it("leaves an unpriced job in the SAME shape as the plain exit, so Price later is not a trap", async () => {
+    // The whole point: whichever button was pressed, a job with no price is an unpriced job.
+    const persistedLead = { id: "srv-lead-same", name: "Same Shape" };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({ job: { id: "job-same", origin: "manual", visits: [] }, persisted: Promise.resolve({ id: "job-same" }) });
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "Same shape" } });
+    fireEvent.change(screen.getByPlaceholderText("search or add"), { target: { value: "Same Shape" } });
+    fireEvent.click(screen.getByRole("button", { name: /Create & price it/ }));
+    await waitFor(() => expect(addJob).toHaveBeenCalled());
+    const [draft] = addJob.mock.calls[0] as [{ svc: string; kind?: string }];
+    expect({ kind: draft.kind, svc: draft.svc }).toEqual({ kind: "estimate", svc: "" });
   });
 
   it("retunes a still-untouched default visit to the priced length", async () => {

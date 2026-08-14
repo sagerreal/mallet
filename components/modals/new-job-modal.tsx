@@ -48,7 +48,9 @@ const CHK_PHOTO_RE = /photo|picture/i;
 
 /** Default visit length while the job is unpriced — a walkthrough, not a work slot. */
 const UNPRICED_VISIT_H = 0.5;
-/** Default visit length once "Create & price it" is the exit — real work takes real time. */
+/** Default visit length once "Create & price it" is the exit — real work takes real time.
+ *  A LOCAL derivation from the button pressed; it never depended on the stored kind, so it is
+ *  unaffected by both exits now creating the same shape. */
 const PRICED_VISIT_H = 1.5;
 /** Both defaults, used to detect a single still-untouched visit row worth retuning. */
 const DEFAULT_VISIT_HOURS: readonly number[] = [UNPRICED_VISIT_H, PRICED_VISIT_H];
@@ -302,13 +304,15 @@ export function NewJobModalContent() {
   /**
    * ONE create for both exits — the kind DERIVES from which foot button ran:
    *
-   *   priced=false ("Create job")        → kind "estimate": no price yet, someone
-   *                                        still looks at the work first. A real job
-   *                                        (never a store-only evisit): it rides the
-   *                                        server schedule window / crew-load /
-   *                                        conflict checks like any other.
-   *   priced=true  ("Create & price it") → svc "service": the price is known and
-   *                                        the caller lands in Build the price next.
+   *   BOTH exits create kind "estimate" — no price yet, so the job is unpriced, and saying
+   *   otherwise was the bug. A real job either way (never a store-only evisit): it rides the
+   *   server schedule window / crew-load / conflict checks like any other.
+   *
+   *   The flag decides only WHAT HAPPENS NEXT:
+   *     priced=false ("Create job")        → done; the job waits to be priced.
+   *     priced=true  ("Create & price it") → the caller lands in Build the price, whose SAVE
+   *                                          books the job. Leaving without saving leaves it
+   *                                          unpriced, which is the truth.
    *
    * For the "new customer" path (typed name with no matching lead) the lead is
    * created FIRST and its server-assigned id awaited — the job's lead FK must
@@ -377,9 +381,18 @@ export function NewJobModalContent() {
 
     const { job: created, persisted: jobPersisted } = addJob({
       leadId: lead.id,
-      // The derived kind. "service" rides svc (the store's addJob maps a non-estimate
-      // kind off svc); the unpriced create declares kind "estimate" explicitly.
-      ...(priced ? { svc: "service" } : { kind: "estimate", svc: "" }),
+      // ONE SHAPE FOR BOTH EXITS: a job with no price is an unpriced job, whichever button
+      // made it. The price builder's save is what books it ("an unpriced job's kind flips
+      // estimate -> work on save … this save IS the fork").
+      //
+      // The priced exit used to commit `svc: "service"` right here, forking the job before a
+      // price existed. Leaving the builder by "Price later" then stranded a job typed as booked
+      // work that was never priced (`kind=work svc=service lines=0` in production), and the
+      // technician's Quote tab routed to the editable builder instead of the "Quote it now /
+      // Send scope to the office" chooser — with no way back to it, because the fork had already
+      // happened. The button chooses WHERE THE USER GOES NEXT, never what the job is.
+      kind: "estimate",
+      svc: "",
       origin: "manual",
       title: job,
       addr: addr.trim() || (lead.address ?? ""),
