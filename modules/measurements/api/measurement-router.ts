@@ -17,6 +17,7 @@ import { RescanRoomUseCase } from "../app/rescan-room";
 import { CreateManualRoomUseCase } from "../app/create-manual-room";
 import { OverrideQuantityUseCase } from "../app/override-quantity";
 import { ConfirmQuantityUseCase } from "../app/confirm-quantity";
+import { SetTrimHeightUseCase } from "../app/set-trim-height";
 import { ListRoomsUseCase } from "../app/list-rooms";
 import { RenameRoomUseCase } from "../app/rename-room";
 import { ArchiveRoomUseCase } from "../app/archive-room";
@@ -89,6 +90,15 @@ const confirmQuantityInput = z.object({
   captureId: z.string().uuid(),
   kind: paintingQuantityKind,
   value: z.number(),
+});
+
+const setTrimHeightInput = z.object({
+  captureId: z.string().uuid(),
+  kind: paintingQuantityKind,
+  // Inches. Null clears it — the room goes back to being priced by the foot. Bounds are enforced
+  // in the use-case (and again by the DB CHECK), not duplicated as zod refinements, so there is
+  // one place the rule is written down.
+  heightIn: z.number().nullable(),
 });
 
 const renameRoomInput = z.object({
@@ -359,6 +369,22 @@ export const createMeasurementRouter = () =>
         const useCase = new ConfirmQuantityUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec(
           { captureId: input.captureId, kind: input.kind, value: input.value },
+          ctx.principal.orgId,
+        );
+        return orThrow(result);
+      }),
+
+    // Same authority as confirm/override: reading the numbers is field work, writing them into
+    // the record is desk work. A tech who measures a 5¼" base tells the office, exactly as they
+    // already do for a corrected wall.
+    setTrimHeight: ownerOrOffice
+      .input(setTrimHeightInput)
+      .output(quantityDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        const useCase = new SetTrimHeightUseCase(repo);
+        const result = await useCase.exec(
+          { captureId: input.captureId, kind: input.kind, heightIn: input.heightIn },
           ctx.principal.orgId,
         );
         return orThrow(result);

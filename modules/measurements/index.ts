@@ -9,11 +9,23 @@ export type {
   QuantityStatus,
 } from "./domain/measurement-repository";
 export type { PaintingQuantity, PaintingQuantityKind } from "./domain/derive-painting";
+export type { TrimRunKind, TrimAreaKind } from "./domain/trim-area";
+export {
+  TRIM_RUN_KINDS,
+  TRIM_AREA_KINDS,
+  TRIM_AREA_KIND_BY_RUN,
+  isTrimRunKind,
+  isValidTrimHeight,
+  trimAreaSqft,
+  MAX_TRIM_HEIGHT_IN,
+} from "./domain/trim-area";
 export { IngestScanUseCase } from "./app/ingest-scan";
 export { RescanRoomUseCase } from "./app/rescan-room";
 export { CreateManualRoomUseCase } from "./app/create-manual-room";
 export { OverrideQuantityUseCase } from "./app/override-quantity";
 export { ConfirmQuantityUseCase } from "./app/confirm-quantity";
+export { SetTrimHeightUseCase } from "./app/set-trim-height";
+export type { SetTrimHeightCommand } from "./app/set-trim-height";
 export { ListRoomsUseCase } from "./app/list-rooms";
 export { RenameRoomUseCase } from "./app/rename-room";
 export { ArchiveRoomUseCase } from "./app/archive-room";

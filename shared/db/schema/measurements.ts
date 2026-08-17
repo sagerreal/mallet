@@ -108,6 +108,11 @@ export const paintingRoomQuantities = pgTable(
     value: numeric("value", { precision: 12, scale: 2, mode: "number" }), // null = needs_confirm
     derivedValue: numeric("derived_value", { precision: 12, scale: 2, mode: "number" }), // null for manual rooms
     status: text("status").notNull(), // derived|override|confirmed|needs_confirm
+    // How tall the trim is, in inches — TYPED by the painter, never picked from a list, and only
+    // meaningful on the two run kinds. A run is not the work: 38.4 ft of 3¼" colonial base and
+    // 38.4 ft of 7" craftsman base are the same length and a different job. Null = never asked,
+    // which is why the trim area is absent rather than zero.
+    heightIn: numeric("height_in", { precision: 6, scale: 2, mode: "number" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -129,6 +134,14 @@ export const paintingRoomQuantities = pgTable(
     check(
       "painting_room_quantities_status_ck",
       sql`${t.status} in ('derived','override','confirmed','needs_confirm')`,
+    ),
+    // A height only exists on a RUN, and only at a size that is really trim. Zero is excluded
+    // deliberately: "this room has no baseboard" is a confirmed zero RUN (the None control), not
+    // a zero-height one — a zero here would price 38 feet of real base at nothing. Above 24" it
+    // is wainscot or panelling, which is a wall surface, and much likelier a slip for 3.6.
+    check(
+      "painting_room_quantities_height_ck",
+      sql`${t.heightIn} is null or (${t.kind} in ('baseboard_lnft','crown_lnft') and ${t.heightIn} > 0 and ${t.heightIn} <= 24)`,
     ),
   ],
 );

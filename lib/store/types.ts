@@ -754,6 +754,11 @@ export interface RoomQuantity {
   value: number | null;
   derivedValue: number | null;
   status: RoomQuantityStatus;
+  /**
+   * How tall the trim is, in inches — typed, never picked from a list. Only ever set on
+   * baseboard_lnft/crown_lnft; null everywhere else and on a run nobody has been asked about.
+   */
+  heightIn: number | null;
 }
 
 /** Wall area a room does NOT get painted — tile band, fully-tiled shower wall. */

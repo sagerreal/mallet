@@ -95,6 +95,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
     throw new Error("setQuantity not used in update-site-capture tests");
   }
 
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in update-site-capture tests");
+  }
+
   async renameRoom(): Promise<never> {
     throw new Error("renameRoom not used in update-site-capture tests");
   }

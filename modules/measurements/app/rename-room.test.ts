@@ -33,6 +33,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async setQuantity(): Promise<number> {
     throw new Error("setQuantity not used in rename tests");
   }
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in rename tests");
+  }
+
   async renameRoom(captureId: string, roomName: string): Promise<number> {
     this.renameCallCount += 1;
     this.renameLastArgs = { captureId, roomName };

@@ -2,6 +2,7 @@ import type { RoomCapture } from "./room-capture";
 import type { SiteCapture } from "./site-capture";
 import type { PaintingQuantity, PaintingQuantityKind } from "./derive-painting";
 import type { DeductionKind } from "./wall-deductions";
+import type { TrimRunKind } from "./trim-area";
 
 // Persistence-level status union — WIDER than the domain derivation union
 // (`PaintingQuantity["status"]` is only 'derived' | 'needs_confirm', the two states a pure
@@ -17,6 +18,11 @@ export interface StoredQuantity {
   readonly value: number | null;
   readonly derivedValue: number | null;
   readonly status: QuantityStatus;
+  /**
+   * How tall the trim is, in inches — typed by the painter, null on every non-run kind and on
+   * a run nobody has been asked about yet. Null is why a trim AREA is absent rather than zero.
+   */
+  readonly heightIn: number | null;
 }
 
 /**
@@ -114,6 +120,12 @@ export interface MeasurementRepository {
     kind: PaintingQuantityKind,
     patch: { value: number | null; status: QuantityStatus },
   ): Promise<number>;
+
+  // Sets (or clears, with null) the typed trim height on ONE run kind. Separate from
+  // setQuantity because a height is not the measurement: it neither confirms nor overrides the
+  // run, so folding it into that patch would make every height entry also a status transition.
+  // Returns the number of rows affected — same no-silent-fail contract as setQuantity.
+  setTrimHeight(captureId: string, kind: TrimRunKind, heightIn: number | null): Promise<number>;
 
   // Returns the number of rows affected (0 = not found / wrong org / already deleted).
   renameRoom(captureId: string, roomName: string): Promise<number>;

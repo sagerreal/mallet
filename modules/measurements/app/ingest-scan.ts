@@ -91,6 +91,9 @@ export class IngestScanUseCase {
         value: q.value,
         derivedValue: q.derivedValue,
         status: q.status,
+        // A fresh derivation has no height: the scanner reports a perimeter, not how tall the
+        // trim standing on it is. Null until somebody types it on the room card.
+        heightIn: null,
       }))
       .sort((a, b) => a.kind.localeCompare(b.kind));
 

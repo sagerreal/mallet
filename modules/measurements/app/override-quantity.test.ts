@@ -85,6 +85,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
     return this.setQuantityReturns;
   }
 
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in override tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in override tests");
   }
@@ -198,7 +202,7 @@ describe("OverrideQuantityUseCase", () => {
 
   it("leaves derivedValue untouched from the pre-existing stored quantity", async () => {
     repo.seed(makeCapture({ source: "roomplan_v1" }), [
-      { kind: "walls_sqft", value: 250, derivedValue: 250, status: "derived" },
+      { kind: "walls_sqft", value: 250, derivedValue: 250, status: "derived", heightIn: null },
     ]);
 
     const result = await useCase.exec(baseCmd({ value: 300 }), ORG);

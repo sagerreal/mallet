@@ -33,6 +33,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async setQuantity(): Promise<number> {
     throw new Error("setQuantity not used in archive tests");
   }
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in archive tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in archive tests");
   }

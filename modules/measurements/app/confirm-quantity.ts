@@ -46,6 +46,9 @@ export class ConfirmQuantityUseCase {
       value: cmd.value,
       derivedValue: quantity.derivedValue,
       status: "confirmed",
+      // Confirming a run says nothing about how tall the trim is — the stored height rides
+      // through untouched rather than being reset by an unrelated edit.
+      heightIn: quantity.heightIn,
     });
   }
 }

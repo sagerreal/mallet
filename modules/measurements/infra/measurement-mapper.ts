@@ -108,6 +108,7 @@ export const toStoredQuantity = (row: PaintingRoomQuantityRow): StoredQuantity =
   value: row.value,
   derivedValue: row.derivedValue,
   status: row.status as QuantityStatus,
+  heightIn: row.heightIn,
 });
 
 /**

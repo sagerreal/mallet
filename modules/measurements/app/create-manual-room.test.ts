@@ -53,6 +53,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
     return this.setQuantityReturns;
   }
 
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in create-manual-room tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in create-manual-room tests");
   }

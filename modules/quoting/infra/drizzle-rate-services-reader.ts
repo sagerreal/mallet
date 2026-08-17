@@ -17,8 +17,11 @@ const RATE_CAP = 500;
 const MEASURED_BY_KINDS: ReadonlySet<MeasuredQuantityKind> = new Set([
   "walls_sqft",
   "ceiling_sqft",
+  "soffit_sqft",
   "baseboard_lnft",
+  "baseboard_sqft",
   "crown_lnft",
+  "crown_sqft",
   "doors_count",
   "windows_count",
   "site_sqft",

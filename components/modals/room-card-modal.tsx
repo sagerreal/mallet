@@ -16,7 +16,7 @@
 
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useRef, useState, type FormEvent } from "react";
 import { useActiveModal, useAppStore, useCloseModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { ModalLoading } from "./modal-loading";
@@ -92,6 +92,46 @@ const QUANTITY_DEFS: readonly QuantityDef[] = [
  */
 const TRIM_KINDS: readonly RoomQuantityKind[] = ["baseboard_lnft", "crown_lnft", "soffit_sqft"];
 const isTrim = (kind: RoomQuantityKind): boolean => TRIM_KINDS.includes(kind);
+
+/**
+ * The two kinds measured as a RUN, and so the only two that can carry a height.
+ *
+ * A run is not the work. 38.4 feet of 3¼" colonial base and 38.4 feet of 7" craftsman base are the
+ * same length and a different job, and until the height is somewhere the app cannot tell them
+ * apart. Soffit is excluded on purpose — it is already an area.
+ */
+const TRIM_RUN_KINDS: readonly RoomQuantityKind[] = ["baseboard_lnft", "crown_lnft"];
+const hasHeight = (kind: RoomQuantityKind): boolean => TRIM_RUN_KINDS.includes(kind);
+
+/** Trim heights are inches; past 24 it is wainscot, which is a wall surface. */
+const MAX_TRIM_HEIGHT_IN = 24;
+const INCHES_PER_FOOT = 12;
+
+/** The paintable face a run of trim makes at a given height — run × height, in square feet. */
+export function trimFaceSqft(runLnft: number, heightIn: number): number {
+  return Math.round(((runLnft * heightIn) / INCHES_PER_FOOT) * 10) / 10;
+}
+
+/**
+ * Parses a typed height. Deliberately NOT a preset list: real millwork runs 2¼", 3¼", 4", 5¼", 7",
+ * and plenty of commercial work is a 4" rubber cove that matches no list at all. Blank clears the
+ * height, which puts the room back to being priced by the foot.
+ */
+export function parseTrimHeight(
+  raw: string,
+): { ok: true; value: number | null } | { ok: false; error: string } {
+  const trimmed = raw.trim();
+  if (trimmed === "") return { ok: true, value: null };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n)) return { ok: false, error: `"${trimmed}" is not a number.` };
+  // Zero is not a short baseboard — it is the absence of one, and that answer is the
+  // "None in this room" button, which records a confirmed zero RUN.
+  if (n <= 0) return { ok: false, error: `Use "None in this room" if there is no trim here.` };
+  if (n > MAX_TRIM_HEIGHT_IN) {
+    return { ok: false, error: `${trimmed}" is taller than trim gets — that's wainscot.` };
+  }
+  return { ok: true, value: n };
+}
 
 /** 1 decimal for sq ft / ln ft, whole numbers for counts. */
 export function formatQuantity(value: number, unit: QuantityUnit): string {
@@ -198,6 +238,7 @@ function QuantityRow({
   note,
   readOnly,
   onCommit,
+  onCommitHeight,
 }: {
   def: QuantityDef;
   quantity: RoomQuantity;
@@ -212,12 +253,46 @@ function QuantityRow({
    */
   readOnly: boolean;
   onCommit: (kind: RoomQuantityKind, value: number) => void;
+  /** Records the typed trim height (inches), or clears it with null. Run kinds only. */
+  onCommitHeight: (kind: RoomQuantityKind, heightIn: number | null) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
+  const [heightDraft, setHeightDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [heightError, setHeightError] = useState<string | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Whether a blur is leaving this editor, or just moving around inside it.
+   *
+   * A run row now has TWO fields — the measurement and the trim height — and blur used to mean
+   * "done here", so it committed AND closed. With a second field that made tabbing from the run
+   * into the height collapse the row out from under the painter mid-entry (caught in a browser;
+   * the unit tests fire blur with no relatedTarget and never saw it). Focus landing on another
+   * control inside the same expander is not leaving it.
+   */
+  function leavingEditor(next: EventTarget | null): boolean {
+    if (!(next instanceof Node)) return true;
+    return !(bodyRef.current?.contains(next) ?? false);
+  }
 
   const display = quantityDisplay(quantity, source, def.unit);
+  // The run the face area is computed from: whatever is actually working, suggestion included,
+  // so the painter sees the arithmetic before committing rather than after.
+  const runValue = quantity.value ?? quantity.derivedValue;
+
+  // A recorded height belongs on the COLLAPSED row, beside the run it modifies — a card showing
+  // only "38.4" has thrown away the distinction the moment the row closes.
+  const heightNote = quantity.heightIn != null ? `${quantity.heightIn}\u2033` : null;
+
+  const trailing = (display.badge || display.measured || heightNote) && (
+    <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+      {heightNote && <span className="muted">{heightNote}</span>}
+      {display.measured && <span className="muted">{display.measured}</span>}
+      {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
+    </span>
+  );
 
   if (readOnly) {
     return (
@@ -225,14 +300,7 @@ function QuantityRow({
         label={def.label}
         value={display.value}
         valueIsHint={display.valueIsHint}
-        after={
-          (display.badge || display.measured) && (
-            <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
-              {display.measured && <span className="muted">{display.measured}</span>}
-              {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
-            </span>
-          )
-        }
+        after={trailing}
       />
     );
   }
@@ -242,15 +310,29 @@ function QuantityRow({
     if (next) {
       const effective = quantity.value ?? quantity.derivedValue;
       setDraft(effective != null ? formatQuantity(effective, def.unit) : "");
+      setHeightDraft(quantity.heightIn != null ? String(quantity.heightIn) : "");
       setError(null);
+      setHeightError(null);
     }
   }
 
-  function commit() {
+  function commitHeight() {
+    const parsed = parseTrimHeight(heightDraft);
+    if (!parsed.ok) {
+      setHeightError(parsed.error);
+      return;
+    }
+    setHeightError(null);
+    // Unchanged is not a write — re-sending the same height on every blur would put a mutation
+    // behind simply tapping out of the field.
+    if (parsed.value !== quantity.heightIn) onCommitHeight(def.kind, parsed.value);
+  }
+
+  function commit(close = true) {
     const parsed = parseQuantityInput(draft, def.unit);
     if (parsed.ok === "empty") {
-      // No-op close — nothing typed, nothing to save.
-      setOpen(false);
+      // Nothing typed, nothing to save.
+      if (close) setOpen(false);
       setError(null);
       return;
     }
@@ -259,7 +341,7 @@ function QuantityRow({
       return;
     }
     onCommit(def.kind, parsed.value);
-    setOpen(false);
+    if (close) setOpen(false);
     setError(null);
   }
 
@@ -268,18 +350,12 @@ function QuantityRow({
       label={def.label}
       value={display.value}
       valueIsHint={display.valueIsHint}
-      after={
-        (display.badge || display.measured) && (
-          <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
-            {display.measured && <span className="muted">{display.measured}</span>}
-            {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
-          </span>
-        )
-      }
+      after={trailing}
       expandable
       open={open}
       onOpenChange={openEditor}
     >
+      <div ref={bodyRef}>
       <Field label={def.label}>
         <input
           type="text"
@@ -287,7 +363,7 @@ function QuantityRow({
           value={draft}
           autoFocus
           onChange={(e) => setDraft(e.target.value)}
-          onBlur={commit}
+          onBlur={(e) => commit(leavingEditor(e.relatedTarget))}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -296,6 +372,47 @@ function QuantityRow({
           }}
         />
       </Field>
+      {/* HOW TALL THE TRIM IS — typed, never picked.
+          The scanner gives a perimeter, so trim has only ever been a length, and a length is not
+          the work: painting 38.4 feet of 3¼" colonial base and 38.4 feet of 7" craftsman base is
+          the same number and a different job. A preset list would be a guess about somebody else's
+          millwork (bases run 2¼", 3¼", 4", 5¼", 7", and commercial rubber cove matches no list at
+          all) — the painter has a tape measure, so the app takes their number.
+          Blank is a real answer: no height, priced by the foot, exactly as before. */}
+      {hasHeight(def.kind) && (
+        <div style={{ marginTop: "var(--space-3)" }}>
+          <Field label="Height (inches)">
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="e.g. 5.25"
+              value={heightDraft}
+              onChange={(e) => setHeightDraft(e.target.value)}
+              onBlur={commitHeight}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitHeight();
+                }
+              }}
+            />
+          </Field>
+          {/* The arithmetic, shown before it is committed rather than after — this is the whole
+              reason for asking, so it should not be something the painter has to go find. */}
+          {quantity.heightIn != null && runValue != null && (
+            <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
+              {formatQuantity(runValue, def.unit)} ln ft × {quantity.heightIn}
+              &Prime; = {trimFaceSqft(runValue, quantity.heightIn).toFixed(1)} sq ft of face
+            </p>
+          )}
+          {heightError && (
+            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
+              {heightError}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* THE TWO ANSWERS A TRIM ROW ACTUALLY HAS.
           Accepting the calculated perimeter used to mean noticing the number was already in the box
           and pressing Enter; recording "this room has no crown" meant knowing that typing a zero
@@ -341,6 +458,7 @@ function QuantityRow({
       {error && (
         <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{error}</p>
       )}
+      </div>
     </SheetRow>
   );
 }
@@ -503,6 +621,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
   // rows are read-only (fail closed until the role loads). Scan/rename/archive/re-scan
   // are field work and stay live (v1.measurements allows an assigned tech).
   const setRoomQuantity = useAppStore((s) => s.setRoomQuantity);
+  const setTrimHeight = useAppStore((s) => s.setTrimHeight);
   const addDeduction = useAppStore((s) => s.addDeduction);
   const removeDeduction = useAppStore((s) => s.removeDeduction);
   const renameRoom = useAppStore((s) => s.renameRoom);
@@ -512,6 +631,10 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
 
   function commitQuantity(kind: RoomQuantityKind, value: number) {
     setRoomQuantity(jobId, room.id, kind, value);
+  }
+
+  function commitHeight(kind: RoomQuantityKind, heightIn: number | null) {
+    setTrimHeight(jobId, room.id, kind, heightIn);
   }
 
   function remove() {
@@ -544,6 +667,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
               note={def.kind === "crown_lnft" ? crownNote(room) : null}
               readOnly={false}
               onCommit={commitQuantity}
+              onCommitHeight={commitHeight}
             />
           );
         })}

@@ -53,7 +53,7 @@ const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
   source: "manual",
   capturedAt: "2026-07-01T00:00:00.000Z",
   quantities: [
-    { kind: "walls_sqft", value: 100, derivedValue: null, status: "confirmed" },
+    { kind: "walls_sqft", value: 100, derivedValue: null, status: "confirmed", heightIn: null },
   ],
   ...overrides,
 });
@@ -95,8 +95,8 @@ describe("measurementsSlice", () => {
         source: "manual",
         capturedAt: "2026-07-01T00:00:00.000Z",
         quantities: [
-          { kind: "walls_sqft", value: 100, derivedValue: null, status: "confirmed" },
-          { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm" },
+          { kind: "walls_sqft", value: 100, derivedValue: null, status: "confirmed", heightIn: null },
+          { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm", heightIn: null },
         ],
       }));
 
@@ -180,7 +180,7 @@ describe("measurementsSlice", () => {
       store.getState().setJobRooms(JOB, [
         room({
           quantities: [
-            { kind: "walls_sqft", value: null, derivedValue: 95, status: "needs_confirm" },
+            { kind: "walls_sqft", value: null, derivedValue: 95, status: "needs_confirm", heightIn: null },
           ],
         }),
       ]);
@@ -207,7 +207,7 @@ describe("measurementsSlice", () => {
       store.getState().setJobRooms(JOB, [
         room({
           quantities: [
-            { kind: "walls_sqft", value: null, derivedValue: 95, status: "needs_confirm" },
+            { kind: "walls_sqft", value: null, derivedValue: 95, status: "needs_confirm", heightIn: null },
           ],
         }),
       ]);
@@ -309,7 +309,7 @@ describe("measurementsSlice", () => {
         roomName: "Kitchen",
         source: "roomplan_v1",
         capturedAt: "2026-07-01T00:00:00.000Z",
-        quantities: [{ kind: "walls_sqft", value: 120, derivedValue: 120, status: "derived" }],
+        quantities: [{ kind: "walls_sqft", value: 120, derivedValue: 120, status: "derived", heightIn: null }],
       });
 
       const result = await store.getState().scanRoom(JOB, "Kitchen");
@@ -379,7 +379,7 @@ describe("measurementsSlice", () => {
         roomName: "Kitchen",
         source: "roomplan_v1",
         capturedAt: "2026-07-02T00:00:00.000Z",
-        quantities: [{ kind: "walls_sqft", value: 130, derivedValue: 130, status: "derived" }],
+        quantities: [{ kind: "walls_sqft", value: 130, derivedValue: 130, status: "derived", heightIn: null }],
       });
 
       const result = await store.getState().rescanRoom(JOB, "room-1", "Kitchen");

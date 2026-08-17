@@ -44,6 +44,8 @@ export class OverrideQuantityUseCase {
       value: cmd.value,
       derivedValue: previous?.derivedValue ?? null,
       status,
+      // Overriding the run says nothing about how tall the trim is — same rule as confirm.
+      heightIn: previous?.heightIn ?? null,
     });
   }
 }

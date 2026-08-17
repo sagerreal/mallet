@@ -30,7 +30,7 @@ const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
   source: "manual",
   capturedAt: "2026-07-01T00:00:00.000Z",
   quantities: [
-    { kind: "walls_sqft", value: 100, derivedValue: null, status: "confirmed" },
+    { kind: "walls_sqft", value: 100, derivedValue: null, status: "confirmed", heightIn: null },
   ],
   ...overrides,
 });

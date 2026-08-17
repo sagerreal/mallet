@@ -85,6 +85,10 @@ class FakeMeasurementRepository implements MeasurementRepository {
     return this.setQuantityReturns;
   }
 
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in confirm tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in confirm tests");
   }
@@ -140,7 +144,7 @@ describe("ConfirmQuantityUseCase", () => {
 
   it("returns a conflict error when the quantity is not currently needs_confirm", async () => {
     repo.seed(makeCapture(), [
-      { kind: "ceiling_sqft", value: 150, derivedValue: 150, status: "derived" },
+      { kind: "ceiling_sqft", value: 150, derivedValue: 150, status: "derived", heightIn: null },
     ]);
 
     const result = await useCase.exec(baseCmd(), ORG);
@@ -152,7 +156,7 @@ describe("ConfirmQuantityUseCase", () => {
 
   it("returns a conflict error when the quantity is already confirmed", async () => {
     repo.seed(makeCapture(), [
-      { kind: "ceiling_sqft", value: 150, derivedValue: null, status: "confirmed" },
+      { kind: "ceiling_sqft", value: 150, derivedValue: null, status: "confirmed", heightIn: null },
     ]);
 
     const result = await useCase.exec(baseCmd(), ORG);
@@ -183,7 +187,7 @@ describe("ConfirmQuantityUseCase", () => {
 
   it("returns a validation error when the value is negative", async () => {
     repo.seed(makeCapture(), [
-      { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm" },
+      { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm", heightIn: null },
     ]);
 
     const result = await useCase.exec(baseCmd({ value: -1 }), ORG);
@@ -196,7 +200,7 @@ describe("ConfirmQuantityUseCase", () => {
 
   it("confirms a needs_confirm quantity, setting value and status 'confirmed'", async () => {
     repo.seed(makeCapture(), [
-      { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm" },
+      { kind: "ceiling_sqft", value: null, derivedValue: null, status: "needs_confirm", heightIn: null },
     ]);
 
     const result = await useCase.exec(baseCmd({ value: 180 }), ORG);

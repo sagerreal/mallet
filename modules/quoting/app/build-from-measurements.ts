@@ -58,7 +58,9 @@ const KIND_LABELS: Record<MeasuredQuantityKind, string> = {
   ceiling_sqft: "Ceiling",
   soffit_sqft: "Soffit / bulkhead",
   baseboard_lnft: "Baseboard",
+  baseboard_sqft: "Baseboard",
   crown_lnft: "Crown",
+  crown_sqft: "Crown",
   doors_count: "Doors",
   windows_count: "Windows",
   site_sqft: "Site area",
@@ -118,6 +120,47 @@ const siteQuantities = (
   }
   return quantities;
 };
+
+/**
+ * A trim run with a typed height reaches this use-case TWICE — once as the length the scanner
+ * traced, once as the face area that length and height make (see RoomQuantitiesReader). Exactly
+ * one of the pair may become a line: they are the same baseboard, and seeding both would charge
+ * a shop's customer for 38.4 feet AND 16.8 square feet of it.
+ *
+ * The AREA wins when the shop sells trim by the square foot, because that is the more specific
+ * answer and the only reason anyone typed a height. Otherwise the run wins — a painter who bids
+ * by the foot can still record how tall the base is without it silently costing them the line.
+ *
+ * The loser is dropped completely, gaps included: a per-foot shop must not be told it is
+ * "missing" a per-square-foot baseboard service it has no use for.
+ */
+// The run→area pairing, duplicated from measurements' trim-area.ts rather than imported. The
+// barrel is the only sanctioned import path and it is a RUNTIME import here (not a type), which
+// pulls createMeasurementRouter and the config validator — that throws without DB env and takes
+// this whole unit test file down. Same call, same reason, as the kind set duplicated in
+// drizzle-rate-services-reader.ts. build-from-measurements.test.ts pins this map against
+// measurements' own, so the two cannot drift.
+const TRIM_AREA_BY_RUN: Readonly<Record<string, MeasuredQuantityKind>> = {
+  baseboard_lnft: "baseboard_sqft",
+  crown_lnft: "crown_sqft",
+};
+
+function pricedTrimBasis(
+  quantities: readonly { kind: MeasuredQuantityKind; value: number }[],
+  serviceByKind: ReadonlyMap<MeasuredQuantityKind, RateService>,
+): { kind: MeasuredQuantityKind; value: number }[] {
+  const present = new Set(quantities.map((q) => q.kind));
+  const supersededRuns = new Set<MeasuredQuantityKind>();
+  const unusedAreas = new Set<MeasuredQuantityKind>();
+
+  for (const [run, area] of Object.entries(TRIM_AREA_BY_RUN)) {
+    if (!present.has(run as MeasuredQuantityKind) || !present.has(area)) continue;
+    if (serviceByKind.has(area)) supersededRuns.add(run as MeasuredQuantityKind);
+    else unusedAreas.add(area);
+  }
+
+  return quantities.filter((q) => !supersededRuns.has(q.kind) && !unusedAreas.has(q.kind));
+}
 
 /**
  * Turns a job's measurements — scanned rooms AND traced site surfaces — into estimate seed
@@ -193,7 +236,7 @@ export class BuildFromMeasurementsUseCase {
 
     for (const room of rooms) {
       if (room.hasUnconfirmed) unconfirmedRooms.push(room.roomName);
-      for (const quantity of room.quantities) {
+      for (const quantity of pricedTrimBasis(room.quantities, serviceByKind)) {
         seed(room.roomName, quantity.kind, quantity.value);
       }
     }

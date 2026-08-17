@@ -73,6 +73,10 @@ class FakeRepo implements MeasurementRepository {
   async setQuantity(): Promise<number> {
     throw new Error("unused");
   }
+  async setTrimHeight(): Promise<number> {
+    throw new Error("setTrimHeight not used in deduction tests");
+  }
+
   async renameRoom(): Promise<number> {
     throw new Error("unused");
   }
