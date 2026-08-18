@@ -21,6 +21,8 @@ export interface AddBlockInput {
   readonly techUserId: string;
   readonly workDate: string;
   readonly kind: "job" | "travel" | "break" | "shop";
+  /** The job these hours went to. Required on the "job" kind, null on every other. */
+  readonly jobId: string | null;
   readonly startTime: string;
   readonly endTime: string;
   readonly note: string;

@@ -316,7 +316,7 @@ export default function MyHoursPage() {
   const acceptDay = (date: string, startTime: string, endTime: string): void => {
     if (!myUserId) return;
     writes.addBlock(
-      { techUserId: myUserId, workDate: date, kind: "shop", startTime, endTime, note: "" },
+      { techUserId: myUserId, workDate: date, kind: "shop", jobId: null, startTime, endTime, note: "" },
       () => void unreportedQ.refetch(),
     );
   };

@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, gte, isNull, isNotNull, lte, inArray, ne, or, sql, type SQL } from "drizzle-orm";
-import { timeEntries } from "@mallet/shared/db/schema";
+import { timeEntries, users } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
 import { timesheetSortSpec, type TimesheetSort } from "./timesheet-sorts";
@@ -255,9 +255,26 @@ export class DrizzleTimeEntryRepository implements TimeEntryRepository {
 
   async approveWeek(techUserId: UserId, dates: string[], now: Date): Promise<number> {
     if (dates.length === 0) return 0;
+    /**
+     * The rate is STAMPED here, from the person's rate at this moment.
+     *
+     * Approval is when a week stops being editable, so it is when its cost is final. Without
+     * this, job costing multiplies hours by whatever the person costs TODAY, and the day anybody
+     * gets a raise every job they ever touched re-prices itself — last quarter's margins move
+     * under the owner for work that was settled months ago.
+     *
+     * A correlated subquery rather than a join: `update ... from` would need the whole predicate
+     * restated, and the rate is one scalar per row. Null stays null when the shop has not told us
+     * what somebody costs — hours without money, never hours at $0.
+     */
+    const rateNow = sql<number | null>`(
+      select ${users.costRateCents} from ${users}
+      where ${users.id} = ${timeEntries.techUserId} and ${users.orgId} = ${timeEntries.orgId}
+    )`;
+
     const rows = await this.tx
       .update(timeEntries)
-      .set({ status: "approved", approvedAt: now, updatedAt: now })
+      .set({ status: "approved", approvedAt: now, updatedAt: now, costRateCents: rateNow })
       .where(
         and(
           eq(timeEntries.orgId, this.orgId),

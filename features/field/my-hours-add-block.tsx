@@ -17,6 +17,7 @@ import { KIND_LABELS, dayLabel, type MyHoursEntry } from "./my-hours-derive";
 import { editWindowDates, timesProblem } from "./my-hours-edit";
 import type { AddBlockInput } from "./use-my-hours-writes";
 import { SelectMenu } from "@/components/ui/select-menu";
+import { api } from "@/lib/trpc/client";
 
 // The add block types PUNCHED rows only — time off has its own entry path (a kind, a day and
 // a length; no times), so the clock kinds are the whole menu here.
@@ -66,16 +67,47 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
   const [startTime, setStartTime] = useState("");
   const [endTime, setEndTime] = useState("");
   const [note, setNote] = useState("");
+  const [jobId, setJobId] = useState("");
   const problem = timesProblem(startTime, endTime);
 
+  // The jobs this technician may attribute hours to. Assignee-scoped and deliberately NOT
+  // limited to today: a timesheet is corrected after the work is done, so a finished job has to
+  // still be offered or the correction is impossible.
+  const jobs = api.v1.field.myJobs.useQuery(undefined, { enabled: kind === "job" });
+  const jobOptions = (jobs.data?.items ?? []).map((j) => ({
+    value: j.id,
+    label: j.title ? `${j.num} — ${j.title}` : j.num,
+  }));
+
+  // Job time that does not name a job cannot be costed, which is the only reason the kind
+  // exists. Anything else is Regular.
+  const missingJob = kind === "job" && jobId === "";
+
+  const pickKind = (next: Kind): void => {
+    setKind(next);
+    if (next !== "job") setJobId("");
+  };
+
   const submit = (): void => {
-    if (techUserId === undefined || problem !== null) return;
-    onAdd({ techUserId, workDate, kind, startTime, endTime, note: note.trim() }, () => {
-      setStartTime("");
-      setEndTime("");
-      setNote("");
-      onCancel();
-    });
+    if (techUserId === undefined || problem !== null || missingJob) return;
+    onAdd(
+      {
+        techUserId,
+        workDate,
+        kind,
+        jobId: kind === "job" ? jobId : null,
+        startTime,
+        endTime,
+        note: note.trim(),
+      },
+      () => {
+        setStartTime("");
+        setEndTime("");
+        setNote("");
+        setJobId("");
+        onCancel();
+      },
+    );
   };
 
   return (
@@ -94,10 +126,18 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
       </Field>
       <div className="ts-erow" {...kindGroup.groupProps}>
         <label {...kindGroup.labelProps}>Type</label>
-        <KindPicker value={kind} onPick={setKind} />
+        <KindPicker value={kind} onPick={pickKind} />
       </div>
       {kind === "job" ? (
-        <p className="mh-s">Say which job in the note — the office attaches it to the job for you.</p>
+        <Field label="Job">
+          <SelectMenu
+            value={jobId}
+            onChange={setJobId}
+            options={[{ value: "", label: "Pick a job…" }, ...jobOptions]}
+            aria-label="Job"
+            compact
+          />
+        </Field>
       ) : null}
       <div className="ts-times">
         <div className="ts-timecol">
@@ -115,9 +155,12 @@ export function AddBlockForm({ today, techUserId, saving, error, onAdd, onCancel
         <input type="text" value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
       </Field>
       {problem !== null ? <p className="mh-err">{problem}</p> : null}
+      {problem === null && missingJob ? (
+        <p className="mh-err">Pick the job these hours went to, or record them as Regular.</p>
+      ) : null}
       {error !== null ? <p className="mh-err">{error}</p> : null}
       <div className="mh-acts">
-        <Button disabled={problem !== null || saving || techUserId === undefined} onClick={submit}>
+        <Button disabled={problem !== null || missingJob || saving || techUserId === undefined} onClick={submit}>
           {saving ? "Adding…" : "Add these hours"}
         </Button>
         <Button variant="quiet" onClick={onCancel}>

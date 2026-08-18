@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, isNull, lte, ne, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, isNotNull, isNull, lte, ne, sql } from "drizzle-orm";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { jobs, jobVisits } from "@mallet/shared/db/schema/jobs";
@@ -6,16 +6,25 @@ import { jobLines, jobAddons } from "@mallet/shared/db/schema/job-execution";
 import { invoices } from "@mallet/shared/db/schema/invoices";
 import { leads } from "@mallet/shared/db/schema/leads";
 import { users } from "@mallet/shared/db/schema/users";
+import { timeEntries } from "@mallet/shared/db/schema/time-entries";
 import { rollUpLabor, type LaborVisit, type JobLabor } from "../domain/labor-rollup";
 
 /**
  * modules/jobs/infra/drizzle-labor-reader.ts
- * What a week of work COST, read off the visits that were already recorded.
+ * What a week of work COST, read off the hours people reported against jobs.
  *
- * Reads `job_visits`, never `jobs`. Both tables carry enroute/started/completed stamps, and the
- * job's are the wrong ones: a job has one set no matter how many trips it took, so costing a
- * three-visit job off them measures the last trip and calls it the job. One triple per visit row,
- * summed — which works identically at one visit or five.
+ * THE TIMESHEET IS THE SOURCE OF LABOUR. There is no clock: a person enters their day as blocks
+ * of Regular, Job or Break time, names the job on the job blocks, and submits it. The job blocks
+ * ARE the labour, so a costed hour and a paid hour are the same row and cannot disagree — which
+ * is the failure mode of every design where the clock and the costing are captured separately.
+ *
+ * Only `kind = 'job'` contributes. Regular is paid working time nobody attributed, Break is not
+ * paid work at all, and time off has no job — none of them belong in a job's cost.
+ *
+ * The rate is STAMPED ON APPROVAL and read from the stamp. Approval is when a week stops being
+ * editable, so it is when its cost is final — without it a raise would re-price every job the
+ * person ever touched, moving last quarter's margins under the owner. Draft rows have no stamp
+ * yet and fall back to the current rate, which is the right answer for hours still being edited.
  *
  * The cost rate comes from the visit's ASSIGNEE, not the caller and not the job's assignee: the
  * hour belongs to whoever ran that trip.
@@ -71,6 +80,24 @@ export interface JobLaborRow extends JobLabor {
  */
 const visitDay = sql`coalesce(${jobVisits.scheduledDate}, ${jobVisits.completedAt}::date)`;
 
+/**
+ * A time entry's two instants, composed in JS from the stored `YYYY-MM-DD` and `HH:MM:SS`.
+ *
+ * Deliberately NOT `work_date + start_time` in SQL: that yields a `timestamp` the driver hands
+ * back as a string, and casting it to timestamptz would resolve it in the DATABASE's zone rather
+ * than the van's — the same trap that once had a timesheet rendering 4am shifts. Only the SPAN is
+ * ever used, and both ends are built the same way, so the difference is exact whatever the zone.
+ *
+ * Returns null when either half is missing (a running row has no end). An end before its start —
+ * a shift across midnight, or a typo — makes a negative span, which visitLabor() already refuses
+ * rather than subtracting from a job's cost.
+ */
+const instant = (workDate: string, hhmmss: string | null): Date | null => {
+  if (hhmmss === null) return null;
+  const at = new Date(`${workDate}T${hhmmss}`);
+  return Number.isNaN(at.getTime()) ? null : at;
+};
+
 export class DrizzleLaborReader {
   constructor(
     private readonly tx: TenantTx,
@@ -81,20 +108,21 @@ export class DrizzleLaborReader {
   async byJob(from: string, to: string): Promise<JobLaborRow[]> {
     const rows = await this.tx
       .select({
-        jobId: jobVisits.jobId,
-        startedAt: jobVisits.startedAt,
-        completedAt: jobVisits.completedAt,
-        durationMinutes: jobVisits.durationMinutes,
-        status: jobVisits.status,
+        jobId: timeEntries.jobId,
+        workDate: timeEntries.workDate,
+        startTime: timeEntries.startTime,
+        endTime: timeEntries.endTime,
+        // A hand-entered block has no booked length to fall back on — the entry IS the claim.
+        durationMinutes: sql<number | null>`null::int`,
         /**
-         * THE SNAPSHOT FIRST, the person's current rate only as a fallback.
+         * THE STAMP FIRST, the person's current rate only as a fallback.
          *
-         * `job_visits.cost_rate_cents` is stamped when the visit completes, so a raise stops
-         * re-pricing every week already worked. The coalesce covers rows written before the stamp
-         * existed and visits whose assignee had no rate at the time — for those the current rate
-         * is the best available answer and is exactly the pre-snapshot behaviour.
+         * `time_entries.cost_rate_cents` is written when the week is approved, so a raise stops
+         * re-pricing every week already worked. The coalesce covers draft rows (not yet settled)
+         * and rows approved before the stamp existed — for those the current rate is the best
+         * available answer and is exactly the pre-stamp behaviour.
          */
-        costRateCents: sql<number | null>`coalesce(${jobVisits.costRateCents}, ${users.costRateCents})`,
+        costRateCents: sql<number | null>`coalesce(${timeEntries.costRateCents}, ${users.costRateCents})`,
         num: jobs.num,
         title: jobs.title,
         jobStatus: jobs.status,
@@ -102,33 +130,46 @@ export class DrizzleLaborReader {
         callbackOf: jobs.callbackOf,
         customerName: leads.name,
       })
-      .from(jobVisits)
-      .innerJoin(jobs, and(eq(jobs.id, jobVisits.jobId), eq(jobs.orgId, jobVisits.orgId)))
+      .from(timeEntries)
+      .innerJoin(jobs, and(eq(jobs.id, timeEntries.jobId), eq(jobs.orgId, timeEntries.orgId)))
       .innerJoin(leads, and(eq(leads.id, jobs.leadId), eq(leads.orgId, jobs.orgId)))
-      // LEFT, deliberately: an unassigned visit still happened and its hours still count. Losing
-      // it would make a job look cheaper than it was, which is the one direction a costing report
-      // must never be wrong in.
-      .leftJoin(users, and(eq(users.id, jobVisits.assigneeUserId), eq(users.orgId, jobVisits.orgId)))
+      // INNER, unlike the visit reader's LEFT join: a time entry always has an author, so a
+      // missing user row is corruption rather than the ordinary unassigned case.
+      .innerJoin(users, and(eq(users.id, timeEntries.techUserId), eq(users.orgId, timeEntries.orgId)))
       .where(
         and(
-          eq(jobVisits.orgId, this.orgId),
-          isNull(jobVisits.deletedAt),
+          eq(timeEntries.orgId, this.orgId),
+          isNull(timeEntries.deletedAt),
           isNull(jobs.deletedAt),
-          // Nobody travelled and nobody worked.
-          ne(jobVisits.status, "canceled"),
-          gte(visitDay, from),
-          lte(visitDay, to),
+          // Only job time is a job's cost. Regular is unattributed paid work, Break is not work,
+          // and time-off kinds have no job at all.
+          eq(timeEntries.kind, "job"),
+          // A running row has no end and therefore no length — it would read as a negative span.
+          isNotNull(timeEntries.endTime),
+          gte(timeEntries.workDate, from),
+          lte(timeEntries.workDate, to),
         ),
       );
 
-    const labor: LaborVisit[] = rows.map((r) => ({
-      jobId: r.jobId,
-      startedAt: r.startedAt,
-      completedAt: r.completedAt,
-      durationMinutes: r.durationMinutes,
-      complete: r.status === "complete",
-      costRateCents: r.costRateCents,
-    }));
+    // jobId is nullable on the column (Regular/Break carry none) but the inner join to jobs plus
+    // the kind = 'job' filter mean every surviving row has one; the guard is for the type, and
+    // drops anything pathological rather than passing a null through as a job key.
+    const labor: LaborVisit[] = rows.flatMap((r) =>
+      r.jobId === null
+        ? []
+        : [
+            {
+              jobId: r.jobId,
+              startedAt: instant(r.workDate, r.startTime),
+              completedAt: instant(r.workDate, r.endTime),
+              durationMinutes: r.durationMinutes,
+              // An entry with both times IS the finished claim — there is no separate "did it
+              // finish" state on a timesheet row the way a visit has one.
+              complete: true,
+              costRateCents: r.costRateCents,
+            },
+          ],
+    );
 
     // The rollup drops jobs whose visits all contributed nothing, so the join back is by lookup
     // rather than by zip — the two lists are not the same length.
