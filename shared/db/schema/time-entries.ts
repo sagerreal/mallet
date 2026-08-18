@@ -42,6 +42,18 @@ export const timeEntries = pgTable(
     // WHO last hand-edited a payroll row (null = untouched tap-truth). Review needs to tell
     // tap-truth from thumb-truth, and whose thumb — set on every manual create/update.
     editedByUserId: uuid("edited_by_user_id"),
+    /**
+     * What this person cost per hour, stamped WHEN THE WEEK WAS APPROVED.
+     *
+     * Job costing multiplies hours by a rate. Read the rate live and every job somebody ever
+     * touched silently re-prices itself the day they get a raise — last quarter's margins move
+     * under the owner, for work whose cost was settled long ago. Approval is the moment a week
+     * stops being editable, so it is the moment its cost is final.
+     *
+     * Null on a draft row and on every row approved before this existed; the reader falls back to
+     * the person's current rate for those, which is exactly the old behaviour rather than a $0 job.
+     */
+    costRateCents: integer("cost_rate_cents"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

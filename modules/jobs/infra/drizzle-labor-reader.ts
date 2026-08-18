@@ -21,9 +21,10 @@ import { rollUpLabor, type LaborVisit, type JobLabor } from "../domain/labor-rol
  * Only `kind = 'job'` contributes. Regular is paid working time nobody attributed, Break is not
  * paid work at all, and time off has no job — none of them belong in a job's cost.
  *
- * The rate is the person's CURRENT burdened rate. A visit-stamped snapshot used to freeze it at
- * completion; a hand-entered timesheet has no equivalent moment, so a raise re-prices past weeks
- * until somebody asks for a snapshot.
+ * The rate is STAMPED ON APPROVAL and read from the stamp. Approval is when a week stops being
+ * editable, so it is when its cost is final — without it a raise would re-price every job the
+ * person ever touched, moving last quarter's margins under the owner. Draft rows have no stamp
+ * yet and fall back to the current rate, which is the right answer for hours still being edited.
  *
  * The cost rate comes from the visit's ASSIGNEE, not the caller and not the job's assignee: the
  * hour belongs to whoever ran that trip.
@@ -113,7 +114,15 @@ export class DrizzleLaborReader {
         endTime: timeEntries.endTime,
         // A hand-entered block has no booked length to fall back on — the entry IS the claim.
         durationMinutes: sql<number | null>`null::int`,
-        costRateCents: users.costRateCents,
+        /**
+         * THE STAMP FIRST, the person's current rate only as a fallback.
+         *
+         * `time_entries.cost_rate_cents` is written when the week is approved, so a raise stops
+         * re-pricing every week already worked. The coalesce covers draft rows (not yet settled)
+         * and rows approved before the stamp existed — for those the current rate is the best
+         * available answer and is exactly the pre-stamp behaviour.
+         */
+        costRateCents: sql<number | null>`coalesce(${timeEntries.costRateCents}, ${users.costRateCents})`,
         num: jobs.num,
         title: jobs.title,
         jobStatus: jobs.status,

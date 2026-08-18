@@ -16,11 +16,10 @@ import type { Context } from "@/trpc/init";
  * worth keeping: the column is the record of what a finished trip cost.
  *
  * What it no longer DRIVES is job costing. Labour is read off the timesheet now (see
- * DrizzleLaborReader), and a hand-entered block has no completion moment to snapshot at, so the
- * rate applied is the person's current one. The consequence is asserted below rather than left
- * implicit: a raise DOES re-price already-entered work. That is a real gap, not a design — the
- * natural equivalent moment is APPROVAL, which a timesheet already has, and stamping the rate
- * there would restore the property. Until somebody does that, this test documents the truth.
+ * DrizzleLaborReader), which carries its OWN stamp: `time_entries.cost_rate_cents`, written when
+ * the week is approved. Approval is when a week stops being editable, so it is when its cost is
+ * final — the same property, at the moment a timesheet actually has one. Both halves are proved
+ * below: an approved week survives a raise, and a draft week does not pretend to.
  */
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
@@ -129,22 +128,46 @@ suite("cost snapshot (live DB)", () => {
    * costs today, so the week somebody's rate changes, every week they have ever entered moves
    * with it. Stamping the rate at timesheet APPROVAL would fix this; nothing does it yet.
    */
-  it("a raise re-prices work already entered — the timesheet has no rate snapshot", async () => {
+  const seedJobBlock = async (num: string) => {
     const [j] = await admin<{ id: string }[]>`
       insert into jobs (org_id, lead_id, num, status, total_cents)
-      values (${orgId}, ${leadId}, 'SNAP-RAISE', 'complete', 50000) returning id`;
+      values (${orgId}, ${leadId}, ${num}, 'complete', 50000) returning id`;
     await admin`
       insert into time_entries (org_id, tech_user_id, job_id, work_date, kind, start_time, end_time, src, status)
       values (${orgId}, ${techId}, ${j!.id}, ${DAY}, 'job', '09:00', '11:00', 'manual', 'draft')`;
+    return j!.id;
+  };
 
-    const before = await laborFor("SNAP-RAISE");
-    expect(before?.costCents).toBe(6400); // 2h at $32
+  /**
+   * THE PROPERTY, at the moment a timesheet has one. Without the stamp, the day anybody gets a
+   * raise every job they ever touched re-prices itself and last quarter's margins move.
+   */
+  it("a raise does not re-price a week already approved", async () => {
+    await seedJobBlock("SNAP-APPROVED");
+    await owner().v1.timesheets.approveWeek({ techUserId: techId, dates: [DAY] });
+
+    const before = await laborFor("SNAP-APPROVED");
+    expect(before?.costCents).toBe(6400); // 2h at $32, settled
 
     await owner().v1.identity.setMemberCostRate({ userId: techId, costRateCents: 6000 });
 
-    const after = await laborFor("SNAP-RAISE");
+    const after = await laborFor("SNAP-APPROVED");
     expect(after?.hours).toBe(before?.hours);
-    expect(after?.costCents).toBe(12_000); // the SAME 2h, now at $60
+    expect(after?.costCents).toBe(before?.costCents);
+
+    await owner().v1.identity.setMemberCostRate({ userId: techId, costRateCents: 3200 });
+  });
+
+  /**
+   * The other half, and it is deliberate: hours still being edited have no settled cost, so they
+   * price at what the person costs now. Freezing a draft would quote a rate nobody agreed to.
+   */
+  it("an unapproved week still prices at the current rate", async () => {
+    await seedJobBlock("SNAP-DRAFT");
+    expect((await laborFor("SNAP-DRAFT"))?.costCents).toBe(6400);
+
+    await owner().v1.identity.setMemberCostRate({ userId: techId, costRateCents: 6000 });
+    expect((await laborFor("SNAP-DRAFT"))?.costCents).toBe(12_000);
 
     await owner().v1.identity.setMemberCostRate({ userId: techId, costRateCents: 3200 });
   });

@@ -1,0 +1,19 @@
+-- What a person cost per hour, frozen at the moment their week was approved.
+--
+-- Job costing multiplies hours by a rate. Read that rate live and every job somebody ever touched
+-- silently re-prices itself the day they get a raise — last quarter's margins move under the owner
+-- for work whose cost was settled months ago. Approval is when a week stops being editable, so it
+-- is when its cost is final.
+--
+-- Nullable and NOT backfilled on purpose. A draft row has no settled cost yet, and a row approved
+-- before this column existed has no honest rate to invent — both fall back to the person's current
+-- rate in DrizzleLaborReader, which is exactly the behaviour they had yesterday. Backfilling
+-- today's rate onto historic rows would stamp a number nobody ever agreed to as if it were a
+-- record of what was paid.
+--
+-- Re-runnable, and here that is load-bearing rather than hygiene: this statement has ALREADY been
+-- applied to the shared database under an earlier file name (it was 0163, then 0164 chained off a
+-- different snapshot, before parallel branches landed 0163 twice). Every renumber changes the file
+-- hash, which is the identity drizzle keys `__drizzle_migrations` on, so this file runs again
+-- against a database that already has the column.
+ALTER TABLE "time_entries" ADD COLUMN IF NOT EXISTS "cost_rate_cents" integer;

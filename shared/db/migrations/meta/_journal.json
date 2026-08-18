@@ -1149,6 +1149,13 @@
       "when": 1787089794038,
       "tag": "0163_famous_nicolaos",
       "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1787094776263,
+      "tag": "0164_rate_stamp_on_approval",
+      "breakpoints": true
     }
   ]
 }
