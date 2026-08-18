@@ -13,6 +13,7 @@ const baseRow: RoomCaptureRow = {
   roomName: "Living Room",
   source: "manual",
   rawPayload: null,
+  wallOverrides: {},
   geometry: null,
   capturedAt: new Date("2026-07-01T00:00:00Z"),
   supersededById: null,

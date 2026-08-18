@@ -17,6 +17,7 @@ const room = (over: Partial<RoomCard> = {}): RoomCard => ({
   quantities: [{ kind: "walls_sqft", value: 142, derivedValue: 142, status: "derived", heightIn: null }],
   deductions: [],
   walls: [],
+  openings: [],
   netWallsSqft: 142,
   ...over,
 });

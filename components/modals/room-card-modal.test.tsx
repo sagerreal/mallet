@@ -23,6 +23,7 @@ interface Store {
   jobs: Job[];
   setRoomQuantity: ReturnType<typeof vi.fn>;
   setTrimHeight: ReturnType<typeof vi.fn>;
+  setWallSqft: ReturnType<typeof vi.fn>;
   renameRoom: ReturnType<typeof vi.fn>;
   archiveRoom: ReturnType<typeof vi.fn>;
   addManualRoom: ReturnType<typeof vi.fn>;
@@ -84,6 +85,7 @@ function room(overrides: Partial<RoomCard> = {}): RoomCard {
     quantities: [quantity()],
     deductions: [],
     walls: [],
+  openings: [],
     netWallsSqft: null,
     ...overrides,
   };
@@ -104,6 +106,7 @@ beforeEach(() => {
     jobs: [job()],
     setRoomQuantity: vi.fn(),
     setTrimHeight: vi.fn(),
+    setWallSqft: vi.fn(async () => {}),
     renameRoom: vi.fn(),
     archiveRoom: vi.fn(),
     addManualRoom: vi.fn(),
@@ -185,10 +188,14 @@ describe("quantityDisplay", () => {
     expect(d.valueIsHint).toBe(true);
   });
 
-  it("needs_confirm WITH a suggestion (trim conventions): the suggestion as a muted hint + Confirm badge, never a plain fact", () => {
+  // INVERTED (Aug 18, Owen): the muted hint still read as "this room has 29.3 ft of crown" —
+  // "it's defaulting to having baseboard and crowning even though I said it should not". The
+  // scanner cannot see trim, so an unanswered trim row is a QUESTION and prints Add; the
+  // suggestion lives only inside the editor, where "Use calculated 29.3" is visibly an offer.
+  it("needs_confirm WITH a suggestion (trim conventions): the row still reads Add — no number defaults onto the card", () => {
     const d = quantityDisplay(quantity({ status: "needs_confirm", value: null, derivedValue: 29.3 }), "roomplan_v1", "lnft");
     expect(d.badge).toEqual({ tone: "amber", text: "Confirm" });
-    expect(d.value).toBe("29.3");
+    expect(d.value).toBe("Add");
     expect(d.valueIsHint).toBe(true);
   });
 
@@ -724,18 +731,18 @@ describe("taking or refusing a trim calculation", () => {
       ],
     });
 
-  it("offers the measured perimeter as a named action carrying its number", () => {
+  it("offers the perimeter CALCULATION as a named action — the scanner cannot measure trim", () => {
     storeState.roomsByJob[JOB_ID] = [trimRoom()];
     render(<RoomCardModalContent />);
     fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
-    expect(screen.getByRole("button", { name: "Use measured 46.0" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Use calculated 46.0" })).toBeTruthy();
   });
 
   it("commits that number when it is taken", () => {
     storeState.roomsByJob[JOB_ID] = [trimRoom()];
     render(<RoomCardModalContent />);
     fireEvent.click(screen.getByRole("button", { name: /^Crown \(ln ft\)/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Use measured 46.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use calculated 46.0" }));
     expect(storeState.setRoomQuantity).toHaveBeenCalledWith(JOB_ID, CAPTURE_ID, "crown_lnft", 46);
   });
 
@@ -771,7 +778,7 @@ describe("taking or refusing a trim calculation", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Soffit \/ bulkhead/ }));
     expect(screen.getByRole("button", { name: "None in this room" })).toBeTruthy();
     // and nothing to "use" — the scanner never measured one
-    expect(screen.queryByRole("button", { name: /^Use measured/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Use (measured|calculated)/ })).toBeNull();
   });
 });
 
@@ -956,8 +963,8 @@ describe("trim height", () => {
 // data rendered where the total is questioned: inside the Walls editor, above the field.
 describe("RoomCardModalContent — the walls total shows its working", () => {
   const twoWalls = [
-    { index: 0, widthFt: 12.3, heightFt: 8, sqft: 98.4 },
-    { index: 1, widthFt: 6.5, heightFt: 8, sqft: 52 },
+    { index: 0, widthFt: 12.3, heightFt: 8, sqft: 98.4 , overrideSqft: null },
+    { index: 1, widthFt: 6.5, heightFt: 8, sqft: 52 , overrideSqft: null },
   ];
 
   it("expanding Walls lists each wall's dims and area, then the measured total", () => {
@@ -987,6 +994,48 @@ describe("RoomCardModalContent — the walls total shows its working", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
 
     expect(screen.queryByText(/Measured total/)).toBeNull();
+  });
+
+  // Two instruments on one number: the free-text total held a stale draft that, on blur, wrote a
+  // whole-room override OVER a fresh wall edit. On a scanned room with walls the breakdown IS the
+  // editor; the free field belongs to rooms with nothing per-wall to edit.
+  it("hides the free-text total when the per-wall lines are the editor", () => {
+    storeState.roomsByJob = {
+      [JOB_ID]: [room({ walls: twoWalls, quantities: [quantity({ value: 150.4, derivedValue: 150.4 })] })],
+    };
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+
+    expect(screen.queryByLabelText("Walls (sq ft)")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Use measured 150\.4/ })).toBeNull();
+    expect(screen.getByRole("button", { name: /Wall 1 ·/ })).toBeTruthy();
+  });
+
+  it("keeps the free-text total on a scanned room whose walls all failed — something must be editable", () => {
+    storeState.roomsByJob = { [JOB_ID]: [room({ walls: [] })] };
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+
+    expect(screen.getByLabelText("Walls (sq ft)")).toBeTruthy();
+  });
+
+  // A whole-room total typed before per-wall editing existed must stay clearable: override
+  // status with no wall edited keeps the free-text field alongside the breakdown, and the
+  // breakdown's sum line tells the MEASURED story it can actually account for.
+  it("keeps the free-text field under a legacy whole-room override", () => {
+    storeState.roomsByJob = {
+      [JOB_ID]: [
+        room({
+          walls: twoWalls,
+          quantities: [quantity({ value: 999, derivedValue: 150.4, status: "override" })],
+        }),
+      ],
+    };
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+
+    expect(screen.getByLabelText("Walls (sq ft)")).toBeTruthy();
+    expect(screen.getByText(/Measured total · 150\.4 sq ft/)).toBeTruthy();
   });
 
   it("keeps the breakdown out of every other quantity row", () => {

@@ -42,6 +42,9 @@ class FakeMeasurementRepository implements MeasurementRepository {
     this.renameLastArgs = { captureId, roomName };
     return this.renameReturns;
   }
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async archive(): Promise<number> {
     throw new Error("archive not used in rename tests");
   }

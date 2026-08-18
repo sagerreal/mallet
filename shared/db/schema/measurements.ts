@@ -31,6 +31,12 @@ export const roomCaptures = pgTable(
     source: text("source").notNull(), // 'roomplan_v1' | 'manual'
     rawPayload: jsonb("raw_payload"), // verbatim; null for manual
     geometry: jsonb("geometry"), // NormalizedGeometry snake_case; null for manual
+    // Per-wall square-footage overrides, {"<wallIndex>": sqft}. "The scanner said wall 3 is
+    // 49.7 but I measured 52" — the painter's number for ONE wall, with the scanner's number
+    // for the rest. walls_sqft recomputes as the sum of (override ?? measured) on every write;
+    // an empty object means untouched. Kept as jsonb on the capture (not a table): overrides
+    // die with the capture, a re-scan replaces them wholesale, and there is nothing to join.
+    wallOverrides: jsonb("wall_overrides").notNull().default({}),
     capturedAt: timestamp("captured_at", { withTimezone: true }).notNull(),
     supersededById: uuid("superseded_by_id"), // re-scan chain; null = current
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

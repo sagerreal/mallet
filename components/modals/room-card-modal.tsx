@@ -24,7 +24,7 @@ import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useRoomScanAvailability, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
 import { ScanUnavailable } from "@/components/shared/scan-unavailable";
 import { RoomDeductions } from "./room-deductions";
-import { WallBreakdown } from "./wall-breakdown";
+import { WallBreakdown, feetInches } from "./wall-breakdown";
 import { RoomScanView } from "./room-scan-view";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
@@ -165,6 +165,25 @@ export interface QuantityDisplay {
  *    no scan number underneath it) → green "confirmed" badge.
  *  - derived, or anything else → plain value, no badge.
  */
+/** A whole-room total typed before per-wall editing existed: override status, no wall edited. */
+function wholeRoomOverride(room: RoomCard, q: RoomQuantity): boolean {
+  return q.kind === "walls_sqft" && q.status === "override" && room.walls.every((w) => w.overrideSqft == null);
+}
+
+/** "3' 2" × 6' 10"" for one door; sizes joined for several. Null when the scan saw none. */
+export function openingSizes(
+  openings: readonly { kind: string; widthFt: number; heightFt: number }[],
+  kind: "door" | "window",
+): string | null {
+  const sized = openings.filter((o) => o.kind === kind);
+  if (sized.length === 0) return null;
+  // Two sizes at most on the row — a sunroom's six windows would push the count and the badge
+  // off the sheet. The rest are a count; every size is still on its wall in the scan viewer.
+  const shown = sized.slice(0, 2).map((o) => `${feetInches(o.widthFt)} × ${feetInches(o.heightFt)}`);
+  const more = sized.length - shown.length;
+  return more > 0 ? `${shown.join(" · ")} +${more}` : shown.join(" · ");
+}
+
 export function quantityDisplay(
   q: RoomQuantity,
   source: RoomCard["source"],
@@ -182,17 +201,11 @@ export function quantityDisplay(
   }
 
   if (q.status === "needs_confirm") {
-    // A suggestion (trim conventions: perimeter-derived baseboard/crown) renders as a muted
-    // hint value behind the Confirm badge — visibly NOT a measurement. Tapping opens the
-    // editor prefilled with it; committing (or zeroing a not-present trim) confirms.
-    if (q.derivedValue != null) {
-      return {
-        value: formatQuantity(q.derivedValue, unit),
-        valueIsHint: true,
-        badge: { tone: "amber", text: "Confirm" },
-        measured: null,
-      };
-    }
+    // NO NUMBER ON THE ROW. The perimeter-derived baseboard/crown suggestion used to print
+    // here as a muted hint — and a room card reading "Baseboard 36.2" says this room HAS
+    // baseboard, however muted the ink. Owen's rule (and the derivation's own law) is that the
+    // scanner cannot see trim, so an unanswered row must read as a question. The suggestion
+    // still lives inside the editor ("Use calculated 36.2"), where it is visibly an offer.
     return { value: "Add", valueIsHint: true, badge: { tone: "amber", text: "Confirm" }, measured: null };
   }
 
@@ -239,6 +252,8 @@ function QuantityRow({
   source,
   note,
   breakdown,
+  breakdownReplacesField = true,
+  detail,
   readOnly,
   onCommit,
   onCommitHeight,
@@ -250,6 +265,15 @@ function QuantityRow({
   note?: string | null;
   /** The working behind this row's number (per-wall lines for walls_sqft), shown above the editor. */
   breakdown?: React.ReactNode;
+  /**
+   * When false, the free-text editor stays ALONGSIDE the breakdown. The one case: a whole-room
+   * override typed before per-wall editing existed (status override, no wall carries a number) —
+   * hiding the field would strand it with no way to clear, and the breakdown's lines can't
+   * explain a total they don't sum to.
+   */
+  breakdownReplacesField?: boolean;
+  /** A muted trailing fact ("3' 2" × 6' 10"") — the sizes behind a count. */
+  detail?: string | null;
   /**
    * Kept for surfaces that genuinely view rather than edit. It is no longer keyed on ROLE:
    * baseboard, crown and soffit arrive needing a human answer precisely because the geometry
@@ -291,8 +315,9 @@ function QuantityRow({
   // only "38.4" has thrown away the distinction the moment the row closes.
   const heightNote = quantity.heightIn != null ? `${quantity.heightIn}\u2033` : null;
 
-  const trailing = (display.badge || display.measured || heightNote) && (
+  const trailing = (display.badge || display.measured || heightNote || detail) && (
     <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", flexShrink: 0 }}>
+      {detail && <span className="muted">{detail}</span>}
       {heightNote && <span className="muted">{heightNote}</span>}
       {display.measured && <span className="muted">{display.measured}</span>}
       {display.badge && <Badge tone={display.badge.tone}>{display.badge.text}</Badge>}
@@ -362,6 +387,10 @@ function QuantityRow({
     >
       <div ref={bodyRef}>
       {breakdown}
+      {/* A scanned room with per-wall lines edits BY WALL — the breakdown is the editor, and the
+          total is their sum. A second, free-text total here held a stale draft that would write
+          a whole-room override over a fresh wall edit on blur. Manual rooms (no walls) keep it. */}
+      {(breakdown == null || !breakdownReplacesField) && (
       <Field label={def.label}>
         <input
           type="text"
@@ -378,6 +407,7 @@ function QuantityRow({
           }}
         />
       </Field>
+      )}
       {/* HOW TALL THE TRIM IS — typed, never picked.
           The scanner gives a perimeter, so trim has only ever been a length, and a length is not
           the work: painting 38.4 feet of 3¼" colonial base and 38.4 feet of 7" craftsman base is
@@ -426,7 +456,7 @@ function QuantityRow({
             · the calculation, named and carrying its number — the scanner's perimeter, taken.
             · None in this room — the honest answer for rubber cove base or a ceiling with no crown,
               and a CONFIRMED zero rather than a row nobody answered. */}
-      {(quantity.derivedValue != null || isTrim(def.kind)) && (
+      {(breakdown == null || !breakdownReplacesField) && (quantity.derivedValue != null || isTrim(def.kind)) && (
         <div style={{ display: "flex", gap: "var(--space-2)", flexWrap: "wrap", marginTop: "var(--space-3)" }}>
           {quantity.derivedValue != null && (
             <button
@@ -438,7 +468,10 @@ function QuantityRow({
                 setError(null);
               }}
             >
-              Use measured {formatQuantity(quantity.derivedValue, def.unit)}
+              {/* Trim suggestions are perimeter CONVENTIONS, not measurements — the scanner
+                  cannot see trim. Calling a convention "measured" is how it reads as a default. */}
+              {isTrim(def.kind) ? "Use calculated " : "Use measured "}
+              {formatQuantity(quantity.derivedValue, def.unit)}
             </button>
           )}
           {isTrim(def.kind) && (
@@ -628,6 +661,7 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
   // are field work and stay live (v1.measurements allows an assigned tech).
   const setRoomQuantity = useAppStore((s) => s.setRoomQuantity);
   const setTrimHeight = useAppStore((s) => s.setTrimHeight);
+  const setWallSqft = useAppStore((s) => s.setWallSqft);
   const addDeduction = useAppStore((s) => s.addDeduction);
   const removeDeduction = useAppStore((s) => s.removeDeduction);
   const renameRoom = useAppStore((s) => s.renameRoom);
@@ -680,9 +714,27 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
               source={room.source}
               note={def.kind === "crown_lnft" ? crownNote(room) : null}
               breakdown={
-                def.kind === "walls_sqft" ? (
-                  <WallBreakdown walls={room.walls} totalSqft={quantity.derivedValue} />
+                def.kind === "walls_sqft" && room.walls.length > 0 ? (
+                  <WallBreakdown
+                    walls={room.walls}
+                    // The number the lines actually add to. With per-wall edits, that's the
+                    // row's value (the override sum). Under a LEGACY whole-room override —
+                    // typed before per-wall editing — the lines know nothing about the typed
+                    // total, so they show the measured story and the row keeps the override.
+                    totalSqft={wholeRoomOverride(room, quantity) ? quantity.derivedValue : (quantity.value ?? quantity.derivedValue)}
+                    onEditWall={(index, sqft) => setWallSqft(jobId, room.id, index, sqft)}
+                  />
                 ) : undefined
+              }
+              breakdownReplacesField={!wholeRoomOverride(room, quantity)}
+              // "I see there was a door but I don't see the measurement" — the size was in the
+              // geometry all along. A count's sizes ride the row: "Doors · 1 · 3' 2" × 6' 10"".
+              detail={
+                def.kind === "doors_count"
+                  ? openingSizes(room.openings, "door")
+                  : def.kind === "windows_count"
+                    ? openingSizes(room.openings, "window")
+                    : null
               }
               readOnly={false}
               onCommit={commitQuantity}

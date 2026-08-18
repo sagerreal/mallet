@@ -130,6 +130,17 @@ export interface MeasurementRepository {
   // Returns the number of rows affected (0 = not found / wrong org / already deleted).
   renameRoom(captureId: string, roomName: string): Promise<number>;
 
+  /**
+   * Atomically set (sqft) or clear (null) ONE wall's override and return the capture's final
+   * override map — concurrent edits to different walls must both land. Null result = capture
+   * missing, deleted, or superseded: refuse loudly, the edit would otherwise vanish silently.
+   */
+  patchWallOverride(
+    captureId: string,
+    wallIndex: number,
+    sqft: number | null,
+  ): Promise<Readonly<Record<number, number>> | null>;
+
   // ── deductions (wall area that is not painted) ─────────────────────────────
 
   // Throws CaptureNotFoundError when the (org_id, capture_id) FK doesn't resolve for this org.

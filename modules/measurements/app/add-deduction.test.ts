@@ -80,6 +80,9 @@ class FakeRepo implements MeasurementRepository {
   async renameRoom(): Promise<number> {
     throw new Error("unused");
   }
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async archive(): Promise<number> {
     throw new Error("unused");
   }

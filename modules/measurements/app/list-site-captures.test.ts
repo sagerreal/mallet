@@ -30,6 +30,9 @@ const manualCapture = (id: string, name: string): SiteCapture => {
 };
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async addDeduction(): Promise<void> {
     throw new Error("addDeduction not used in list-site-captures tests");
   }

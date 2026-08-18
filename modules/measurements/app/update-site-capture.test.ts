@@ -44,6 +44,9 @@ const manualCapture = (): SiteCapture =>
   tracedCapture({ source: "manual", polygon: null, footprintSqft: null, perimeterLnft: null, areaSqft: 500 });
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async addDeduction(): Promise<void> {
     throw new Error("addDeduction not used in update-site-capture tests");
   }

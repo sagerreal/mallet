@@ -23,6 +23,7 @@ const JOB = "job-1";
 const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
   deductions: [],
   walls: [],
+  openings: [],
   netWallsSqft: null,
   id: "room-1",
   jobId: JOB,

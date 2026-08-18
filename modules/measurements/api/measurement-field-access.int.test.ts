@@ -241,6 +241,115 @@ suite("v1.measurements — field (tech) access boundary (live RLS)", () => {
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
+  // #545 shipped setTrimHeight ownerOrOffice from a parallel branch, missing #544's policy —
+  // the person with the tape measure on the baseboard IS the tech. Owen typed a height on the
+  // phone, watched the face-area line compute, and the write was refused and silently rolled
+  // back: a blank height box and a number he could not explain.
+  describe("v1.measurements.setTrimHeight — field work, like confirm/override", () => {
+    it("an ASSIGNED tech records the height they just measured", async () => {
+      const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await caller.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Trim height room",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+
+      const q = await caller.v1.measurements.setTrimHeight({
+        captureId: scan.id,
+        kind: "baseboard_lnft",
+        heightIn: 5.25,
+      });
+
+      expect(q.heightIn).toBe(5.25);
+    });
+
+    it("an UNASSIGNED tech is still refused", async () => {
+      const owner = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await owner.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Not your trim",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+      const stranger = appRouter.createCaller(ctxFor(otherTechId, orgId, "tech"));
+
+      await expect(
+        stranger.v1.measurements.setTrimHeight({ captureId: scan.id, kind: "baseboard_lnft", heightIn: 5.25 }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+  });
+
+  // "we should be able to edit specific walls on the scan not just the total square feet."
+  describe("v1.measurements.setWallOverride — one wall, the painter's number", () => {
+    it("an ASSIGNED tech edits one wall and the total becomes the sum", async () => {
+      const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await caller.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Wall edit room",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+      const before = scan.quantities.find((q) => q.kind === "walls_sqft");
+      expect(before?.status).toBe("derived");
+
+      const room = await caller.v1.measurements.setWallOverride({
+        captureId: scan.id,
+        wallIndex: 0,
+        sqft: 120,
+      });
+
+      const wall = room.walls.find((w) => w.index === 0);
+      expect(wall?.overrideSqft).toBe(120);
+      const after = room.quantities.find((q) => q.kind === "walls_sqft");
+      expect(after?.status).toBe("override");
+      // the scanner's number survives as the derived value — the audit never loses it
+      expect(after?.derivedValue).toBe(before?.derivedValue);
+    });
+
+    it("clearing the edit restores the scanner's total and the derived status", async () => {
+      const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await caller.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Wall edit clear room",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+      await caller.v1.measurements.setWallOverride({ captureId: scan.id, wallIndex: 0, sqft: 120 });
+
+      const room = await caller.v1.measurements.setWallOverride({
+        captureId: scan.id,
+        wallIndex: 0,
+        sqft: null,
+      });
+
+      const after = room.quantities.find((q) => q.kind === "walls_sqft");
+      expect(after?.status).toBe("derived");
+      expect(after?.value).toBe(after?.derivedValue);
+      expect(room.walls.every((w) => w.overrideSqft === null)).toBe(true);
+    });
+
+    it("an UNASSIGNED tech is refused", async () => {
+      const owner = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await owner.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Not your wall",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+      const stranger = appRouter.createCaller(ctxFor(otherTechId, orgId, "tech"));
+
+      await expect(
+        stranger.v1.measurements.setWallOverride({ captureId: scan.id, wallIndex: 0, sqft: 120 }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+  });
+
   describe("v1.measurements.roomGeometry — the scan viewer's read", () => {
     it("an ASSIGNED tech reads the walls of a scan on their job", async () => {
       const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));

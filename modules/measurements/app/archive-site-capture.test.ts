@@ -7,6 +7,9 @@ const ORG: OrgId = asOrgId("22222222-2222-2222-2222-222222222222");
 const CAPTURE_ID = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
 
 class FakeMeasurementRepository implements MeasurementRepository {
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async addDeduction(): Promise<void> {
     throw new Error("addDeduction not used in archive-site-capture tests");
   }

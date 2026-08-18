@@ -40,6 +40,9 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in archive tests");
   }
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async archive(captureId: string): Promise<number> {
     this.archiveCallCount += 1;
     this.archiveLastArg = captureId;

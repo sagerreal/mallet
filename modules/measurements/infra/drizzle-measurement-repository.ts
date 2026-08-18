@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { roomCaptures, paintingRoomQuantities, siteCaptures, roomDeductions } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
@@ -190,6 +190,40 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
       .returning();
     return rows.length;
   }
+  // ATOMIC PER-KEY PATCH, not read-modify-write: the tech edits wall 0 on the phone while the
+  // office edits wall 1 — two whole-map writes under READ COMMITTED would each read {} and the
+  // second would erase the first, both callers told success. `||` / `-` apply to the row's
+  // CURRENT value at update time (the blocked writer re-reads after the lock), so both keys
+  // land whatever the order. Returns the final map so the caller computes the total from what
+  // is actually stored, never from its own stale read. Null = missing/deleted/SUPERSEDED — a
+  // re-scanned room's old card must refuse the write loudly, not swallow it (the listByJob
+  // filter would hide the edit forever).
+  async patchWallOverride(
+    captureId: string,
+    wallIndex: number,
+    sqft: number | null,
+  ): Promise<Readonly<Record<number, number>> | null> {
+    const key = String(wallIndex);
+    const expr =
+      sqft === null
+        ? sql`${roomCaptures.wallOverrides} - ${key}`
+        : sql`${roomCaptures.wallOverrides} || jsonb_build_object(${key}::text, ${sqft}::numeric)`;
+    const rows = await this.tx
+      .update(roomCaptures)
+      .set({ wallOverrides: expr, updatedAt: new Date() })
+      .where(
+        and(
+          eq(roomCaptures.orgId, this.orgId),
+          eq(roomCaptures.id, captureId),
+          isNull(roomCaptures.deletedAt),
+          isNull(roomCaptures.supersededById),
+        ),
+      )
+      .returning({ wallOverrides: roomCaptures.wallOverrides });
+    if (rows.length === 0) return null;
+    return rows[0]!.wallOverrides as Readonly<Record<number, number>>;
+  }
+
 
   async archive(captureId: string): Promise<number> {
     const now = new Date();
@@ -322,6 +356,7 @@ export class DrizzleMeasurementRepository implements MeasurementRepository {
           source: p.source,
           rawPayload: p.rawPayload,
           geometry: p.geometry ? toWireGeometry(p.geometry) : null,
+          wallOverrides: capture.wallOverrides,
           capturedAt: p.capturedAt,
           supersededById: p.supersededById,
         })

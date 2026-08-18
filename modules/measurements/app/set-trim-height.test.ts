@@ -98,6 +98,9 @@ class FakeMeasurementRepository implements MeasurementRepository {
   async renameRoom(): Promise<number> {
     throw new Error("renameRoom not used in trim-height tests");
   }
+  async patchWallOverride(): Promise<Readonly<Record<number, number>> | null> {
+    throw new Error("patchWallOverride not used in this test");
+  }
   async archive(): Promise<number> {
     throw new Error("archive not used in trim-height tests");
   }

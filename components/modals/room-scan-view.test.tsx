@@ -27,14 +27,14 @@ const GEOMETRY = {
     { index: 1, vertices: [P(4, 0, 0), P(4, 0, 3), P(4, 2.4, 3), P(4, 2.4, 0)] },
   ],
   openings: [
-    { kind: "door", wallIndex: 0 },
-    { kind: "window", wallIndex: 0 },
-    { kind: "window", wallIndex: 0 },
+    { kind: "door", wallIndex: 0, widthFt: 3.2, heightFt: 6.8 },
+    { kind: "window", wallIndex: 0, widthFt: 2, heightFt: 4 },
+    { kind: "window", wallIndex: 0, widthFt: 2, heightFt: 4 },
   ],
 };
 const WALLS: RoomWall[] = [
-  { index: 0, widthFt: 13.1, heightFt: 7.9, sqft: 103.5 },
-  { index: 1, widthFt: 9.8, heightFt: 7.9, sqft: 77.4 },
+  { index: 0, widthFt: 13.1, heightFt: 7.9, sqft: 103.5 , overrideSqft: null },
+  { index: 1, widthFt: 9.8, heightFt: 7.9, sqft: 77.4 , overrideSqft: null },
 ];
 
 describe("RoomScanView", () => {
@@ -62,11 +62,13 @@ describe("RoomScanView", () => {
     expect(screen.getByText(/Wall 2 · 9' 10" × 7' 11" · 77\.4 sq ft/)).toBeTruthy();
   });
 
-  it("names the openings the scanner saw on the tapped wall", () => {
+  it("names each opening the scanner saw on the tapped wall, WITH its size", () => {
     render(<RoomScanView captureId="c1" walls={WALLS} />);
     fireEvent.click(screen.getByRole("button", { name: "Wall 1" }));
 
-    expect(screen.getByText(/1 door · 2 windows/)).toBeTruthy();
+    expect(
+      screen.getByText(/door 3' 2" × 6' 10" · window 2' 0" × 4' 0" · window 2' 0" × 4' 0"/),
+    ).toBeTruthy();
   });
 
   it("says it is loading while the geometry is in flight", () => {

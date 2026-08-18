@@ -37,6 +37,23 @@ export class CorruptCaptureError extends Error {
 // NOT let this throw escape the page — it catches CorruptCaptureError specifically per-row,
 // skips the unreadable capture, and logs `measurements.capture.unreadable` so one bad row can't
 // blank a whole job's room list.
+/** {"3": 52} from jsonb — anything else is corruption, and corruption throws (toDomain law). */
+const parseWallOverrides = (rowId: string, raw: unknown): Record<number, number> => {
+  if (raw == null) return {};
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new CorruptCaptureError(`corrupt room_capture ${rowId} wall_overrides: not an object`);
+  }
+  const out: Record<number, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const index = Number(k);
+    if (!Number.isInteger(index) || index < 0 || typeof v !== "number" || !Number.isFinite(v) || v <= 0) {
+      throw new CorruptCaptureError(`corrupt room_capture ${rowId} wall_overrides: bad entry ${k}`);
+    }
+    out[index] = v;
+  }
+  return out;
+};
+
 export const toDomainCapture = (row: RoomCaptureRow): RoomCapture => {
   let geometry = null;
   if (row.geometry !== null) {
@@ -55,6 +72,9 @@ export const toDomainCapture = (row: RoomCaptureRow): RoomCapture => {
     source: row.source as RoomCaptureSource,
     rawPayload: row.rawPayload,
     geometry,
+    // Validated at the read boundary the same way as geometry: a corrupt shape throws rather
+    // than coercing. Non-numeric junk cannot become a wall's "measurement".
+    wallOverrides: parseWallOverrides(row.id, row.wallOverrides),
     capturedAt: row.capturedAt,
     supersededById: row.supersededById,
     createdAt: row.createdAt,
