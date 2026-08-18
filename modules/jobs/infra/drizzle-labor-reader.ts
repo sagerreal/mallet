@@ -80,14 +80,22 @@ export interface JobLaborRow extends JobLabor {
 const visitDay = sql`coalesce(${jobVisits.scheduledDate}, ${jobVisits.completedAt}::date)`;
 
 /**
- * A time entry's span, as the two instants the rollup wants.
+ * A time entry's two instants, composed in JS from the stored `YYYY-MM-DD` and `HH:MM:SS`.
  *
- * `work_date` is a date and `start_time`/`end_time` are times, so the pair is composed here. An
- * entry whose end is before its start (a shift across midnight, or a typo) yields a negative span,
- * which visitLabor() already refuses rather than subtracting from a job's cost.
+ * Deliberately NOT `work_date + start_time` in SQL: that yields a `timestamp` the driver hands
+ * back as a string, and casting it to timestamptz would resolve it in the DATABASE's zone rather
+ * than the van's — the same trap that once had a timesheet rendering 4am shifts. Only the SPAN is
+ * ever used, and both ends are built the same way, so the difference is exact whatever the zone.
+ *
+ * Returns null when either half is missing (a running row has no end). An end before its start —
+ * a shift across midnight, or a typo — makes a negative span, which visitLabor() already refuses
+ * rather than subtracting from a job's cost.
  */
-const entryStart = sql<Date | null>`(${timeEntries.workDate} + ${timeEntries.startTime})`;
-const entryEnd = sql<Date | null>`(${timeEntries.workDate} + ${timeEntries.endTime})`;
+const instant = (workDate: string, hhmmss: string | null): Date | null => {
+  if (hhmmss === null) return null;
+  const at = new Date(`${workDate}T${hhmmss}`);
+  return Number.isNaN(at.getTime()) ? null : at;
+};
 
 export class DrizzleLaborReader {
   constructor(
@@ -100,8 +108,9 @@ export class DrizzleLaborReader {
     const rows = await this.tx
       .select({
         jobId: timeEntries.jobId,
-        startedAt: entryStart,
-        completedAt: entryEnd,
+        workDate: timeEntries.workDate,
+        startTime: timeEntries.startTime,
+        endTime: timeEntries.endTime,
         // A hand-entered block has no booked length to fall back on — the entry IS the claim.
         durationMinutes: sql<number | null>`null::int`,
         costRateCents: users.costRateCents,
@@ -142,8 +151,8 @@ export class DrizzleLaborReader {
         : [
             {
               jobId: r.jobId,
-              startedAt: r.startedAt,
-              completedAt: r.completedAt,
+              startedAt: instant(r.workDate, r.startTime),
+              completedAt: instant(r.workDate, r.endTime),
               durationMinutes: r.durationMinutes,
               // An entry with both times IS the finished claim — there is no separate "did it
               // finish" state on a timesheet row the way a visit has one.

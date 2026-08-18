@@ -12,8 +12,13 @@ import type { Context } from "@/trpc/init";
  * v1.jobs.laborByJob against the live database.
  *
  * The rollup arithmetic is unit-tested in labor-rollup.test.ts; what can only be proved here is
- * the QUERY — that the week window picks the right visits, that the cost rate comes off the
- * VISIT's assignee rather than anyone else, and that RLS keeps another shop's hours out.
+ * the QUERY — that the week window picks the right entries, that ONLY job time counts, that the
+ * cost rate comes off the person who entered the hours, and that RLS keeps another shop's out.
+ *
+ * Labour is the TIMESHEET now, not visit stamps. A person types blocks of Regular, Job or Break
+ * and names the job on the job blocks; those blocks are what a job costs. Everything this file
+ * seeds is therefore a time entry, and the visit-only cases it used to cover (a booked-length
+ * fallback, a canceled visit) have no equivalent — an entry either exists or it does not.
  */
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
@@ -63,14 +68,18 @@ suite("v1.jobs.laborByJob (live DB)", () => {
     return j!.id;
   };
 
-  const addVisit = async (
-    jobId: string,
-    v: { date: string | null; tech: string | null; started?: string | null; completed?: string | null; mins?: number; status?: string; org?: string },
+  /**
+   * One typed timesheet block. `kind` defaults to job time because that is what this file is
+   * about; the Regular and Break cases pass it explicitly to prove they are excluded.
+   */
+  const addEntry = async (
+    jobId: string | null,
+    e: { date: string; tech: string; start: string; end: string | null; kind?: string; org?: string },
   ) => {
     await admin`
-      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, started_at, completed_at, duration_minutes, status)
-      values (${v.org ?? orgId}, ${jobId}, ${v.date}, ${v.tech}, ${v.started ?? null}, ${v.completed ?? null},
-              ${v.mins ?? 120}, ${v.status ?? "complete"})`;
+      insert into time_entries (org_id, tech_user_id, job_id, work_date, kind, start_time, end_time, src, status)
+      values (${e.org ?? orgId}, ${e.tech}, ${jobId}, ${e.date}, ${e.kind ?? "job"},
+              ${e.start}, ${e.end}, 'manual', 'draft')`;
   };
 
   beforeAll(async () => {
@@ -99,38 +108,43 @@ suite("v1.jobs.laborByJob (live DB)", () => {
       insert into leads (org_id, name) values (${orgId}, 'Costing Customer') returning id`;
     leadId = l!.id;
 
-    // Measured, 2.5h by the $32/h tech → $80.
+    // 2.5h of job time by the $32/h tech → $80.
     const measured = await addJob("C-MEASURED", 180_000);
-    await addVisit(measured, { date: TUE, tech: cheapTechId, started: `${TUE}T16:00:00Z`, completed: `${TUE}T18:30:00Z` });
+    await addEntry(measured, { date: TUE, tech: cheapTechId, start: "08:00", end: "10:30" });
 
-    // Two visits, two different people — proves the rate follows the VISIT's assignee.
+    // Two people's blocks on one job — proves the rate follows whoever entered the hours.
     const twoCrew = await addJob("C-TWOCREW", 240_000);
-    await addVisit(twoCrew, { date: MON, tech: cheapTechId, started: `${MON}T15:00:00Z`, completed: `${MON}T16:00:00Z` });
-    await addVisit(twoCrew, { date: TUE, tech: pricyTechId, started: `${TUE}T15:00:00Z`, completed: `${TUE}T16:00:00Z` });
+    await addEntry(twoCrew, { date: MON, tech: cheapTechId, start: "09:00", end: "10:00" });
+    await addEntry(twoCrew, { date: TUE, tech: pricyTechId, start: "09:00", end: "10:00" });
 
-    // No taps, but it finished — falls back to the booked 2h and says so.
-    const scheduled = await addJob("C-SCHEDULED", 90_000);
-    await addVisit(scheduled, { date: TUE, tech: cheapTechId, mins: 120 });
+    // Regular and Break blocks naming this job's day — neither is a job's cost. Regular is paid
+    // work nobody attributed and Break is not work at all, so this job stays absent entirely.
+    const untimed = await addJob("C-UNATTRIBUTED", 90_000);
+    await addEntry(null, { date: TUE, tech: cheapTechId, start: "11:00", end: "13:00", kind: "shop" });
+    await addEntry(null, { date: TUE, tech: cheapTechId, start: "13:00", end: "13:30", kind: "break" });
+    void untimed;
 
     // Outside the window entirely.
     const nextWeek = await addJob("C-NEXTWEEK", 50_000);
-    await addVisit(nextWeek, { date: NEXT_MON, tech: cheapTechId, started: `${NEXT_MON}T15:00:00Z`, completed: `${NEXT_MON}T17:00:00Z` });
+    await addEntry(nextWeek, { date: NEXT_MON, tech: cheapTechId, start: "09:00", end: "11:00" });
 
-    // Canceled — nobody travelled and nobody worked.
-    const canceled = await addJob("C-CANCELED", 50_000);
-    await addVisit(canceled, { date: TUE, tech: cheapTechId, started: `${TUE}T15:00:00Z`, completed: `${TUE}T17:00:00Z`, status: "canceled" });
+    // Still running — no end time, so no length and nothing honest to cost.
+    const openRow = await addJob("C-OPEN", 50_000);
+    await addEntry(openRow, { date: TUE, tech: cheapTechId, start: "09:00", end: null });
 
     // Another shop's hours, on the same days.
     const [ol] = await admin<{ id: string }[]>`
       insert into leads (org_id, name) values (${otherOrgId}, 'Other Customer') returning id`;
+    const otherOwner = await mkUser(otherOrgId, "owner", 5000);
     const otherJob = await addJob("C-OTHERORG", 99_000, otherOrgId, ol!.id);
-    await addVisit(otherJob, { org: otherOrgId, date: TUE, tech: null, started: `${TUE}T15:00:00Z`, completed: `${TUE}T19:00:00Z` });
+    await addEntry(otherJob, { org: otherOrgId, date: TUE, tech: otherOwner, start: "09:00", end: "13:00" });
   });
 
   afterAll(async () => {
     for (const org of [orgId, otherOrgId]) {
       if (!org) continue;
-      // job_visits_assignee_fk has no ON DELETE, so visits go before the org cascade reaches users.
+      // Entries reference users with no ON DELETE, so they go before the org cascade reaches them.
+      await admin`delete from time_entries where org_id = ${org}`;
       await admin`delete from job_visits where org_id = ${org}`;
       await admin`delete from orgs where id = ${org}`;
     }
@@ -141,7 +155,7 @@ suite("v1.jobs.laborByJob (live DB)", () => {
   const week = () =>
     appRouter.createCaller(ctxFor(ownerId, orgId, "owner")).v1.jobs.laborByJob({ from: MON, to: SUN });
 
-  it("measures the real span and costs it at the assignee's burdened rate", async () => {
+  it("costs a typed block at the rate of whoever entered it", async () => {
     const row = (await week()).items.find((i) => i.num === "C-MEASURED");
     expect(row).toMatchObject({ visits: 1, hours: 2.5, costCents: 8000, source: "measured" });
     expect(row?.quotedCents).toBe(180_000);
@@ -149,25 +163,33 @@ suite("v1.jobs.laborByJob (live DB)", () => {
   });
 
   /**
-   * The rate belongs to whoever ran THAT trip. Costing both hours at one person's rate — the
-   * job's assignee, or the caller — is the quiet way a two-crew job reports the wrong margin.
+   * The rate belongs to whoever worked those hours. Costing a whole job at one person's rate —
+   * the job's assignee, or the caller — is the quiet way a two-crew job reports a wrong margin.
    */
-  it("takes each visit's rate from its own assignee: 1h at $32 + 1h at $60 = $92", async () => {
+  it("takes each block's rate from its own author: 1h at $32 + 1h at $60 = $92", async () => {
     const row = (await week()).items.find((i) => i.num === "C-TWOCREW");
     expect(row).toMatchObject({ visits: 2, hours: 2, costCents: 9200 });
   });
 
-  it("falls back to the booked length when nobody tapped, and labels it scheduled", async () => {
-    const row = (await week()).items.find((i) => i.num === "C-SCHEDULED");
-    expect(row).toMatchObject({ hours: 2, source: "scheduled", costCents: 6400 });
+  /**
+   * ONLY JOB TIME IS A JOB'S COST. Regular is paid work nobody attributed and Break is not work,
+   * so neither may land on a job — and a job with no job blocks is absent rather than costing 0,
+   * because 0 reads as "measured, free".
+   */
+  it("counts neither Regular nor Break", async () => {
+    expect((await week()).items.map((i) => i.num)).not.toContain("C-UNATTRIBUTED");
   });
 
-  it("keeps the week window: next Monday's visit is not in this week", async () => {
+  it("keeps the week window: next Monday's block is not in this week", async () => {
     expect((await week()).items.map((i) => i.num)).not.toContain("C-NEXTWEEK");
   });
 
-  it("ignores a canceled visit — nobody travelled and nobody worked", async () => {
-    expect((await week()).items.map((i) => i.num)).not.toContain("C-CANCELED");
+  /**
+   * A row with no end time has no length. Costing it as if it ended now would change the job's
+   * margin every time the page was opened.
+   */
+  it("ignores a block that has not been closed out", async () => {
+    expect((await week()).items.map((i) => i.num)).not.toContain("C-OPEN");
   });
 
   it("never returns another shop's hours", async () => {
@@ -175,15 +197,29 @@ suite("v1.jobs.laborByJob (live DB)", () => {
   });
 
   /**
-   * An unassigned visit still happened. Dropping it would make the job look cheaper than it was,
-   * which is the one direction a costing report must never be wrong in.
+   * Hours without money, never hours at $0. A shop that has not told us what somebody costs must
+   * see the time they worked and be told the money is unknown — the alternative reports a job as
+   * more profitable than it was, which is the one direction this must never be wrong in.
    */
-  it("counts an unassigned visit's hours, with no cost against them", async () => {
+  it("counts hours from somebody with no burdened rate, with no cost against them", async () => {
     const orphanJob = await addJob("C-ORPHAN", 40_000);
-    await addVisit(orphanJob, { date: TUE, tech: null, started: `${TUE}T14:00:00Z`, completed: `${TUE}T15:30:00Z` });
+    await addEntry(orphanJob, { date: TUE, tech: ownerId, start: "14:00", end: "15:30" });
 
     const row = (await week()).items.find((i) => i.num === "C-ORPHAN");
     expect(row).toMatchObject({ hours: 1.5, costCents: null, costIsPartial: false });
+  });
+
+  /**
+   * Half a rate table is still worth showing, as long as it says it is half. Silently reporting
+   * only the priced half as if it were the whole cost is the flattering-direction error again.
+   */
+  it("flags a job as partial when only some of its hours are priced", async () => {
+    const mixed = await addJob("C-PARTIAL", 40_000);
+    await addEntry(mixed, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });
+    await addEntry(mixed, { date: TUE, tech: ownerId, start: "09:00", end: "10:00" });
+
+    const row = (await week()).items.find((i) => i.num === "C-PARTIAL");
+    expect(row).toMatchObject({ hours: 2, costCents: 3200, costIsPartial: true });
   });
 
   it("a tech is refused — labor cost is not a field surface", async () => {

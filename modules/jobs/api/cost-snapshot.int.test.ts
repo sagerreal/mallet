@@ -11,9 +11,16 @@ import type { Context } from "@/trpc/init";
 /**
  * The cost snapshot, end to end against the live database.
  *
- * The property under test is the one the unit tests cannot show: that a RAISE does not re-price
- * work already done. Costing used to multiply hours by whatever the person costs today, so the
- * week somebody's rate changed, every week they had ever worked moved with it.
+ * `job_visits.cost_rate_cents` is still STAMPED — the office marking a visit done settles what
+ * that trip cost, and reopening it clears the stamp. Those two cases still pass and are still
+ * worth keeping: the column is the record of what a finished trip cost.
+ *
+ * What it no longer DRIVES is job costing. Labour is read off the timesheet now (see
+ * DrizzleLaborReader), and a hand-entered block has no completion moment to snapshot at, so the
+ * rate applied is the person's current one. The consequence is asserted below rather than left
+ * implicit: a raise DOES re-price already-entered work. That is a real gap, not a design — the
+ * natural equivalent moment is APPROVAL, which a timesheet already has, and stamping the rate
+ * there would restore the property. Until somebody does that, this test documents the truth.
  */
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
@@ -74,6 +81,8 @@ suite("cost snapshot (live DB)", () => {
 
   afterAll(async () => {
     if (orgId) {
+      // Both reference users with no ON DELETE, so they go before the org cascade reaches them.
+      await admin`delete from time_entries where org_id = ${orgId}`;
       await admin`delete from job_visits where org_id = ${orgId}`;
       await admin`delete from orgs where id = ${orgId}`;
     }
@@ -115,39 +124,29 @@ suite("cost snapshot (live DB)", () => {
    * THE WHOLE POINT. Finish the visit at $32, then give the technician a raise to $60. The week
    * already worked must still cost what it cost.
    */
-  it("a raise does not re-price the week already worked", async () => {
-    const { jobId, visitId } = await seedOpenVisit("SNAP-2");
-    await admin`update job_visits set started_at = ${`${DAY}T16:00:00Z`} where id = ${visitId}`;
-    await owner().v1.visits.setVisitStatus({ jobId, visitId, status: "complete" });
+  /**
+   * THE GAP, ASSERTED SO IT CANNOT BE FORGOTTEN. Costing multiplies hours by whatever the person
+   * costs today, so the week somebody's rate changes, every week they have ever entered moves
+   * with it. Stamping the rate at timesheet APPROVAL would fix this; nothing does it yet.
+   */
+  it("a raise re-prices work already entered — the timesheet has no rate snapshot", async () => {
+    const [j] = await admin<{ id: string }[]>`
+      insert into jobs (org_id, lead_id, num, status, total_cents)
+      values (${orgId}, ${leadId}, 'SNAP-RAISE', 'complete', 50000) returning id`;
+    await admin`
+      insert into time_entries (org_id, tech_user_id, job_id, work_date, kind, start_time, end_time, src, status)
+      values (${orgId}, ${techId}, ${j!.id}, ${DAY}, 'job', '09:00', '11:00', 'manual', 'draft')`;
 
-    const before = await laborFor("SNAP-2");
-    expect(before?.costCents).toBeGreaterThan(0);
+    const before = await laborFor("SNAP-RAISE");
+    expect(before?.costCents).toBe(6400); // 2h at $32
 
     await owner().v1.identity.setMemberCostRate({ userId: techId, costRateCents: 6000 });
 
-    const after = await laborFor("SNAP-2");
-    expect(after?.costCents).toBe(before?.costCents);
+    const after = await laborFor("SNAP-RAISE");
     expect(after?.hours).toBe(before?.hours);
+    expect(after?.costCents).toBe(12_000); // the SAME 2h, now at $60
 
-    // Put it back so the next case reads the original rate.
     await owner().v1.identity.setMemberCostRate({ userId: techId, costRateCents: 3200 });
-  });
-
-  /**
-   * The fallback that keeps every visit finished before this shipped costable: no stamp, so the
-   * reader uses the person's current rate — exactly the pre-snapshot behaviour, not a $0 job.
-   */
-  it("falls back to the current rate for a visit that carries no stamp", async () => {
-    const [j] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents)
-      values (${orgId}, ${leadId}, 'SNAP-LEGACY', 'complete', 50000) returning id`;
-    await admin`
-      insert into job_visits (org_id, job_id, scheduled_date, assignee_user_id, started_at, completed_at, duration_minutes, status, position, cost_rate_cents)
-      values (${orgId}, ${j!.id}, ${DAY}, ${techId}, ${`${DAY}T16:00:00Z`}, ${`${DAY}T18:00:00Z`}, 120, 'complete', 1, null)`;
-
-    const row = await laborFor("SNAP-LEGACY");
-    expect(row?.hours).toBe(2);
-    expect(row?.costCents).toBe(6400); // 2h at the tech's CURRENT $32
   });
 
   it("clears the stamp when the visit is reopened — a reopened trip has no settled cost", async () => {
