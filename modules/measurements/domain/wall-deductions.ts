@@ -49,38 +49,89 @@ export interface WallDimensions {
 
 const ZERO: WallDimensions = { widthM: 0, heightM: 0, areaM2: 0 };
 
+const Y_UP: Point3 = { x: 0, y: 1, z: 0 };
+
 /**
- * Width, height and area of one wall polygon.
+ * Which way is up, answered by the room itself: the floor's own normal.
  *
- * Height is the vertical extent. Width is measured IN THE WALL'S OWN PLANE — the largest
- * horizontal (XZ) distance between any two vertices — because a room arrives in its own frame and
- * almost no wall is axis-aligned. For the rectangle a wall actually is, that largest span is the
- * width. Area comes from Newell's method, which is plane-true even for a tilted wall.
+ * THE FRAME IS NOT OURS TO ASSUME. A real capture (Owen's bathroom, Aug 18) arrived Z-UP —
+ * every wall's z-extent was exactly the 2.31 m ceiling height — while this module assumed y-up.
+ * "Height" came out as a wall's horizontal component and "width" as a diagonal, so the room card
+ * printed "Wall 2 · 12' 4" × 1' 6" · 74.3 sq ft": arithmetic that contradicts itself on a surface
+ * whose whole job is being auditable. Areas never suffered (Newell is frame-free), which is
+ * exactly what made the wrong dims visible.
+ *
+ * Whatever frame a capture arrives in, its floor is horizontal — so the floor's normal IS the
+ * vertical. A geometry whose floor is degenerate falls back to y-up, the old assumption, which
+ * is also the manual-room case where nothing reads dims at all.
  */
-export function wallDimensions(wall: { readonly polygon: { readonly vertices: readonly Point3[] } }): WallDimensions {
+export function roomUp(g: NormalizedGeometry): Point3 {
+  const v = g.floorPolygon.vertices;
+  if (v.length < MIN_POLYGON_VERTICES) return Y_UP;
+
+  // Newell normal — same construction polygonArea takes the magnitude of.
+  let nx = 0;
+  let ny = 0;
+  let nz = 0;
+  for (let i = 0; i < v.length; i++) {
+    const a = v[i]!;
+    const b = v[(i + 1) % v.length]!;
+    nx += (a.y - b.y) * (a.z + b.z);
+    ny += (a.z - b.z) * (a.x + b.x);
+    nz += (a.x - b.x) * (a.y + b.y);
+  }
+  // Epsilon, not exact zero: a numerically-degenerate floor (a sliver polygon from an aborted
+  // scan) has a TINY nonzero normal, and normalizing that noise yields a garbage up — often
+  // horizontal — which transposes every wall's dims. The magnitude here is 2× the floor's area;
+  // 0.01 m² of floor is no floor.
+  const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+  if (len < 0.02) return Y_UP;
+  return { x: nx / len, y: ny / len, z: nz / len };
+}
+
+/**
+ * Width, height and area of one wall polygon, measured against the room's up direction.
+ *
+ * Height is the extent ALONG up; width is the largest distance between any two vertices once
+ * up is projected out — the horizontal run, whatever frame the capture arrived in. For the
+ * rectangle a wall actually is, width × height equals the Newell area, which is the invariant
+ * the room card's breakdown displays. `up` defaults to y for callers with no geometry in hand;
+ * anything holding a NormalizedGeometry should pass roomUp(g).
+ */
+export function wallDimensions(
+  wall: { readonly polygon: { readonly vertices: readonly Point3[] } },
+  up: Point3 = Y_UP,
+): WallDimensions {
   const v = wall.polygon.vertices;
   if (v.length < MIN_POLYGON_VERTICES) return ZERO;
 
-  let minY = Infinity;
-  let maxY = -Infinity;
+  let minH = Infinity;
+  let maxH = -Infinity;
   for (const p of v) {
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
+    const h = p.x * up.x + p.y * up.y + p.z * up.z;
+    if (h < minH) minH = h;
+    if (h > maxH) maxH = h;
   }
 
+  // Horizontal positions: each vertex with its up-component removed.
+  const flat = v.map((p) => {
+    const h = p.x * up.x + p.y * up.y + p.z * up.z;
+    return { x: p.x - h * up.x, y: p.y - h * up.y, z: p.z - h * up.z };
+  });
   let widthM = 0;
-  for (let i = 0; i < v.length; i++) {
-    for (let j = i + 1; j < v.length; j++) {
-      const a = v[i]!;
-      const b = v[j]!;
+  for (let i = 0; i < flat.length; i++) {
+    for (let j = i + 1; j < flat.length; j++) {
+      const a = flat[i]!;
+      const b = flat[j]!;
       const dx = a.x - b.x;
+      const dy = a.y - b.y;
       const dz = a.z - b.z;
-      const span = Math.sqrt(dx * dx + dz * dz);
+      const span = Math.sqrt(dx * dx + dy * dy + dz * dz);
       if (span > widthM) widthM = span;
     }
   }
 
-  return { widthM, heightM: maxY - minY, areaM2: polygonArea(v) };
+  return { widthM, heightM: maxH - minH, areaM2: polygonArea(v) };
 }
 
 /** The distinct, in-range walls a deduction actually names. */
@@ -111,9 +162,13 @@ export function deriveDeductionSqft(g: NormalizedGeometry, d: Deduction): number
 
   // Clamped PER WALL, not once against the tallest: a band taller than a given wall covers that
   // wall entirely, and letting it over-run would subtract area the room does not have.
+  const up = roomUp(g);
   const m2 = walls.reduce((sum, w) => {
-    const { widthM, heightM } = wallDimensions(w);
-    return sum + widthM * Math.min(d.heightM as number, heightM);
+    const { widthM, heightM, areaM2 } = wallDimensions(w, up);
+    // width × band-height is a RECTANGLE'S band. On a gable wall the bounding box holds more
+    // area than the wall does, so an uncapped band could subtract more than whole_wall would —
+    // deducting area the room does not have. A band can never remove more than the wall.
+    return sum + Math.min(widthM * Math.min(d.heightM as number, heightM), areaM2);
   }, 0);
   return round1(m2 * SQ_METERS_TO_SQFT);
 }

@@ -2,7 +2,7 @@ import { z } from "zod";
 import { edgeTotalsFt, isClassified, roofComplexity } from "@/lib/measure/edge-classes";
 import type { RoomCaptureWithQuantities } from "../domain/measurement-repository";
 import type { SiteCapture, SitePolygon } from "../domain/site-capture";
-import { deriveDeductionSqft, wallDimensions, netWallsSqft } from "../domain/wall-deductions";
+import { deriveDeductionSqft, roomUp, wallDimensions, netWallsSqft } from "../domain/wall-deductions";
 
 // Heavy fields (geometry, rawPayload) are deliberately excluded from the list DTO — a
 // `getGeometry` procedure can be added later for the floor-plan outline UI when it needs them.
@@ -189,9 +189,12 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
       }))
     : [];
 
+  // Dims measured against the room's own up (the floor's normal) — a capture may arrive in any
+  // frame, and the y-up default printed a z-up room's horizontal runs as its "heights".
+  const up = geometry ? roomUp(geometry) : null;
   const walls = geometry
     ? geometry.walls.map((w, index) => {
-        const { widthM, heightM, areaM2 } = wallDimensions(w);
+        const { widthM, heightM, areaM2 } = wallDimensions(w, up ?? undefined);
         return {
           index,
           widthFt: round1(widthM * METERS_TO_FEET),

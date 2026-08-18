@@ -948,3 +948,62 @@ describe("trim height", () => {
     expect(screen.queryByLabelText("Height (inches)")).toBeNull();
   });
 });
+
+// ---------------------------------------------------------------------------
+
+// "I scan a room and I just see the total square feet" — the total now shows its working. The
+// per-wall areas were already on the phone (the deduction picker lists them); this is the same
+// data rendered where the total is questioned: inside the Walls editor, above the field.
+describe("RoomCardModalContent — the walls total shows its working", () => {
+  const twoWalls = [
+    { index: 0, widthFt: 12.3, heightFt: 8, sqft: 98.4 },
+    { index: 1, widthFt: 6.5, heightFt: 8, sqft: 52 },
+  ];
+
+  it("expanding Walls lists each wall's dims and area, then the measured total", () => {
+    // The fixture is COHERENT on purpose: derivedValue is what these walls actually sum to
+    // (98.4 + 52.0), because the component's stated invariant is "the total those lines add
+    // to" — a green test over walls summing to 150.4 under a printed 560.0 would be the suite
+    // blessing the exact contradiction the feature exists to remove.
+    storeState.roomsByJob = {
+      [JOB_ID]: [
+        room({
+          walls: twoWalls,
+          quantities: [quantity({ value: 150.4, derivedValue: 150.4 })],
+        }),
+      ],
+    };
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+
+    expect(screen.getByText(/Wall 1 · 12' 4" × 8' 0" · 98\.4 sq ft/)).toBeTruthy();
+    expect(screen.getByText(/Wall 2 · 6' 6" × 8' 0" · 52\.0 sq ft/)).toBeTruthy();
+    expect(screen.getByText(/Measured total · 150\.4 sq ft/)).toBeTruthy();
+  });
+
+  it("shows no breakdown on a manual room — no geometry, no walls to show", () => {
+    storeState.roomsByJob = { [JOB_ID]: [room({ source: "manual", walls: [] })] };
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Walls \(sq ft\)/ }));
+
+    expect(screen.queryByText(/Measured total/)).toBeNull();
+  });
+
+  it("keeps the breakdown out of every other quantity row", () => {
+    storeState.roomsByJob = {
+      [JOB_ID]: [
+        room({
+          walls: twoWalls,
+          quantities: [
+            quantity(),
+            quantity({ kind: "ceiling_sqft", value: 76.7, derivedValue: 76.7 }),
+          ],
+        }),
+      ],
+    };
+    render(<RoomCardModalContent />);
+    fireEvent.click(screen.getByRole("button", { name: /^Ceiling \(sq ft\)/ }));
+
+    expect(screen.queryByText(/Wall 1 ·/)).toBeNull();
+  });
+});
