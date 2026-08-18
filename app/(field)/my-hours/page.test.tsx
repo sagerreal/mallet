@@ -255,6 +255,60 @@ describe("approved hours", () => {
 });
 
 describe("adding a block the clock missed", () => {
+  /**
+   * JOB TIME NAMES ITS JOB. The kind exists so those hours can be costed against something, so a
+   * "job" block with no job is the one shape that cannot do the only thing it is for. It used to
+   * be a note the office re-filed by hand.
+   */
+  it("will not accept job time until a job is named", () => {
+    withEntries([]);
+    render(<MyHoursPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "08:00" } });
+    fireEvent.change(screen.getByLabelText("End"), { target: { value: "11:00" } });
+
+    expect(screen.getByRole("button", { name: "Add these hours" })).toHaveProperty("disabled", true);
+    fireEvent.click(screen.getByRole("button", { name: "Add these hours" }));
+    expect(createMutate).not.toHaveBeenCalled();
+  });
+
+  it("sends the named job with the hours", () => {
+    withEntries([]);
+    render(<MyHoursPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    // SelectMenu is the app's own listbox, not a native <select>: open the trigger, then pick
+    // with mouseDown — the option commits on mousedown so the click never lands on a moved list.
+    fireEvent.click(screen.getByLabelText("Job"));
+    fireEvent.mouseDown(screen.getByRole("option", { name: /JOB-9/ }));
+    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "08:00" } });
+    fireEvent.change(screen.getByLabelText("End"), { target: { value: "11:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add these hours" }));
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(createMutate.mock.calls[0]?.[0]).toMatchObject({ kind: "job", jobId: "job-9" });
+  });
+
+  it("forgets the job once the block is switched away from Job", () => {
+    // Switching to Regular and back must not leave the previous job still sitting in the picker,
+    // ready to be submitted by somebody who thinks they are starting fresh.
+    withEntries([]);
+    render(<MyHoursPage />);
+    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+    fireEvent.click(screen.getByLabelText("Job"));
+    fireEvent.mouseDown(screen.getByRole("option", { name: /JOB-9/ }));
+    expect(screen.getByLabelText("Job").textContent).toContain("JOB-9");
+
+    fireEvent.click(screen.getByRole("button", { name: "Regular" }));
+    fireEvent.click(screen.getByRole("button", { name: "Job" }));
+
+    expect(screen.getByLabelText("Job").textContent).not.toContain("JOB-9");
+    // And with nothing named, the block is refused — the guard is back in force.
+    expect(screen.getByRole("button", { name: "Add these hours" })).toHaveProperty("disabled", true);
+  });
+
   it("creates it against the caller's own id, as a manual entry that is not running", () => {
     withEntries([entry()]);
     render(<MyHoursPage />);
@@ -269,6 +323,8 @@ describe("adding a block the clock missed", () => {
       techUserId: ME,
       workDate: TODAY,
       kind: "shop",
+      // Regular time names no job — only the "job" kind carries one.
+      jobId: null,
       startTime: "06:00",
       endTime: "07:30",
       note: "",
