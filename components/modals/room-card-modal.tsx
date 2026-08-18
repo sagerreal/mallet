@@ -25,6 +25,7 @@ import { useRoomScanAvailability, RoomScanPayloadError, RoomScanCaptureError } f
 import { ScanUnavailable } from "@/components/shared/scan-unavailable";
 import { RoomDeductions } from "./room-deductions";
 import { WallBreakdown } from "./wall-breakdown";
+import { RoomScanView } from "./room-scan-view";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -659,6 +660,14 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
 
       <div className="sheet-rows">
         <RoomNameRow room={room} onRename={(name) => renameRoom(jobId, room.id, name)} />
+
+        {/* The scan itself, viewable: the dollhouse drawn from the capture's own polygons,
+            every wall tappable. Scanned rooms only — a manual room has nothing to draw. */}
+        {room.source === "roomplan_v1" && (
+          <SheetRow label="Scan" value="View" valueIsHint expandable>
+            <RoomScanView captureId={room.id} walls={room.walls} />
+          </SheetRow>
+        )}
 
         {QUANTITY_DEFS.map((def) => {
           const quantity = findQuantity(room, def.kind);

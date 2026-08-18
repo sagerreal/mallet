@@ -44,6 +44,23 @@ export const wallSummaryDTO = z.object({
   sqft: z.number(),
 });
 
+/**
+ * The capture's own 3D geometry, for the scan viewer. A SEPARATE read from the list DTO on
+ * purpose — the list stays light (its comment says why), and only an opened viewer pays for
+ * vertices. Openings carry which wall and what kind, deliberately not a position: RoomPlan
+ * gives us wall + size, and drawing a door at an invented spot would be showing a guess.
+ */
+const scenePointDTO = z.object({ x: z.number(), y: z.number(), z: z.number() });
+export const roomGeometryDTO = z.object({
+  captureId: z.string().uuid(),
+  floor: z.array(scenePointDTO),
+  walls: z.array(z.object({ index: z.number().int().nonnegative(), vertices: z.array(scenePointDTO) })),
+  openings: z.array(
+    z.object({ kind: z.enum(["door", "window", "opening"]), wallIndex: z.number().int().nonnegative().nullable() }),
+  ),
+});
+export type RoomGeometryDTO = z.infer<typeof roomGeometryDTO>;
+
 export const roomCaptureDTO = z.object({
   id: z.string().uuid(),
   jobId: z.string().uuid(),

@@ -240,4 +240,52 @@ suite("v1.measurements — field (tech) access boundary (live RLS)", () => {
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  describe("v1.measurements.roomGeometry — the scan viewer's read", () => {
+    it("an ASSIGNED tech reads the walls of a scan on their job", async () => {
+      const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await caller.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Viewer room",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+
+      const g = await caller.v1.measurements.roomGeometry({ captureId: scan.id });
+
+      expect(g.walls.length).toBeGreaterThan(0);
+      expect(g.walls[0]!.vertices.length).toBeGreaterThanOrEqual(3);
+      expect(g.floor.length).toBeGreaterThanOrEqual(3);
+    });
+
+    it("an UNASSIGNED tech is refused, same as every other capture read", async () => {
+      const owner = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const scan = await owner.v1.measurements.ingestScan({
+        jobId,
+        roomName: "Not your viewer room",
+        capturedAt: new Date("2026-08-18T00:00:00Z").toISOString(),
+        rawPayload: { raw: "payload" },
+        geometry,
+      });
+      const stranger = appRouter.createCaller(ctxFor(otherTechId, orgId, "tech"));
+
+      await expect(
+        stranger.v1.measurements.roomGeometry({ captureId: scan.id }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("a manual room says plainly there is no scan to view", async () => {
+      const caller = appRouter.createCaller(ctxFor(assignedTechId, orgId, "tech"));
+      const room = await caller.v1.measurements.createManualRoom({
+        jobId,
+        roomName: "Typed in",
+        quantities: [{ kind: "walls_sqft", value: 100 }],
+      });
+
+      await expect(
+        caller.v1.measurements.roomGeometry({ captureId: room.id }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND", message: expect.stringContaining("no scan") });
+    });
+  });
 });

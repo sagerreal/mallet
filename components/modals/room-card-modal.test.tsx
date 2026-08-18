@@ -1007,3 +1007,22 @@ describe("RoomCardModalContent — the walls total shows its working", () => {
     expect(screen.queryByText(/Wall 1 ·/)).toBeNull();
   });
 });
+
+// "can you make it so that I can actually click and view the scan" — the Scan row, scanned
+// rooms only. The viewer itself is tested in room-scan-view.test.tsx; here we pin WHO gets
+// the row: a capture has polygons to draw, a hand-entered room has nothing.
+describe("RoomCardModalContent — the Scan row", () => {
+  it("offers View on a scanned room", () => {
+    storeState.roomsByJob = { [JOB_ID]: [room()] };
+    render(<RoomCardModalContent />);
+
+    expect(screen.getByRole("button", { name: /^Scan/ })).toBeTruthy();
+  });
+
+  it("offers nothing to view on a manual room", () => {
+    storeState.roomsByJob = { [JOB_ID]: [room({ source: "manual" })] };
+    render(<RoomCardModalContent />);
+
+    expect(screen.queryByRole("button", { name: /^Scan/ })).toBeNull();
+  });
+});
