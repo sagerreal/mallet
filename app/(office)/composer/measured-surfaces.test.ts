@@ -49,6 +49,7 @@ const site = (overrides: Partial<SiteCard> = {}): SiteCard => ({
 const room = (overrides: Partial<RoomCard> = {}): RoomCard => ({
   deductions: [],
   walls: [],
+  openings: [],
   netWallsSqft: null,
   id: "r1",
   jobId: "j1",

@@ -16,6 +16,12 @@ export interface RoomCaptureProps {
   readonly source: RoomCaptureSource;
   readonly rawPayload: unknown | null;
   readonly geometry: NormalizedGeometry | null;
+  /**
+   * Per-wall square-footage overrides, keyed by wall index: the painter's number for ONE wall,
+   * the scanner's for the rest. Empty means untouched. Only a scanned capture can carry one —
+   * a manual room has no walls to point at.
+   */
+  readonly wallOverrides?: Readonly<Record<number, number>>;
   readonly capturedAt: Date;
   readonly supersededById: string | null;
   readonly createdAt: Date;
@@ -37,6 +43,19 @@ export class RoomCapture {
 
     if (!VALID_SOURCES.includes(props.source)) {
       return err(validation(`invalid source: "${props.source}"`, "source"));
+    }
+
+    for (const [key, sqft] of Object.entries(props.wallOverrides ?? {})) {
+      const index = Number(key);
+      if (!Number.isInteger(index) || index < 0) {
+        return err(validation("wall override index must be a wall", "wallOverrides"));
+      }
+      if (props.geometry === null || index >= props.geometry.walls.length) {
+        return err(validation("wall override points at a wall this capture does not have", "wallOverrides"));
+      }
+      if (!Number.isFinite(sqft) || sqft <= 0) {
+        return err(validation("an edited wall needs a real area", "wallOverrides"));
+      }
     }
 
     // The wire value may arrive as `undefined` (absent JSON key) — normalize to null so the
@@ -76,5 +95,22 @@ export class RoomCapture {
 
   get props(): RoomCaptureProps {
     return this.p;
+  }
+
+  /** Normalized: absent (older rows, fresh constructions) reads as untouched. */
+  get wallOverrides(): Readonly<Record<number, number>> {
+    return this.p.wallOverrides ?? {};
+  }
+
+  /**
+   * Record (sqft) or clear (null) the painter's number for one wall. Returns a NEW capture —
+   * all invariants re-checked through create, so an override can never point at a wall this
+   * capture does not have.
+   */
+  setWallOverride(wallIndex: number, sqft: number | null, now: Date): Result<RoomCapture, ValidationError> {
+    const next: Record<number, number> = { ...this.wallOverrides };
+    if (sqft === null) delete next[wallIndex];
+    else next[wallIndex] = sqft;
+    return RoomCapture.create({ ...this.p, wallOverrides: next, updatedAt: now });
   }
 }

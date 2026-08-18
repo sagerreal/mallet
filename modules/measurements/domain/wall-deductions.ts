@@ -134,12 +134,6 @@ export function wallDimensions(
   return { widthM, heightM: maxH - minH, areaM2: polygonArea(v) };
 }
 
-/** The distinct, in-range walls a deduction actually names. */
-const selectedWalls = (g: NormalizedGeometry, wallIndexes: readonly number[]) =>
-  [...new Set(wallIndexes)]
-    .map((i) => g.walls[i])
-    .filter((w): w is NonNullable<typeof w> => w !== undefined);
-
 /**
  * Square feet a deduction removes, derived from the capture's own geometry.
  *
@@ -150,12 +144,26 @@ const selectedWalls = (g: NormalizedGeometry, wallIndexes: readonly number[]) =>
  * An index that does not resolve is skipped rather than throwing: geometry can be replaced by a
  * re-scan under a deduction that outlived it, and a stale index must not take down the room.
  */
-export function deriveDeductionSqft(g: NormalizedGeometry, d: Deduction): number | null {
-  const walls = selectedWalls(g, d.wallIndexes);
+export function deriveDeductionSqft(
+  g: NormalizedGeometry,
+  d: Deduction,
+  wallOverrides: Readonly<Record<number, number>> = {},
+): number | null {
+  // Order-insensitive, duplicates count ONCE — the selectedWalls contract, kept.
+  const indexes = [...new Set(d.wallIndexes)];
 
   if (d.kind === "whole_wall") {
-    const m2 = walls.reduce((sum, w) => sum + polygonArea(w.polygon.vertices), 0);
-    return round1(m2 * SQ_METERS_TO_SQFT);
+    // The painter's number where one exists — a whole-wall deduction on an EDITED wall must
+    // remove what the room now claims that wall is, or net = (gross with the edit) − (the
+    // scanner's number) strands phantom square feet in the estimate.
+    const sqft = indexes.reduce((sum, index) => {
+      const w = g.walls[index];
+      if (!w) return sum;
+      const override = wallOverrides[index];
+      if (override !== undefined) return sum + override;
+      return sum + polygonArea(w.polygon.vertices) * SQ_METERS_TO_SQFT;
+    }, 0);
+    return round1(sqft);
   }
 
   if (d.heightM === null || !Number.isFinite(d.heightM) || d.heightM < 0) return null;
@@ -163,14 +171,19 @@ export function deriveDeductionSqft(g: NormalizedGeometry, d: Deduction): number
   // Clamped PER WALL, not once against the tallest: a band taller than a given wall covers that
   // wall entirely, and letting it over-run would subtract area the room does not have.
   const up = roomUp(g);
-  const m2 = walls.reduce((sum, w) => {
+  const sqft = indexes.reduce((sum, index) => {
+    const w = g.walls[index];
+    if (!w) return sum;
     const { widthM, heightM, areaM2 } = wallDimensions(w, up);
     // width × band-height is a RECTANGLE'S band. On a gable wall the bounding box holds more
     // area than the wall does, so an uncapped band could subtract more than whole_wall would —
-    // deducting area the room does not have. A band can never remove more than the wall.
-    return sum + Math.min(widthM * Math.min(d.heightM as number, heightM), areaM2);
+    // deducting area the room does not have. A band can never remove more than the wall —
+    // and "the wall" is the painter's number when they edited it.
+    const wallSqft = wallOverrides[index] ?? areaM2 * SQ_METERS_TO_SQFT;
+    const bandSqft = widthM * Math.min(d.heightM as number, heightM) * SQ_METERS_TO_SQFT;
+    return sum + Math.min(bandSqft, wallSqft);
   }, 0);
-  return round1(m2 * SQ_METERS_TO_SQFT);
+  return round1(sqft);
 }
 
 /**

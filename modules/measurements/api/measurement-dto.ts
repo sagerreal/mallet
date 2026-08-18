@@ -42,6 +42,21 @@ export const wallSummaryDTO = z.object({
   widthFt: z.number(),
   heightFt: z.number(),
   sqft: z.number(),
+  /** The painter's number for THIS wall, when they edited it. The scanner's sqft stays above. */
+  overrideSqft: z.number().nullable(),
+});
+
+/**
+ * A door/window/opening the scanner saw: which wall, what kind, and its SIZE — width/height in
+ * feet, the client never converts. Deliberately no position along the wall: RoomPlan records
+ * wall + size, and a position would be an invention. Rides on the list DTO (unlike vertices)
+ * because "Doors · 1" with no size was a fact withheld: the size was in the geometry all along.
+ */
+export const openingSummaryDTO = z.object({
+  kind: z.enum(["door", "window", "opening"]),
+  wallIndex: z.number().int().nonnegative().nullable(),
+  widthFt: z.number(),
+  heightFt: z.number(),
 });
 
 /**
@@ -55,11 +70,20 @@ export const roomGeometryDTO = z.object({
   captureId: z.string().uuid(),
   floor: z.array(scenePointDTO),
   walls: z.array(z.object({ index: z.number().int().nonnegative(), vertices: z.array(scenePointDTO) })),
-  openings: z.array(
-    z.object({ kind: z.enum(["door", "window", "opening"]), wallIndex: z.number().int().nonnegative().nullable() }),
-  ),
+  openings: z.array(openingSummaryDTO),
 });
 export type RoomGeometryDTO = z.infer<typeof roomGeometryDTO>;
+
+/** Wire openings → summary with sizes in feet. One conversion, one place. */
+export const toOpeningSummaries = (
+  openings: readonly { kind: "door" | "window" | "opening"; wallIndex: number | null; width: number; height: number }[],
+): z.infer<typeof openingSummaryDTO>[] =>
+  openings.map((o) => ({
+    kind: o.kind,
+    wallIndex: o.wallIndex,
+    widthFt: round1(o.width * METERS_TO_FEET),
+    heightFt: round1(o.height * METERS_TO_FEET),
+  }));
 
 export const roomCaptureDTO = z.object({
   id: z.string().uuid(),
@@ -71,6 +95,8 @@ export const roomCaptureDTO = z.object({
   deductions: z.array(deductionDTO),
   /** Empty for a manual room, which has no geometry and therefore no walls to point at. */
   walls: z.array(wallSummaryDTO),
+  /** Empty for a manual room. The scanner's doors/windows, with sizes. */
+  openings: z.array(openingSummaryDTO),
   /**
    * walls_sqft less every deduction, floored at zero — the number an estimate prices from.
    * Null whenever the gross is null (walls still needs_confirm): there is nothing to subtract
@@ -202,13 +228,14 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
         kind: d.kind,
         wallIndexes: [...d.wallIndexes],
         heightM: d.heightM,
-        sqft: deriveDeductionSqft(geometry, d),
+        sqft: deriveDeductionSqft(geometry, d, room.capture.wallOverrides),
       }))
     : [];
 
   // Dims measured against the room's own up (the floor's normal) — a capture may arrive in any
   // frame, and the y-up default printed a z-up room's horizontal runs as its "heights".
   const up = geometry ? roomUp(geometry) : null;
+  const overrides = room.capture.wallOverrides;
   const walls = geometry
     ? geometry.walls.map((w, index) => {
         const { widthM, heightM, areaM2 } = wallDimensions(w, up ?? undefined);
@@ -217,9 +244,12 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
           widthFt: round1(widthM * METERS_TO_FEET),
           heightFt: round1(heightM * METERS_TO_FEET),
           sqft: round1(areaM2 * SQ_METERS_TO_SQFT),
+          overrideSqft: overrides[index] ?? null,
         };
       })
     : [];
+
+  const openings = geometry ? toOpeningSummaries(geometry.openings) : [];
 
   const grossWalls = room.quantities.find((q) => q.kind === "walls_sqft")?.value ?? null;
 
@@ -238,6 +268,7 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
     })),
     deductions,
     walls,
+    openings,
     netWallsSqft: netWallsSqft(grossWalls, deductions.map((d) => d.sqft)),
   };
 };

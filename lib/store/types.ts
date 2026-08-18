@@ -783,6 +783,16 @@ export interface RoomWall {
   widthFt: number;
   heightFt: number;
   sqft: number;
+  /** The painter's number for THIS wall, when edited. The scanner's sqft stays alongside. */
+  overrideSqft: number | null;
+}
+
+/** A door/window the scanner saw: which wall, what kind, its size in feet. Never a position. */
+export interface RoomOpening {
+  kind: "door" | "window" | "opening";
+  wallIndex: number | null;
+  widthFt: number;
+  heightFt: number;
 }
 
 export interface RoomCard {
@@ -795,6 +805,8 @@ export interface RoomCard {
   deductions: RoomDeduction[];
   /** Empty for a manual room — no geometry, so no walls to point at. */
   walls: RoomWall[];
+  /** Empty for a manual room. The scanner's doors/windows, with sizes. */
+  openings: RoomOpening[];
   /**
    * walls_sqft less every deduction, floored at zero — what an estimate prices from. Null
    * whenever the gross is null (walls still needs_confirm): nothing to subtract from, and 0

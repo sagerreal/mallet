@@ -8,6 +8,7 @@
 import type {
   RoomCard,
   RoomDeduction,
+  RoomOpening,
   RoomQuantity,
   RoomWall,
   SiteCard,
@@ -31,7 +32,8 @@ interface RoomCaptureDtoShape {
   // `.map` off it would take down the whole room list. Absent degrades to "none recorded yet",
   // which is visibly wrong for a moment and self-corrects, rather than a crash that is not.
   deductions?: readonly RoomDeduction[];
-  walls?: readonly RoomWall[];
+  walls?: readonly (Omit<RoomWall, "overrideSqft"> & { overrideSqft?: number | null })[];
+  openings?: readonly RoomOpening[];
   netWallsSqft?: number | null;
 }
 
@@ -118,6 +120,13 @@ export function roomCaptureDtoToStore(dto: RoomCaptureDtoShape): RoomCard {
       widthFt: w.widthFt,
       heightFt: w.heightFt,
       sqft: w.sqft,
+      overrideSqft: w.overrideSqft ?? null,
+    })),
+    openings: (dto.openings ?? []).map((o) => ({
+      kind: o.kind,
+      wallIndex: o.wallIndex,
+      widthFt: o.widthFt,
+      heightFt: o.heightFt,
     })),
     netWallsSqft: dto.netWallsSqft ?? null,
   };

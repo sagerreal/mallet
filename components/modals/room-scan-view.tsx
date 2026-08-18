@@ -18,7 +18,7 @@
 import { useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { buildRoomScene } from "@/lib/room-scene";
-import { wallLabel, wallDidNotCapture } from "./wall-breakdown";
+import { wallLabel, wallDidNotCapture, feetInches } from "./wall-breakdown";
 import type { RoomWall } from "@/lib/store/types";
 
 export interface RoomScanViewProps {
@@ -28,16 +28,21 @@ export interface RoomScanViewProps {
 }
 
 function openingsCaption(
-  openings: readonly { kind: "door" | "window" | "opening"; wallIndex: number | null }[],
+  openings: readonly {
+    kind: "door" | "window" | "opening";
+    wallIndex: number | null;
+    widthFt: number;
+    heightFt: number;
+  }[],
   index: number,
 ): string | null {
-  const here = openings.filter((o) => o.wallIndex === index);
-  const doors = here.filter((o) => o.kind === "door").length;
-  const windows = here.filter((o) => o.kind === "window").length;
-  const parts: string[] = [];
-  if (doors > 0) parts.push(doors === 1 ? "1 door" : `${doors} doors`);
-  if (windows > 0) parts.push(windows === 1 ? "1 window" : `${windows} windows`);
-  return parts.length > 0 ? parts.join(" · ") : null;
+  // Each opening with its SIZE — "1 door" alone was a fact withheld; the width and height were
+  // in the geometry all along. Still never a position: the scan records wall + size, not where.
+  const here = openings.filter((o) => o.wallIndex === index && o.kind !== "opening");
+  if (here.length === 0) return null;
+  return here
+    .map((o) => `${o.kind} ${feetInches(o.widthFt)} × ${feetInches(o.heightFt)}`)
+    .join(" · ");
 }
 
 function SceneWallPolygon({
@@ -143,7 +148,9 @@ export function RoomScanView({ captureId, walls }: RoomScanViewProps) {
         {picked
           ? wallDidNotCapture(picked)
             ? `Wall ${picked.index + 1} · didn't capture`
-            : `${wallLabel(picked)}${openings ? ` · ${openings}` : ""}`
+            : picked.overrideSqft != null
+              ? `Wall ${picked.index + 1} · ${picked.overrideSqft.toFixed(1)} sq ft · edited · measured ${picked.sqft.toFixed(1)}${openings ? ` · ${openings}` : ""}`
+              : `${wallLabel(picked)}${openings ? ` · ${openings}` : ""}`
           : "Tap a wall to see its measurements."}
       </p>
     </div>

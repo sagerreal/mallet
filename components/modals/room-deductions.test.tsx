@@ -10,8 +10,8 @@ import { RoomDeductions, type RoomDeductionsProps } from "./room-deductions";
 import type { RoomCard } from "@/lib/store/types";
 
 const walls = [
-  { index: 0, widthFt: 10, heightFt: 8, sqft: 80 },
-  { index: 1, widthFt: 5, heightFt: 8, sqft: 40 },
+  { index: 0, widthFt: 10, heightFt: 8, sqft: 80 , overrideSqft: null },
+  { index: 1, widthFt: 5, heightFt: 8, sqft: 40 , overrideSqft: null },
 ];
 
 const room = (over: Partial<RoomCard> = {}): RoomCard => ({
@@ -20,6 +20,7 @@ const room = (over: Partial<RoomCard> = {}): RoomCard => ({
   roomName: "Bathroom",
   source: "roomplan_v1",
   capturedAt: "2026-08-14T00:00:00.000Z",
+  openings: [],
   quantities: [{ kind: "walls_sqft", value: 142, derivedValue: 142, status: "derived", heightIn: null }],
   deductions: [],
   walls,
@@ -201,8 +202,8 @@ describe("RoomDeductions — walls the scanner lost", () => {
   it("keeps an uncaptured wall out of the picker", () => {
     const r = room({
       walls: [
-        { index: 0, widthFt: 12.3, heightFt: 8, sqft: 98.4 },
-        { index: 1, widthFt: 0, heightFt: 0, sqft: 0 },
+        { index: 0, widthFt: 12.3, heightFt: 8, sqft: 98.4 , overrideSqft: null },
+        { index: 1, widthFt: 0, heightFt: 0, sqft: 0 , overrideSqft: null },
       ],
     });
     render(<RoomDeductions room={r} readOnly={false} onAdd={vi.fn()} onRemove={vi.fn()} />);
@@ -213,7 +214,7 @@ describe("RoomDeductions — walls the scanner lost", () => {
   });
 
   it("renders nothing at all when every wall failed to capture — no dead control", () => {
-    const r = room({ walls: [{ index: 0, widthFt: 0, heightFt: 0, sqft: 0 }] });
+    const r = room({ walls: [{ index: 0, widthFt: 0, heightFt: 0, sqft: 0 , overrideSqft: null }] });
     const { container } = render(
       <RoomDeductions room={r} readOnly={false} onAdd={vi.fn()} onRemove={vi.fn()} />,
     );

@@ -23,7 +23,8 @@ describe("roomCaptureDtoToStore", () => {
           sqft: 96,
         },
       ],
-      walls: [{ index: 0, widthFt: 10, heightFt: 8, sqft: 80 }],
+      walls: [{ index: 0, widthFt: 10, heightFt: 8, sqft: 80, overrideSqft: null }],
+      openings: [],
       netWallsSqft: 24,
     };
 
@@ -36,7 +37,8 @@ describe("roomCaptureDtoToStore", () => {
       deductions: [
         { id: "d-1", reason: "Tile wainscot", kind: "band", wallIndexes: [0, 2], heightM: 1.2, sqft: 96 },
       ],
-      walls: [{ index: 0, widthFt: 10, heightFt: 8, sqft: 80 }],
+      walls: [{ index: 0, widthFt: 10, heightFt: 8, sqft: 80, overrideSqft: null }],
+      openings: [],
       netWallsSqft: 24,
       quantities: [
         { kind: "walls_sqft", value: 120, derivedValue: 118, status: "derived", heightIn: null },
@@ -58,6 +60,7 @@ describe("roomCaptureDtoToStore", () => {
       quantities,
       deductions: [],
       walls: [],
+  openings: [],
       netWallsSqft: null,
     };
     const result = roomCaptureDtoToStore(dto);

@@ -64,6 +64,14 @@ export interface MeasurementsSlice {
   ) => void;
   renameRoom: (jobId: string, captureId: string, roomName: string) => void;
   /**
+   * The painter's area for ONE wall (null clears it) — walls_sqft becomes the sum server-side.
+   * NOT optimistic, same reason as deductions: the total is derived from geometry the client
+   * does not hold unrounded, and a flashed wrong total on the audit surface defeats the surface.
+   * Rethrows on failure so the editor shows the refusal inline instead of silently reverting —
+   * the silent-rollback lesson from setTrimHeight (a tech watched a number vanish with no why).
+   */
+  setWallSqft: (jobId: string, captureId: string, wallIndex: number, sqft: number | null) => Promise<void>;
+  /**
    * Record wall area this room does NOT get painted. `heightFt` is null for a whole-wall
    * deduction. NOT optimistic, deliberately: the square footage is derived server-side from the
    * capture's geometry, so the client cannot predict the number it is about to show — an
@@ -143,6 +151,7 @@ export const createMeasurementsSlice: StateCreator<
       // and its wall area is edited directly instead.
       deductions: [],
       walls: [],
+      openings: [],
       netWallsSqft: null,
       quantities: quantities.map((q) => ({
         kind: q.kind,
@@ -225,6 +234,18 @@ export const createMeasurementsSlice: StateCreator<
         reportWriteError("overrideQuantity", err);
         set((s) => ({ roomsByJob: { ...s.roomsByJob, [jobId]: snapshot } }));
       });
+  },
+
+  setWallSqft: async (jobId, captureId, wallIndex, sqft) => {
+    try {
+      const dto = await trpcVanilla.v1.measurements.setWallOverride.mutate({ captureId, wallIndex, sqft });
+      set((s) => ({
+        roomsByJob: { ...s.roomsByJob, [jobId]: withRoom(s.roomsByJob[jobId] ?? [], roomCaptureDtoToStore(dto)) },
+      }));
+    } catch (err: unknown) {
+      reportWriteError("setWallSqft", err);
+      throw err;
+    }
   },
 
   addDeduction: async (jobId, captureId, deduction) => {

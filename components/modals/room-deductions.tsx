@@ -106,11 +106,14 @@ function AddDeductionForm({ walls, busy, onCancel, onAdd }: AddFormProps) {
   const preview = picked.reduce((sum, i) => {
     const w = walls.find((x) => x.index === i);
     if (!w) return sum;
+    // The EFFECTIVE area — the painter's number when they edited the wall, matching the server's
+    // deduction math. A whole-wall deduction on an edited wall removes what the room now says.
+    const wallSqft = w.overrideSqft ?? w.sqft;
     // A wall whose height rounded to 0.0 cannot be banded against — dividing by it printed
     // "−NaN sq ft" as the live preview. Its whole area is still an honest whole-wall number.
-    if (heightFt === null) return sum + w.sqft;
+    if (heightFt === null) return sum + wallSqft;
     if (w.heightFt <= 0) return sum;
-    return sum + (w.sqft / w.heightFt) * Math.min(heightFt, w.heightFt);
+    return sum + Math.min((w.sqft / w.heightFt) * Math.min(heightFt, w.heightFt), wallSqft);
   }, 0);
 
   const ready = reason.trim().length > 0 && picked.length > 0;

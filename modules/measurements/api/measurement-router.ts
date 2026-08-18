@@ -18,6 +18,7 @@ import { CreateManualRoomUseCase } from "../app/create-manual-room";
 import { OverrideQuantityUseCase } from "../app/override-quantity";
 import { ConfirmQuantityUseCase } from "../app/confirm-quantity";
 import { SetTrimHeightUseCase } from "../app/set-trim-height";
+import { SetWallOverrideUseCase } from "../app/set-wall-override";
 import { ListRoomsUseCase } from "../app/list-rooms";
 import { RenameRoomUseCase } from "../app/rename-room";
 import { ArchiveRoomUseCase } from "../app/archive-room";
@@ -31,6 +32,7 @@ import {
   quantityDTO,
   roomCaptureDTO,
   roomGeometryDTO,
+  toOpeningSummaries,
   toRoomCaptureDTO,
   siteCaptureDTO,
   sitePolygonDTO,
@@ -331,7 +333,7 @@ export const createMeasurementRouter = () =>
             index,
             vertices: w.polygon.vertices.map((v) => ({ x: v.x, y: v.y, z: v.z })),
           })),
-          openings: g.openings.map((o) => ({ kind: o.kind, wallIndex: o.wallIndex })),
+          openings: toOpeningSummaries(g.openings),
         };
       }),
 
@@ -409,11 +411,44 @@ export const createMeasurementRouter = () =>
     // Same authority as confirm/override: reading the numbers is field work, writing them into
     // the record is desk work. A tech who measures a 5¼" base tells the office, exactly as they
     // already do for a corrected wall.
-    setTrimHeight: ownerOrOffice
+    // anyRole behind the capture gate, the #544 policy: the person with the tape measure on
+    // the baseboard is the tech. This shipped ownerOrOffice, so a tech's typed height was
+    // refused server-side and SILENTLY rolled back — the "26.6 sq ft of face" they watched
+    // appear was gone on the next open, with nothing saying why.
+    /**
+     * "The scanner said wall 3 is 49.7 but I measured 52" — the painter's number for one wall.
+     * anyRole behind the capture gate (the #544 policy): the person with the tape measure is
+     * the tech. Returns the WHOLE updated room so the client adopts walls and total together.
+     */
+    setWallOverride: anyRole
+      .input(
+        z.object({
+          captureId: z.string().uuid(),
+          wallIndex: z.number().int().nonnegative(),
+          sqft: z.number().positive().nullable(),
+        }),
+      )
+      .output(roomCaptureDTO)
+      .mutation(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
+        const useCase = new SetWallOverrideUseCase(repo);
+        const result = await useCase.exec(
+          { captureId: input.captureId, wallIndex: input.wallIndex, sqft: input.sqft },
+          ctx.principal.orgId,
+        );
+        orThrow(result);
+        const room = await repo.getCapture(input.captureId);
+        if (!room) throw new TRPCError({ code: "NOT_FOUND", message: "room capture not found" });
+        return toRoomCaptureDTO(room);
+      }),
+
+    setTrimHeight: anyRole
       .input(setTrimHeightInput)
       .output(quantityDTO)
       .mutation(async ({ ctx, input }) => {
         const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        await assertOnCaptureJobIfTech(ctx.tx, ctx.principal, repo, input.captureId);
         const useCase = new SetTrimHeightUseCase(repo);
         const result = await useCase.exec(
           { captureId: input.captureId, kind: input.kind, heightIn: input.heightIn },
