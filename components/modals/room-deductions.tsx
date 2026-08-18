@@ -21,6 +21,9 @@
 
 import { useState } from "react";
 import type { RoomCard, RoomWall } from "@/lib/store/types";
+// One string for a wall everywhere: the breakdown under the Walls total and this picker must
+// print the SAME wall the SAME way, or the same wall reads as two facts one screen apart.
+import { wallLabel, wallDidNotCapture } from "./wall-breakdown";
 
 /** Heights a painter actually says, so the common cases are one tap. Feet. */
 const HEIGHT_PRESETS: readonly { label: string; ft: number }[] = [
@@ -32,17 +35,6 @@ const HEIGHT_PRESETS: readonly { label: string; ft: number }[] = [
 const REASON_PRESETS: readonly string[] = ["Tile wainscot", "Shower surround", "Backsplash"];
 
 const fmt1 = (n: number): string => n.toFixed(1);
-
-/** 10.5 ft → 10' 6". A painter reads feet and inches, never a decimal foot. */
-function feetInches(ft: number): string {
-  const whole = Math.floor(ft);
-  const inches = Math.round((ft - whole) * 12);
-  return inches === 12 ? `${whole + 1}' 0"` : `${whole}' ${inches}"`;
-}
-
-function wallLabel(w: RoomWall): string {
-  return `Wall ${w.index + 1} · ${feetInches(w.widthFt)} × ${feetInches(w.heightFt)} · ${fmt1(w.sqft)} sq ft`;
-}
 
 // ---------------------------------------------------------------------------
 // One recorded deduction
@@ -114,7 +106,11 @@ function AddDeductionForm({ walls, busy, onCancel, onAdd }: AddFormProps) {
   const preview = picked.reduce((sum, i) => {
     const w = walls.find((x) => x.index === i);
     if (!w) return sum;
-    return sum + (heightFt === null ? w.sqft : (w.sqft / w.heightFt) * Math.min(heightFt, w.heightFt));
+    // A wall whose height rounded to 0.0 cannot be banded against — dividing by it printed
+    // "−NaN sq ft" as the live preview. Its whole area is still an honest whole-wall number.
+    if (heightFt === null) return sum + w.sqft;
+    if (w.heightFt <= 0) return sum;
+    return sum + (w.sqft / w.heightFt) * Math.min(heightFt, w.heightFt);
   }, 0);
 
   const ready = reason.trim().length > 0 && picked.length > 0;
@@ -227,7 +223,13 @@ export function RoomDeductions({ room, readOnly, onAdd, onRemove }: RoomDeductio
 
   // A manual room has no geometry: no walls to point at, and nothing to derive an area from.
   // Its wall area is edited directly instead, so this section would be a dead control.
-  if (room.source === "manual" || room.walls.length === 0) return null;
+  //
+  // Walls the scanner LOST (degenerate 0×0 polygons) are excluded the same way: the breakdown
+  // one row up calls them "didn't capture", so offering the same wall here as a selectable
+  // "0' 0" × 0' 0" · 0.0 sq ft" checkbox is two facts one screen apart — and deducting from a
+  // wall with no area is meaningless (the server contributes 0 for it regardless).
+  const capturedWalls = room.walls.filter((w) => !wallDidNotCapture(w));
+  if (room.source === "manual" || capturedWalls.length === 0) return null;
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
@@ -280,7 +282,7 @@ export function RoomDeductions({ room, readOnly, onAdd, onRemove }: RoomDeductio
 
       {readOnly ? null : open ? (
         <AddDeductionForm
-          walls={room.walls}
+          walls={capturedWalls}
           busy={busy}
           onCancel={() => {
             setOpen(false);

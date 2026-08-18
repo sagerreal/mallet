@@ -2,7 +2,7 @@ import { z } from "zod";
 import { edgeTotalsFt, isClassified, roofComplexity } from "@/lib/measure/edge-classes";
 import type { RoomCaptureWithQuantities } from "../domain/measurement-repository";
 import type { SiteCapture, SitePolygon } from "../domain/site-capture";
-import { deriveDeductionSqft, wallDimensions, netWallsSqft } from "../domain/wall-deductions";
+import { deriveDeductionSqft, roomUp, wallDimensions, netWallsSqft } from "../domain/wall-deductions";
 
 // Heavy fields (geometry, rawPayload) are deliberately excluded from the list DTO — a
 // `getGeometry` procedure can be added later for the floor-plan outline UI when it needs them.
@@ -43,6 +43,23 @@ export const wallSummaryDTO = z.object({
   heightFt: z.number(),
   sqft: z.number(),
 });
+
+/**
+ * The capture's own 3D geometry, for the scan viewer. A SEPARATE read from the list DTO on
+ * purpose — the list stays light (its comment says why), and only an opened viewer pays for
+ * vertices. Openings carry which wall and what kind, deliberately not a position: RoomPlan
+ * gives us wall + size, and drawing a door at an invented spot would be showing a guess.
+ */
+const scenePointDTO = z.object({ x: z.number(), y: z.number(), z: z.number() });
+export const roomGeometryDTO = z.object({
+  captureId: z.string().uuid(),
+  floor: z.array(scenePointDTO),
+  walls: z.array(z.object({ index: z.number().int().nonnegative(), vertices: z.array(scenePointDTO) })),
+  openings: z.array(
+    z.object({ kind: z.enum(["door", "window", "opening"]), wallIndex: z.number().int().nonnegative().nullable() }),
+  ),
+});
+export type RoomGeometryDTO = z.infer<typeof roomGeometryDTO>;
 
 export const roomCaptureDTO = z.object({
   id: z.string().uuid(),
@@ -189,9 +206,12 @@ export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDT
       }))
     : [];
 
+  // Dims measured against the room's own up (the floor's normal) — a capture may arrive in any
+  // frame, and the y-up default printed a z-up room's horizontal runs as its "heights".
+  const up = geometry ? roomUp(geometry) : null;
   const walls = geometry
     ? geometry.walls.map((w, index) => {
-        const { widthM, heightM, areaM2 } = wallDimensions(w);
+        const { widthM, heightM, areaM2 } = wallDimensions(w, up ?? undefined);
         return {
           index,
           widthFt: round1(widthM * METERS_TO_FEET),

@@ -24,6 +24,8 @@ import { useJobRooms } from "@/features/measurements/use-job-rooms";
 import { useRoomScanAvailability, RoomScanPayloadError, RoomScanCaptureError } from "@/lib/native/room-scan";
 import { ScanUnavailable } from "@/components/shared/scan-unavailable";
 import { RoomDeductions } from "./room-deductions";
+import { WallBreakdown } from "./wall-breakdown";
+import { RoomScanView } from "./room-scan-view";
 import { SheetRow } from "./sheet-row";
 import { Field } from "@/components/ui/input";
 import { Badge, type BadgeTone } from "@/components/ui/badge";
@@ -236,6 +238,7 @@ function QuantityRow({
   quantity,
   source,
   note,
+  breakdown,
   readOnly,
   onCommit,
   onCommitHeight,
@@ -245,6 +248,8 @@ function QuantityRow({
   source: RoomCard["source"];
   /** A caveat about THIS row's suggestion, shown where it is about to be accepted. */
   note?: string | null;
+  /** The working behind this row's number (per-wall lines for walls_sqft), shown above the editor. */
+  breakdown?: React.ReactNode;
   /**
    * Kept for surfaces that genuinely view rather than edit. It is no longer keyed on ROLE:
    * baseboard, crown and soffit arrive needing a human answer precisely because the geometry
@@ -356,6 +361,7 @@ function QuantityRow({
       onOpenChange={openEditor}
     >
       <div ref={bodyRef}>
+      {breakdown}
       <Field label={def.label}>
         <input
           type="text"
@@ -655,6 +661,14 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
       <div className="sheet-rows">
         <RoomNameRow room={room} onRename={(name) => renameRoom(jobId, room.id, name)} />
 
+        {/* The scan itself, viewable: the dollhouse drawn from the capture's own polygons,
+            every wall tappable. Scanned rooms only — a manual room has nothing to draw. */}
+        {room.source === "roomplan_v1" && (
+          <SheetRow label="Scan" value="View" valueIsHint expandable>
+            <RoomScanView captureId={room.id} walls={room.walls} />
+          </SheetRow>
+        )}
+
         {QUANTITY_DEFS.map((def) => {
           const quantity = findQuantity(room, def.kind);
           if (!quantity) return null;
@@ -665,6 +679,11 @@ function ViewRoom({ room, jobName }: { room: RoomCard; jobName: string | undefin
               quantity={quantity}
               source={room.source}
               note={def.kind === "crown_lnft" ? crownNote(room) : null}
+              breakdown={
+                def.kind === "walls_sqft" ? (
+                  <WallBreakdown walls={room.walls} totalSqft={quantity.derivedValue} />
+                ) : undefined
+              }
               readOnly={false}
               onCommit={commitQuantity}
               onCommitHeight={commitHeight}

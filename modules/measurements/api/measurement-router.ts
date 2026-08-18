@@ -30,6 +30,7 @@ import { ArchiveSiteCaptureUseCase } from "../app/archive-site-capture";
 import {
   quantityDTO,
   roomCaptureDTO,
+  roomGeometryDTO,
   toRoomCaptureDTO,
   siteCaptureDTO,
   sitePolygonDTO,
@@ -301,6 +302,37 @@ export const createMeasurementRouter = () =>
         const useCase = new ListRoomsUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const result = await useCase.exec({ jobId: asJobId(input.jobId) }, ctx.principal.orgId);
         return orThrow(result).map(toRoomCaptureDTO);
+      }),
+
+    /**
+     * One capture's 3D geometry, for the scan viewer. Separate from `list` so the list stays
+     * light — only an opened viewer pays for vertices. Same field gate as every other
+     * capture-scoped read: a tech sees only the rooms of jobs they are on.
+     */
+    roomGeometry: anyRole
+      .input(z.object({ captureId: z.string().uuid() }))
+      .output(roomGeometryDTO)
+      .query(async ({ ctx, input }) => {
+        const repo = new DrizzleMeasurementRepository(ctx.tx, ctx.principal.orgId);
+        // One fetch: the capture answers BOTH questions (does it exist / whose job is it) —
+        // the shared gate helper would read the same row a second time. Missing is NOT_FOUND
+        // for every role before any assignment question, so an unassigned tech probing ids
+        // learns nothing they wouldn't from a real 404.
+        const capture = await repo.getCapture(input.captureId);
+        if (!capture) throw new TRPCError({ code: "NOT_FOUND", message: "room capture not found" });
+        await assertOnJobIfTech(ctx.tx, ctx.principal, capture.capture.props.jobId);
+        const g = capture.capture.props.geometry;
+        // A manual room has no geometry — nothing to view, said plainly rather than a 500.
+        if (!g) throw new TRPCError({ code: "NOT_FOUND", message: "this room was entered by hand — no scan to view" });
+        return {
+          captureId: input.captureId,
+          floor: g.floorPolygon.vertices.map((v) => ({ x: v.x, y: v.y, z: v.z })),
+          walls: g.walls.map((w, index) => ({
+            index,
+            vertices: w.polygon.vertices.map((v) => ({ x: v.x, y: v.y, z: v.z })),
+          })),
+          openings: g.openings.map((o) => ({ kind: o.kind, wallIndex: o.wallIndex })),
+        };
       }),
 
     /**

@@ -192,3 +192,32 @@ describe("RoomDeductions", () => {
     await waitFor(() => expect(onRemove).toHaveBeenCalledWith("d1"));
   });
 });
+
+// A wall the scanner LOST arrives as a degenerate 0×0 polygon. The breakdown one row up names it
+// "didn't capture"; this picker must not offer the same wall as a selectable "0' 0" × 0' 0" ·
+// 0.0 sq ft" checkbox — two facts one screen apart — and banding against its zero height is what
+// printed "−NaN sq ft" as a live preview.
+describe("RoomDeductions — walls the scanner lost", () => {
+  it("keeps an uncaptured wall out of the picker", () => {
+    const r = room({
+      walls: [
+        { index: 0, widthFt: 12.3, heightFt: 8, sqft: 98.4 },
+        { index: 1, widthFt: 0, heightFt: 0, sqft: 0 },
+      ],
+    });
+    render(<RoomDeductions room={r} readOnly={false} onAdd={vi.fn()} onRemove={vi.fn()} />);
+    fireEvent.click(screen.getByText("Add"));
+
+    expect(screen.getByText(/Wall 1 ·/)).toBeTruthy();
+    expect(screen.queryByText(/Wall 2 ·/)).toBeNull();
+  });
+
+  it("renders nothing at all when every wall failed to capture — no dead control", () => {
+    const r = room({ walls: [{ index: 0, widthFt: 0, heightFt: 0, sqft: 0 }] });
+    const { container } = render(
+      <RoomDeductions room={r} readOnly={false} onAdd={vi.fn()} onRemove={vi.fn()} />,
+    );
+
+    expect(container.innerHTML).toBe("");
+  });
+});
