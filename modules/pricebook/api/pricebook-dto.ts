@@ -96,6 +96,7 @@ export type PaginatedMaterialDTO = z.infer<typeof paginatedMaterialDTO>;
 export const seedPricebookDTO = z.object({
   services: z.array(serviceDTO),
   categories: z.array(categoryDTO),
+  materials: z.array(materialDTO),
 });
 
 export type SeedPricebookDTO = z.infer<typeof seedPricebookDTO>;

@@ -13,7 +13,7 @@
 import { useState } from "react";
 import { useAppStore } from "@/lib/store/app-store";
 import type { Material } from "@/lib/store/types";
-import { fmt$ } from "@/lib/format";
+import { fmt$rate } from "@/lib/format";
 import { MarkupBandsEditor } from "@/features/office/markup-bands-editor";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 
@@ -38,7 +38,7 @@ function MaterialRow({ m, canSeeCost }: { m: Material; canSeeCost: boolean }) {
       >
         <span style={{ flex: 1, fontWeight: 600 }}>{m.name}</span>
         <span style={{ fontWeight: 700, minWidth: 70, textAlign: "right" }}>
-          {fmt$(m.unitPrice)}
+          {fmt$rate(m.unitPrice)}
           {m.pricingMode === "manual" && (
             <span className="muted" style={{ fontWeight: 400, fontSize: "var(--type-sm)" }}> · set by you</span>
           )}
@@ -142,7 +142,13 @@ export function MaterialsPanel({ canSeeCost }: { canSeeCost: boolean }) {
   const [addError, setAddError] = useState<string | null>(null);
   const [bandsOpen, setBandsOpen] = useState(false);
 
-  const active = materials.filter((m) => m.active);
+  // THE PACK'S ORDER, not the store's. Services sort here too (sortServices in pricebook-pane);
+  // materials never did, so the list came back in whatever order the repo happened to hand over —
+  // for the seeded painting book, exactly backwards: sandpaper first, the paint a painter reaches
+  // for every day last.
+  const active = materials
+    .filter((m) => m.active)
+    .sort((a, b) => a.position - b.position || a.name.localeCompare(b.name));
   const q = query.trim().toLowerCase();
   const visible = q ? active.filter((m) => m.name.toLowerCase().includes(q)) : active;
 

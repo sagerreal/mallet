@@ -57,10 +57,12 @@ export function categoryDtoToStore(dto: CategoryDTO): Category {
 export function seedResultDtoToStore(dto: SeedPricebookDTO): {
   services: Service[];
   categories: Category[];
+  materials: Material[];
 } {
   return {
     services: dto.services.map(serviceDtoToStore),
     categories: dto.categories.map(categoryDtoToStore),
+    materials: dto.materials.map(materialDtoToStore),
   };
 }
 

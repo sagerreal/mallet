@@ -274,12 +274,13 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
   seedPricebook: async () => {
     try {
       const dto = await trpcVanilla.v1.pricebook.seed.mutate();
-      const { services, categories } = seedResultDtoToStore(dto);
+      const { services, categories, materials } = seedResultDtoToStore(dto);
       // Append-only: never replace the loaded catalog. The server no-ops (empty arrays) if
       // the org was already seeded, so this can't clobber anything already in the store.
       set((s) => ({
         services: mergeNewById(s.services, services),
         categories: mergeNewById(s.categories, categories),
+        materials: mergeNewById(s.materials, materials),
       }));
       return { ok: true };
     } catch (e) {

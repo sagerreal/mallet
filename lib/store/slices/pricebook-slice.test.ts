@@ -368,6 +368,7 @@ describe("pricebookSlice", () => {
     mutate.seed.mockResolvedValue({
       services: [baseServiceDto({ id: "seed-s1", name: "Toilet reset" })],
       categories: [baseCategoryDto({ id: "seed-c1", name: "Fixtures" })],
+      materials: [],
     });
 
     const r = await store.getState().seedPricebook();
@@ -403,6 +404,7 @@ describe("pricebookSlice", () => {
     mutate.seed.mockResolvedValue({
       services: [baseServiceDto({ id: "seed-s1" })],
       categories: [baseCategoryDto({ id: "seed-c1" })],
+      materials: [],
     });
 
     await store.getState().seedPricebook();
@@ -435,7 +437,7 @@ describe("pricebookSlice", () => {
       ],
       categories: [],
     });
-    mutate.seed.mockResolvedValue({ services: [], categories: [] });
+    mutate.seed.mockResolvedValue({ services: [], categories: [], materials: [] });
 
     const r = await store.getState().seedPricebook();
 
