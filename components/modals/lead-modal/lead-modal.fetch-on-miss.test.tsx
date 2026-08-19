@@ -45,6 +45,8 @@ vi.mock("@/lib/trpc/client", () => ({
       // The sheet header's record trail — settled/empty for these tests.
       links: { forRecord: { useQuery: () => ({ data: undefined }) } },
       customers: {
+        // The sheet's "Pipeline stage" row gates on this; empty = the row never renders.
+        pipeline: { board: { useQuery: () => ({ data: undefined }) } },
         get: { useQuery: () => leadQuery },
         // The activity trail is fetched per customer; settled/empty for these routing tests.
         listNotes: { useQuery: () => ({ data: undefined, isFetched: true }) },

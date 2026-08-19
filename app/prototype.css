@@ -1783,6 +1783,30 @@
   .ttp-edu-foot{font-size:var(--type-sm);margin:0}
 
   /* ---------- pipeline search (shown only above 20 active leads) ---------- */
+  /* ── Customers Pipeline (shop-defined stages) — rides the work board's .board/.col/.kcard ── */
+  /* Drop target: outline not background, so the cards inside keep their contrast mid-drag. */
+  .col.pipe-over{outline:2px dashed var(--line-strong);outline-offset:-2px}
+  .board .kcard[draggable="true"]{cursor:grab}
+  .pipe-headacts{display:flex;align-items:center;gap:var(--space-2)}
+  .pipe-edit{background:none;border:none;padding:var(--space-1) var(--space-2);font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;min-height:24px}
+  .pipe-edit:hover{color:var(--ink)}
+  .pipe-headedit{padding:var(--space-1) var(--space-2) var(--space-3)}
+  .pipe-headedit input,.pipe-addform input{width:100%;min-height:44px;border:1.5px solid var(--line-strong);border-radius:var(--radius-sm);padding:0 var(--space-3);font-size:var(--type-base);font-family:inherit;background:var(--card);color:var(--ink)}
+  .pipe-headrow{display:flex;gap:var(--space-2);margin-top:var(--space-2);flex-wrap:wrap}
+  .pipe-addstage{flex:0 0 220px;min-width:220px;border:1.5px dashed var(--line-strong);border-radius:var(--radius);background:none;min-height:120px;color:var(--ink-2);font-family:inherit;font-size:var(--type-base);font-weight:600;cursor:pointer;padding:var(--space-3)}
+  .pipe-addstage:hover:not(:disabled){color:var(--ink)}
+  .pipe-addform{cursor:default}
+  .pipe-colempty{color:var(--ink-3);font-size:var(--type-sm);text-align:center;padding:var(--space-4) 0;margin:0}
+  .pipe-more{width:100%;margin-top:var(--space-1)}
+  /* First-run setup — the whole tab until the shop decides. */
+  .pipe-setup{max-width:560px;margin:var(--space-10) auto;text-align:center}
+  .pipe-setup h3{font-family:var(--font-display);font-size:var(--type-xl);margin:0 0 var(--space-2)}
+  .pipe-setup p{color:var(--ink-2);font-size:var(--type-base);margin:0 0 var(--space-5);line-height:1.5}
+  .pipe-tpls{display:grid;grid-template-columns:repeat(3,1fr);gap:var(--space-3)}
+  .pipe-tpl{background:var(--card);border:1.5px solid var(--line);border-radius:var(--radius-md);padding:var(--space-4);text-align:left;cursor:pointer;font-family:inherit;color:var(--ink)}
+  .pipe-tpl:hover:not(:disabled){border-color:var(--line-strong)}
+  .pipe-tpl b{display:block;font-size:var(--type-base);margin-bottom:var(--space-1)}
+  .pipe-tpl span{font-size:var(--type-sm);color:var(--ink-2);line-height:1.45;display:block}
   .board-tools{margin-bottom:var(--space-3)}
   .board-tools input{border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-size:var(--type-base);width:280px;font-family:inherit}
   .board-tools input:focus{outline:none;border-color:var(--green-600)}
@@ -3176,6 +3200,7 @@
     .herofig{font-size:var(--type-3xl) !important}
     .ticket .thesis{font-size:var(--type-md)}
     .dash-grid{grid-template-columns:1fr}
+    .pipe-tpls{grid-template-columns:1fr}
     .board{gap:var(--space-3);scroll-snap-type:x mandatory;-webkit-overflow-scrolling:touch;padding-left:var(--space-2xs);padding-right:var(--space-4)}
     /* Deliberate peek, not a clip: the next column sits ~48px into view, which
        itself is the "there's more" affordance — no dots/arrows needed. */

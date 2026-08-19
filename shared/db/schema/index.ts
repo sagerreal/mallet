@@ -31,6 +31,7 @@ export * from "./pricebook-service-materials";
 export * from "./labor-rates";
 export * from "./job-terms";
 export * from "./lead-sources";
+export * from "./pipeline-stages";
 export * from "./inbound-endpoints";
 export * from "./quoting-rules";
 export * from "./frontdesk";

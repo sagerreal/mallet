@@ -26,7 +26,7 @@ class Repo implements Partial<LeadRepository> {
       phone: parsed && isOk(parsed) ? parsed.value : null,
       email: null, customFields: null, source: null, stage: "new", value: zeroMoney,
       unread: false, wonAt: null, companyId: null, role: null, notes: null,
-      lossReason: null, address: null, createdAt: now, updatedAt: now,
+      lossReason: null, pipelineStageId: null, address: null, createdAt: now, updatedAt: now,
     });
     if (!isOk(lead)) throw new Error("seed failed");
     this.store.set(lead.value.props.id, lead.value);

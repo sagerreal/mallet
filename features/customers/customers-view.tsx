@@ -7,7 +7,7 @@
 
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { LeadGroup } from "@/modules/customers/infra/lead-views";
 import { useAppStore, useLeads, useEstimates, useOpenModal, useCustSeg, useSetCustSeg } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
@@ -23,6 +23,7 @@ import { CustomersGroupFilter } from "./customers-group-filter";
 import { ALL_COL_DEFS, DEFAULT_COLS, colWidths } from "./customers-columns";
 import { LeadRow } from "./lead-row";
 import { CompaniesView } from "./companies-view";
+import { PipelineBoard } from "./pipeline-board";
 import { pressable } from "@/lib/a11y";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ListLoading } from "@/components/shared/list-loading";
@@ -49,6 +50,26 @@ const FIRST_RUN = {
 export function CustomersView() {
   const openModal = useOpenModal();
   const custSeg = useCustSeg();
+  // List | Pipeline. URL-backed (?view=pipeline) like the Office tabs, so the board is
+  // bookmarkable and Back undoes the switch instead of leaving the page. Initialised to "list"
+  // and adopted from the URL AFTER mount — reading window in the initialiser makes the server
+  // render one tab and the client another, which is a hydration mismatch (the Office page's tabs
+  // made the same call, and the hydration-flash rule is exactly about this trap).
+  const [custView, setCustView] = useState<"list" | "pipeline">("list");
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get("view") === "pipeline") setCustView("pipeline");
+  }, []);
+  useEffect(() => {
+    const onPop = () => {
+      setCustView(new URLSearchParams(window.location.search).get("view") === "pipeline" ? "pipeline" : "list");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  const switchView = (v: "list" | "pipeline") => {
+    setCustView(v);
+    window.history.pushState(null, "", v === "pipeline" ? "/customers?view=pipeline" : "/customers");
+  };
   const setCustSeg = useSetCustSeg();
   const restoreLead = useAppStore((s) => s.restoreLead);
 
@@ -160,6 +181,22 @@ export function CustomersView() {
         </button>
       </div>
 
+      {/* List | Pipeline — the same .otabs bar the Office page navigates with. The Pipeline view
+          is the shop's OWN stages (progressive disclosure: its first open is a setup screen, and
+          a shop that never opens it sees this page exactly as before). */}
+      <div className="otabs" role="tablist" aria-label="Customers view">
+        <button className={custView === "list" ? "otab on" : "otab"} role="tab" aria-selected={custView === "list"} onClick={() => switchView("list")}>
+          List
+        </button>
+        <button className={custView === "pipeline" ? "otab on" : "otab"} role="tab" aria-selected={custView === "pipeline"} onClick={() => switchView("pipeline")}>
+          Pipeline
+        </button>
+      </div>
+
+      {custView === "pipeline" ? (
+        <PipelineBoard />
+      ) : (
+      <>
       {/* Mobile-only: full-width primary action */}
       <div className="mob-new">
         <button className="btn primary" onClick={() => openModal(MODAL.NEW_CUSTOMER)}>+ New customer</button>
@@ -297,6 +334,8 @@ export function CustomersView() {
         Add columns or filters when you need them. Custom fields become filterable once defined.
       </p>
         </>
+      )}
+      </>
       )}
     </div>
   );

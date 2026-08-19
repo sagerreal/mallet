@@ -37,6 +37,12 @@ export interface LeadFilter {
   /** One work group — where this customer's WORK has got to. Mutually exclusive; see LEAD_GROUPS. */
   readonly group?: LeadGroup;
   readonly stage?: LeadStage;
+  /**
+   * One shop-defined pipeline stage (pipeline_stages.id), or "none" for the explicitly-unstaged
+   * set — the board's leading column. A separate axis from `stage` (the fixed lifecycle enum):
+   * this one is the shop's own vocabulary and entirely manual.
+   */
+  readonly pipelineStage?: string | "none";
   readonly unreadOnly?: boolean;
   /**
    * The ARCHIVED set instead of the live one.
@@ -86,6 +92,14 @@ export interface LeadRepository {
    */
   /** Every Pipeline column's count in one round trip. */
   viewCounts(): Promise<Record<LeadView, number>>;
+
+  /**
+   * Live-lead counts per shop-defined pipeline stage, one GROUP BY — the board's column heads.
+   * Key is the stage id; the "none" key is the unstaged count. Soft-deleted stages still appear
+   * under their id (their leads are unstaged in spirit); the read layer folds them into "none"
+   * because only it knows which stages are live.
+   */
+  pipelineStageCounts(): Promise<Record<string, number>>;
 
   facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }>;
   save(lead: Lead): Promise<void>;

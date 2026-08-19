@@ -29,6 +29,7 @@ export const toDomain = (row: LeadRow): Lead => {
     notes: row.notes ?? null,
     lossReason: row.lossReason ?? null,
     address: row.address ?? null,
+    pipelineStageId: row.pipelineStageId ?? null,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

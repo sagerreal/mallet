@@ -38,6 +38,10 @@ export interface LeadProps {
   // Why the customer went elsewhere ("Price", "No response"). Written when a quote is declined;
   // was dropped by the store's update payload builder, so the answer was gone by the next refetch.
   readonly lossReason: string | null;
+  // The shop-defined pipeline stage this customer sits in (pipeline_stages.id). Null = unstaged,
+  // which is every customer in a shop that never set a pipeline up. MANUAL placement — the board
+  // and the sheet picker write it; no derivation ever does.
+  readonly pipelineStageId: string | null;
   // Service address for field work (e.g. "123 Main St, Oakland CA 94601"). Null when not captured.
   readonly address: string | null;
   readonly createdAt: Date;
@@ -68,6 +72,15 @@ export class Lead {
   firstTouch(now: Date): Lead {
     if (this.p.stage !== "new") return this;
     return new Lead({ ...this.p, stage: "contacted", updatedAt: now });
+  }
+
+  // Place in (or remove from) a shop-defined pipeline stage. No-op when already there —
+  // dropping a card on its own column must not stamp updatedAt. Existence/liveness of the target
+  // stage is the use case's check (it needs the repository); cross-org linkage is the composite
+  // FK's (leads_org_pipeline_stage_fk).
+  setPipelineStage(stageId: string | null, now: Date): Lead {
+    if (stageId === this.p.pipelineStageId) return this;
+    return new Lead({ ...this.p, pipelineStageId: stageId, updatedAt: now });
   }
 
   // Clear the unread flag (e.g. the owner opened the lead). No-op if already read.

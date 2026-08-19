@@ -143,6 +143,9 @@ export class DrizzleLeadRepository implements LeadRepository {
     // customer: it returned the live list and the screen just added a Restore column to it.
     const conds: SQL[] = [filter?.archived ? isNotNull(leads.deletedAt) : isNull(leads.deletedAt)];
     if (filter?.stage) conds.push(eq(leads.stage, filter.stage));
+    // "none" = explicitly unstaged (IS NULL) — the board's leading column. Absent = no filter.
+    if (filter?.pipelineStage === "none") conds.push(isNull(leads.pipelineStageId));
+    else if (filter?.pipelineStage) conds.push(eq(leads.pipelineStageId, filter.pipelineStage));
     if (filter?.unreadOnly) conds.push(eq(leads.unread, true));
     if (filter?.source) conds.push(eq(leads.source, filter.source));
     if (filter?.view) conds.push(leadViewCondition(filter.view, this.tx));
@@ -173,6 +176,18 @@ export class DrizzleLeadRepository implements LeadRepository {
       .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)));
     const r = rows[0];
     return { intake: r?.intake ?? 0, quoting: r?.quoting ?? 0, out: r?.out ?? 0, won: r?.won ?? 0 };
+  }
+
+  /** Live-lead counts per shop-defined stage, one GROUP BY. Key "none" = unstaged. */
+  async pipelineStageCounts(): Promise<Record<string, number>> {
+    const rows = await this.tx
+      .select({ stageId: leads.pipelineStageId, n: sql<number>`count(*)::int` })
+      .from(leads)
+      .where(and(eq(leads.orgId, this.orgId), isNull(leads.deletedAt)))
+      .groupBy(leads.pipelineStageId);
+    const out: Record<string, number> = {};
+    for (const r of rows) out[r.stageId ?? "none"] = r.n;
+    return out;
   }
 
   /**
@@ -333,6 +348,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         notes: p.notes,
         lossReason: p.lossReason,
         address: p.address,
+        pipelineStageId: p.pipelineStageId,
         updatedAt: p.updatedAt,
       })
       // Guard: org-scoped + non-deleted (defense in depth, mirrors company + task repos).

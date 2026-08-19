@@ -19,6 +19,7 @@ import { AddLeadNoteUseCase } from "../app/add-lead-note";
 import { ListLeadNotesUseCase } from "../app/list-lead-notes";
 import { RemoveLeadNoteUseCase } from "../app/remove-lead-note";
 import { LEAD_NOTE_KINDS, LEAD_NOTE_MAX, type LeadNote } from "../domain/lead-note";
+import { createPipelineRouter } from "./pipeline-router";
 
 // DTOs — the wire contract, deliberately separate from the domain. Money is flattened to a
 // plain cents object; Phone/branded ids serialize as strings.
@@ -48,6 +49,8 @@ const leadDTO = z.object({
   // store's payload builder, so "why did we lose this?" had no durable answer.
   lossReason: z.string().nullable(),
   address: z.string().nullable(),
+  /** Shop-defined pipeline stage id — MANUAL placement, null = unstaged. */
+  pipelineStageId: z.string().uuid().nullable(),
   createdAt: z.string(),
   // The list's DEFAULT ordering is `lastActivity` → updated_at, and until this shipped the
   // Latest column had no way to show the value the rows were already sorted by.
@@ -151,6 +154,8 @@ const listInput = z.object({
   scope: z.enum(LEAD_SCOPES).optional(),
   /** One work group — where this customer's work has got to. The Customers list's chips. */
   group: z.enum(LEAD_GROUPS).optional(),
+  /** One shop-defined pipeline stage (id), or "none" for the unstaged column. */
+  pipelineStage: z.union([z.string().uuid(), z.literal("none")]).optional(),
   /**
    * Show the ARCHIVED set instead of the live one. Archiving is a soft delete, so this is the
    * deleted rows — the only way the Customers screen's Archived tab can show an archived customer.
@@ -167,6 +172,7 @@ const countInput = z.object({
   // list is showing the 12 customers who owe money.
   scope: z.enum(LEAD_SCOPES).optional(),
   group: z.enum(LEAD_GROUPS).optional(),
+  pipelineStage: z.union([z.string().uuid(), z.literal("none")]).optional(),
   /**
    * Show the ARCHIVED set instead of the live one. Archiving is a soft delete, so this is the
    * deleted rows — the only way the Customers screen's Archived tab can show an archived customer.
@@ -204,6 +210,7 @@ const toLeadDTO = (
     notes: p.notes,
     lossReason: p.lossReason,
     address: p.address,
+    pipelineStageId: p.pipelineStageId,
     createdAt: p.createdAt.toISOString(),
     updatedAt: p.updatedAt.toISOString(),
   };
@@ -229,6 +236,8 @@ const updateInput = z.object({
 // request's tx + ports, delegate, map the result. No business logic lives here.
 export const createLeadRouter = () =>
   router({
+    // Shop-defined pipeline (stages + placement) — see pipeline-router.ts.
+    pipeline: createPipelineRouter(),
     update: ownerOrOffice
       .input(updateInput)
       .output(leadDTO)
@@ -463,7 +472,7 @@ export const createLeadRouter = () =>
           sort: input.sort,
           sortDir: input.sortDir,
           page: toPage({ limit: input.limit, cursor: input.cursor ?? null }),
-          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope, group: input.group, archived: input.archived },
+          filter: { stage: input.stage, unreadOnly: input.unreadOnly, search: input.search, source: input.source, view: input.view, scope: input.scope, group: input.group, archived: input.archived, pipelineStage: input.pipelineStage },
         });
         // Two batched reads for the page — never per-row (same batching rule the invoice list
         // applies to lead names). The group is derived from three other tables, so per-row it
@@ -543,6 +552,7 @@ export const createLeadRouter = () =>
             scope: input.scope,
             group: input.group,
             archived: input.archived,
+            pipelineStage: input.pipelineStage,
           }),
         };
       }),
