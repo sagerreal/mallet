@@ -49,6 +49,33 @@ export const ESTIMATE_ORIGINS: readonly EstimateOrigin[] = ["office", "field"];
 export const isEstimateOrigin = (value: string): value is EstimateOrigin =>
   (ESTIMATE_ORIGINS as readonly string[]).includes(value);
 
+/**
+ * Which numbers the customer sees on the public quote. 'lines' = per-line extended amounts
+ * (today's behavior); 'total' = scope prose + one price at the bottom (the proposal format).
+ * Display-only: rates stay in the data either way, and optional add-on prices always show —
+ * adding one changes the total, so its price must be visible.
+ */
+export type PriceDisplay = "lines" | "total";
+
+export const PRICE_DISPLAYS: readonly PriceDisplay[] = ["lines", "total"];
+
+export const isPriceDisplay = (value: string): value is PriceDisplay =>
+  (PRICE_DISPLAYS as readonly string[]).includes(value);
+
+/**
+ * One row of the estimating math behind a line — the substrate model (Cabinet Doors × 22,
+ * Walls × 2,400 sq ft) whose amounts the composer rolls up into the line's rate. Internal only:
+ * never serialized to a customer-facing surface, exactly like cost. The line's rate stays the
+ * single pricing source of truth — the sum is a composer affordance, never a server invariant,
+ * so an owner can always override the rolled-up price.
+ */
+export interface EstimateSubItem {
+  readonly description: string;
+  readonly quantity: number;
+  readonly unit: string | null;
+  readonly amountCents: number;
+}
+
 // Good/Better/Best. An estimate is tiered iff recommendedTier is non-null; then every line
 // carries a tier tag until accept resolves the estimate to the customer's chosen tier.
 export type QuoteTier = "good" | "better" | "best";
@@ -92,6 +119,12 @@ export interface EstimateLineProps {
   /** Provenance pointer when the line came from a pricebook MATERIAL (sellable parts).
    * Values above are snapshots — the id survives for costing, never for live repricing. */
   readonly materialId: string | null;
+  /** Customer-facing scope prose under this line (Includes / Excludes / Prep / Products), plain
+   *  text rendered pre-wrap. Optional so pre-existing construction sites read as null. */
+  readonly scope?: string | null;
+  /** Internal estimating math behind the price — see EstimateSubItem. Null when the line was
+   *  priced directly. Optional for the same reason as scope. */
+  readonly subItems?: readonly EstimateSubItem[] | null;
 }
 
 /**
@@ -105,6 +138,48 @@ export interface EstimateLineProps {
  */
 export type EstimateLineCreateProps = Omit<EstimateLineProps, "taxable"> & {
   readonly taxable?: boolean;
+};
+
+// Scope is a proposal page's worth of prose, not a paragraph cap — the PaintScout exemplar runs
+// ~2.5 printed pages for one line. Sub-item bounds mirror the composer's editable rows.
+const MAX_SCOPE_CHARS = 8000;
+const MAX_SUB_ITEMS = 20;
+const MAX_SUB_DESCRIPTION_CHARS = 500;
+const MAX_SUB_UNIT_CHARS = 20;
+
+// Jsonb round-trip validation for a line's sub-items — malformed rows fail loud, valid input is
+// normalized (trimmed, blank unit → null) and frozen. Absent/empty reads as null, one meaning.
+const validateSubItems = (
+  input: readonly EstimateSubItem[] | null | undefined,
+): Result<readonly EstimateSubItem[] | null, ValidationError> => {
+  if (input == null || input.length === 0) return ok(null);
+  if (input.length > MAX_SUB_ITEMS) {
+    return err(validation(`a line is limited to ${MAX_SUB_ITEMS} sub-items`, "subItems"));
+  }
+  const items: EstimateSubItem[] = [];
+  for (const item of input) {
+    const description = typeof item.description === "string" ? item.description.trim() : "";
+    if (description.length === 0 || description.length > MAX_SUB_DESCRIPTION_CHARS) {
+      return err(validation("sub-item description is required (max 500 chars)", "subItems"));
+    }
+    if (!Number.isFinite(item.quantity) || item.quantity < 0) {
+      return err(validation("sub-item quantity cannot be negative", "subItems"));
+    }
+    const unitRaw = typeof item.unit === "string" ? item.unit.trim() : "";
+    if (unitRaw.length > MAX_SUB_UNIT_CHARS) {
+      return err(validation("sub-item unit is limited to 20 characters", "subItems"));
+    }
+    if (!Number.isInteger(item.amountCents) || item.amountCents < 0) {
+      return err(validation("sub-item amount must be non-negative integer cents", "subItems"));
+    }
+    items.push({
+      description,
+      quantity: item.quantity,
+      unit: unitRaw.length === 0 ? null : unitRaw,
+      amountCents: item.amountCents,
+    });
+  }
+  return ok(Object.freeze(items));
 };
 
 // A single priced line on an estimate. Immutable value object; its extended amount is derived,
@@ -127,7 +202,21 @@ export class EstimateLine {
     if (props.tier !== null && !isQuoteTier(props.tier)) {
       return err(validation(`unknown line tier: ${props.tier}`, "tier"));
     }
-    return ok(new EstimateLine({ ...props, description, taxable: props.taxable ?? true }));
+    const scopeTrimmed = typeof props.scope === "string" ? props.scope.trim() : null;
+    if (scopeTrimmed !== null && scopeTrimmed.length > MAX_SCOPE_CHARS) {
+      return err(validation(`scope is limited to ${MAX_SCOPE_CHARS} characters`, "scope"));
+    }
+    const subItems = validateSubItems(props.subItems);
+    if (!subItems.ok) return subItems;
+    return ok(
+      new EstimateLine({
+        ...props,
+        description,
+        taxable: props.taxable ?? true,
+        scope: scopeTrimmed !== null && scopeTrimmed.length > 0 ? scopeTrimmed : null,
+        subItems: subItems.value,
+      }),
+    );
   }
 
   // Extended amount = quantity × unit rate, rounded to whole cents.
@@ -198,6 +287,9 @@ export interface EstimateProps {
   readonly tierNames: TierNames | null;
   // Snapshot of the selected job terms text at draft time (no live reference).
   readonly termsSnapshot: string | null;
+  /** Which numbers the customer sees — see PriceDisplay. Optional so pre-existing construction
+   *  sites read as the historical default ('lines'); absent means lines, never "unknown". */
+  readonly priceDisplay?: PriceDisplay;
   // Signature evidence. All nullable: an office-side acceptance has none, and that is a real state
   // rather than a missing one.
   readonly signerName?: string | null;
@@ -225,6 +317,9 @@ export class Estimate {
     }
     if (props.origin !== undefined && !isEstimateOrigin(props.origin)) {
       return err(validation(`unknown estimate origin: ${props.origin}`, "origin"));
+    }
+    if (props.priceDisplay !== undefined && !isPriceDisplay(props.priceDisplay)) {
+      return err(validation(`unknown price display: ${props.priceDisplay}`, "priceDisplay"));
     }
     if (props.discBps < 0 || props.discBps > BPS_DENOMINATOR) {
       return err(validation("discount must be between 0 and 10000 bps", "discBps"));
@@ -543,6 +638,8 @@ export class Estimate {
         rateCents: l.props.rate,
         isOptional: l.props.isOptional,
         tier: l.props.tier,
+        // Scope is part of what the signer read — the record is incomplete without it.
+        scope: l.props.scope ?? null,
         // By accept time the committed line set IS the selection, so every surviving line is in.
         included: true,
       })),
@@ -552,6 +649,8 @@ export class Estimate {
       totalCents: total,
       depositCents: deposit,
       chosenTier: this.p.acceptedTier,
+      // What the signer's page showed per line: every amount, or scope + one total.
+      priceDisplay: this.priceDisplay(),
       termsText: this.p.termsSnapshot,
       authorizationText: authorizationText({
         totalCents: total,
@@ -564,6 +663,12 @@ export class Estimate {
   /** Provenance, defaulting the pre-column history to 'office'. */
   origin(): EstimateOrigin {
     return this.p.origin ?? "office";
+  }
+
+  // Absent means the historical default: per-line amounts, exactly what every quote showed
+  // before the display switch existed.
+  priceDisplay(): PriceDisplay {
+    return this.p.priceDisplay ?? "lines";
   }
 
   /**
