@@ -655,7 +655,7 @@ describe("EstimateLine scope & sub-items", () => {
       subItems: Array.from({ length: 20 }, () => ({ ...sub, unit: "  " })),
     });
     expect(isOk(r) && r.value.props.subItems?.length).toBe(20);
-    expect(isOk(r) && r.value.props.subItems?.[0].unit).toBeNull();
+    expect(isOk(r) && r.value.props.subItems?.[0]?.unit).toBeNull();
   });
 
   it("reads absent/empty sub-items as null", () => {
@@ -685,7 +685,7 @@ describe("EstimateLine scope & sub-items", () => {
     if (!isOk(r)) throw new Error(r.error.message);
     const resolved = r.value.withoutTier();
     expect(resolved.props.scope).toBe("Includes walls");
-    expect(resolved.props.subItems?.[0].amountCents).toBe(984_000);
+    expect(resolved.props.subItems?.[0]?.amountCents).toBe(984_000);
   });
 });
 
@@ -711,6 +711,6 @@ describe("Estimate price display", () => {
     });
     const snapshot = est.toSignedSnapshot("Two Day Painting");
     expect(snapshot.priceDisplay).toBe("total");
-    expect(snapshot.lines[0].scope).toBe("Includes:\n1. Walls");
+    expect(snapshot.lines[0]?.scope).toBe("Includes:\n1. Walls");
   });
 });

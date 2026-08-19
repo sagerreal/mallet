@@ -362,9 +362,9 @@ describe("DraftEstimateUseCase — scope, sub-items, price display", () => {
     expect(isOk(r)).toBe(true);
     if (!isOk(r)) return;
     expect(r.value.priceDisplay()).toBe("total");
-    const lineProps = r.value.props.lines[0].props;
-    expect(lineProps.scope).toBe("Includes:\n1. Walls");
-    expect(lineProps.subItems?.[0]).toEqual({
+    const lineProps = r.value.props.lines[0]?.props;
+    expect(lineProps?.scope).toBe("Includes:\n1. Walls");
+    expect(lineProps?.subItems?.[0]).toEqual({
       description: "Walls",
       quantity: 2400,
       unit: "sq ft",
