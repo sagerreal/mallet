@@ -63,9 +63,14 @@ export class HttpSquareOauthGateway implements SquareOauthGateway {
       // Space-separated, per Square. The set is fixed in the domain — a seller who grants fewer
       // is recorded as such on the connection rather than silently assumed complete.
       scope: SQUARE_SCOPES.join(" "),
-      session: "false",
       state,
     });
+    // NO session=false. That parameter tells Square to ignore the browser's existing Square
+    // session and force a fresh login — which dead-ends on a BLANK PAGE for a sandbox seller,
+    // because a sandbox test account cannot log in through the normal form at all; it is launched
+    // from the Developer Console instead. It is also wrong for production: a shop already signed
+    // in to Square should not be made to re-authenticate to connect.
+    //
     // redirect_uri is deliberately NOT sent: Square uses the URL registered on the application,
     // and passing one that differs by a character is the most common cause of a failed connect.
     return `${this.host}/oauth2/authorize?${params.toString()}`;

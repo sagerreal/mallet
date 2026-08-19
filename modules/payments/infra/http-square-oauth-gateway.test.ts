@@ -59,6 +59,17 @@ describe("HttpSquareOauthGateway — authorizeUrl", () => {
   it("does not send a redirect_uri", () => {
     expect(gw.authorizeUrl("n")).not.toContain("redirect_uri");
   });
+
+  /**
+   * REGRESSION. `session=false` tells Square to ignore the browser's existing Square session and
+   * force a fresh login. A SANDBOX seller cannot log in through the normal form at all — it is
+   * launched from the Developer Console — so the consent screen rendered as a BLANK PAGE and the
+   * connect flow could not be completed by anyone. It is wrong for production too: a shop already
+   * signed in to Square should not be made to re-authenticate to connect.
+   */
+  it("does not force a fresh login, which blanks the page for a sandbox seller", () => {
+    expect(gw.authorizeUrl("n")).not.toContain("session=false");
+  });
 });
 
 describe("HttpSquareOauthGateway — token exchange", () => {
