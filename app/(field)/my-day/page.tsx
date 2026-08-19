@@ -23,8 +23,6 @@ import { api } from "@/lib/trpc/client";
 import type { RouterOutputs } from "@/lib/trpc/client";
 import { useOpenModal, usePushModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
-import { DayClock } from "@/features/field/day-clock";
-import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { reportWriteError, reportWriteNotice } from "@/lib/store/write-error";
 import { shouldShowLoadFailed } from "@/lib/first-run";
 import { LoadFailed } from "@/components/shared/load-failed";
@@ -55,8 +53,7 @@ const ENROUTE_RETRIES = 2;
 export default function MyDayPage() {
   const utils = api.useUtils();
   // Which day the agenda is looking at. 0 = today (the live path below, untouched); the pager
-  // moves it within ±DAY_PAGER_REACH. Paging is a VIEW change only — it must never touch the
-  // running clock, which is a server-side time entry the DayClock merely renders.
+  // moves it within ±DAY_PAGER_REACH. Paging is a VIEW change only.
   const [dayOffset, setDayOffset] = useState(0);
   const slideDir = useRef<"fwd" | "back" | null>(null);
   const viewDate = addDaysISO(todayISO(), dayOffset);
@@ -102,21 +99,6 @@ export default function MyDayPage() {
    * A segment under a minute is thrown away rather than rounded up — right, because a timesheet
    * is kept to the minute — but silence here is why the clock once looked broken.
    */
-  const announceClock = (notice: "segment_too_short" | "close_bounded" | null) => {
-    if (notice === "segment_too_short") {
-      reportWriteNotice(
-        "clock",
-        "That was under a minute, so it wasn't recorded. Add the time on My hours if it should count.",
-      );
-    }
-    if (notice === "close_bounded") {
-      reportWriteNotice(
-        "clock",
-        "That segment ran far too long to be real, so its end was capped. Correct it on My hours.",
-      );
-    }
-  };
-
   /** Move the card NOW — patch the exact cache entry this page reads (same input, or it's a miss). */
   const patchJob = (jobId: string, patch: (j: JobSummary) => JobSummary) => {
     utils.v1.field.myDay.setData(dayInput, (prev) =>
@@ -135,20 +117,15 @@ export default function MyDayPage() {
    * The clock card reads `open`/`list` on long staleTimes — without these invalidations it kept
    * showing the previous segment until something else remounted it.
    */
-  const refreshClock = (): void => {
-    void utils.v1.timesheets.open.invalidate();
-    void utils.v1.timesheets.list.invalidate();
-  };
-
   // ── job-level pair, for the visit-less card ────────────────────────────────
   const startMutation = api.v1.field.start.useMutation({
     onMutate: ({ jobId }) => patchJob(jobId, (j) => ({ ...j, status: "in_progress" })),
-    onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
+    onSuccess: () => { void refetch(); },
     onError: (err) => { void refetch(); reportWriteError("field.start", err); },
   });
   const completeMutation = api.v1.field.complete.useMutation({
     onMutate: ({ jobId }) => patchJob(jobId, (j) => ({ ...j, status: "complete" })),
-    onSuccess: (dto) => { announceClock(dto.clockNotice); refreshClock(); void refetch(); },
+    onSuccess: () => { void refetch(); },
     onError: (err) => { void refetch(); reportWriteError("field.complete", err); },
   });
 
@@ -177,7 +154,7 @@ export default function MyDayPage() {
           ? { status, completedAt: new Date().toISOString() }
           : { status, startedAt: new Date().toISOString() },
       ),
-    onSuccess: () => { refreshClock(); void refetch(); },
+    onSuccess: () => { void refetch(); },
     onError: (err) => { void refetch(); reportWriteError("field.setVisitStatus", err); },
   });
 
@@ -195,7 +172,6 @@ export default function MyDayPage() {
 
   const items = viewingToday ? (data?.items ?? []) : (pagedDay.data?.items ?? []);
   const customers = viewingToday ? (data?.customers ?? []) : (pagedDay.data?.customers ?? []);
-  const hasClock = useTimesheetClock();
 
   const jobsById = new Map(items.map((j) => [j.id, j]));
   const customersById = new Map(customers.map((c) => [c.id, c]));
@@ -293,25 +269,6 @@ export default function MyDayPage() {
     <>
       <h1>My day</h1>
 
-      {/* The day clock owns its own queries — it must not wait on the agenda, and the agenda's
-          loading state must not blank the row that says whether he is being paid. A sheet shop
-          has no punch clock — its crew type their week on My hours instead, so the control hides
-          entirely rather than sitting inert. */}
-      {viewingToday && hasClock ? (
-        <DayClock
-          jobs={items}
-          // The DAY TOTAL card's denominator: the length of this person's working day (their
-          // crew-schedule row, else the org's default hours). A shop that never set hours up
-          // falls back to today's booked visit load, so the ring still means something.
-          scheduledMinutes={
-            standardDay.data?.minutes ??
-            items
-              .flatMap((j) => j.visits)
-              .filter((v) => v.scheduledDate === todayISO() && v.status !== "canceled")
-              .reduce((n, v) => n + (v.durationMinutes ?? 0), 0)
-          }
-        />
-      ) : null}
       {!viewingToday ? (
         <DaySummaryCard
           dateISO={viewDate}

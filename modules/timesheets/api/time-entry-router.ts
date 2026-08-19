@@ -331,49 +331,6 @@ export const createTimesheetRouter = () =>
         return { open: entry === null ? null : toTimeEntryDTO(entry) };
       }),
 
-    /**
-     * One day-level clock tap: Start day, Break, End break, End day.
-     *
-     * Unlike the clock tap that rides along with a visit write (which is swallowed rather than
-     * allowed to fail a dispatch action), this tap IS the user's action. A refusal must reach them:
-     * the button rolls back and says so, because a technician who thinks he clocked in and did not
-     * is the exact failure this feature exists to prevent.
-     */
-    clockTap: anyRole
-      .input(clockTapInput)
-      .output(clockStateDTO)
-      .mutation(async ({ ctx, input }) => {
-        const orgId = ctx.principal.orgId;
-        // The clock records the hours of the person tapping — never an id from the wire. An owner
-        // who also runs calls punches his own clock here, exactly as a tech does.
-        const techUserId = asUserId(ctx.principal.userId);
-        const repo = new DrizzleTimeEntryRepository(ctx.tx, orgId);
-        // The shop's zone is read HERE and injected: timesheets must not import the settings
-        // module's domain, and a wrong zone files a plumber's evening on tomorrow's sheet, so it
-        // belongs where it can be seen being passed in.
-        const timeZone = await new DrizzleSettingsRepository(ctx.tx, orgId).getTimezone();
-        const useCase = new SetClockStateUseCase(
-          repo,
-          ctx.deps.clock,
-          ctx.deps.ids,
-          timeZone,
-          new DrizzleWeekSubmissionRepository(ctx.tx, orgId),
-        );
-
-        orThrow(
-          await useCase.exec(
-            { techUserId, tap: input.tap, jobId: null, at: new Date(input.at) },
-            orgId,
-          ),
-        );
-
-        // Re-read rather than reporting the plan's own `opened`: that is null both for End day and
-        // for a no-op double tap, and a client told "null" after a double-tapped Break would show
-        // the technician as off the clock while the database has him running.
-        const entry = await repo.findOpenForTech(techUserId);
-        return { open: entry === null ? null : toTimeEntryDTO(entry) };
-      }),
-
     create: anyRole
       .input(createInput)
       .output(timeEntryDTO)

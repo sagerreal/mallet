@@ -22,6 +22,7 @@ import { ListJobsUseCase } from "../app/list-jobs";
 import { StartJobUseCase } from "../app/start-job";
 import { CompleteJobUseCase } from "../app/complete-job";
 import { SetVisitStatusUseCase } from "../app/set-visit-status";
+import type { VisitStatus } from "../domain/job";
 import { SetVisitEnrouteUseCase } from "../app/set-visit-enroute";
 import { SetVerifyAnswerUseCase, AddJobPhotoUseCase, AddJobAddonUseCase, SetJobLinesUseCase } from "../app/job-execution-use-cases";
 import { PatchVisitScheduleUseCase } from "../app/patch-visit-schedule";
@@ -39,7 +40,6 @@ import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 import { byAgenda, byVisitOn } from "./my-day-order";
 import { withinDayPagerBound, DAY_PAGER_BOUND_DAYS } from "./day-window";
 import { standardDayMinutes, weekdayOf } from "./standard-day";
-import { runVisitClockTap, CLOCK_TAP_FOR_STATUS, FIELD_VISIT_STATUSES, type ClockTapOutcome } from "./visit-clock-tap";
 import { visitToClose } from "./visit-to-close";
 
 /**
@@ -99,11 +99,6 @@ const loadCustomersFor = async (
  * discarded rather than rounded up, which is right, but nothing said so and the hours simply never
  * appeared. The field response carries it so the person who tapped finds out from the tap.
  */
-const clockNoticeDTO = z.enum(["segment_too_short", "close_bounded"]);
-
-const noticeFor = (outcome: ClockTapOutcome): z.infer<typeof clockNoticeDTO> | null =>
-  outcome.discardedTooShort ? "segment_too_short" : outcome.boundedClose ? "close_bounded" : null;
-
 // Field-surface add-addon input: description 1..200, optional client-authored id for idempotent
 // retry (mirrors the office addAddonInput's optional id), optional rate (tech with !seesPrice has
 // it zeroed server-side; seesPrice techs and office callers may send a real rate).
@@ -301,6 +296,13 @@ const jobIdVisitIdInput = z.object({
 });
 
 // The field surface's own status input. Narrower than the office's on purpose: the enum is the
+
+/**
+ * The visit statuses the FIELD surface may set — the two step buttons on a technician's visit row.
+ * Reopen and cancel are office moves and are not offered here.
+ */
+const FIELD_VISIT_STATUSES = ["in_progress", "complete"] as const satisfies readonly VisitStatus[];
+
 // two step buttons a technician has (see FIELD_VISIT_STATUSES), so ↩ Reopen and cancel stay
 // office-only at the API, not merely hidden in the UI.
 const fieldSetVisitStatusInput = jobIdVisitIdInput.extend({
@@ -521,7 +523,7 @@ export const createFieldRouter = () =>
     // modal at all. While they moved the job without moving the clock, a tech who worked entirely
     // from the agenda recorded ten hours of unattributed `shop` time and ZERO job time: payroll
     // right, job costing empty. The two entry points must not be able to diverge.
-    start: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
+    start: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       await assertOnJobIfTech(repo, jobId, ctx.principal);
@@ -529,19 +531,12 @@ export const createFieldRouter = () =>
       const dto = await toJobDTOWithExecution(repo, started);
       // Starting the job = arriving on it: close the drive, open job time. Never fails the write.
       // Job-level, so job-level assignment is the right question — this button is not about one visit.
-      const outcome = await runVisitClockTap(
-        { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
-        "arrived",
-        jobId,
-        started.isAssignedTo(ctx.principal.userId),
-      );
-      const clockNotice = noticeFor(outcome);
-      if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
+      if (ctx.principal.role !== "tech") return { ...dto };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
+      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) };
     }),
 
-    complete: anyRole.input(jobIdInput).output(jobDTO.extend({ clockNotice: clockNoticeDTO.nullable() })).mutation(async ({ ctx, input }) => {
+    complete: anyRole.input(jobIdInput).output(jobDTO).mutation(async ({ ctx, input }) => {
       const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
       const jobId = asJobId(input.jobId);
       const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
@@ -588,19 +583,10 @@ export const createFieldRouter = () =>
             status: "complete",
           }),
         );
-        const tap = await runVisitClockTap(
-          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
-          "done",
-          jobId,
-          // VISIT-level, matching setVisitStatus: an owner clearing a colleague's visit is
-          // dispatching and takes none of the hours.
-          job.isAssignedToVisit(ctx.principal.userId, closing),
-        );
         const cascaded = await toJobDTOWithExecution(repo, job);
-        const notice = noticeFor(tap);
-        if (ctx.principal.role !== "tech") return { ...cascaded, clockNotice: notice };
+        if (ctx.principal.role !== "tech") return { ...cascaded };
         const techSeesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-        return { ...redactMoneyForTech(cascaded, techSeesPrice, FIELD_SURFACE_REDACTION), clockNotice: notice };
+        return { ...redactMoneyForTech(cascaded, techSeesPrice, FIELD_SURFACE_REDACTION) };
       }
 
       if (before?.canStart()) {
@@ -610,16 +596,9 @@ export const createFieldRouter = () =>
       const dto = await toJobDTOWithExecution(repo, completed);
       // Completing the job = done on it: close job time and auto-resume shop, so whoever did the work
       // stays on the clock between calls. Never fails the write.
-      const outcome = await runVisitClockTap(
-        { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
-        "done",
-        jobId,
-        completed.isAssignedTo(ctx.principal.userId),
-      );
-      const clockNotice = noticeFor(outcome);
-      if (ctx.principal.role !== "tech") return { ...dto, clockNotice };
+      if (ctx.principal.role !== "tech") return { ...dto };
       const seesPrice = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getTechSeesPrice();
-      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION), clockNotice };
+      return { ...redactMoneyForTech(dto, seesPrice, FIELD_SURFACE_REDACTION) };
     }),
 
     /**
@@ -699,7 +678,6 @@ export const createFieldRouter = () =>
     // Arrived / ✓ Mark done from the technician's own visit row. Same use-case as the office
     // endpoint (v1.visits.setVisitStatus stays ownerOrOffice and is NOT loosened); this is a
     // sibling gated by assignment instead of by role, so a tech may only move a visit on a job
-    // they are on. The tap also drives their clock — see runVisitClockTap.
     setVisitStatus: anyRole
       .input(fieldSetVisitStatusInput)
       .output(jobDTO)
@@ -717,14 +695,6 @@ export const createFieldRouter = () =>
         );
 
         // Hours are written AFTER the visit write, in the same transaction, and can never fail it.
-        await runVisitClockTap(
-          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
-          CLOCK_TAP_FOR_STATUS[input.status],
-          jobId,
-          // VISIT-level: an owner-operator working their own visit gets the hours; an owner clearing
-          // a colleague's visit is dispatching and gets none.
-          job.isAssignedToVisit(ctx.principal.userId, visitId),
-        );
 
         logger.info(
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId, status: input.status },
@@ -757,12 +727,6 @@ export const createFieldRouter = () =>
         // Run on EVERY tap, including a repeat one the use-case treats as idempotent: the clock
         // decides for itself whether a segment is already open (planTap no-ops a double tap), and
         // a second tap is then the only thing that can repair a segment an earlier failure lost.
-        await runVisitClockTap(
-          { tx: ctx.tx, principal: ctx.principal, clock: ctx.deps.clock, ids: ctx.deps.ids },
-          "enroute",
-          jobId,
-          job.isAssignedToVisit(ctx.principal.userId, visitId),
-        );
 
         logger.info(
           { jobId: input.jobId, visitId: input.visitId, orgId: ctx.principal.orgId },

@@ -138,8 +138,8 @@ suite("timesheet policy (live RLS)", () => {
 
   });
 
-  it("a clock tap on a submitted week lands AND reopens the attestation", async () => {
-    // A second tech, submitting THIS week — the week a clock tap actually files on.
+  it("new hours on a submitted week land AND reopen the attestation", async () => {
+    // A second tech, submitting THIS week — the week the new hours file on.
     const [t2] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role)
       values (${orgId}, ${randomUUID()}, 'tech2@tspolicy.test', 'tech') returning id`;
@@ -150,8 +150,20 @@ suite("timesheet policy (live RLS)", () => {
     const sub = await tech2.v1.timesheets.submitWeek({ weekStart: thisMonday!.d });
     expect(sub.reopenedAt).toBeNull();
 
-    await tech2.v1.timesheets.clockTap({ tap: "start_day", at: new Date(Date.now() - 120_000).toISOString() });
-    await tech2.v1.timesheets.clockTap({ tap: "end_day", at: new Date().toISOString() });
+    // Typed in, because that is now the only way hours ever arrive — there is no clock. The
+    // property is unchanged and matters more without one: hours added after somebody signed off
+    // must un-sign it, or the attestation covers a week that has since grown.
+    await tech2.v1.timesheets.create({
+      techUserId: t2!.id,
+      workDate: thisMonday!.d,
+      kind: "shop",
+      jobId: null,
+      startTime: "09:00",
+      endTime: "11:00",
+      note: "",
+      src: "manual",
+      running: false,
+    });
 
     const after = await tech2.v1.timesheets.submissionFor({ weekStart: thisMonday!.d });
     expect(after.submission?.reopenedAt).not.toBeNull();
