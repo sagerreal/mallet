@@ -11,6 +11,7 @@ const booking: BookingCfg = {
 
 const baseProps = (overrides: Partial<OrgSettingsProps> = {}): OrgSettingsProps => ({
   orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+  paymentProvider: 'stripe',
   trade: "plumbing",
   markupBps: 3500,
   taxBps: 0,

@@ -4,6 +4,7 @@ import { asOrgId } from "@mallet/shared/types";
 
 const base = (): OrgSettingsProps => ({
   orgId: asOrgId("00000000-0000-0000-0000-000000000001"),
+  paymentProvider: 'stripe',
   trade: "plumbing",
   markupBps: 3500,
   taxBps: 0,

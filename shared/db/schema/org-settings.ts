@@ -8,7 +8,9 @@ import {
   timestamp,
   doublePrecision,
   unique,
+  check,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { orgs } from "./orgs";
 
 // One row per org. Scalars are typed columns (money in cents, rates in bps, durations in integer
@@ -154,6 +156,13 @@ export const orgSettings = pgTable(
     docInvoicePayInstructions: text("doc_invoice_pay_instructions"),
     docInvoiceReceiptNote: text("doc_invoice_receipt_note"),
     docChangeOrderAgreement: text("doc_change_order_agreement"),
+    // ── Which processor this shop takes cards through ────────────────────────
+    // 'stripe' for every org today. 'square' exists because a shop that already runs Square is
+    // not going to change processors to change software — the reader is on their counter and
+    // their money already lands in that account. The payment PORTS are provider-neutral
+    // (modules/invoicing/domain/*-gateway.ts); this column is what picks the adapter behind them.
+    // NOT nullable: "no provider" is already expressed by the connected-account id being null.
+    paymentProvider: text("payment_provider").notNull().default("stripe"),
     // ── Stripe Connect (Express) — PR1 onboarding foundation ──────────────────
     // The connected account id (acct_...) is null until onboarding begins. Status booleans mirror
     // the Stripe Account object and default false; onboardedAt stamps the first time charges go live.
@@ -175,5 +184,8 @@ export const orgSettings = pgTable(
   (t) => [
     unique("org_settings_org_id_uq").on(t.orgId),
     unique("org_settings_org_id_row_uq").on(t.orgId, t.id),
+    // Enumerated in the DB, not just in zod: this column decides where a shop's money goes, and a
+    // typo'd value must not be storable at all.
+    check("org_settings_payment_provider_ck", sql`${t.paymentProvider} in ('stripe','square')`),
   ],
 );
