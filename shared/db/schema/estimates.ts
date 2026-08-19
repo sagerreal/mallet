@@ -20,6 +20,16 @@ import { leads } from "./leads";
 // Customer-facing display names for the three Good/Better/Best tiers (jsonb column shape).
 type TierNamesColumn = { good: string; better: string; best: string };
 
+// Internal estimating math behind one line (jsonb column shape): the substrate rows that roll up
+// into the line's rate. Money is integer cents. NEVER serialized to any customer-facing surface —
+// redacted exactly like cost_cents.
+type SubItemsColumn = {
+  description: string;
+  quantity: number;
+  unit: string | null;
+  amountCents: number;
+}[];
+
 // Snapshot of the AI's original draft lines (jsonb column shape) — written ONCE at draft time
 // when the estimate originated from the AI drafter, never updated after. The send path diffs
 // this against the lines actually sent to mine edit-delta corrections (quoting_rules proposals).
@@ -76,6 +86,11 @@ export const estimates = pgTable(
     // Snapshot of the selected job terms TEXT at draft time (no live reference — later term
     // edits must not rewrite sent quotes). Rendered on the public quote page and the modal.
     termsSnapshot: text("terms_snapshot"),
+    // Which numbers the customer sees on the public quote: 'lines' = per-line extended amounts
+    // (the default, today's behavior), 'total' = scope prose + one price at the bottom (the
+    // PaintScout-style proposal). Display-only — rates stay in the data either way, and optional
+    // add-on prices always show (adding one changes the total, so its price must be visible).
+    priceDisplay: text("price_display").notNull().default("lines"),
 
     // ---- Signature evidence -------------------------------------------------------------------
     //
@@ -182,6 +197,7 @@ export const estimates = pgTable(
     check("estimates_disc_bps_check", sql`${t.discBps} between 0 and 10000`),
     check("estimates_tax_bps_check", sql`${t.taxBps} >= 0`),
     check("estimates_dep_bps_check", sql`${t.depBps} between 0 and 10000`),
+    check("estimates_price_display_check", sql`${t.priceDisplay} in ('lines', 'total')`),
   ],
 );
 
@@ -217,6 +233,14 @@ export const estimateLines = pgTable(
     // survives for costing and future reprice-from-book actions. No FK — a deleted material
     // must not constrain its historical lines.
     materialId: uuid("material_id"),
+    // Customer-facing scope prose under this line: Includes / Excludes / Prep / Products, plain
+    // text rendered pre-wrap. This is the "pages of words" a $2-15M shop's proposal carries.
+    scope: text("scope"),
+    // The estimating math behind the line's price (see SubItemsColumn). Jsonb, not a child table:
+    // sub-items are never queried independently and live and die with their line. The line's
+    // rate_cents stays the single pricing source of truth — the composer derives it from these,
+    // the server never enforces the sum.
+    subItems: jsonb("sub_items").$type<SubItemsColumn>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
