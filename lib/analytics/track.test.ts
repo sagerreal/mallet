@@ -116,15 +116,37 @@ describe("configuration", () => {
     expect(await freshInit()).toMatchObject({ api_host: INGEST_PATH });
   });
 
-  it("turns autocapture and session replay OFF", async () => {
-    // Both would record customer names, addresses and invoice totals. Neither is a default we can
-    // accept in an app whose every screen is somebody else's customer.
+  it("turns autocapture OFF", async () => {
+    // Autocapture records the text inside whatever was clicked, and nearly everything clickable
+    // here has a customer inside it.
     expect(await freshInit()).toMatchObject({
       autocapture: false,
-      disable_session_recording: true,
       capture_pageview: false,
       person_profiles: "identified_only",
     });
+  });
+
+  /**
+   * REPLAY IS ON, AND MASKED AT THE SOURCE. Masking happens in the browser before transmission, so
+   * the unmasked pixels never leave the phone — it is not a display setting somebody can switch off
+   * in PostHog later. `maskTextSelector: "*"` rather than a list of selectors: a list is a promise
+   * to remember every future component that renders a customer, and that promise gets broken.
+   */
+  it("records sessions with every value and every character masked", async () => {
+    const opts = await freshInit();
+    expect(opts).toMatchObject({ disable_session_recording: false });
+    expect(opts.session_recording).toMatchObject({
+      maskAllInputs: true,
+      maskTextSelector: "*",
+      recordHeaders: false,
+      recordBody: false,
+    });
+  });
+
+  it("never records network bodies or headers — those are whole customer records", async () => {
+    const rec = (await freshInit()).session_recording as Record<string, unknown>;
+    expect(rec.recordBody).toBe(false);
+    expect(rec.recordHeaders).toBe(false);
   });
 
   /**

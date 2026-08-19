@@ -10,8 +10,11 @@
  *
  *  · autocapture OFF. It records the text inside whatever was clicked, and nearly everything
  *    clickable in Mallet contains a customer's name, address, phone number or invoice total.
- *  · session replay OFF. It films the screen. That screen is somebody's home address and what
- *    they paid to have their boiler fixed.
+ *  · session replay ON, but MASKED TO THE FRAME. It films the screen, and that screen is somebody's
+ *    home address and what they paid to have their boiler fixed — so every input value and every
+ *    piece of text is replaced with blocks before the recording leaves the browser. What survives
+ *    is layout, clicks and navigation: enough to see a technician get stuck on a screen, not enough
+ *    to read the customer he was looking at.
  *  · identified_only profiles. Anonymous traffic gets events but no stored person, so a shop's
  *    logged-out marketing visit does not become a billable profile.
  *  · pageviews sent BY HAND (see the provider). Automatic ones fire before the route is known in
@@ -47,7 +50,26 @@ export function startAnalytics(): void {
     api_host: INGEST_PATH,
     ui_host: analyticsHost(),
     autocapture: false,
-    disable_session_recording: true,
+    /**
+     * REPLAY, MASKED AT THE SOURCE.
+     *
+     * Masking happens in the browser before anything is transmitted, so the unmasked pixels never
+     * exist outside the technician's phone — this is not a display setting on PostHog's side that
+     * somebody could switch off later.
+     *
+     *  · maskAllInputs — every field value. Names, addresses, phone numbers, card entry.
+     *  · maskTextSelector "*" — ALL text, not a list of selectors. A list is a promise to remember
+     *    every future component that renders a customer, and that promise gets broken; "*" is the
+     *    only version that stays true as the app grows.
+     *  · no network bodies or headers. Those are tRPC payloads — a customer record in full.
+     */
+    disable_session_recording: false,
+    session_recording: {
+      maskAllInputs: true,
+      maskTextSelector: "*",
+      recordHeaders: false,
+      recordBody: false,
+    },
     capture_pageview: false,
     capture_pageleave: true,
     person_profiles: "identified_only",
