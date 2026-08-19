@@ -13,6 +13,7 @@ import {
   foreignKey, jsonb } from "drizzle-orm/pg-core";
 import { orgs } from "./orgs";
 import { companies } from "./companies";
+import { pipelineStages } from "./pipeline-stages";
 
 // A customer/lead in the pipeline. Every row carries org_id; RLS isolates by it.
 // Conventions: money as integer cents, soft-delete, created/updated timestamps.
@@ -37,6 +38,10 @@ export const leads = pgTable(
     // was dropped by the update payload builder, so the answer to "why did we lose this?" was gone
     // by the next refetch.
     lossReason: text("loss_reason"),
+    // The shop-defined pipeline stage this customer sits in (pipeline_stages.id), null = unstaged.
+    // Manual placement — set by dragging on the board or from the customer sheet. Nullable because
+    // the pipeline is opt-in: shops that never set one up keep this null forever.
+    pipelineStageId: uuid("pipeline_stage_id"),
     // Service address captured at lead creation or updated from the lead modal.
     // Nullable: most leads are created without an address.
     address: text("address"),
@@ -84,5 +89,14 @@ export const leads = pgTable(
       columns: [t.orgId, t.companyId],
       foreignColumns: [companies.orgId, companies.id],
     }),
+    // Composite FK (org_id, pipeline_stage_id) → pipeline_stages(org_id, id): a lead can only sit
+    // in its OWN org's stage. Same cross-tenant-proof device as leads_org_company_fk.
+    foreignKey({
+      name: "leads_org_pipeline_stage_fk",
+      columns: [t.orgId, t.pipelineStageId],
+      foreignColumns: [pipelineStages.orgId, pipelineStages.id],
+    }),
+    // Backs the board's per-stage columns and counts (GROUP BY stage) without a tenant scan.
+    index("leads_org_pipeline_stage_idx").on(t.orgId, t.pipelineStageId),
   ],
 );

@@ -21,11 +21,12 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/trpc/client";
 import { dtoEstimateSummaryToStore, dtoLeadNoteToStore } from "@/lib/store/dto-mapper";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { Modal } from "../modal";
 import { SheetRow } from "../sheet-row";
+import { PipelineStagePicker } from "@/features/customers/pipeline-stage-picker";
+import { api } from "@/lib/trpc/client";
 import { LeadSheetHeader, PhoneCell } from "./lead-header";
 import { NotesBody, latestNoteSnippet } from "./lead-notes";
 import { TasksBody, openTaskLabel } from "./tasks-card";
@@ -251,6 +252,15 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         ? { label: callLabel(lead), run: () => pushModal(MODAL.CALL, { leadId: lead.id }) }
         : { label: "New quote", run: newQuote };
 
+  // The shop's pipeline stages — gates the "Pipeline stage" row. A shop with no pipeline never
+  // sees the row (progressive disclosure); a tech's session cannot read it and gets the same
+  // nothing. One cached read, shared with the board.
+  const pipelineQ = api.v1.customers.pipeline.board.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+  const pipelineStages = pipelineQ.data?.stages ?? [];
+
   const openTasksStore = tasks.filter((t) => t.leadId === lead.id && !t.done);
   const openTasks = Math.max(openTasksStore.length, leadTasksQ.data?.items.length ?? 0);
 
@@ -397,6 +407,18 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         >
           <TasksBody lead={lead} />
         </SheetRow>
+
+        {/* Only when the shop HAS a pipeline. The value names the stage, or offers placement. */}
+        {pipelineStages.length > 0 && (
+          <SheetRow
+            label="Pipeline stage"
+            value={pipelineStages.find((s) => s.id === lead.pipelineStageId)?.name ?? "Add"}
+            valueIsHint={!pipelineStages.some((s) => s.id === lead.pipelineStageId)}
+            expandable
+          >
+            <PipelineStagePicker leadId={lead.id} value={lead.pipelineStageId} />
+          </SheetRow>
+        )}
       </div>
       </SheetRow>
 

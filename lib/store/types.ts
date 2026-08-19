@@ -84,6 +84,8 @@ export interface Lead {
   role?: string;
   value?: number;
   lossReason?: string;
+  /** Shop-defined pipeline stage id — MANUAL placement, absent/undefined = unstaged. */
+  pipelineStageId?: string;
   acts?: LeadNote[];
   notes?: string;
   card?: { brand: string; last4: string; via: string };

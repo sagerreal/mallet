@@ -49,6 +49,7 @@ export function toStoreLead(dto: LeadDTO): Lead {
     customFields: dto.customFields ?? undefined,
     notes: dto.notes ?? undefined,
     address: dto.address ?? undefined,
+    pipelineStageId: dto.pipelineStageId ?? undefined,
     // The key is set only when a card exists, so adoptLead's `{ ...prior, ...lead }` merge from
     // a card-less mutation DTO cannot erase a card the list already delivered.
     ...(dto.card ? { card: dtoCardToStore(dto.card) } : {}),

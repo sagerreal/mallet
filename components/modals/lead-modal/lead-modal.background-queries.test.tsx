@@ -52,6 +52,8 @@ vi.mock("@/lib/trpc/client", () => {
       v1: {
         links: { forRecord: { useQuery: () => ({ data: undefined }) } },
         customers: {
+        // The sheet's "Pipeline stage" row gates on this; empty = the row never renders.
+        pipeline: { board: { useQuery: () => ({ data: undefined }) } },
           get: { useQuery: record("customers.get") },
           listNotes: { useQuery: record("customers.listNotes") },
         },

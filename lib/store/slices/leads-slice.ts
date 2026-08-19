@@ -167,6 +167,10 @@ function reconcileLeadFromDTO(
     notes: dto.notes !== undefined ? (dto.notes ?? undefined) : current.notes,
     // address is persisted; adopt from DTO when present, otherwise keep current.
     address: dto.address !== undefined ? (dto.address ?? undefined) : current.address,
+    // pipeline placement is persisted; adopt when the DTO carries it (the update endpoint's
+    // response predates the field under deploy skew — keep current then, never erase).
+    pipelineStageId:
+      "pipelineStageId" in dto ? ((dto as { pipelineStageId?: string | null }).pipelineStageId ?? undefined) : current.pipelineStageId,
     // Explicitly re-pin ALL seven local-only fields so the contract is
     // drift-safe regardless of what the spread above brings in from current.
     age: current.age,
@@ -209,6 +213,13 @@ export interface LeadsSlice {
    */
   clearLeadUnreadLocal: (id: string) => void;
   moveLeadStage: (id: string, stage: string) => void;
+  /**
+   * Place a customer in a shop-defined pipeline stage (null = unstage). Its own action rather
+   * than an updateLead key: placement persists through v1.customers.pipeline.setLeadStage — a
+   * dedicated endpoint that verifies the stage is LIVE — and updateLead's payload builder would
+   * silently drop an unknown key (the exact mapper trap this store has been bitten by before).
+   */
+  setLeadPipelineStage: (id: string, stageId: string | null) => Promise<boolean>;
   addLeadNote: (id: string, note: Omit<LeadNote, "id">) => LeadNote;
   removeLeadNote: (id: string, noteId: string) => void;
   adoptLeadNotes: (id: string, notes: LeadNote[]) => void;
@@ -357,6 +368,27 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
           }),
         }));
         reportWriteError("updateLead", err);
+        return false;
+      });
+  },
+
+  setLeadPipelineStage: (id, stageId) => {
+    const prior = get().leads.find((l) => l.id === id)?.pipelineStageId;
+    set((s) => ({
+      leads: s.leads.map((l) => (l.id === id ? { ...l, pipelineStageId: stageId ?? undefined } : l)),
+    }));
+    return trpcVanilla.v1.customers.pipeline.setLeadStage
+      .mutate({ leadId: id, stageId })
+      .then(() => {
+        // Placement moves the row between board columns — refetch the cached pages.
+        invalidateLists("customers");
+        return true;
+      })
+      .catch((err: unknown) => {
+        set((s) => ({
+          leads: s.leads.map((l) => (l.id === id ? { ...l, pipelineStageId: prior } : l)),
+        }));
+        reportWriteError("setLeadPipelineStage", err);
         return false;
       });
   },

@@ -18,6 +18,7 @@ const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
   role: null,
   notes: null,
   lossReason: null,
+      pipelineStageId: null,
   address: null,
   createdAt: new Date("2026-06-01T00:00:00Z"),
   updatedAt: new Date("2026-06-01T00:00:00Z"),

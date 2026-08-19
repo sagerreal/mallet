@@ -62,6 +62,7 @@ class FakeLeadRepository implements LeadRepository {
       role: input.role,
       notes: input.notes,
       lossReason: null,
+      pipelineStageId: null,
       address: input.address,
       createdAt: now,
       updatedAt: now,
@@ -104,6 +105,7 @@ class FakeLeadRepository implements LeadRepository {
   async facets(): Promise<{ stages: Record<string, number>; sources: { source: string; n: number }[] }> { return { stages: {}, sources: [] }; }
 
   async viewCounts(): Promise<Record<string, number>> { return { intake: 0, quoting: 0, out: 0, won: 0 }; }
+  async pipelineStageCounts(): Promise<Record<string, number>> { return {}; }
 
   async list(page: CursorPage, filter?: LeadFilter): Promise<Paginated<Lead>> {
     // Exclude soft-deleted rows.
