@@ -185,6 +185,31 @@
   .navsub.active{background:rgba(43,39,32,.10);color:var(--ink);font-weight:600}
   .navsub .cnt{margin-left:auto;background:rgba(43,39,32,.06);color:var(--ink);border:1px solid var(--manila-line);border-radius:var(--radius-xl);font-size:var(--type-xs);padding:0 var(--space-2);font-weight:700;min-width:18px;text-align:center}
   .navitem{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);color:var(--ink-2);font-weight:500;font-size:var(--type-base);cursor:pointer;margin-bottom:var(--space-2xs);position:relative}
+
+  /* ---------- sidebar rail (iPad / narrow windows) ----------
+     248px of navigation on an 820pt iPad portrait is 30% of the screen spent on a list the
+     office already knows by heart — and it is exactly the width the Money table was missing
+     when its PAID/DUE columns clipped. The rail keeps every destination one tap away at 64px;
+     the toggle lives on the sidebar itself, and narrow viewports start collapsed (the Sidebar
+     component seeds that from matchMedia at mount — CSS cannot know the saved preference). */
+  .railtoggle{margin-left:auto;background:none;border:none;color:var(--manila-ink);opacity:.55;cursor:pointer;font-size:var(--type-base);line-height:1;padding:var(--space-1) var(--space-2);border-radius:var(--radius-sm)}
+  .railtoggle:hover{opacity:1;background:var(--manila-2)}
+  .sidebar.rail{width:64px}
+  .sidebar.rail .sidehead{flex-direction:column;gap:var(--space-2);padding:var(--space-4) var(--space-2) var(--space-2)}
+  .sidebar.rail .bword,.sidebar.rail .brandai{display:none}
+  .sidebar.rail .railtoggle{margin-left:0}
+  .sidebar.rail .navitem{justify-content:center;padding-left:0;padding-right:0}
+  .sidebar.rail .navitem>span:not(.cnt):not(.navpend){display:none}
+  /* The count survives as a corner badge — an unread-messages dot you cannot see is a message
+     you do not answer. */
+  /* iOS-badge corner treatment: anchored to the row's top-right, full number visible —
+     right-aligned INSIDE the 64px rail, so "102" never clips to "02". */
+  .sidebar.rail .navitem .cnt{position:absolute;top:0;right:var(--space-2xs);margin:0;font-size:var(--type-xs);padding:0 var(--space-1)}
+  .sidebar.rail .navsubs,.sidebar.rail .navlabel{display:none}
+  .sidebar.rail .navnew{justify-content:center;width:calc(100% - var(--space-4));margin-left:var(--space-2);margin-right:var(--space-2)}
+  .sidebar.rail .navnew>span:not(.plus){display:none}
+  .sidebar.rail .sideacct{justify-content:center;padding-left:var(--space-1);padding-right:var(--space-1)}
+  .sidebar.rail .sideacct .who,.sidebar.rail .acct-caret{display:none}
   .navitem svg{width:17px;height:17px;flex-shrink:0;stroke:currentColor;opacity:.9}
   .navitem:hover{background:rgba(43,39,32,.05);color:var(--ink)}
   .navitem.active{background:rgba(43,39,32,.10);color:var(--ink);font-weight:600}
@@ -980,6 +1005,27 @@
      than forcing a column wider than its share.
      Opt-in via .cols-sized: .list-tbl is shared with Money and Companies, which have no colgroup
      and would fall back to equal columns. */
+  /* Wide lists scroll INSIDE their card rather than clipping — an auto-layout table narrower
+     than its content otherwise sheds its rightmost columns, and on Money those are PAID and
+     DUE: the two numbers the page exists to show. The floor keeps columns readable while the
+     card scrolls, instead of crushing the job title to a word a line. Desktop/tablet only —
+     the ≤640px block below re-lays these tables as cards. */
+  /* 761px and up ONLY: the ≤760px block below re-lays these tables as stacked cards
+     (display:block), where a table min-width would force 950px-wide cards with no scroll
+     container at all — an iPad Mini portrait is 744px and sits exactly in that trap. */
+  @media (min-width:761px){
+    .card:has(> .list-tbl){overflow-x:auto}
+    /* Money only: eight columns of real content. Fixed layout + the colgroup keeps every
+       column readable at any width; below ~950px the CARD scrolls the difference instead of
+       shedding PAID and DUE off the right edge. (A bare min-width on an auto-layout table
+       inside a scroll container does the opposite — the table balloons to max-content.)
+       The ACTIONS cell is exempt from the fixed-layout crop: the armed charge renders
+       Remind + Confirm + Cancel, and a safety pattern that clips its own Cancel button is
+       worse than a taller row — the cell wraps instead. */
+    .list-tbl.mny td.cardacts{white-space:normal;overflow:visible}
+    .list-tbl.mny .macts{flex-wrap:wrap;row-gap:var(--space-1)}
+    .list-tbl.mny{min-width:950px}
+  }
   .list-tbl.cols-sized{table-layout:fixed}
   .list-tbl.cols-sized th,.list-tbl.cols-sized td{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   /* compact auto-remind chip in the Money header */
