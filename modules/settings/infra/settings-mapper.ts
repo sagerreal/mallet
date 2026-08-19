@@ -81,6 +81,10 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     docInvoicePayInstructions: row.docInvoicePayInstructions,
     docInvoiceReceiptNote: row.docInvoiceReceiptNote,
     docChangeOrderAgreement: row.docChangeOrderAgreement,
+    // Narrowed from the DB's text column — the check constraint already guarantees the value, so
+    // anything else is corruption. Falling back to stripe is the safe read: it can only ever
+    // under-claim what a shop connected.
+    paymentProvider: row.paymentProvider === "square" ? "square" : "stripe",
     // Stripe Connect (Express) onboarding state (PR1).
     stripeConnectedAccountId: row.stripeConnectedAccountId ?? null,
     stripeChargesEnabled: row.stripeChargesEnabled,

@@ -69,6 +69,7 @@ export const baseSettingsProps = (o: Partial<OrgSettingsProps> = {}): OrgSetting
   docInvoicePayInstructions: null,
   docInvoiceReceiptNote: null,
   docChangeOrderAgreement: null,
+  paymentProvider: "stripe",
   stripeConnectedAccountId: null,
   stripeChargesEnabled: false,
   stripePayoutsEnabled: false,

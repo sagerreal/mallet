@@ -17,6 +17,7 @@ const defaultBooking: BookingCfg = {
 const baseRow = (): OrgSettingsRow => ({
   id: ROW_ID,
   orgId: ORG_ID,
+  paymentProvider: 'stripe',
   trade: "plumbing",
   markupBps: 3500,
   taxBps: 0,
@@ -176,5 +177,26 @@ describe("toOrgSettings (settings mapper)", () => {
     row.booking = customBooking;
     const settings = toOrgSettings(row, TEST_ORG_NAME);
     expect(settings.props.booking).toEqual(customBooking);
+  });
+});
+
+/**
+ * WHICH PROCESSOR THE SHOP IS ON. A shop already running Square will not change processors to
+ * change software, so this is a per-org fact. The payment ports are already provider-neutral —
+ * this value selects the adapter behind them.
+ */
+describe("toOrgSettings — paymentProvider", () => {
+  it("defaults every existing org to stripe", () => {
+    expect(toOrgSettings(baseRow(), "Acme").props.paymentProvider).toBe("stripe");
+  });
+
+  it("carries square through when that is what the row says", () => {
+    expect(toOrgSettings({ ...baseRow(), paymentProvider: "square" }, "Acme").props.paymentProvider).toBe("square");
+  });
+
+  // The DB check constraint already guarantees the value. Anything else is corruption, and
+  // falling back to stripe can only ever under-claim what a shop connected.
+  it("falls back to stripe rather than trusting an unknown value", () => {
+    expect(toOrgSettings({ ...baseRow(), paymentProvider: "paypal" }, "Acme").props.paymentProvider).toBe("stripe");
   });
 });

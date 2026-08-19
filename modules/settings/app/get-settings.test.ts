@@ -27,7 +27,7 @@ export class FakeSettingsRepository implements SettingsRepository {
   async getConfig(orgId: string, defaults: () => BookingCfg): Promise<OrgSettings> {
     if (this.config) return this.config;
     const r = OrgSettings.create({
-      orgId: asOrgId(orgId), trade: "plumbing", markupBps: 3500, taxBps: 0,
+      orgId: asOrgId(orgId), paymentProvider: 'stripe', trade: "plumbing", markupBps: 3500, taxBps: 0,
       visitScopeMinutes: 30, visitRepairMinutes: 90, visitInstallMinutes: 240,
       timesheetClock: true,
   techEditsTimes: false,

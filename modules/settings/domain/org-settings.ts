@@ -91,6 +91,12 @@ export interface BookingCfg {
 // the aggregate's identity is `orgId` (one settings row per org). The infra adapter
 // (Task 5) upserts by `orgId` (the `org_settings_org_id_uq` conflict target), never
 // by the surrogate `id`.
+/**
+ * The card processor a shop is on. Not a deployment setting — a shop that already runs Square
+ * keeps Square, because the reader is on their counter and the money already lands there.
+ */
+export type PaymentProvider = "stripe" | "square";
+
 export interface OrgSettingsProps {
   readonly orgId: OrgId;
   readonly trade: string;
@@ -222,6 +228,11 @@ export interface OrgSettingsProps {
    *  booked jobs alike when set. The QUOTE authorization sentence is NOT this — that one is
    *  legal, versioned, snapshotted, and deliberately not editable. */
   readonly docChangeOrderAgreement: string | null;
+  /**
+   * Which processor this shop takes cards through. The payment ports are provider-neutral; this
+   * picks the adapter behind them. Defaults to "stripe" for every org that predates Square.
+   */
+  readonly paymentProvider: PaymentProvider;
   // --- Stripe Connect (Express) onboarding state (PR1) ---
   /** The shop's Stripe connected account id (acct_...). Null until onboarding begins. */
   readonly stripeConnectedAccountId: string | null;

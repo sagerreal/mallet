@@ -10,6 +10,7 @@ const ORG = "00000000-0000-0000-0000-000000000001";
 function seedSettings(over: Partial<OrgSettingsProps> = {}): OrgSettings {
   const props: OrgSettingsProps = {
     orgId: asOrgId(ORG),
+    paymentProvider: 'stripe',
     trade: "plumbing",
     markupBps: 3500,
     taxBps: 0,
