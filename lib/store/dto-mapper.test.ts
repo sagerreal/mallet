@@ -51,6 +51,8 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         taxable: true,
         position: 0,
         tier: null,
+        scope: null,
+        subItems: null,
       },
       {
         id: "line-2",
@@ -63,6 +65,8 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         taxable: false,
         position: 1,
         tier: null,
+        scope: null,
+        subItems: null,
       },
     ],
     subtotal: makeMoneyDTO(20000),
@@ -81,6 +85,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     acceptedTier: null,
     tierNames: null,
     termsSnapshot: null,
+    priceDisplay: "lines" as const,
     publicToken: null,
     publicUrl: null,
     signature: null,
@@ -976,5 +981,40 @@ describe("dtoFieldInvoiceToStore — a hide-prices shop", () => {
   it("does not fall back to a prior record's visible lines", () => {
     const prior = makePriorInv({ lines: [{ d: "Water heater — 40 gal", q: 1, r: 840 }] });
     expect(dtoFieldInvoiceToStore(hidden(), prior).lines).toEqual([]);
+  });
+});
+
+describe("dtoEstimateToStore — scope, sub-items, price display", () => {
+  it("maps scope, converts sub-item cents to dollars, and writes priceDisplay only when total", () => {
+    const dto = makeEstimateDTO({
+      priceDisplay: "total",
+      lines: [
+        {
+          id: "line-1",
+          description: "Painting",
+          quantity: 1,
+          rate: makeMoneyDTO(2_145_000),
+          cost: makeMoneyDTO(0),
+          isOptional: false,
+          needsPhoto: false,
+          taxable: true,
+          position: 0,
+          tier: null,
+          scope: "Includes:\n1. Walls",
+          subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+        },
+      ],
+    });
+    const est = dtoEstimateToStore(dto, makePriorEst());
+    expect(est.priceDisplay).toBe("total");
+    expect(est.lines[0]?.scope).toBe("Includes:\n1. Walls");
+    expect(est.lines[0]?.sub).toEqual([{ d: "Walls", q: 2400, unit: "sq ft", amt: 9840 }]);
+  });
+
+  it("omits priceDisplay and sub for the default shapes", () => {
+    const est = dtoEstimateToStore(makeEstimateDTO(), makePriorEst());
+    expect(est.priceDisplay).toBeUndefined();
+    expect(est.lines[0]?.scope).toBeUndefined();
+    expect(est.lines[0]?.sub).toBeUndefined();
   });
 });

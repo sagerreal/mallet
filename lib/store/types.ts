@@ -148,6 +148,18 @@ export interface EstimateLine {
   h?: number;
   /** GBB tier tag. Set on every line of a tiered estimate; absent on single quotes. */
   tier?: QuoteTierKey;
+  /** Customer-facing scope prose under the line (plain text, rendered pre-wrap). */
+  scope?: string;
+  /** Internal sub-items that roll up into the line's rate ($). Never shown to the customer. */
+  sub?: EstimateSubItem[];
+}
+
+/** One row of the estimating math behind a line — amounts in DOLLARS like the rest of the store. */
+export interface EstimateSubItem {
+  d: string;
+  q: number;
+  unit?: string;
+  amt: number;
 }
 
 /** One customer open of the quote page — the telemetry unit the Rail renders. */
@@ -235,6 +247,8 @@ export interface Estimate {
   tierNames?: TierNames;
   /** Terms text frozen at draft time — later term edits never rewrite sent quotes. */
   termsSnapshot?: string;
+  /** Customer sees one price instead of per-line amounts. Absent = 'lines', today's default. */
+  priceDisplay?: "total";
   /**
    * The customer's signature, absent when nobody signed.
    *
