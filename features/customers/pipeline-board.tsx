@@ -8,6 +8,7 @@ import { StagePill } from "@/components/shared/stage-pill";
 import { LEAD_GROUP_LABELS, type LeadGroup } from "@/modules/customers/infra/lead-views";
 import { PipelineSetup } from "./pipeline-setup";
 import { PipelineStageHead, AddStage } from "./pipeline-stage-head";
+import { usePipelineStageMutations } from "./use-pipeline-stage-mutations";
 
 /**
  * features/customers/pipeline-board.tsx
@@ -43,32 +44,31 @@ interface CardData {
 }
 
 export function PipelineBoard() {
-  const utils = api.useUtils();
   const board = api.v1.customers.pipeline.board.useQuery(undefined, { refetchOnWindowFocus: false });
-
-  const invalidate = () => {
-    void utils.v1.customers.pipeline.board.invalidate();
-    void utils.v1.customers.list.invalidate();
-  };
-
-  const seed = api.v1.customers.pipeline.seed.useMutation({ onSuccess: invalidate });
-  const createStage = api.v1.customers.pipeline.createStage.useMutation({ onSuccess: invalidate });
-  const renameStage = api.v1.customers.pipeline.renameStage.useMutation({ onSuccess: invalidate });
-  const removeStage = api.v1.customers.pipeline.removeStage.useMutation({ onSuccess: invalidate });
-  const moveStage = api.v1.customers.pipeline.moveStage.useMutation({ onSuccess: invalidate });
+  // Optimistic, narrow-settling stage edits — the why lives with the hook.
+  const { seed, createStage, renameStage, removeStage, moveStage, boardCache, invalidateColumns } =
+    usePipelineStageMutations();
 
   // The in-flight moves overlay: instant feedback on drop, cleared when the server settles.
   // On error the entry clears WITHOUT invalidating, so the card visibly snaps back home.
   const [moves, setMoves] = useState<readonly PendingMove[]>([]);
   const setLeadStage = api.v1.customers.pipeline.setLeadStage.useMutation({
-    onSuccess: invalidate,
     onSettled: (_d, _e, vars) => setMoves((m) => m.filter((x) => x.leadId !== vars.leadId)),
   });
 
   const drop = (leadId: string, card: CardData, fromStageId: string | null, toStageId: string | null) => {
     if (setLeadStage.isPending) return; // one move at a time — the overlay holds one truth
     setMoves((m) => [...m.filter((x) => x.leadId !== leadId), { leadId, fromStageId, toStageId, card }]);
-    setLeadStage.mutate({ leadId, stageId: toStageId });
+    setLeadStage.mutate(
+      { leadId, stageId: toStageId },
+      {
+        // Settle the board head and ONLY the two columns this move touched.
+        onSuccess: () => {
+          void boardCache.invalidate();
+          invalidateColumns([fromStageId, toStageId]);
+        },
+      },
+    );
   };
 
   if (board.isLoading) return <p className="muted">Loading…</p>;
