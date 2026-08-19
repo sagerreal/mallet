@@ -131,10 +131,24 @@ export function MoneyTable({ rows, armedCharge, cb, emptyState }: MoneyTableProp
   const cols = MONEY_COL_ORDER;
   return (
     <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
-      <table className="list-tbl">
+      {/* cols-sized (fixed layout) so the colgroup is honoured: columns keep their proportions
+          at every width and long titles ellipsize, instead of auto layout crushing the job
+          title to a word a line and shedding the money columns off the right edge — which is
+          what an iPad did to this table. */}
+      <table className="list-tbl cols-sized mny">
+        <colgroup>
+          <col style={{ width: 70 }} />
+          <col style={{ width: 150 }} />
+          <col style={{ width: 220 }} />
+          <col style={{ width: 120 }} />
+          <col style={{ width: 60 }} />
+          <col style={{ width: 85 }} />
+          <col style={{ width: 85 }} />
+          <col style={{ width: 160 }} />
+        </colgroup>
         <thead>
           <tr>
-            <th style={{ width: 84 }}>#</th>
+            <th>#</th>
             <th>Customer</th>
             {cols.map((c) => (
               <th key={c} style={MONEY_COLS[c].right ? { textAlign: "right" } : undefined}>

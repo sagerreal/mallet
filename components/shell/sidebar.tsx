@@ -10,6 +10,9 @@ import { NewMenu } from "@/components/shell/new-menu";
 import { NavPending } from "@/components/shell/nav-pending";
 import { useNavCounts } from "@/components/shell/use-nav-counts";
 import { signOut } from "@/features/auth/hooks";
+
+/** localStorage key for the sidebar rail preference — an explicit toggle outlives the session. */
+const RAIL_PREF_KEY = "mallet.nav.rail";
 import {
   selectOpenTaskCount,
   selectSentQuoteCount,
@@ -103,7 +106,7 @@ function NavItem({ href, icon, label, count, active, inert }: NavItemProps) {
     );
   }
   return (
-    <Link href={href} className={cls}>
+    <Link href={href} className={cls} title={label}>
       {icon}
       <span>{label}</span>
       {count ? <span className="cnt">{count}</span> : null}
@@ -193,15 +196,63 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
   // prevent a flash of office items that a tech should never see.
   const roleKnown = !me.isLoading;
 
+  // RAIL: collapsed to a 64px icon strip. Narrow viewports (an iPad, a half-screen window)
+  // start collapsed — 248px of nav was exactly the width the Money table's PAID/DUE columns
+  // were missing — and an explicit toggle is remembered. Seeded in an effect, not an
+  // initializer: the server renders expanded, and reading matchMedia during render would make
+  // hydration disagree with SSR.
+  const [rail, setRail] = useState(false);
+  const focusNewOnExpand = useRef(false);
+  useEffect(() => {
+    // Guarded like lib/theme.ts: localStorage THROWS outright in some privacy modes, and a
+    // throw inside this effect would unmount the shell on every authenticated route.
+    let saved: string | null = null;
+    try {
+      saved = window.localStorage.getItem(RAIL_PREF_KEY);
+    } catch {
+      /* privacy mode — fall through to the viewport default */
+    }
+    if (saved !== null) setRail(saved === "1");
+    else if (typeof window.matchMedia === "function") {
+      setRail(window.matchMedia("(max-width: 1024px)").matches);
+    }
+  }, []);
+  const setRailAndRemember = (next: boolean) => {
+    setRail(next);
+    try {
+      window.localStorage.setItem(RAIL_PREF_KEY, next ? "1" : "0");
+    } catch {
+      /* privacy mode — the choice still applies for this session */
+    }
+  };
+  // The rail's "+" swaps itself for the real New menu on expand — without this, the keyboard
+  // user who pressed Enter on it is dropped to <body> mid-interaction and has to Tab back from
+  // the top of the page.
+  useEffect(() => {
+    if (!rail && focusNewOnExpand.current) {
+      focusNewOnExpand.current = false;
+      (document.querySelector(".navnew") as HTMLButtonElement | null)?.focus();
+    }
+  }, [rail]);
+
   return (
-    <aside className="sidebar">
+    <aside className={`sidebar${rail ? " rail" : ""}`}>
       {/* Brand */}
       <div className="sidehead">
         <div className="brand">
           <span className="bmark">✦</span>
-          Mallet
+          <span className="bword">Mallet</span>
           <span className="brandai">.ai</span>
         </div>
+        <button
+          type="button"
+          className="railtoggle"
+          aria-label={rail ? "Expand navigation" : "Collapse navigation"}
+          aria-expanded={!rail}
+          onClick={() => setRailAndRemember(!rail)}
+        >
+          {rail ? "»" : "«"}
+        </button>
       </div>
 
       {/* Nav */}
@@ -210,7 +261,21 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
             The field items below are rendered immediately (no role-conditional risk). */}
         {roleKnown && !isTech && (
           <>
-            <NewMenu />
+            {rail ? (
+              <button
+                type="button"
+                className="navnew"
+                aria-label="Expand navigation to create"
+                onClick={() => {
+                  focusNewOnExpand.current = true;
+                  setRailAndRemember(false);
+                }}
+              >
+                <span className="plus">+</span>
+              </button>
+            ) : (
+              <NewMenu />
+            )}
 
             <NavItem href="/dashboard" icon={<HomeIcon />} label="Office" active={officeActive} />
 
@@ -314,10 +379,19 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
           className={`sideacct${acctOpen ? " open" : ""}`}
           role="button"
           tabIndex={0}
-          aria-expanded={acctOpen}
-          aria-haspopup="menu"
-          onClick={() => setAcctOpen((v) => !v)}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") setAcctOpen((v) => !v); }}
+          // In the rail this control EXPANDS the navigation (a 64px column cannot host the
+          // menu) — claiming "menu, collapsed" and then not opening one is a lie to a screen
+          // reader, so the menu semantics apply only when the menu is what a press does.
+          aria-label={rail ? "Expand navigation to open your account" : undefined}
+          aria-expanded={rail ? undefined : acctOpen}
+          aria-haspopup={rail ? undefined : "menu"}
+          onClick={() => (rail ? setRailAndRemember(false) : setAcctOpen((v) => !v))}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              if (rail) setRailAndRemember(false);
+              else setAcctOpen((v) => !v);
+            }
+          }}
         >
           <span className="avatar">{initials}</span>
           <div className="who">
