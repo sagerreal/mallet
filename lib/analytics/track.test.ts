@@ -127,6 +127,21 @@ describe("configuration", () => {
     });
   });
 
+  /**
+   * THE THREE POSTHOG TURNS ON ITSELF. These are not SDK defaults — they arrive in the project's
+   * remote config, and a fresh project shipped `autocaptureExceptions: true` and `heatmaps: true`,
+   * which made the bundle download exception-autocapture.js and dead-clicks-autocapture.js.
+   * Exception messages here name customers; heatmaps carry the surrounding DOM. Saying no
+   * explicitly means a toggle in the PostHog UI cannot re-enable them behind the repository.
+   */
+  it("refuses the capture features PostHog enables by remote config", async () => {
+    expect(await freshInit()).toMatchObject({
+      capture_exceptions: false,
+      enable_heatmaps: false,
+      capture_dead_clicks: false,
+    });
+  });
+
   it("initialises only ONCE — strict mode mounts the effect twice", async () => {
     vi.resetModules();
     process.env[KEY] = "phc_test";

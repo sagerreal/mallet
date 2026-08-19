@@ -54,6 +54,29 @@ export function startAnalytics(): void {
     // The default sends the full URL including query. Job and customer ids ride in those, and an
     // id in an analytics tool is a join key back to a real person's address.
     mask_personal_data_properties: true,
+
+    /**
+     * THE THREE THINGS POSTHOG TURNS ON BY ITSELF.
+     *
+     * These are not SDK defaults — they arrive in the project's REMOTE CONFIG, which the browser
+     * fetches at init and which happily enables capture the local options never asked for. A fresh
+     * project came back with `autocaptureExceptions: true` and `heatmaps: true`, and the bundle
+     * duly downloaded exception-autocapture.js and dead-clicks-autocapture.js.
+     *
+     * Each one leaks this app's data in its own way:
+     *  · exceptions carry the error MESSAGE, and ours are built from real values — a failed
+     *    invoice write names the customer.
+     *  · heatmaps record where a click landed together with the surrounding DOM, which is the
+     *    element text problem again by another route.
+     *  · dead clicks are autocapture wearing a different hat.
+     *
+     * Saying so explicitly here means the answer lives in the repository, survives somebody
+     * toggling a switch in the PostHog UI, and is reviewable. Turning them off in the project
+     * settings as well is belt and braces, not the fix.
+     */
+    capture_exceptions: false,
+    enable_heatmaps: false,
+    capture_dead_clicks: false,
   });
 }
 
