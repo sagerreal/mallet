@@ -2577,6 +2577,13 @@
      same one every .sheet-row carries, because this IS a SheetRow (variant="section"). */
   button.fsec-h{width:100%;min-height:52px;background:none;border:none;padding:0;font-family:inherit;color:inherit;text-align:left}
   button.fsec-h:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  /* A .sheet-rows list nested INSIDE a section is that section's body, so it must not draw its
+     own boundaries: .fsec already ruled the line above the head, and the next .fsec rules the one
+     below. Left alone the list adds a border-top under the head and the last row adds a
+     border-bottom a few pixels above the next section's border-top — two hairlines pretending to
+     be one divider. Section boundaries stay --line (stronger); row separators stay --line-2. */
+  .fsec .sheet-rows{margin-top:0;border-top:none}
+  .fsec .sheet-rows > .sheet-row:last-of-type{border-bottom:none}
   .tjf-h{cursor:pointer;user-select:none}
   .tjf-t{display:inline-flex;align-items:center;gap:var(--space-2)}
   /* The trailing cluster: count, its qualifier, the caret. A figure, not a label — so the
