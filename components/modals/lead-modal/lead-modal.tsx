@@ -127,6 +127,10 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
 
   const [phoneOpen, setPhoneOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
+  // The chapters. Contact opens because it is the reason the sheet is usually opened; the rest
+  // stay shut so an empty customer is four lines, not eight rows all saying "Add".
+  const [contactOpen, setContactOpen] = useState(true);
+  const [workOpen, setWorkOpen] = useState(false);
 
   /**
    * ONLY WHEN THIS SHEET IS THE ONE ON SCREEN. ModalHost mounts the customer sheet on every page
@@ -242,7 +246,7 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   const primaryKind: Action = !hasPhone ? "addphone" : isNew ? "call" : "quote";
   const primary =
     primaryKind === "addphone"
-      ? { label: "Add phone", run: () => setPhoneOpen(true) }
+      ? { label: "Add phone", run: () => { setContactOpen(true); setPhoneOpen(true); } }
       : primaryKind === "call"
         ? { label: callLabel(lead), run: () => pushModal(MODAL.CALL, { leadId: lead.id }) }
         : { label: "New quote", run: newQuote };
@@ -300,7 +304,14 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
 
       {/* CONTACT — the ways to reach this customer. These carry their value in the collapsed row,
           which is how the sheet is read without opening anything. */}
-      <div className="sheet-worklab">Contact</div>
+      <SheetRow
+        variant="section"
+        label="Contact"
+        value={contactSummary(lead)}
+        expandable
+        open={contactOpen}
+        onOpenChange={setContactOpen}
+      >
       <div className="sheet-rows">
         {/* Phone has ONE home in every state — it used to live here when empty and
             in the header when filled, which left nowhere obvious to edit it. */}
@@ -355,9 +366,17 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
           <AddressBody lead={lead} />
         </SheetRow>
       </div>
+      </SheetRow>
 
       {/* WORK — what is outstanding on this customer. */}
-      <div className="sheet-worklab">Work</div>
+      <SheetRow
+        variant="section"
+        label="Work"
+        value={workSummary(latestNoteSnippet(lead), openTasks)}
+        expandable
+        open={workOpen}
+        onOpenChange={setWorkOpen}
+      >
       <div className="sheet-rows">
         <SheetRow
           label="Notes"
@@ -379,23 +398,17 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
           <TasksBody lead={lead} />
         </SheetRow>
       </div>
+      </SheetRow>
 
       {/* Everything else. With email promoted, the summary is what is actually still in here. */}
-      <div className="sheet-rows">
-        <SheetRow
-          label="Details"
-          value={detailsSummary(lead, companies)}
-          valueIsHint={detailsSummary(lead, companies) === "Add"}
-          expandable
-        >
-          <DetailsBody lead={lead} />
-        </SheetRow>
+      <SheetRow variant="section" label="Details" value={detailsSummary(lead, companies)} expandable>
+        <DetailsBody lead={lead} />
+      </SheetRow>
 
-        {/* Neutral ink at level 0; red only on Delete inside. */}
-        <SheetRow label="Clean up" value="mark Lost or archive" valueIsHint expandable>
-          <CleanUpBody lead={lead} />
-        </SheetRow>
-      </div>
+      {/* Neutral ink at the head; red only on Delete inside. */}
+      <SheetRow variant="section" label="Clean up" value="mark Lost or archive" expandable>
+        <CleanUpBody lead={lead} />
+      </SheetRow>
 
       {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
       <div className="sheet-foot">
@@ -411,6 +424,32 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
     </Modal>
   );
 }
+
+/**
+ * What a CLOSED chapter says on its right.
+ *
+ * The sheet's grammar is that you read the record without opening anything — that was the whole
+ * argument for keeping phone and address at the top level rather than burying them. Collapsing
+ * them into a chapter takes that away unless the head carries it, so each one reports what is
+ * inside without being opened.
+ */
+const CONTACT_FIELDS = 4; // phone · email · source · service address
+
+const contactSummary = (lead: Lead): string => {
+  const filled = [lead.phone, lead.email, lead.source, lead.address]
+    .filter((v) => Boolean(v && String(v).trim())).length;
+  // "Add" rather than "0 of 4": a zero count reads as a broken counter, and the empty state of
+  // every other row on this sheet already says Add.
+  return filled === 0 ? "Add" : `${filled} of ${CONTACT_FIELDS}`;
+};
+
+const workSummary = (noteSnippet: string | null, openTasks: number): string => {
+  const parts = [
+    openTasks > 0 ? openTaskLabel(openTasks) : null,
+    noteSnippet ? "notes" : null,
+  ].filter(Boolean);
+  return parts.length > 0 ? parts.join(" · ") : "Add";
+};
 
 /** The Service-address accordion body — the full-width AddressInput with its
  *  in-flow suggestion list, committing on select/blur. */
