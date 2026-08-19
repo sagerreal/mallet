@@ -9,3 +9,5 @@ export { DrizzleSquareConnectionRepository } from "./infra/drizzle-square-connec
 export { StartSquareConnect, CompleteSquareConnect, DisconnectSquare } from "./app/connect-square";
 export type { TenantRunner } from "./app/connect-square";
 export { createPaymentsRouter } from "./api/payments-router";
+export { resolvePaymentLinkGateway } from "./app/resolve-payment-link-gateway";
+export { SquarePaymentLinkGateway } from "./infra/square-payment-link-gateway";

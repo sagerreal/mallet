@@ -55,4 +55,11 @@ export interface SquareOauthGateway {
 
   /** Best-effort revoke on disconnect. A failure here must not block local disconnection. */
   revoke(accessToken: string, signal?: AbortSignal): Promise<Result<void, AppError>>;
+
+  /**
+   * The seller's MAIN location id. Square scopes every payment to a location, so a connection
+   * without one cannot charge anything — it is read at connect time rather than left for the shop
+   * to pick, because a shop with one location should never be asked which one.
+   */
+  mainLocationId(accessToken: string, signal?: AbortSignal): Promise<Result<string | null, AppError>>;
 }

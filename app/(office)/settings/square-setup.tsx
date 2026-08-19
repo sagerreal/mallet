@@ -25,6 +25,7 @@ const note = { fontSize: "var(--type-sm)", color: "var(--ink-3)" } as const;
 
 export function SquareSetup() {
   const status = api.v1.payments.square.status.useQuery();
+  const provider = api.v1.payments.provider.get.useQuery();
   const utils = api.useUtils();
   const [error, setError] = useState<string | null>(null);
   const [armed, setArmed] = useState(false);
@@ -34,6 +35,13 @@ export function SquareSetup() {
     // blocked or lose the session.
     onSuccess: (d) => {
       window.location.href = d.url;
+    },
+    onError: (e) => setError(e.message),
+  });
+
+  const setProvider = api.v1.payments.provider.set.useMutation({
+    onSuccess: () => {
+      void utils.v1.payments.provider.get.invalidate();
     },
     onError: (e) => setError(e.message),
   });
@@ -99,6 +107,33 @@ export function SquareSetup() {
           <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
             <span style={label}>Connected</span>
             {s.merchantId && <span style={note}>merchant {s.merchantId}</span>}
+          </div>
+
+          {/* WHICH PROCESSOR INVOICES GO THROUGH. Connecting Square does not switch anything by
+              itself — a shop mid-migration needs both connected while they decide, and flipping
+              their live invoicing as a side effect of connecting would be the wrong default. */}
+          <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+            <span style={note}>Take card payments through</span>
+            <div className="seg" role="group" aria-label="Card processor">
+              {(["stripe", "square"] as const).map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  aria-pressed={provider.data?.provider === p}
+                  aria-disabled={setProvider.isPending ? true : undefined}
+                  onClick={(e) => {
+                    if (setProvider.isPending) {
+                      e.preventDefault();
+                      return;
+                    }
+                    setError(null);
+                    setProvider.mutate({ provider: p });
+                  }}
+                >
+                  {p === "stripe" ? "Stripe" : "Square"}
+                </button>
+              ))}
+            </div>
           </div>
           {/* Two-tap, the sweep-modal pattern: disconnecting stops card payments, so it must not
               be one stray tap away. */}

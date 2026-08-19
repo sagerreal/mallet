@@ -652,6 +652,14 @@ export class OrgSettings {
    * invariant via create. onboardedAt is caller-controlled (the use case stamps it the first time
    * charges go live). Returns a new OrgSettings or a ValidationError.
    */
+  /**
+   * Switch the card processor this shop is on. The connection itself lives elsewhere (Stripe's on
+   * this row, Square's in square_connections) — this only says which one an invoice goes through.
+   */
+  patchPaymentProvider(provider: PaymentProvider, now: Date): Result<OrgSettings, ValidationError> {
+    return OrgSettings.create({ ...this.p, paymentProvider: provider, updatedAt: now });
+  }
+
   patchStripe(
     fields: {
       connectedAccountId?: string | null;
