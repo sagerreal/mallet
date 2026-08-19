@@ -77,6 +77,17 @@ export class CompleteSquareConnect {
     );
     if (!saved.ok) return err(saved.error);
 
+    // Square scopes every payment to a LOCATION, so a connection without one cannot charge. Read
+    // it now rather than asking the shop: a single-location shop should never be shown a picker.
+    // A failure here does NOT fail the connect — the connection is real and the location can be
+    // filled in later; refusing the whole connection over it would be worse.
+    const loc = await this.gateway.mainLocationId(tokens.value.accessToken);
+    if (loc.ok && loc.value) {
+      await this.run((repo) => repo.setLocation(loc.value as string));
+    } else {
+      logger.warn({ orgId }, "square.connect.no_location");
+    }
+
     // merchantId is an identifier, not a secret — safe to log, and the one thing worth having
     // when a shop asks which Square account they connected.
     logger.info({ orgId, merchantId: tokens.value.merchantId }, "square.connected");

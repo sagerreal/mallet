@@ -5,6 +5,8 @@ import { loadConfig } from "@mallet/shared/config";
 import { withTenant } from "@mallet/shared/db/tx";
 import { systemClock } from "@mallet/shared/types";
 import { createSecretBox } from "@mallet/platform/crypto/secret-box";
+import { TRPCError } from "@trpc/server";
+import { DrizzleSettingsRepository, OrgSettings } from "@mallet/settings";
 import { HttpSquareOauthGateway } from "../infra/http-square-oauth-gateway";
 import { DrizzleSquareConnectionRepository } from "../infra/drizzle-square-connection-repository";
 import { StartSquareConnect, DisconnectSquare, type TenantRunner } from "../app/connect-square";
@@ -32,6 +34,44 @@ const buildGateway = () => {
 // That is an owner's decision, never a technician's.
 export const createPaymentsRouter = () =>
   router({
+    /** Which processor this shop's invoices go through. */
+    provider: router({
+      get: ownerOrOffice
+        .output(z.object({ provider: z.enum(["stripe", "square"]) }))
+        .query(async ({ ctx }) => {
+          const settings = await new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId).getConfig(
+            ctx.principal.orgId,
+            OrgSettings.defaultBooking,
+          );
+          return { provider: settings.props.paymentProvider };
+        }),
+
+      set: ownerOrOffice
+        .input(z.object({ provider: z.enum(["stripe", "square"]) }))
+        .output(z.object({ provider: z.enum(["stripe", "square"]) }))
+        .mutation(async ({ ctx, input }) => {
+          const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+          const settings = await repo.getConfig(ctx.principal.orgId, OrgSettings.defaultBooking);
+
+          // Refuse to point invoicing at a processor that is not connected. Allowing it would
+          // produce invoices with no way to pay them, discovered by a customer rather than by the
+          // shop — and the shop would have no idea why nobody is paying.
+          if (input.provider === "square") {
+            const live = await new DrizzleSquareConnectionRepository(ctx.tx, ctx.principal.orgId).findLive();
+            if (!live) {
+              throw new TRPCError({
+                code: "PRECONDITION_FAILED",
+                message: "Connect Square first — there is nowhere to send payments yet",
+              });
+            }
+          }
+
+          const next = orThrow(settings.patchPaymentProvider(input.provider, (ctx.deps.clock ?? systemClock).now()));
+          await repo.saveConfig(next);
+          return { provider: input.provider };
+        }),
+    }),
+
     square: router({
       status: ownerOrOffice.output(squareStatusDTO).query(async ({ ctx }) => {
         const gateway = buildGateway();

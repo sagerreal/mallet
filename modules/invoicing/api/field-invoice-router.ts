@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolvePaymentLinkGateway } from "@mallet/payments";
 import { TRPCError } from "@trpc/server";
 import { router, anyRole } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
@@ -402,13 +403,21 @@ export const createFieldInvoiceRouter = () =>
         // caller may not even know exists — a different answer than NOT_FOUND, and so exactly the
         // existence oracle the flattened refusal exists to close.
         await loadInScope(invoiceId, ctx);
-        if (!ctx.deps.paymentLinkGateway) {
+        // Per-ORG processor, same as the office endpoint — a tech taking a card at the door must
+        // hit the same processor the office invoices through, or the shop's money arrives in two
+        // different accounts depending on who collected it.
+        const gateway = await resolvePaymentLinkGateway(
+          ctx.tx,
+          ctx.principal.orgId,
+          ctx.deps.paymentLinkGateway,
+        );
+        if (!gateway) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
         }
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const useCase = new CreatePaymentUseCase(
           repo,
-          ctx.deps.paymentLinkGateway,
+          gateway,
           new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId),
         );
         const result = orThrow(await useCase.exec({ orgId: ctx.principal.orgId, invoiceId }));

@@ -217,4 +217,29 @@ export class HttpSquareOauthGateway implements SquareOauthGateway {
       return err(externalService("square", "couldn't reach Square — try again", true));
     }
   }
+
+  async mainLocationId(accessToken: string, signal?: AbortSignal): Promise<Result<string | null, AppError>> {
+    try {
+      const res = await this.fetchImpl(`${this.host}/v2/merchants/me`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          Accept: "application/json",
+          "Square-Version": "2025-01-23",
+        },
+        signal,
+      });
+      if (!res.ok) {
+        logger.warn({ status: res.status }, "square.location.failed");
+        return err(externalService("square", "couldn't read the Square location", res.status >= 500));
+      }
+      const json = (await res.json()) as { merchant?: { main_location_id?: unknown } };
+      const id = json.merchant?.main_location_id;
+      // Null rather than an error: a seller CAN have no main location, and that is a state to
+      // record, not a failure to connect.
+      return ok(isNonEmptyString(id) ? id : null);
+    } catch (e: unknown) {
+      logger.warn({ err: e instanceof Error ? e.message : String(e) }, "square.location.threw");
+      return err(externalService("square", "couldn't reach Square — try again", true));
+    }
+  }
 }

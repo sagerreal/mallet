@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { resolvePaymentLinkGateway } from "@mallet/payments";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { DrizzleAuthorizationReader } from "../infra/drizzle-authorization-reader";
 import { checkAuthorization } from "../domain/authorization";
@@ -627,12 +628,21 @@ export const createInvoiceRouter = () =>
       .input(idInput)
       .output(z.object({ url: z.string().url(), sessionId: z.string() }))
       .mutation(async ({ ctx, input }) => {
-        if (!ctx.deps.paymentLinkGateway) {
+        // WHICH PROCESSOR THIS ORG IS ON. Resolved per REQUEST, not once at boot: the gateway used
+        // to come straight from deps, so an org set to Square still had Stripe checkout links
+        // minted for it. Falls back to Stripe when Square is selected but not connected, so
+        // invoicing never breaks on a half-finished setup.
+        const gateway = await resolvePaymentLinkGateway(
+          ctx.tx,
+          ctx.principal.orgId,
+          ctx.deps.paymentLinkGateway,
+        );
+        if (!gateway) {
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "card payments are not enabled" });
         }
         const repo = new DrizzleInvoiceRepository(ctx.tx, ctx.principal.orgId);
         const connect = new DrizzleConnectTargetReader(ctx.tx, ctx.principal.orgId);
-        const useCase = new CreatePaymentUseCase(repo, ctx.deps.paymentLinkGateway, connect);
+        const useCase = new CreatePaymentUseCase(repo, gateway, connect);
         const result = orThrow(
           await useCase.exec({ orgId: ctx.principal.orgId, invoiceId: asInvoiceId(input.invoiceId) }),
         );
