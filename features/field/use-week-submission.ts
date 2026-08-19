@@ -22,6 +22,8 @@
  */
 
 import { api } from "@/lib/trpc/client";
+import { track } from "@/lib/analytics/track";
+import { ANALYTICS_EVENTS } from "@/lib/analytics/events";
 
 export interface WeekSubmissionState {
   /** True when this week carries a live attestation — submitted and not reopened since. */
@@ -54,6 +56,9 @@ export function useWeekSubmission(weekStartISO: string, enabled: boolean): WeekS
       // The register locks on this answer, so it has to be re-read rather than assumed: the office
       // may have reopened the week between the render and the tap.
       void utils.v1.timesheets.submissionFor.invalidate();
+      // No week date and no hours count: which weeks a named person worked is not a question
+      // analytics needs to answer, and the event only exists to say the habit stuck.
+      track(ANALYTICS_EVENTS.hoursSubmitted);
     },
   });
 

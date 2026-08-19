@@ -26,6 +26,14 @@ const ConfigSchema = z.object({
   // Comms providers — all OPTIONAL. Each channel independently falls back to the logging stub when
   // unconfigured (graceful degradation). Email needs RESEND_API_KEY + EMAIL_FROM; SMS needs all
   // three Twilio vars. ANTHROPIC_API_KEY unblocks the Phase 3 AI features.
+  /**
+   * Product analytics. BOTH optional and checked together at the call site: with no key the
+   * analytics layer is a no-op, so a local checkout and a preview build send nothing rather than
+   * polluting the real project. Public by necessity — a project key is designed to sit in a
+   * browser bundle and can only write events.
+   */
+  NEXT_PUBLIC_POSTHOG_KEY: z.string().min(1).optional(),
+  NEXT_PUBLIC_POSTHOG_HOST: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
   EMAIL_FROM: z.string().min(1).optional(), // e.g. "Mallet <notifications@yourdomain.com>"
   TWILIO_ACCOUNT_SID: z.string().min(1).optional(),
