@@ -262,6 +262,19 @@ export function QuoteCard({
             Good, Better &amp; Best
           </button>
         </div>
+        <button
+          type="button"
+          className="pricevis"
+          aria-pressed={state.priceDisplay === "total"}
+          title="Which numbers the customer sees. One total = scope prose + a single price at the bottom; your rates stay in the data either way. Optional add-on prices always show."
+          onClick={() =>
+            onUpdate({ priceDisplay: state.priceDisplay === "total" ? "lines" : "total" })
+          }
+        >
+          {state.priceDisplay === "total"
+            ? "$ Customer sees one total"
+            : "$ Customer sees every price"}
+        </button>
       </div>
 
       {/* One-line note describing what the last format switch did */}
@@ -352,6 +365,7 @@ export function QuoteCard({
           <LineTable
             lines={state.lines}
             showCost={showCost}
+            priceMode={state.priceDisplay}
             onUpdateLine={updateLine}
             onRemoveLine={removeLine}
               onAddLine={addLine}
