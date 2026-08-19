@@ -8,8 +8,6 @@ export { CountTimeEntriesUseCase } from "./app/count-time-entries";
 export { UpdateTimeEntryUseCase } from "./app/update-time-entry";
 export { RemoveTimeEntryUseCase } from "./app/remove-time-entry";
 export { ApproveWeekUseCase } from "./app/approve-week";
-export { SetClockStateUseCase } from "./app/set-clock-state";
-export type { SetClockStateCommand, SetClockStateResult } from "./app/set-clock-state";
 export type { ClockTap, ClockState } from "./domain/clock";
 export { DrizzleTimeEntryRepository } from "./infra/drizzle-time-entry-repository";
 export { DrizzleWeekSubmissionRepository } from "./infra/drizzle-week-submission-repository";

@@ -18,11 +18,9 @@ import { TIMESHEET_SORTS } from "../infra/timesheet-sorts";
 import { UpdateTimeEntryUseCase } from "../app/update-time-entry";
 import { RemoveTimeEntryUseCase } from "../app/remove-time-entry";
 import { ApproveWeekUseCase } from "../app/approve-week";
-import { SetClockStateUseCase } from "../app/set-clock-state";
 import { SubmitWeekUseCase, SUBMITTED_WEEK_MESSAGE } from "../app/submit-week";
 import { RequestChangesUseCase } from "../app/request-changes";
 import { weekStartOf } from "../domain/week-submission";
-import type { ClockTap } from "../domain/clock";
 import { timeEntryDTO, toTimeEntryDTO } from "./time-entry-dto";
 
 const paginatedDTO = z.object({
@@ -86,32 +84,6 @@ const reopenInput = z.object({
   entryId: z.string().uuid(),
 });
 
-/**
- * The DAY-level taps — the two-tap punch on My day, plus the break either side of lunch.
- *
- * The job-level taps (On my way / Arrived / Done) are deliberately absent: they name a job, and a
- * job tap must be gated by "is this job assigned to you" and written in the same transaction as the
- * visit. That is v1.field.*; routing them through here would hand a technician a way to file job
- * hours against a job they were never sent to.
- */
-const DAY_CLOCK_TAPS = ["start_day", "break", "end_break", "end_day"] as const satisfies readonly ClockTap[];
-
-const clockTapInput = z.object({
-  tap: z.enum(DAY_CLOCK_TAPS),
-  /**
-   * When the tap happened, per the DEVICE. A tap made in a crawlspace with no signal is retried
-   * when the van reaches the road, and the original moment is the one that should be recorded.
-   * Never trusted: the domain bounds it against server time in both directions before it becomes
-   * hours, so a wrong phone clock cannot backdate a payroll record.
-   */
-  at: z.string().datetime(),
-});
-
-/**
- * What the caller's clock is doing now: the single running entry, or null when they are off the
- * clock. Every clock endpoint answers with this same shape so the client has exactly one thing to
- * render and no way to drift from the database.
- */
 const clockStateDTO = z.object({
   open: timeEntryDTO.nullable(),
 });
@@ -136,10 +108,12 @@ const toWeekSubmissionDTO = (sub: import("../domain/week-submission").WeekSubmis
 /**
  * The tech-edit boundary, phrased ONCE so create/update/remove cannot drift.
  *
- * Office callers pass untouched. A tech caller is refused when the org keeps hand edits off
- * (the HCP model — the clock and the visit taps are the field's only writers), or when any
- * touched week is already SUBMITTED (the attestation is with the office; the clock path is
- * exempt and reopens the submission instead — see SetClockStateUseCase).
+ * Office callers pass untouched. A tech caller is refused when the org keeps hand edits off (the
+ * office writes the hours on this account), or when any touched week is already SUBMITTED — the
+ * attestation is with the office, and the whole point of submitting is that the week stops moving.
+ *
+ * The OFFICE can still write into a submitted week, and when it does the submission is reopened
+ * (CreateTimeEntryUseCase) — somebody must not stay signed for a week that grew after they signed.
  */
 async function assertTechMayEditTimes(
   ctx: { tx: TenantTx; principal: { role: string; userId: string; orgId: OrgId } },
@@ -342,7 +316,13 @@ export const createTimesheetRouter = () =>
         await assertTechMayEditTimes(ctx, [input.workDate]);
 
         const repo = new DrizzleTimeEntryRepository(ctx.tx, ctx.principal.orgId);
-        const useCase = new CreateTimeEntryUseCase(repo, ctx.deps.clock, ctx.deps.ids);
+        const useCase = new CreateTimeEntryUseCase(
+          repo,
+          ctx.deps.clock,
+          ctx.deps.ids,
+          // Hours added to a week somebody already signed for un-sign it — see the use-case.
+          new DrizzleWeekSubmissionRepository(ctx.tx, ctx.principal.orgId),
+        );
         const result = await useCase.exec(
           {
             id: input.id,
