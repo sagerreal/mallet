@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { guardRole } from "@/lib/auth/guard";
 import { resolveMe } from "@/lib/auth/server-me";
+import { AnalyticsIdentify } from "@/lib/analytics/analytics-identify";
 import { resolveFieldToggles } from "@/lib/auth/server-field-toggles";
 import { FieldTogglesProvider } from "@/features/settings/field-toggles-provider";
 import { Sidebar } from "@/components/shell/sidebar";
@@ -48,6 +49,11 @@ export default async function FieldLayout({ children }: { children: ReactNode })
         {/* Fills store.jobs from v1.field.myDay — the office JobsHydrator is
             ownerOrOffice-only, so without this a tech's store (and the
             tech-job-modal it feeds) would stay empty. */}
+        {/* Names who this is for analytics, from the identity the layout already resolved.
+            Renders nothing and sends nothing without a PostHog key. */}
+        {initialMe ? (
+            <AnalyticsIdentify userId={initialMe.userId} orgId={initialMe.orgId} role={initialMe.role} />
+          ) : null}
         <FieldJobsHydrator />
         {/* Apple 1.5 — warm the reader at launch and on foreground. 5.6's one-second budget is
             unreachable without it; see the component. Renders nothing. */}

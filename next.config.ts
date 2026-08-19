@@ -71,6 +71,27 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+
+  /**
+   * Analytics through our OWN origin.
+   *
+   * A large share of this audience runs a blocker, and every mainstream list drops requests to
+   * posthog.com by hostname — so a straight browser-to-PostHog integration silently loses those
+   * people, and loses them non-randomly: the technical, privacy-minded end of the market. Sending
+   * to /ingest on our own domain and rewriting server-side keeps the data honest.
+   *
+   * skipTrailingSlashRedirect matters: without it Next 308-redirects /ingest/decide/ and the SDK
+   * follows the redirect to the wrong host.
+   */
+  skipTrailingSlashRedirect: true,
+
+  async rewrites() {
+    return [
+      // Static assets (the recorder script) come from the asset host, events from the ingest host.
+      { source: "/ingest/static/:path*", destination: "https://us-assets.i.posthog.com/static/:path*" },
+      { source: "/ingest/:path*", destination: "https://us.i.posthog.com/:path*" },
+    ];
+  },
 };
 
 export default nextConfig;

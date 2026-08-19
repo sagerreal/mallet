@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import type { ReactNode } from "react";
 import { Inter, Space_Grotesk, Space_Mono } from "next/font/google";
 import { TrpcProvider } from "@/lib/trpc/provider";
+import { AnalyticsProvider } from "@/lib/analytics/analytics-provider";
 import "./globals.css";
 import "./prototype.css";
 import { NativeReady } from "@/components/shell/native-ready";
@@ -62,7 +63,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
         {/* Publishes --kb. iOS ignores interactiveWidget above, so every fixed bottom composer
             needs the visual viewport to know where the keyboard actually is. */}
         <KeyboardInset />
-        <TrpcProvider>{children}</TrpcProvider>
+        {/* INSIDE TrpcProvider: the identity hook that names who is signed in is a tRPC query,
+            so analytics has to sit where it can read one. Sends nothing without a key. */}
+        <TrpcProvider>
+          <AnalyticsProvider>{children}</AnalyticsProvider>
+        </TrpcProvider>
       </body>
     </html>
   );
