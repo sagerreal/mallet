@@ -1,6 +1,6 @@
 import { asEstimateId, asEstimateLineId, asOrgId, asLeadId, money } from "@mallet/shared/types";
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
-import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, type QuoteTier, type TierNames } from "../domain/estimate";
+import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, isPriceDisplay, type QuoteTier, type TierNames } from "../domain/estimate";
 import type { SignedSnapshot } from "../domain/signature";
 
 export type EstimateRow = typeof estimates.$inferSelect;
@@ -20,6 +20,10 @@ const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
     // DB CHECK constrains the value set; EstimateLine.create re-validates and fails loud.
     tier: row.tier as QuoteTier | null,
     materialId: row.materialId ?? null,
+    scope: row.scope,
+    // Jsonb read-back: the shape is ours on the way in, and EstimateLine.create re-validates
+    // every item field, so corrupt rows fail loud here rather than coercing.
+    subItems: row.subItems,
   });
   if (!result.ok) throw new Error(`corrupt estimate_line ${row.id}: ${result.error.message}`);
   return result.value;
@@ -33,6 +37,9 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
   }
   if (!isEstimateOrigin(row.origin)) {
     throw new Error(`corrupt estimate ${row.id}: unknown origin "${row.origin}"`);
+  }
+  if (!isPriceDisplay(row.priceDisplay)) {
+    throw new Error(`corrupt estimate ${row.id}: unknown price display "${row.priceDisplay}"`);
   }
   const lines = [...lineRows]
     .sort((a, b) => a.position - b.position)
@@ -67,6 +74,7 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     acceptedTier: row.acceptedTier as QuoteTier | null,
     tierNames: row.tierNames as TierNames | null,
     termsSnapshot: row.termsSnapshot,
+    priceDisplay: row.priceDisplay,
     signerName: row.signerName,
     signatureSvg: row.signatureSvg,
     signerIp: row.signerIp,

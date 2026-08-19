@@ -236,6 +236,57 @@ suite("DrizzleEstimateRepository against live Supabase RLS", () => {
     expect(rejected).toBe(true);
   });
 
+  it("round-trips scope, sub-items and price display, and updates them on re-save", async () => {
+    const orgA = asOrgId(orgAId);
+    const leadA = asLeadId(leadAId);
+    const scoped = EstimateLine.create({
+      id: asEstimateLineId(randomUUID()),
+      description: "New Construction Interior Painting",
+      quantity: 1,
+      rate: money(2_145_000),
+      cost: zeroMoney,
+      isOptional: false,
+      needsPhoto: false,
+      position: 0,
+      tier: null,
+      materialId: null,
+      scope: "Includes:\n1. Walls\n2. Trim",
+      subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+    });
+    if (!isOk(scoped)) throw new Error(scoped.error.message);
+
+    await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleEstimateRepository(tx, orgA);
+      const est = draftEstimate(orgA, leadA, await repo.nextNumber(), [scoped.value], {
+        priceDisplay: "total",
+      });
+      await repo.save(est);
+
+      const loaded = await repo.findById(est.props.id);
+      expect(loaded).not.toBeNull();
+      expect(loaded!.priceDisplay()).toBe("total");
+      const lp = loaded!.props.lines[0]?.props;
+      expect(lp?.scope).toBe("Includes:\n1. Walls\n2. Trim");
+      expect(lp?.subItems).toEqual([
+        { description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 },
+      ]);
+
+      // Re-save with edited scope + cleared sub-items — proves the excluded.* conflict set.
+      const editedLine = EstimateLine.create({
+        ...lp!,
+        scope: "Includes:\n1. Walls only",
+        subItems: null,
+      });
+      if (!isOk(editedLine)) throw new Error(editedLine.error.message);
+      const edited = loaded!.withLinesForAccept([editedLine.value], new Date());
+      await repo.save(edited);
+
+      const reloaded = await repo.findById(est.props.id);
+      expect(reloaded!.props.lines[0]?.props.scope).toBe("Includes:\n1. Walls only");
+      expect(reloaded!.props.lines[0]?.props.subItems).toBeNull();
+    });
+  });
+
   it("rejects an estimate in this org that references another org's lead (composite FK)", async () => {
     // Correctly stamped org A (passes RLS WITH CHECK) but pointing at org B's lead — the composite
     // FK (org_id, lead_id) -> leads(org_id, id) must reject it.
