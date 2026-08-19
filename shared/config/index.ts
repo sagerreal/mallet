@@ -117,6 +117,24 @@ const ConfigSchema = z.object({
   // the app boots without it, but the connect flow fail-closes when absent: storing a live refresh
   // token in plaintext is not an acceptable degradation. Mint one with `generateKey()`.
   QBO_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
+  // Square. A shop already running Square will not change processors to change software, so this
+  // is a second payment provider beside Stripe, selected per-org (org_settings.payment_provider).
+  //
+  // All OPTIONAL, matching the QBO and Stripe pattern: with no application id/secret the Square
+  // gateways construct as null and the connect flow self-disables, rather than 500-ing an app that
+  // every Stripe org is happily using. Absence is a configuration state, not a crash.
+  //
+  // The environment switch picks the API HOST (connect.squareupsandbox.com vs connect.squareup.com)
+  // AND the credential set — sandbox ids are rejected against live sellers and vice versa, so the
+  // two can never be mixed by accident.
+  SQUARE_APPLICATION_ID: z.string().min(1).optional(),
+  SQUARE_APPLICATION_SECRET: z.string().min(1).optional(),
+  SQUARE_ENVIRONMENT: z.enum(["sandbox", "production"]).default("sandbox"),
+  SQUARE_REDIRECT_URI: z.url().optional(),
+  // Verifies Square webhook signatures. Optional so the app boots without it, but the webhook
+  // route fail-closes when absent: an unverified payment notification is an instruction from an
+  // unauthenticated stranger to mark an invoice paid.
+  SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1).optional(),
   // Self-serve signup. Mallet is INVITE-ONLY while in pilot: with this unset (the default),
   // identity.signup refuses to provision a fresh org for anyone without a pending org_invites
   // row — invited staff still join their org. "1" or "true" reopens self-serve org creation.
