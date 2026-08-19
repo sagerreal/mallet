@@ -21,11 +21,16 @@ import {
   deliveryGateReason,
   gapNoticeText,
   gbbTierTotal,
+  emptyLine,
+  emptySubItem,
   hasRealLine,
+  lineToPayload,
   linesForSend,
   pricingSummary,
   realLines,
   realTierCount,
+  subItemsTotal,
+  withSubPatch,
   recommendedTier,
   seedLinesToComposerLines,
   sendGateReason,
@@ -904,9 +909,10 @@ describe("applyReviseSeed", () => {
     recommendedTier: null,
     tierNames: null,
     jobId: null,
+    priceDisplay: "lines" as const,
     lines: [
-      { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null },
-      { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null },
+      { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null },
+      { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null },
     ],
   };
 
@@ -929,8 +935,8 @@ describe("applyReviseSeed", () => {
       recommendedTier: "best" as const,
       tierNames: { good: "Basic", better: "Standard", best: "Premium" },
       lines: [
-        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const },
-        { d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, taxable: true, tier: "best" as const },
+        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null },
+        { d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, taxable: true, tier: "best" as const, scope: null, subItems: null },
       ],
     });
     expect(next.format).toBe("gbb");
@@ -955,7 +961,7 @@ describe("applyReviseSeed", () => {
       recommendedTier: "best" as const,
       tierNames: { good: "Basic", better: "Standard", best: "Premium" },
       lines: [
-        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const },
+        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null },
       ],
     });
     expect(tiered.jobId).toBe("job-9");
@@ -1003,5 +1009,99 @@ describe("addHeldTrace", () => {
     const after = addHeldTrace(next, { ...trace, id: "t2", name: "Patio" });
     expect(after.heldTraces.map((t) => t.id)).toEqual(["t1", "t2"]);
     expect(next.heldTraces).toHaveLength(1);
+  });
+});
+
+describe("sub-items — the estimating math behind a line", () => {
+  it("withSubPatch derives the line rate from real sub-items", () => {
+    const line = withSubPatch(emptyLine(), [
+      { d: "Walls", q: 2400, unit: "sq ft", amt: 9840 },
+      { d: "Trim", q: 62, unit: "pieces", amt: 7430 },
+      { d: "", q: 1, amt: 999 }, // blank description = not a real row, never priced
+    ]);
+    expect(line.r).toBe(17270);
+    expect(line.sub).toHaveLength(3);
+  });
+
+  it("sums sub-item dollars without float drift", () => {
+    expect(subItemsTotal([{ d: "a", q: 1, amt: 0.1 }, { d: "b", q: 1, amt: 0.2 }])).toBe(0.3);
+  });
+
+  it("clearing every sub-item keeps the last derived rate for hand editing", () => {
+    const priced = withSubPatch(emptyLine(), [{ d: "Walls", q: 1, amt: 100 }]);
+    const cleared = withSubPatch(priced, []);
+    expect(cleared.sub).toBeUndefined();
+    expect(cleared.r).toBe(100);
+  });
+});
+
+describe("lineToPayload — one wire mapping for page and slice", () => {
+  it("maps scope and sub-items to cents, dropping blank sub rows", () => {
+    const payload = lineToPayload({
+      d: "New Construction Interior Painting",
+      q: 1,
+      r: 21_450,
+      scope: "Includes:\n1. Walls",
+      sub: [
+        { d: "Walls", q: 2400, unit: "sq ft", amt: 9840 },
+        { d: "", q: 1, amt: 0 },
+      ],
+    });
+    expect(payload).toEqual({
+      description: "New Construction Interior Painting",
+      quantity: 1,
+      rateCents: 2_145_000,
+      costCents: 0,
+      isOptional: false,
+      needsPhoto: false,
+      taxable: true,
+      tier: undefined,
+      materialId: null,
+      scope: "Includes:\n1. Walls",
+      subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+    });
+  });
+
+  it("omits scope and subItems when the line has neither", () => {
+    const payload = lineToPayload({ d: "Labor", q: 1, r: 100 });
+    expect(payload.scope).toBeUndefined();
+    expect(payload.subItems).toBeUndefined();
+  });
+});
+
+describe("price display", () => {
+  it("defaults to lines", () => {
+    expect(INITIAL_STATE.priceDisplay).toBe("lines");
+  });
+
+  it("revise seed restores scope, sub-items and price display", () => {
+    const seeded = applyReviseSeed(INITIAL_STATE, {
+      leadId: "lead-1",
+      title: "Basement",
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      recommendedTier: null,
+      tierNames: null,
+      jobId: null,
+      priceDisplay: "total",
+      lines: [
+        {
+          d: "Painting",
+          q: 1,
+          rCents: 2_145_000,
+          cCents: 0,
+          opt: false,
+          photo: false,
+          taxable: true,
+          tier: null,
+          scope: "Includes:\n1. Walls",
+          subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+        },
+      ],
+    });
+    expect(seeded.priceDisplay).toBe("total");
+    expect(seeded.lines[0]?.scope).toBe("Includes:\n1. Walls");
+    expect(seeded.lines[0]?.sub).toEqual([{ d: "Walls", q: 2400, unit: "sq ft", amt: 9840 }]);
   });
 });

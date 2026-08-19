@@ -33,6 +33,19 @@ export interface ComposerLine {
   /** Provenance: set when the line came from a pricebook MATERIAL (sellable part/equipment).
    * Values are snapshots — this id rides to the server for costing, never live repricing. */
   materialId?: string;
+  /** Customer-facing scope prose under the line (plain text, rendered pre-wrap on the quote). */
+  scope?: string;
+  /** The estimating math behind the price — rolls up into r via withSubPatch. Never customer-visible. */
+  sub?: ComposerSubItem[];
+}
+
+/** One sub-item row (dollars, like every composer amount). Blank-description rows are edit
+ *  scaffolding — they never price and never persist, same rule as realLines. */
+export interface ComposerSubItem {
+  d: string;
+  q: number;
+  unit?: string;
+  amt: number;
 }
 
 export type QuoteFormat = "single" | "gbb";
@@ -164,6 +177,9 @@ export interface ComposerState {
    * (?job= / ?change=). An abandoned draft takes them with it — deliberate.
    */
   heldTraces: HeldTrace[];
+  /** Which numbers the customer sees — 'lines' (every amount, today's default) or 'total'
+   *  (scope prose + one price). Cycled by the $ chip on the line-table header. */
+  priceDisplay: "lines" | "total";
 }
 
 export function emptyLine(): ComposerLine {
@@ -172,6 +188,78 @@ export function emptyLine(): ComposerLine {
 
 export function cloneLines(lines: ComposerLine[]): ComposerLine[] {
   return lines.map((l) => ({ ...l }));
+}
+
+export function emptySubItem(): ComposerSubItem {
+  return { d: "", q: 1, amt: 0 };
+}
+
+/** Sub-items with a non-blank description — the only ones that price or persist. */
+export function realSubItems(sub: ComposerSubItem[] | undefined): ComposerSubItem[] {
+  return (sub ?? []).filter((si) => (si.d ?? "").trim() !== "");
+}
+
+/** Σ sub-item amounts in dollars, summed in integer cents so 0.1 + 0.2 stays 0.3. */
+export function subItemsTotal(sub: ComposerSubItem[] | undefined): number {
+  const cents = realSubItems(sub).reduce((acc, si) => acc + Math.round((si.amt ?? 0) * 100), 0);
+  return cents / 100;
+}
+
+/**
+ * Apply a sub-item edit to a line: the line's rate becomes the roll-up of the real rows.
+ * Clearing the last row keeps the derived rate (hand-editable again) rather than zeroing a
+ * price the owner already saw. Returns a new line — never mutates.
+ */
+export function withSubPatch(line: ComposerLine, sub: ComposerSubItem[]): ComposerLine {
+  const rows = sub.map((si) => ({ ...si }));
+  if (realSubItems(rows).length === 0) {
+    const { sub: _cleared, ...rest } = line;
+    return rows.length === 0 ? { ...rest } : { ...rest, sub: rows };
+  }
+  return { ...line, sub: rows, r: subItemsTotal(rows) };
+}
+
+/**
+ * ComposerLine → the wire line for v1.quoting.draft / accept. ONE mapping shared by
+ * buildDraftPayload and any future caller — the store slice's materialId drop happened
+ * because this conversion was written twice.
+ */
+export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
+  description: string;
+  quantity: number;
+  rateCents: number;
+  costCents: number;
+  isOptional: boolean;
+  needsPhoto: boolean;
+  taxable: boolean;
+  tier: TierKey | undefined;
+  materialId: string | null;
+  scope?: string;
+  subItems?: { description: string; quantity: number; unit?: string; amountCents: number }[];
+} {
+  const sub = realSubItems(l.sub);
+  return {
+    description: l.d,
+    quantity: l.q ?? 1,
+    rateCents: Math.round((l.r ?? 0) * 100),
+    costCents: Math.round((l.c ?? 0) * 100),
+    isOptional: l.opt ?? false,
+    needsPhoto: l.photo ?? false,
+    taxable: !l.notax,
+    tier: l.tier,
+    materialId: l.materialId ?? null,
+    ...(l.scope?.trim() ? { scope: l.scope } : {}),
+    ...(sub.length > 0
+      ? {
+          subItems: sub.map((si) => ({
+            description: si.d,
+            quantity: si.q ?? 1,
+            ...(si.unit?.trim() ? { unit: si.unit } : {}),
+            amountCents: Math.round((si.amt ?? 0) * 100),
+          })),
+        }
+      : {}),
+  };
 }
 
 export const INITIAL_STATE: ComposerState = {
@@ -196,6 +284,7 @@ export const INITIAL_STATE: ComposerState = {
   terms: null,
   sendChannel: "text",
   heldTraces: [],
+  priceDisplay: "lines",
 };
 
 /** Append a trace held on this quote (immutable — a new state, a new array). */
@@ -483,6 +572,10 @@ export interface ReviseSeedLine {
    *  shop had excluded. */
   taxable: boolean;
   tier: TierKey | null;
+  /** Customer-facing scope prose, restored verbatim. */
+  scope: string | null;
+  /** The estimating math behind the price (wire shape, cents). */
+  subItems: { description: string; quantity: number; unit: string | null; amountCents: number }[] | null;
 }
 
 export interface ReviseSeed {
@@ -494,6 +587,9 @@ export interface ReviseSeed {
   lines: ReviseSeedLine[];
   recommendedTier: TierKey | null;
   tierNames: { good: string; better: string; best: string } | null;
+  /** Which numbers the customer saw on the original — a revision must not silently re-expose
+   *  per-line amounts a proposal deliberately hid. */
+  priceDisplay: "lines" | "total";
   /**
    * The scope-visit job the ORIGINAL quote priced — carried onto the revision, or the edited
    * quote would accept into a duplicate job (the exact defect convert-on-accept exists to fix,
@@ -519,6 +615,17 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
     ...(l.opt ? { opt: true } : {}),
     ...(l.photo ? { photo: true } : {}),
     ...(l.taxable ? {} : { notax: true }),
+    ...(l.scope?.trim() ? { scope: l.scope } : {}),
+    ...(l.subItems?.length
+      ? {
+          sub: l.subItems.map((si) => ({
+            d: si.description,
+            q: si.quantity,
+            ...(si.unit ? { unit: si.unit } : {}),
+            amt: si.amountCents / 100,
+          })),
+        }
+      : {}),
   });
   const pricing = { disc: seed.discBps / 100, tax: seed.taxBps / 100, dep: seed.depBps / 100 };
   const tiered = seed.lines.some((l) => l.tier != null);
@@ -533,6 +640,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       pricing,
       format: "single",
       lines,
+      priceDisplay: seed.priceDisplay,
     };
   }
 
@@ -552,7 +660,16 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       lines: tierLines(k),
     })),
   };
-  return { ...state, leadId: seed.leadId, jobId: seed.jobId, desc: seed.title, pricing, format: "gbb", gbb };
+  return {
+    ...state,
+    leadId: seed.leadId,
+    jobId: seed.jobId,
+    desc: seed.title,
+    pricing,
+    format: "gbb",
+    gbb,
+    priceDisplay: seed.priceDisplay,
+  };
 }
 
 export interface MeasurementGap {
@@ -671,6 +788,9 @@ export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): E
     if (l.photo != null) e.photo = l.photo;
     if (l.notax != null) e.notax = l.notax;
     if ("tier" in l && l.tier != null) e.tier = l.tier;
+    if (l.scope?.trim()) e.scope = l.scope;
+    const sub = realSubItems(l.sub);
+    if (sub.length > 0) e.sub = sub.map((si) => ({ d: si.d, q: si.q, unit: si.unit, amt: si.amt }));
     return e;
   });
 }

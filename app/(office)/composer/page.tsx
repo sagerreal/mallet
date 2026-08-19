@@ -50,6 +50,7 @@ import {
   laborRulePayload,
   linesForSend,
   applyReviseSeed,
+  lineToPayload,
   matchServiceByName,
   realLines,
   recommendedTier,
@@ -212,6 +213,7 @@ export default function ComposerPage() {
         // quote whose accept mints a duplicate job. Server-side validation re-guards it on the
         // revision's own draft (assertScopeVisitJob runs on every v1.quoting.draft).
         jobId: dto.jobId ?? null,
+        priceDisplay: dto.priceDisplay,
         lines: dto.lines.map((l) => ({
           d: l.description,
           q: l.quantity,
@@ -221,6 +223,8 @@ export default function ComposerPage() {
           photo: l.needsPhoto,
           taxable: l.taxable,
           tier: l.tier ?? null,
+          scope: l.scope ?? null,
+          subItems: l.subItems ?? null,
         })),
       }),
     );
@@ -607,17 +611,10 @@ export default function ComposerPage() {
       taxBps: Math.round((cs.pricing.tax ?? 0) * 100),
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
       validDays: cs.validDays,
-      lines: payloadLines.map((l) => ({
-        description: l.d,
-        quantity: l.q ?? 1,
-        rateCents: Math.round((l.r ?? 0) * 100),
-        costCents: Math.round((l.c ?? 0) * 100),
-        isOptional: l.opt ?? false,
-        needsPhoto: l.photo ?? false,
-        taxable: !l.notax,
-        tier: l.tier,
-        materialId: l.materialId ?? null,
-      })),
+      lines: payloadLines.map(lineToPayload),
+      // Which numbers the customer sees — 'lines' is the historical default, 'total' the
+      // proposal format ($ chip on the line-table header).
+      priceDisplay: cs.priceDisplay,
       ...(gbb
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
         : {}),
