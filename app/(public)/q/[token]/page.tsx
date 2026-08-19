@@ -174,6 +174,10 @@ export default async function PublicQuotePage({
   const fixedSubtotalCents = estimate.subtotal();
   // The SECOND base: what the rate is charged on. Non-taxable lines stay in the subtotal above.
   const fixedTaxableCents = estimate.taxableBase();
+  // 'total' = the proposal format: scope prose + ONE price at the bottom. Per-line amounts hide;
+  // optional add-on prices always show (adding one changes the total, so its price must be
+  // visible), and the totals block is untouched.
+  const showLineAmounts = estimate.priceDisplay() !== "total";
 
   // The deposit a RETURNING customer can still pay. 0 — so no button renders at all — whenever
   // paying it is impossible: an unaccepted quote, nothing left owed, a shop that can't take cards,
@@ -269,6 +273,7 @@ export default async function PublicQuotePage({
             <QuoteLines
               tiers={tierViews.tiers}
               recommendedTier={tierViews.recommendedTier}
+              showLineAmounts={showLineAmounts}
               discBps={p.discBps}
               taxBps={p.taxBps}
               depBps={p.depBps}
@@ -293,6 +298,8 @@ export default async function PublicQuotePage({
                     rateCents={lp.rate}
                     taxable={lp.taxable}
                     showTaxMark={p.taxBps > 0}
+                    scope={lp.scope}
+                    showAmount={showLineAmounts}
                   />
                 );
               })}
@@ -301,6 +308,7 @@ export default async function PublicQuotePage({
               <QuoteLines
                 fixedSubtotalCents={fixedSubtotalCents}
                 fixedTaxableCents={fixedTaxableCents}
+                showLineAmounts={showLineAmounts}
                 optionalLines={optLines.map((line) => {
                   const lp = line.props;
                   return {

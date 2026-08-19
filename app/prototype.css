@@ -1882,6 +1882,9 @@
   .custlogo{width:46px;height:46px;border-radius:var(--radius);background:var(--card);color:var(--green-900);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:var(--type-lg)}
   .custbody{padding:var(--space-5) var(--space-6) var(--space-6)}
   .custline{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
+  /* Scope prose under a line — the proposal's Includes/Excludes/Products. Pre-wrap keeps the
+     shop's typed numbering and paragraph breaks exactly as written. */
+  .custline-scope{display:block;white-space:pre-wrap;color:var(--ink-2);font-size:var(--type-sm);line-height:1.55;margin-top:var(--space-2);max-width:62ch}
   /* "No tax" marker on a document line. Quiet: it qualifies the line it sits in, it is not a
      status the customer has to act on — and it only renders when the document charges tax. */
   .custline-notax{margin-left:var(--space-2);color:var(--ink-3);font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
