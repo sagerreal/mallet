@@ -135,6 +135,11 @@ const ConfigSchema = z.object({
   // route fail-closes when absent: an unverified payment notification is an instruction from an
   // unauthenticated stranger to mark an invoice paid.
   SQUARE_WEBHOOK_SIGNATURE_KEY: z.string().min(1).optional(),
+  // Base64 32-byte key sealing the OAuth tokens at rest (platform/crypto/secret-box) AND signing
+  // the connect flow's state parameter. Optional so the app boots without it, but the connect
+  // flow fail-closes when absent: storing a live Square token in plaintext is not an acceptable
+  // degradation when that token can charge a real merchant's customers. Mint with generateKey().
+  SQUARE_TOKEN_ENCRYPTION_KEY: z.string().min(1).optional(),
   // Self-serve signup. Mallet is INVITE-ONLY while in pilot: with this unset (the default),
   // identity.signup refuses to provision a fresh org for anyone without a pending org_invites
   // row — invited staff still join their org. "1" or "true" reopens self-serve org creation.
