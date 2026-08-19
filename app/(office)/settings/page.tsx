@@ -33,6 +33,7 @@ import { LeadMarketplacesCard } from "./lead-marketplaces-card";
 import { PaymentsCard } from "./payments-card";
 import { TapToPayCard } from "./tap-to-pay-card";
 import { QuickbooksCard } from "./quickbooks-card";
+import { SquareCard } from "./square-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { TimezoneCard } from "./timezone-card";
 import { ImportCard } from "./import-card";
@@ -792,6 +793,7 @@ function SecIntegrations() {
           end of merchant onboarding, and 3.6 wants it reachable outside checkout. */}
       <TapToPayCard />
       <QuickbooksCard />
+      <SquareCard />
 
       <SetGroup>Messaging</SetGroup>
       <A2pRegistrationCard />

@@ -13,6 +13,7 @@ import { createCompanyRouter } from "@mallet/companies";
 import { createTrailRouter } from "@mallet/links";
 import { createTeamChatRouter } from "@mallet/team-chat";
 import { createMeasurementRouter } from "@mallet/measurements";
+import { createPaymentsRouter } from "@mallet/payments";
 import { createMessagingRouter } from "@mallet/messaging";
 import { createSettingsRouter } from "@mallet/settings";
 import { createChecklistRouter } from "@mallet/checklists";
@@ -49,6 +50,7 @@ export const appRouter = router({
     links: createTrailRouter(),
     teamChat: createTeamChatRouter(),
     measurements: createMeasurementRouter(),
+    payments: createPaymentsRouter(),
     messaging: createMessagingRouter(),
     calls: createCallRouter(),
     settings: createSettingsRouter(),
