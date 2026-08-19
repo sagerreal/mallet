@@ -326,3 +326,66 @@ describe("DraftEstimateUseCase — ai_draft snapshot persistence", () => {
     if (isOk(without)) expect(without.value.props.jobId).toBeNull();
   });
 });
+
+describe("DraftEstimateUseCase — scope, sub-items, price display", () => {
+  const cmd = (lines: EstimateLineInput[], priceDisplay?: "lines" | "total") => ({
+    orgId: ORG,
+    leadId: LEAD,
+    title: null,
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    validDays: null,
+    lines,
+    priceDisplay: priceDisplay ?? null,
+  });
+
+  it("persists scope, sub-items and price display", async () => {
+    const repo = new FakeEstimateRepository();
+    const draft = new DraftEstimateUseCase(
+      repo,
+      new InMemoryEventBus(),
+      new FixedClock(new Date("2026-06-01T00:00:00Z")),
+      seqIds(),
+    );
+    const r = await draft.exec(
+      cmd(
+        [
+          oneLine({
+            scope: "Includes:\n1. Walls",
+            subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+          }),
+        ],
+        "total",
+      ),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.priceDisplay()).toBe("total");
+    const lineProps = r.value.props.lines[0].props;
+    expect(lineProps.scope).toBe("Includes:\n1. Walls");
+    expect(lineProps.subItems?.[0]).toEqual({
+      description: "Walls",
+      quantity: 2400,
+      unit: "sq ft",
+      amountCents: 984_000,
+    });
+  });
+
+  it("propagates a sub-item validation failure", async () => {
+    const repo = new FakeEstimateRepository();
+    const draft = new DraftEstimateUseCase(
+      repo,
+      new InMemoryEventBus(),
+      new FixedClock(new Date("2026-06-01T00:00:00Z")),
+      seqIds(),
+    );
+    const r = await draft.exec(
+      cmd([oneLine({ subItems: [{ description: "", quantity: 1, unit: null, amountCents: 1 }] })]),
+    );
+    expect(isOk(r)).toBe(false);
+    if (isOk(r)) return;
+    expect(r.error.kind).toBe("validation");
+    if (r.error.kind === "validation") expect(r.error.field).toBe("subItems");
+  });
+});

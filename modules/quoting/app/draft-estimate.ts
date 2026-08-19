@@ -3,7 +3,7 @@ import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/type
 import { asEstimateId, asEstimateLineId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
-import type { QuoteTier, TierNames } from "../domain/estimate";
+import type { EstimateSubItem, PriceDisplay, QuoteTier, TierNames } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 import type { AiDraftLine } from "../domain/edit-delta";
 
@@ -25,6 +25,10 @@ export interface EstimateLineInput {
   /** Good/Better/Best tag — required on every line of a tiered draft, absent otherwise. */
   readonly tier?: QuoteTier | null;
   readonly materialId?: string | null;
+  /** Customer-facing scope prose under the line — the proposal's Includes/Excludes/Products. */
+  readonly scope?: string | null;
+  /** Internal estimating math behind the price. Never reaches a customer surface. */
+  readonly subItems?: readonly EstimateSubItem[] | null;
 }
 
 export interface DraftEstimateCommand {
@@ -41,6 +45,8 @@ export interface DraftEstimateCommand {
   readonly tierNames?: TierNames | null;
   /** Snapshot of the selected job terms TEXT (no live reference). */
   readonly termsSnapshot?: string | null;
+  /** Which numbers the customer sees — 'lines' (default) or 'total'. */
+  readonly priceDisplay?: PriceDisplay | null;
   /**
    * The job this quote adds work to — makes it a CHANGE ORDER.
    *
@@ -117,6 +123,7 @@ export class DraftEstimateUseCase {
       acceptedTier: null,
       tierNames: cmd.tierNames ?? null,
       termsSnapshot: cmd.termsSnapshot ?? null,
+      priceDisplay: cmd.priceDisplay ?? "lines",
       lines: built,
       createdAt: now,
       updatedAt: now,
@@ -161,6 +168,8 @@ export class DraftEstimateUseCase {
         position: i,
         tier: input.tier ?? null,
         materialId: input.materialId ?? null,
+        scope: input.scope ?? null,
+        subItems: input.subItems ?? null,
       });
       if (!isOk(line)) return line;
       built.push(line.value);
