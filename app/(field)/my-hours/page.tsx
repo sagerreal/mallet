@@ -40,7 +40,6 @@ import { HoursSummary } from "@/features/field/hours-summary";
 import { HoursWeekNav } from "@/features/field/hours-week-nav";
 import { HoursSheet } from "@/features/field/hours-sheet";
 import { UnreportedDayCard } from "@/features/field/unreported-day-card";
-import { useTimesheetClock } from "@/features/settings/use-timesheet-clock";
 import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
 import { useTechEditsTimes } from "@/features/settings/use-tech-edits-times";
 import { useWeekSubmission } from "@/features/field/use-week-submission";
@@ -73,7 +72,7 @@ function NoHoursYet({ onAdd }: { onAdd: (() => void) | null }) {
     return (
       <FirstRunEmptyState
         heading="No hours yet"
-        subtext="Hours are recorded as you start your day and tap through your jobs. On this account the office keeps timesheet changes — ask them about anything missing."
+        subtext="You write your hours in here — Regular, Job or Break — and submit the week. On this account the office keeps timesheet changes, so ask them about anything missing."
         paths={[]}
       />
     );
@@ -81,12 +80,12 @@ function NoHoursYet({ onAdd }: { onAdd: (() => void) | null }) {
   return (
     <FirstRunEmptyState
       heading="No hours yet"
-      subtext="Hours are recorded as you start your day and tap through your jobs. Anything the clock missed — or time planned ahead — you can add here."
+      subtext="You write your hours in here: Regular, Job or Break, a day at a time, then submit the week."
       paths={[
         {
-          title: "Add hours",
-          description: "Pick the day and the times. The office reviews it before it reaches payroll.",
-          actionLabel: "Add hours",
+          title: "Add a day",
+          description: "Pick the day, the type and the times. The office reviews it before it reaches payroll.",
+          actionLabel: "Add a day",
           onAction: onAdd,
           variant: "primary",
         },
@@ -299,7 +298,6 @@ export default function MyHoursPage() {
   });
   const writes = useMyHoursWrites();
   const [addOpen, setAddOpen] = useState(false);
-  const hasClock = useTimesheetClock();
 
   /**
    * Days he evidently worked and sent nothing in. Its own query rather than derived from the rows
@@ -377,14 +375,13 @@ export default function MyHoursPage() {
         overtimePolicy={overtimePolicy}
         canEditOwnTimes={canEditOwnTimes}
         addButton={
-          /* In the week pager, not at the foot of the page: in a SHEET shop this is not a
-             correction path, it is the only way hours ever get recorded, so it belongs beside the
-             week it writes into. It says what it does rather than apologising for being after the
-             fact. Hidden while the form is open — the form IS the control then, and hidden entirely
-             when the shop keeps changes with the office, because the server would refuse the write. */
+          /* In the week pager, not at the foot of the page: this is not a correction path, it is
+             the only way hours are ever recorded, so it belongs beside the week it writes into.
+             Hidden while the form is open — the form IS the control then — and hidden entirely
+             when the shop keeps changes with the office, because the server would refuse it. */
           addOpen || !canEditOwnTimes ? null : (
-            <Button variant={hasClock ? "quiet" : "primary"} onClick={() => setAddOpen(true)}>
-              {hasClock ? "Add hours" : "Add a day"}
+            <Button variant="primary" onClick={() => setAddOpen(true)}>
+              Add a day
             </Button>
           )
         }

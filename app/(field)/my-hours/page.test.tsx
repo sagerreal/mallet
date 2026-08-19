@@ -254,7 +254,7 @@ describe("approved hours", () => {
   });
 });
 
-describe("adding a block the clock missed", () => {
+describe("writing a day in", () => {
   /**
    * JOB TIME NAMES ITS JOB. The kind exists so those hours can be costed against something, so a
    * "job" block with no job is the one shape that cannot do the only thing it is for. It used to
@@ -263,7 +263,7 @@ describe("adding a block the clock missed", () => {
   it("will not accept job time until a job is named", () => {
     withEntries([]);
     render(<MyHoursPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a day" }));
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     fireEvent.change(screen.getByLabelText("Start"), { target: { value: "08:00" } });
     fireEvent.change(screen.getByLabelText("End"), { target: { value: "11:00" } });
@@ -276,7 +276,7 @@ describe("adding a block the clock missed", () => {
   it("sends the named job with the hours", () => {
     withEntries([]);
     render(<MyHoursPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a day" }));
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     // SelectMenu is the app's own listbox, not a native <select>: open the trigger, then pick
     // with mouseDown — the option commits on mousedown so the click never lands on a moved list.
@@ -295,7 +295,7 @@ describe("adding a block the clock missed", () => {
     // ready to be submitted by somebody who thinks they are starting fresh.
     withEntries([]);
     render(<MyHoursPage />);
-    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a day" }));
     fireEvent.click(screen.getByRole("button", { name: "Job" }));
     fireEvent.click(screen.getByLabelText("Job"));
     fireEvent.mouseDown(screen.getByRole("option", { name: /JOB-9/ }));
@@ -313,7 +313,7 @@ describe("adding a block the clock missed", () => {
     withEntries([entry()]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a day" }));
     fireEvent.change(screen.getByLabelText("Start"), { target: { value: "06:00" } });
     fireEvent.change(screen.getByLabelText("End"), { target: { value: "07:30" } });
     fireEvent.click(screen.getByRole("button", { name: "Add these hours" }));
@@ -337,7 +337,7 @@ describe("adding a block the clock missed", () => {
     withEntries([entry()]);
     render(<MyHoursPage />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a day" }));
 
     // Day is a SelectMenu now, so the choices live in a listbox that opens on click rather than
     // in <option> children. The window runs both ways since Aug 11: today first (the default),
@@ -373,7 +373,7 @@ describe("the four list states", () => {
     render(<MyHoursPage />);
 
     expect(screen.getByText("No hours yet")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Add hours" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add a day" }));
     expect(screen.getByLabelText("Start")).toBeTruthy();
   });
 
@@ -572,7 +572,7 @@ describe("a shop that keeps timesheet changes with the office", () => {
 
   it("offers no way to add hours", () => {
     render(<MyHoursPage />);
-    expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add a day" })).toBeNull();
   });
 
   it("says WHO to ask instead of just removing the buttons", () => {
@@ -613,7 +613,7 @@ describe("a shop that keeps timesheet changes with the office", () => {
     withEntries([]);
     render(<MyHoursPage />);
     expect(screen.getByText("No hours yet")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add a day" })).toBeNull();
   });
 });
 
@@ -661,7 +661,7 @@ describe("submitting the week", () => {
     submissionQuery = submittedWeek();
     render(<MyHoursPage />);
     expect(screen.queryByRole("button", { name: /^Edit the shift on/ })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Add hours" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Add a day" })).toBeNull();
   });
 
   it("says the week is with the office rather than removing the controls silently", () => {

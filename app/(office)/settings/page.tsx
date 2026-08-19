@@ -635,7 +635,6 @@ function TeamRolesBlock() {
   const utils = api.useUtils();
   const setToggle = useAppStore((s) => s.setToggle);
   const techSeesPrice = useAppStore((s) => s.toggles.techSeesPrice);
-  const timesheetClock = useAppStore((s) => s.toggles.timesheetClock);
   const techEditsTimes = useAppStore((s) => s.toggles.techEditsTimes);
   // The overtime policy is numbers, not a toggle — read from settings, saved via updateConfig.
   const saveOt = api.v1.settings.updateConfig.useMutation({
@@ -697,32 +696,13 @@ function TeamRolesBlock() {
           sits here rather than in SecTeam — the rules card is inside this block and Crew hours
           follows it. */}
       <SetGroup>Hours</SetGroup>
-      <FoldCard mark={<MarkPunch />} title="How your crew records hours" summary={timesheetClock ? "punch clock" : "written in"}>
+      <FoldCard mark={<MarkPunch />} title="How your crew records hours" summary="written in">
         <div className="stage-row" style={{ borderTop: "none", marginTop: "0" }}>
-          <div style={{ flex: 1 }}>
-            <b>Crew punch a clock</b>
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              On, the crew tap start, break and end on My day. Off, they type their week on My
-              hours instead — the same hours, approved and sent to QuickBooks the same way.
-            </div>
-          </div>
-          <label className="switch">
-            <input
-              type="checkbox"
-              checked={timesheetClock}
-              disabled={settingsLoading}
-              onChange={(e) => setToggle("timesheetClock", e.target.checked)}
-            />
-            <i />
-          </label>
-        </div>
-
-        <div className="stage-row">
           <div style={{ flex: 1 }}>
             <b>Techs can edit their own times</b>
             <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              Off, the clock and job taps are the only field writers — corrections go through
-              you. On, techs edit until a week is submitted.
+              Off, corrections go through you. On, techs write and edit their own week until it
+              is submitted.
             </div>
           </div>
           <label className="switch">

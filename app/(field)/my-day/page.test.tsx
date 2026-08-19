@@ -160,33 +160,12 @@ describe("My day — the screen moves when you press", () => {
     expect(screen.getByRole("button", { name: "Arrived" }).hasAttribute("disabled")).toBe(true);
   });
 
-  it("says so when the clock threw the segment away for being under a minute", () => {
-    render(<MyDayPage />);
-    completeOpts.onSuccess?.({ clockNotice: "segment_too_short" });
-    expect(notices).toHaveLength(1);
-    expect(notices[0]).toMatch(/under a minute/i);
-    expect(notices[0]).toMatch(/My hours/);
-  });
-
-  it("stays quiet when the clock did exactly what it looks like it did", () => {
-    render(<MyDayPage />);
-    completeOpts.onSuccess?.({ clockNotice: null });
-    expect(notices).toHaveLength(0);
-  });
-
-  // The clock moved and nothing told it to look again: v1.timesheets.open carries a 15s
-  // staleTime, no refetch interval and no focus refetch, so after "Start job" — which server-side
-  // closes shop time and opens job time — the card kept showing the OLD segment's since and
-  // elapsed until something remounted it.
-  it.each([
-    ["start", () => startOpts],
-    ["complete", () => completeOpts],
-  ])("makes the clock card look again after %s", (_name, opts) => {
-    render(<MyDayPage />);
-    opts().onSuccess?.({ clockNotice: null });
-    expect(invalidateOpen).toHaveBeenCalled();
-    expect(invalidateList).toHaveBeenCalled();
-  });
+  /**
+   * The clock is gone: job taps no longer write hours, so start/complete carry no clock notice and
+   * nothing needs invalidating. Hours are typed on My hours and nowhere else. The three cases that
+   * lived here — the under-a-minute notice, the quiet case, and re-reading the clock card after a
+   * tap — all asserted behaviour that has been removed rather than changed.
+   */
 
   it("surfaces a refused write instead of swallowing it", () => {
     render(<MyDayPage />);

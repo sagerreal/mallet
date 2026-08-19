@@ -332,43 +332,12 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
     expect(paidItem?.customerName).toBe("Field Test Customer");
   });
 
-  it("a JOB tap on a submitted week lands the hours AND reopens the attestation", async () => {
-    // The job taps are the clock too. While only the day-clock path carried the submissions repo,
-    // On my way / Arrived / Done filed hours onto an attested week that still read as attested —
-    // and the submitted-week lock then refused the tech the rows his own tap had created.
-    const [mondayRow] = await admin<{ d: string }[]>`
-      select to_char(date_trunc('week', current_date)::date, 'YYYY-MM-DD') as d`;
-    const thisMonday = mondayRow!.d;
-    const [tapTech] = await admin<{ id: string }[]>`
-      insert into users (org_id, auth_user_id, email, role)
-      values (${orgId}, ${randomUUID()}, 'taptech@field.test', 'tech') returning id`;
-    const tapTechId = tapTech!.id;
-    const [job] = await admin<{ id: string }[]>`
-      insert into jobs (org_id, lead_id, num, status, total_cents, assignee_user_id)
-      values (${orgId}, ${leadId}, ${"JOB-TAP-" + randomUUID().slice(0, 8)}, 'scheduled', 0, ${tapTechId})
-      returning id`;
-    await admin`
-      insert into job_visits (org_id, job_id, status, position, scheduled_date, scheduled_start, assignee_user_id)
-      values (${orgId}, ${job!.id}, 'pending', 1, current_date, '09:00', ${tapTechId})`;
 
-    const caller = appRouter.createCaller(ctxFor(tapTechId, orgId, "tech"));
-    const submitted = await caller.v1.timesheets.submitWeek({ weekStart: thisMonday });
-    expect(submitted.reopenedAt).toBeNull();
-
-    try {
-      // Arrived: opens job time through runVisitClockTap — the path that used to skip the reopen.
-      await caller.v1.field.start({ jobId: job!.id });
-      const after = await caller.v1.timesheets.submissionFor({ weekStart: thisMonday });
-      expect(after.submission?.reopenedAt).not.toBeNull();
-      expect(after.submission?.reopenReason).toContain("new hours");
-    } finally {
-      await admin`delete from time_entries where org_id = ${orgId} and tech_user_id = ${tapTechId}`;
-      await admin`delete from timesheet_submissions where org_id = ${orgId} and tech_user_id = ${tapTechId}`;
-      await admin`delete from job_visits where org_id = ${orgId} and job_id = ${job!.id}`;
-      await admin`delete from jobs where id = ${job!.id}`;
-      await admin`delete from users where id = ${tapTechId}`;
-    }
-  });
+    /**
+     * A job tap can no longer land hours, so it can no longer reopen a signed-off week either.
+     * The property itself still matters and still has a test — timesheet-policy.int.test.ts proves
+     * it against the only writer there is now, a typed entry.
+     */
 
   it("keeps bill STATUS but nulls the paid AMOUNT for a price-blind tech", async () => {
     const paidJobId = await finishedJobWithBill("paid", 40000);
@@ -815,15 +784,13 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       const started = await caller.v1.field.start({ jobId });
       expect(started.status).toBe("in_progress");
 
-      // Starting the job also started the technician's clock. Assert it, rather than only cleaning
-      // it up: the whole point of wiring the My-day buttons is that job time is recorded from the
-      // control a technician actually uses, and a silent regression here would leave payroll right
-      // and job costing empty.
-      const hours = await admin<{ kind: string; job_id: string | null }[]>`
-        select kind, job_id from time_entries
-        where org_id = ${orgId} and tech_user_id = ${visitTechId} and deleted_at is null`;
-      expect(hours).toHaveLength(1);
-      expect(hours[0]).toMatchObject({ kind: "job", job_id: jobId });
+      // Starting the job records NO hours. Dispatch taps stopped writing to the timesheet when
+      // the clock was removed — the technician types their day on My hours, and a tap that also
+      // wrote hours would be counted twice by job costing, which reads exactly those rows.
+      const rows = await admin`
+        select id from time_entries where tech_user_id = ${visitTechId} and deleted_at is null`;
+      expect(rows).toHaveLength(0);
+
     } finally {
       // time_entries holds composite FKs onto BOTH jobs and users, so hours go first.
       await admin`delete from time_entries where org_id = ${orgId} and tech_user_id = ${visitTechId}`;
@@ -1326,7 +1293,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       return row!.enroute_at;
     };
 
-    it("On my way stamps the visit and starts travel time on that job", async () => {
+    it("On my way stamps the visit and writes no hours", async () => {
       const techId = await seedStepTech("step-enroute@field.test");
       const { jobId, visitId } = await seedStepJob("JOB-STEP-ENROUTE", techId);
       try {
@@ -1338,22 +1305,16 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
         expect(dto.visits[0]!.enrouteAt).not.toBeNull();
         expect(await enrouteStamp(visitId)).not.toBeNull();
 
-        // Payroll fact: the drive is on the clock, attributed to the job he is driving to.
-        const rows = await clockRows(techId);
-        expect(rows).toHaveLength(1);
-        expect(rows[0]).toMatchObject({
-          kind: "travel",
-          job_id: jobId,
-          running: true,
-          src: "clock",
-          status: "draft",
-        });
+        // And NOT a payroll fact. Dispatch taps stopped writing hours when the clock was
+        // removed: hours are typed on My hours, and a tap that also wrote them would be counted
+        // twice by job costing, which reads those same rows.
+        expect(await clockRows(techId)).toHaveLength(0);
       } finally {
         await dropStepFixture(techId, jobId);
       }
     });
 
-    it("Arrived moves the visit to in_progress and starts job time", async () => {
+    it("Arrived moves the visit to in_progress and writes no hours", async () => {
       const techId = await seedStepTech("step-arrived@field.test");
       const { jobId, visitId } = await seedStepJob("JOB-STEP-ARRIVED", techId);
       try {
@@ -1362,15 +1323,13 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
         expect(dto.visits[0]!.status).toBe("in_progress");
 
-        const rows = await clockRows(techId);
-        expect(rows).toHaveLength(1);
-        expect(rows[0]).toMatchObject({ kind: "job", job_id: jobId, running: true, src: "clock" });
+        expect(await clockRows(techId)).toHaveLength(0);
       } finally {
         await dropStepFixture(techId, jobId);
       }
     });
 
-    it("Arrived then Done closes job time and auto-resumes unassigned shop time", async () => {
+    it("Arrived then Done moves the visit and leaves the timesheet untouched", async () => {
       const techId = await seedStepTech("step-done@field.test");
       const { jobId, visitId } = await seedStepJob("JOB-STEP-DONE", techId);
       try {
@@ -1380,13 +1339,9 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
 
         expect(dto.visits[0]!.status).toBe("complete");
 
-        // He is still on the clock between calls — that is what keeps the day total right even
-        // when nobody taps anything else. The resumed segment belongs to no job.
-        // (Only the RUNNING row is asserted: back-to-back taps inside one minute discard the
-        // segment between them, so whether a closed job row exists depends on the wall clock.)
-        const running = (await clockRows(techId)).filter((r) => r.running);
-        expect(running).toHaveLength(1);
-        expect(running[0]).toMatchObject({ kind: "shop", job_id: null });
+        // There is no clock to stay on between calls. A whole day of tapping produces no rows;
+        // the technician writes Regular, Job and Break on My hours and submits the week.
+        expect(await clockRows(techId)).toHaveLength(0);
       } finally {
         await dropStepFixture(techId, jobId);
       }
@@ -1409,9 +1364,9 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
       }
     });
 
-    it("On my way then Arrived leaves exactly ONE running entry, and it is job time", async () => {
-      // The write order is load-bearing (the database allows one running entry per tech); a bug
-      // that opened before closing would fail this on the unique index rather than in an assertion.
+    it("On my way then Arrived writes nothing at all to the timesheet", async () => {
+      // This used to assert the write ORDER of the clock segments. Nothing is written now, so the
+      // property worth keeping is the stronger one: a full dispatch chain leaves payroll alone.
       const techId = await seedStepTech("step-chain@field.test");
       const { jobId, visitId } = await seedStepJob("JOB-STEP-CHAIN", techId);
       try {
@@ -1419,9 +1374,7 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
         await caller.v1.field.setVisitEnroute({ jobId, visitId });
         await caller.v1.field.setVisitStatus({ jobId, visitId, status: "in_progress" });
 
-        const running = (await clockRows(techId)).filter((r) => r.running);
-        expect(running).toHaveLength(1);
-        expect(running[0]).toMatchObject({ kind: "job", job_id: jobId });
+        expect(await clockRows(techId)).toHaveLength(0);
       } finally {
         await dropStepFixture(techId, jobId);
       }

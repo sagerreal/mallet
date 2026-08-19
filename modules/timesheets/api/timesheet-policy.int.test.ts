@@ -138,8 +138,8 @@ suite("timesheet policy (live RLS)", () => {
 
   });
 
-  it("a clock tap on a submitted week lands AND reopens the attestation", async () => {
-    // A second tech, submitting THIS week — the week a clock tap actually files on.
+  it("hours the OFFICE adds to a submitted week land AND reopen the attestation", async () => {
+    // A second tech, submitting THIS week — the week the new hours file on.
     const [t2] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role)
       values (${orgId}, ${randomUUID()}, 'tech2@tspolicy.test', 'tech') returning id`;
@@ -150,8 +150,23 @@ suite("timesheet policy (live RLS)", () => {
     const sub = await tech2.v1.timesheets.submitWeek({ weekStart: thisMonday!.d });
     expect(sub.reopenedAt).toBeNull();
 
-    await tech2.v1.timesheets.clockTap({ tap: "start_day", at: new Date(Date.now() - 120_000).toISOString() });
-    await tech2.v1.timesheets.clockTap({ tap: "end_day", at: new Date().toISOString() });
+    // The OFFICE adds them. A technician writing into their own submitted week is refused — that
+    // is what submitting means — so the office is the only route left, and it is exactly the route
+    // that needs this: hours added on somebody's behalf, without them seeing. The property used to
+    // live in the clock, which was exempt from the lock because a person genuinely working cannot
+    // be refused; the clock is gone, so it moved to the only writer there is.
+    const office = appRouter.createCaller(ctxFor(ownerId, orgId, "owner"));
+    await office.v1.timesheets.create({
+      techUserId: t2!.id,
+      workDate: thisMonday!.d,
+      kind: "shop",
+      jobId: null,
+      startTime: "09:00",
+      endTime: "11:00",
+      note: "",
+      src: "manual",
+      running: false,
+    });
 
     const after = await tech2.v1.timesheets.submissionFor({ weekStart: thisMonday!.d });
     expect(after.submission?.reopenedAt).not.toBeNull();
