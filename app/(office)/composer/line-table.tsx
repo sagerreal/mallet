@@ -22,7 +22,7 @@
  * pricebook; the Photo chip returns when it attaches real photos.
  */
 
-import { Fragment, useState } from "react";
+import { Fragment, useId, useState } from "react";
 import { fmt$ } from "@/lib/format";
 import { realSubItems, withSubPatch, type ComposerLine } from "./composer-state";
 import { ScopeEditor, SubItemEditor } from "./line-depth";
@@ -60,6 +60,9 @@ export function LineTable({
   priceMode?: "lines" | "total";
 }) {
   const cols = showCost ? 6 : 5;
+  // GBB renders three LineTables at once — panel ids must be unique per instance or every
+  // tier's aria-controls points at whichever twin rendered first.
+  const uid = useId();
   // Which lines have their depth editors open. Presence of DATA lives on the line itself;
   // these sets are only the expand/collapse UI state, so they reset harmlessly on unmount.
   const [scopeOpen, setScopeOpen] = useState<ReadonlySet<number>>(new Set());
@@ -118,6 +121,9 @@ export function LineTable({
                 ? Math.round((100 * (x.r - x.c)) / x.r)
                 : null;
             const hasContent = Boolean(x.d && x.d.trim());
+            // A line whose description was cleared mid-rewrite must NOT strand its depth: the
+            // price stays locked by sub-items, so the controls that reach them stay visible too.
+            const hasDepth = Boolean(x.scope?.trim()) || realSubItems(x.sub).length > 0;
             return (
               <Fragment key={i}>
               <tr>
@@ -132,13 +138,13 @@ export function LineTable({
                     const src = hasContent ? provenanceFor?.(x.d) : null;
                     return src ? <span className="line-prov">{src}</span> : null;
                   })()}
-                  {hasContent && (
+                  {(hasContent || hasDepth) && (
                     <div className="linehints">
                       <button
                         type="button"
                         className="linehint"
                         aria-expanded={scopeOpen.has(i)}
-                        aria-controls={`line-scope-${i}`}
+                        aria-controls={`${uid}-scope-${i}`}
                         title="Scope prose the customer reads under this line — Includes, Excludes, Products"
                         onClick={() => setScopeOpen(toggle(scopeOpen, i))}
                       >
@@ -148,7 +154,7 @@ export function LineTable({
                         type="button"
                         className="linehint"
                         aria-expanded={subOpen.has(i)}
-                        aria-controls={`line-sub-${i}`}
+                        aria-controls={`${uid}-sub-${i}`}
                         title="Your estimate math — rolls up into this line's price, never shown to the customer"
                         onClick={() => setSubOpen(toggle(subOpen, i))}
                       >
@@ -252,9 +258,9 @@ export function LineTable({
                   )}
                 </td>
               </tr>
-              {hasContent && scopeOpen.has(i) && (
+              {(hasContent || hasDepth) && scopeOpen.has(i) && (
                 <tr className="linedetail">
-                  <td colSpan={cols} id={`line-scope-${i}`}>
+                  <td colSpan={cols} id={`${uid}-scope-${i}`}>
                     <ScopeEditor
                       value={x.scope ?? ""}
                       lineNo={i + 1}
@@ -263,9 +269,9 @@ export function LineTable({
                   </td>
                 </tr>
               )}
-              {hasContent && subOpen.has(i) && (
+              {(hasContent || hasDepth) && subOpen.has(i) && (
                 <tr className="linedetail">
-                  <td colSpan={cols} id={`line-sub-${i}`}>
+                  <td colSpan={cols} id={`${uid}-sub-${i}`}>
                     <SubItemEditor
                       sub={x.sub ?? []}
                       lineNo={i + 1}
