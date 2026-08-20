@@ -76,6 +76,52 @@ export interface EstimateSubItem {
   readonly amountCents: number;
 }
 
+/** The page kinds a presentation may carry — the v1 set from the composer mock (no media). */
+export const PRESENTATION_PAGE_KEYS = ["cover", "about", "reviews", "thanks"] as const;
+export type PresentationPageKey = (typeof PRESENTATION_PAGE_KEYS)[number];
+
+const MAX_PRESENTATION_PAGES = PRESENTATION_PAGE_KEYS.length;
+const MAX_PRESENTATION_TITLE_CHARS = 120;
+const MAX_PRESENTATION_BODY_CHARS = 8000;
+
+/**
+ * The designed pages frozen onto a quote at draft time — same snapshot semantics as
+ * termsSnapshot: later template edits never rewrite a sent quote. Carries no money and no
+ * internal fields, so it is safe on every public surface by construction.
+ */
+export interface PresentationSnapshot {
+  readonly templateName: string;
+  readonly pages: readonly { readonly key: PresentationPageKey; readonly title: string; readonly body: string }[];
+}
+
+// Jsonb round-trip validation — malformed rows fail loud, same rule as tierNames.
+const validatePresentationSnapshot = (
+  input: PresentationSnapshot | null | undefined,
+): Result<PresentationSnapshot | null, ValidationError> => {
+  if (input == null) return ok(null);
+  if (typeof input.templateName !== "string" || input.templateName.trim().length === 0) {
+    return err(validation("presentation template name is required", "presentationSnapshot"));
+  }
+  if (!Array.isArray(input.pages) || input.pages.length === 0 || input.pages.length > MAX_PRESENTATION_PAGES) {
+    return err(validation("a presentation carries 1-4 pages", "presentationSnapshot"));
+  }
+  for (const page of input.pages) {
+    if (!(PRESENTATION_PAGE_KEYS as readonly string[]).includes(page.key)) {
+      return err(validation(`unknown presentation page: ${page.key}`, "presentationSnapshot"));
+    }
+    if (typeof page.title !== "string" || page.title.length > MAX_PRESENTATION_TITLE_CHARS) {
+      return err(validation("presentation page title is limited to 120 characters", "presentationSnapshot"));
+    }
+    if (typeof page.body !== "string" || page.body.length > MAX_PRESENTATION_BODY_CHARS) {
+      return err(validation("presentation page body is limited to 8000 characters", "presentationSnapshot"));
+    }
+  }
+  return ok({
+    templateName: input.templateName.trim(),
+    pages: input.pages.map((p) => ({ key: p.key, title: p.title, body: p.body })),
+  });
+};
+
 // Good/Better/Best. An estimate is tiered iff recommendedTier is non-null; then every line
 // carries a tier tag until accept resolves the estimate to the customer's chosen tier.
 export type QuoteTier = "good" | "better" | "best";
@@ -290,6 +336,8 @@ export interface EstimateProps {
   /** Which numbers the customer sees — see PriceDisplay. Optional so pre-existing construction
    *  sites read as the historical default ('lines'); absent means lines, never "unknown". */
   readonly priceDisplay?: PriceDisplay;
+  /** The designed pages frozen at draft time — null/absent on a plain quote (the default). */
+  readonly presentationSnapshot?: PresentationSnapshot | null;
   // Signature evidence. All nullable: an office-side acceptance has none, and that is a real state
   // rather than a missing one.
   readonly signerName?: string | null;
@@ -321,6 +369,8 @@ export class Estimate {
     if (props.priceDisplay !== undefined && !isPriceDisplay(props.priceDisplay)) {
       return err(validation(`unknown price display: ${props.priceDisplay}`, "priceDisplay"));
     }
+    const presentation = validatePresentationSnapshot(props.presentationSnapshot);
+    if (!presentation.ok) return presentation;
     if (props.discBps < 0 || props.discBps > BPS_DENOMINATOR) {
       return err(validation("discount must be between 0 and 10000 bps", "discBps"));
     }
@@ -330,7 +380,7 @@ export class Estimate {
     }
     const tierError = Estimate.validateTiers(props);
     if (tierError) return err(tierError);
-    return ok(new Estimate({ ...props, num }));
+    return ok(new Estimate({ ...props, num, presentationSnapshot: presentation.value }));
   }
 
   // Tier consistency invariants. A tier may be empty while drafting (only send gates on the

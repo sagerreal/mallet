@@ -41,8 +41,22 @@ export interface ComposerLine {
 
 
 export type { ComposerSubItem } from "./sub-items";
+export type {
+  ComposerPresentation,
+  ComposerPresentationPage,
+  PresentationPageKey,
+  PresentationSnapshotPayload,
+} from "./presentation-state";
+export {
+  presentationSnapshotForPayload,
+  presentationFromSnapshot,
+  togglePresentationPage,
+  patchPresentationPage,
+} from "./presentation-state";
 export { emptySubItem, realSubItems, subItemsTotal, withSubPatch, lineToPayload } from "./sub-items";
 import { realSubItems } from "./sub-items";
+import { presentationFromSnapshot } from "./presentation-state";
+import type { ComposerPresentation, PresentationSnapshotPayload } from "./presentation-state";
 import type { ComposerSubItem } from "./sub-items";
 
 export type QuoteFormat = "single" | "gbb";
@@ -177,6 +191,8 @@ export interface ComposerState {
   /** Which numbers the customer sees — 'lines' (every amount, today's default) or 'total'
    *  (scope prose + one price). Cycled by the $ chip on the line-table header. */
   priceDisplay: "lines" | "total";
+  /** The per-quote copy of a presentation template's pages — null = plain quote (the default). */
+  presentation: ComposerPresentation | null;
 }
 
 export function emptyLine(): ComposerLine {
@@ -211,6 +227,7 @@ export const INITIAL_STATE: ComposerState = {
   sendChannel: "text",
   heldTraces: [],
   priceDisplay: "lines",
+  presentation: null,
 };
 
 /** Append a trace held on this quote (immutable — a new state, a new array). */
@@ -516,6 +533,8 @@ export interface ReviseSeed {
   /** Which numbers the customer saw on the original — a revision must not silently re-expose
    *  per-line amounts a proposal deliberately hid. */
   priceDisplay: "lines" | "total";
+  /** The original's frozen presentation — restored as an UNLINKED per-quote copy. */
+  presentationSnapshot: PresentationSnapshotPayload | null;
   /**
    * The scope-visit job the ORIGINAL quote priced — carried onto the revision, or the edited
    * quote would accept into a duplicate job (the exact defect convert-on-accept exists to fix,
@@ -567,6 +586,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       format: "single",
       lines,
       priceDisplay: seed.priceDisplay,
+      presentation: presentationFromSnapshot(seed.presentationSnapshot),
     };
   }
 
@@ -595,25 +615,12 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
     format: "gbb",
     gbb,
     priceDisplay: seed.priceDisplay,
+    presentation: presentationFromSnapshot(seed.presentationSnapshot),
   };
 }
 
-export interface MeasurementGap {
-  kind: string;
-  label: string;
-}
-
-/** Quiet inline notice copy for a pricebook gap — informational, no dead link v1. */
-export function gapNoticeText(gap: MeasurementGap): string {
-  return `No rate set for ${gap.label} — add one in the Pricebook.`;
-}
-
-/** Quiet inline notice copy for rooms whose only trace is "unconfirmed" (no line, no gap). */
-export function unconfirmedRoomsNoticeText(count: number): string | null {
-  if (count <= 0) return null;
-  const noun = count === 1 ? "room has" : "rooms have";
-  return `${count} ${noun} unconfirmed measurements — confirm them on the job before sending.`;
-}
+// Measurement-notice copy lives with the measurement module (moved for the 800-line file cap).
+export { gapNoticeText, unconfirmedRoomsNoticeText, type MeasurementGap } from "./measured-surfaces";
 
 /** One AI-drafted tier: the display-only note + its lines (rates in dollars). */
 export interface AiTierDraft {

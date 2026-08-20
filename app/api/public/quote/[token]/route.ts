@@ -129,6 +129,12 @@ const estimateToJson = (estimate: Estimate) => {
     tiers: tiersToJson(estimate),
     termsSnapshot: p.termsSnapshot,
     priceDisplay: estimate.priceDisplay(),
+    // Page copy only. templateName is the shop's INTERNAL label for the deck ("Interior repaint
+    // v2 — use for HOAs") and names nothing the customer needs, so it is redacted here even
+    // though the page render never used it.
+    presentationSnapshot: p.presentationSnapshot
+      ? { pages: p.presentationSnapshot.pages.map((pg) => ({ key: pg.key, title: pg.title, body: pg.body })) }
+      : null,
     subtotal: moneyJson(estimate.subtotal()),
     discount: moneyJson(estimate.discountAmount()),
     tax: moneyJson(estimate.taxAmount()),

@@ -516,6 +516,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     termsSnapshot: dto.termsSnapshot ?? undefined,
     // Only the EXCEPTION is written — 'lines' (the default) carries no key at all.
     ...(dto.priceDisplay === "total" ? { priceDisplay: "total" as const } : {}),
+    // The frozen presentation rides the DTO as-is (no money units involved; absent when null).
+    ...(dto.presentationSnapshot ? { presentation: dto.presentationSnapshot } : {}),
     // Signature: carried through UNCONVERTED, cents and all. Every other money field on this
     // mapper becomes dollars, and this one deliberately does not — the snapshot is a frozen record
     // of what somebody signed, and a number this app divided by 100 is no longer the number on the

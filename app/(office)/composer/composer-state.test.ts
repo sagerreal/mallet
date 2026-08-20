@@ -29,7 +29,10 @@ import {
   pricingSummary,
   realLines,
   realTierCount,
+  presentationFromSnapshot,
+  presentationSnapshotForPayload,
   subItemsTotal,
+  togglePresentationPage,
   withSubPatch,
   recommendedTier,
   seedLinesToComposerLines,
@@ -910,6 +913,7 @@ describe("applyReviseSeed", () => {
     tierNames: null,
     jobId: null,
     priceDisplay: "lines" as const,
+    presentationSnapshot: null,
     lines: [
       { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null },
       { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null },
@@ -1085,6 +1089,7 @@ describe("price display", () => {
       tierNames: null,
       jobId: null,
       priceDisplay: "total",
+      presentationSnapshot: null,
       lines: [
         {
           d: "Painting",
@@ -1103,5 +1108,90 @@ describe("price display", () => {
     expect(seeded.priceDisplay).toBe("total");
     expect(seeded.lines[0]?.scope).toBe("Includes:\n1. Walls");
     expect(seeded.lines[0]?.sub).toEqual([{ d: "Walls", q: 2400, unit: "sq ft", amt: 9840 }]);
+  });
+});
+
+describe("presentation — per-quote copy of a template's pages", () => {
+  const presentation = {
+    templateId: "t1",
+    name: "Interior",
+    pages: [
+      { key: "cover" as const, on: true, title: "", body: "" },
+      { key: "about" as const, on: true, title: "About us", body: "Family-run since 2011." },
+      { key: "reviews" as const, on: false, title: "Reviews", body: "Five stars." },
+      { key: "thanks" as const, on: true, title: "Thank you", body: "We're ready when you are." },
+    ],
+  };
+
+  it("freezes only the ON pages into the payload", () => {
+    const snap = presentationSnapshotForPayload(presentation);
+    expect(snap?.templateName).toBe("Interior");
+    expect(snap?.pages.map((p) => p.key)).toEqual(["cover", "about", "thanks"]);
+    expect(snap?.pages[0]).toEqual({ key: "cover", title: "", body: "" });
+  });
+
+  it("sends nothing for no presentation or an all-off presentation", () => {
+    expect(presentationSnapshotForPayload(null)).toBeUndefined();
+    expect(
+      presentationSnapshotForPayload({
+        ...presentation,
+        pages: presentation.pages.map((p) => ({ ...p, on: false })),
+      }),
+    ).toBeUndefined();
+  });
+
+  it("restores a snapshot as an UNLINKED copy with every page on", () => {
+    const snap = presentationSnapshotForPayload(presentation);
+    const restored = presentationFromSnapshot(snap ?? null);
+    expect(restored?.templateId).toBeNull();
+    expect(restored?.name).toBe("Interior");
+    expect(restored?.pages.every((p) => p.on)).toBe(true);
+    expect(restored?.pages).toHaveLength(3);
+  });
+
+  it("never toggles the cover off; toggles other pages per quote", () => {
+    expect(togglePresentationPage(presentation, "cover").pages[0]?.on).toBe(true);
+    const toggled = togglePresentationPage(presentation, "about");
+    expect(toggled.pages[1]?.on).toBe(false);
+    expect(presentation.pages[1]?.on).toBe(true); // immutably
+  });
+
+  it("revise seed restores the presentation", () => {
+    const seeded = applyReviseSeed(INITIAL_STATE, {
+      leadId: "lead-1",
+      title: "Basement",
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      recommendedTier: null,
+      tierNames: null,
+      jobId: null,
+      priceDisplay: "lines",
+      presentationSnapshot: {
+        templateName: "Interior",
+        pages: [{ key: "cover", title: "", body: "" }],
+      },
+      lines: [
+        { d: "Painting", q: 1, rCents: 100, cCents: 0, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null },
+      ],
+    });
+    expect(seeded.presentation?.templateId).toBeNull();
+    expect(seeded.presentation?.name).toBe("Interior");
+  });
+});
+
+describe("presentation — the cover the office previews is the cover the customer gets", () => {
+  it("freezes only ON pages and drops the per-quote toggle flag", () => {
+    const snap = presentationSnapshotForPayload({
+      templateId: "t1",
+      name: "Interior",
+      pages: [
+        { key: "cover", on: true, title: "", body: "" },
+        { key: "about", on: true, title: "About us", body: "Family-run." },
+        { key: "reviews", on: false, title: "Reviews", body: "Five stars." },
+      ],
+    });
+    expect(snap?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(snap?.pages.every((p) => !("on" in p))).toBe(true);
   });
 });

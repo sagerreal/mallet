@@ -178,6 +178,15 @@ export default async function PublicQuotePage({
   // optional add-on prices always show (adding one changes the total, so its price must be
   // visible), and the totals block is untouched.
   const showLineAmounts = estimate.priceDisplay() !== "total";
+  // The designed proposal pages frozen at draft time — null on a plain quote. Cover renders
+  // when present; a non-cover page with an empty body hides itself (the shop hasn't written
+  // it yet); thanks renders after the terms so the document ends on the shop's voice.
+  const presentation = p.presentationSnapshot ?? null;
+  const presentationCover = presentation?.pages.find((page) => page.key === "cover") ?? null;
+  const presentationBody =
+    presentation?.pages.filter((page) => page.key !== "cover" && page.key !== "thanks" && page.body.trim().length > 0) ?? [];
+  const presentationThanks =
+    presentation?.pages.find((page) => page.key === "thanks" && page.body.trim().length > 0) ?? null;
 
   // The deposit a RETURNING customer can still pay. 0 — so no button renders at all — whenever
   // paying it is impossible: an unaccepted quote, nothing left owed, a shop that can't take cards,
@@ -202,6 +211,79 @@ export default async function PublicQuotePage({
         padding: "0 0 var(--space-10)",
       }}
     >
+      {presentationCover && (
+        /* Proposal cover — the designed first page. Same column as the card; accent band. */
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            background: "var(--accent)",
+            color: "var(--pri-fg)",
+            borderRadius: "0 0 16px 16px",
+            padding: "var(--space-8) var(--space-6) var(--space-6)",
+            marginBottom: "var(--space-4)",
+            boxShadow: "var(--shadow)",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-mono, ui-monospace, monospace)",
+              fontSize: "var(--type-xs)",
+              letterSpacing: ".16em",
+              textTransform: "uppercase",
+              opacity: 0.75,
+            }}
+          >
+            {presentationCover.title.trim() || "Proposal"}
+          </div>
+          <h1
+            style={{
+              fontFamily: "var(--font-display)",
+              fontSize: "var(--type-3xl)",
+              lineHeight: 1.08,
+              letterSpacing: "-.02em",
+              margin: "var(--space-3) 0 var(--space-3)",
+            }}
+          >
+            {p.title?.trim() || `Quote ${p.num}`}
+          </h1>
+          <div style={{ fontSize: "var(--type-sm)", opacity: 0.85 }}>
+            Prepared for <b>{customerFirstName}</b> by {orgName} &middot; {p.num}
+          </div>
+        </div>
+      )}
+      {presentationBody.map((page) => (
+        /* Designed body page (about us / reviews) — the shop's own words, pre-wrap. */
+        <div
+          key={page.key}
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            background: "var(--card)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-md)",
+            padding: "var(--space-5) var(--space-6)",
+            marginBottom: "var(--space-4)",
+            boxShadow: "var(--shadow)",
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-mono, ui-monospace, monospace)",
+              fontSize: "var(--type-xs)",
+              letterSpacing: ".14em",
+              textTransform: "uppercase",
+              color: "var(--ink-3)",
+              marginBottom: "var(--space-2)",
+            }}
+          >
+            {page.title.trim() || page.key}
+          </div>
+          <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--type-base)", lineHeight: 1.55, margin: 0 }}>
+            {page.body}
+          </p>
+        </div>
+      ))}
       {/* Quote card — max 520px, full-width on mobile */}
       <div
         style={{
@@ -342,6 +424,30 @@ export default async function PublicQuotePage({
           </p>
         </div>
       </div>
+
+      {presentationThanks && (
+        /* Closing page — the document ends on the shop's voice. */
+        <div
+          style={{
+            width: "100%",
+            maxWidth: 520,
+            background: "var(--accent)",
+            color: "var(--pri-fg)",
+            borderRadius: "var(--radius-md)",
+            padding: "var(--space-6)",
+            marginTop: "var(--space-4)",
+            textAlign: "center",
+            boxShadow: "var(--shadow)",
+          }}
+        >
+          <div style={{ fontWeight: 800, fontSize: "var(--type-lg)", marginBottom: "var(--space-2)" }}>
+            {presentationThanks.title.trim() || "Thank you"}
+          </div>
+          <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--type-sm)", opacity: 0.85, margin: "0 auto", maxWidth: "44ch" }}>
+            {presentationThanks.body}
+          </p>
+        </div>
+      )}
 
       {/* Valid-days notice below the card */}
       {p.validDays && !isDone && (

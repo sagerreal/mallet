@@ -22,6 +22,11 @@ import { BeginConnectOnboardingUseCase, RefreshConnectStatusUseCase } from "../a
 import { CreatePricebookUseCase, UpdatePricebookUseCase, RemovePricebookUseCase } from "../app/pricebook";
 import { CreateLaborRateUseCase, UpdateLaborRateUseCase, RemoveLaborRateUseCase } from "../app/labor-rates";
 import { CreateTermUseCase, UpdateTermUseCase, RemoveTermUseCase } from "../app/terms";
+import {
+  CreatePresentationTemplateUseCase,
+  UpdatePresentationTemplateUseCase,
+  RemovePresentationTemplateUseCase,
+} from "../app/presentation-templates";
 import { CreateSourceUseCase, RemoveSourceUseCase } from "../app/sources";
 import {
   settingsDTO,
@@ -32,6 +37,10 @@ import {
   pricebookItemDTO,
   laborRateDTO,
   jobTermDTO,
+  presentationTemplateDTO,
+  presentationTemplateCreateInput,
+  presentationTemplateUpdateInput,
+  toPresentationTemplateDTO,
   leadSourceDTO,
   bookingCfgDTO,
   bookingCfgInputDTO,
@@ -469,6 +478,52 @@ export const createSettingsRouter = () =>
         .mutation(async ({ ctx, input }) => {
           const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
           const result = await new RemoveTermUseCase(repo, ctx.deps.clock).exec(
+            input,
+            ctx.principal.orgId,
+          );
+          return orThrow(result);
+        }),
+    }),
+
+    // --- Presentation templates ------------------------------------------
+
+    presentationTemplates: router({
+      list: ownerOrOffice.output(z.array(presentationTemplateDTO)).query(async ({ ctx }) => {
+        const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+        const templates = await repo.listPresentationTemplates();
+        return templates.map(toPresentationTemplateDTO);
+      }),
+
+      create: ownerOrOffice
+        .input(presentationTemplateCreateInput)
+        .output(presentationTemplateDTO)
+        .mutation(async ({ ctx, input }) => {
+          const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+          const result = await new CreatePresentationTemplateUseCase(repo, ctx.deps.ids).exec(
+            input,
+            ctx.principal.orgId,
+          );
+          return toPresentationTemplateDTO(orThrow(result));
+        }),
+
+      update: ownerOrOffice
+        .input(presentationTemplateUpdateInput)
+        .output(presentationTemplateDTO)
+        .mutation(async ({ ctx, input }) => {
+          const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+          const result = await new UpdatePresentationTemplateUseCase(repo, ctx.deps.clock).exec(
+            input,
+            ctx.principal.orgId,
+          );
+          return toPresentationTemplateDTO(orThrow(result));
+        }),
+
+      remove: ownerOrOffice
+        .input(z.object({ id: z.string().uuid() }))
+        .output(okDTO)
+        .mutation(async ({ ctx, input }) => {
+          const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
+          const result = await new RemovePresentationTemplateUseCase(repo, ctx.deps.clock).exec(
             input,
             ctx.principal.orgId,
           );

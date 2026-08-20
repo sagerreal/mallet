@@ -45,6 +45,18 @@ const tierNamesInput = z.object({
   best: z.string().trim().min(1).max(60),
 });
 
+// Frozen presentation pages — carries no money, safe on every surface by construction.
+const presentationPageDTO = z.object({
+  key: z.enum(["cover", "about", "reviews", "thanks"]),
+  title: z.string().max(120),
+  body: z.string().max(8_000),
+});
+const presentationSnapshotInput = z.object({
+  templateName: z.string().trim().min(1).max(80),
+  pages: z.array(presentationPageDTO).min(1).max(4),
+});
+const presentationSnapshotDTO = presentationSnapshotInput;
+
 // Internal estimating math behind a line — office DTO only; NEVER serialized on a public surface
 // (redacted exactly like cost). Money in integer cents.
 const subItemDTO = z.object({
@@ -114,6 +126,7 @@ const estimateDTO = z.object({
   termsSnapshot: z.string().nullable(),
   /** Which numbers the customer sees — 'lines' (every amount) or 'total' (scope + one price). */
   priceDisplay: z.enum(["lines", "total"]),
+  presentationSnapshot: presentationSnapshotDTO.nullable(),
   // The unguessable public_token generated at draft time. Never exposed to end-customers via
   // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
   publicToken: z.string().nullable(),
@@ -262,6 +275,8 @@ const draftInput = z
     termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
     /** Which numbers the customer sees — omitted means 'lines', today's behavior. */
     priceDisplay: z.enum(["lines", "total"]).optional(),
+    /** The designed pages to freeze onto this quote (see PresentationSnapshot). */
+    presentationSnapshot: presentationSnapshotInput.optional(),
     /**
      * The job this quote adds work to — makes it a CHANGE ORDER.
      *
@@ -452,6 +467,9 @@ const toEstimateDTO = (estimate: Estimate) => {
     tierNames: p.tierNames,
     termsSnapshot: p.termsSnapshot,
     priceDisplay: estimate.priceDisplay(),
+    presentationSnapshot: p.presentationSnapshot
+      ? { templateName: p.presentationSnapshot.templateName, pages: [...p.presentationSnapshot.pages] }
+      : null,
     publicToken: p.publicToken ?? null,
     publicUrl: publicUrlFor(p.publicToken ?? null),
     signature: toSignatureDTO(estimate),
@@ -609,6 +627,7 @@ export const createEstimateRouter = () =>
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,
           priceDisplay: input.priceDisplay ?? null,
+          presentationSnapshot: input.presentationSnapshot ?? null,
           changeOrderForJobId: input.changeOrderForJobId ?? null,
           jobId: input.jobId ?? null,
           aiDraftLines:

@@ -26,6 +26,22 @@ export interface LaborRate {
   readonly position: number;
 }
 
+/** One designed page of a presentation template. `on` is the template's default activation. */
+export interface PresentationPage {
+  readonly key: "cover" | "about" | "reviews" | "thanks";
+  readonly on: boolean;
+  readonly title: string;
+  readonly body: string;
+}
+
+/** A reusable presentation — the designed pages that wrap a quote into a proposal. */
+export interface PresentationTemplate {
+  readonly id: string;
+  readonly name: string;
+  readonly pages: readonly PresentationPage[];
+  readonly position: number;
+}
+
 export interface JobTerm {
   readonly id: string;
   readonly title: string;
@@ -173,6 +189,25 @@ export interface SettingsRepository {
 
   /** Soft-deletes a job term. Returns rows affected (0 = not found). */
   archiveTerm(id: string, now: Date): Promise<number>;
+
+  // --- presentation_templates -------------------------------------------
+
+  /** All non-archived presentation templates for the current tenant (org implicit in the tx). */
+  listPresentationTemplates(): Promise<PresentationTemplate[]>;
+
+  createPresentationTemplate(input: {
+    id: string;
+    orgId: string;
+    name: string;
+    pages: readonly PresentationPage[];
+    position: number;
+  }): Promise<PresentationTemplate>;
+
+  /** Updates a presentation template. Returns rows affected (0 = not found). */
+  savePresentationTemplate(template: PresentationTemplate, updatedAt: Date): Promise<number>;
+
+  /** Soft-deletes a presentation template. Returns rows affected (0 = not found). */
+  archivePresentationTemplate(id: string, now: Date): Promise<number>;
 
   // --- lead_sources ------------------------------------------------------
 

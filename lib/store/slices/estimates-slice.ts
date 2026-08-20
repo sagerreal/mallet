@@ -171,6 +171,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         tierNames: draft.tierNames,
         termsSnapshot: draft.termsSnapshot?.trim() ? draft.termsSnapshot : undefined,
         priceDisplay: draft.priceDisplay,
+        presentationSnapshot: draft.presentation,
         // The scope-visit job this quote prices (composer ?job=) — accept converts that job
         // into the sold work instead of minting a duplicate.
         jobId: draft.jobId ?? undefined,

@@ -3,6 +3,8 @@ import { asOrgId, isOk, type OrgId } from "@mallet/shared/types";
 import { OrgSettings, type BookingCfg } from "../domain/org-settings";
 import type {
   SettingsRepository, PricebookItem, LaborRate, LaborRateKind, JobTerm, LeadSource,
+  PresentationPage,
+  PresentationTemplate,
 } from "../domain/settings-repository";
 import { GetSettingsUseCase } from "./get-settings";
 
@@ -168,6 +170,37 @@ export class FakeSettingsRepository implements SettingsRepository {
     const before = this.terms.length;
     this.terms = this.terms.filter((x) => x.id !== id);
     return before - this.terms.length;
+  }
+
+  presentationTemplates: PresentationTemplate[] = [];
+
+  async listPresentationTemplates(): Promise<PresentationTemplate[]> {
+    return this.presentationTemplates;
+  }
+
+  async createPresentationTemplate(i: {
+    id: string;
+    orgId: string;
+    name: string;
+    pages: readonly PresentationPage[];
+    position: number;
+  }): Promise<PresentationTemplate> {
+    const t = { id: i.id, name: i.name, pages: [...i.pages], position: i.position };
+    this.presentationTemplates = [...this.presentationTemplates, t];
+    return t;
+  }
+
+  async savePresentationTemplate(t: PresentationTemplate, _updatedAt: Date): Promise<number> {
+    const exists = this.presentationTemplates.some((x) => x.id === t.id);
+    if (!exists) return 0;
+    this.presentationTemplates = this.presentationTemplates.map((x) => (x.id === t.id ? t : x));
+    return 1;
+  }
+
+  async archivePresentationTemplate(id: string, _now: Date): Promise<number> {
+    const before = this.presentationTemplates.length;
+    this.presentationTemplates = this.presentationTemplates.filter((x) => x.id !== id);
+    return before - this.presentationTemplates.length;
   }
 
   async listSources(): Promise<LeadSource[]> { return this.sources; }
