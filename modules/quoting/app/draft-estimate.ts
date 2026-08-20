@@ -3,7 +3,7 @@ import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/type
 import { asEstimateId, asEstimateLineId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
-import type { EstimateSubItem, PriceDisplay, QuoteTier, TierNames } from "../domain/estimate";
+import type { EstimateSubItem, PresentationSnapshot, PriceDisplay, QuoteTier, TierNames } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 import type { AiDraftLine } from "../domain/edit-delta";
 
@@ -47,6 +47,8 @@ export interface DraftEstimateCommand {
   readonly termsSnapshot?: string | null;
   /** Which numbers the customer sees — 'lines' (default) or 'total'. */
   readonly priceDisplay?: PriceDisplay | null;
+  /** The designed pages to freeze onto this quote — absent on a plain quote. */
+  readonly presentationSnapshot?: PresentationSnapshot | null;
   /**
    * The job this quote adds work to — makes it a CHANGE ORDER.
    *
@@ -124,6 +126,7 @@ export class DraftEstimateUseCase {
       tierNames: cmd.tierNames ?? null,
       termsSnapshot: cmd.termsSnapshot ?? null,
       priceDisplay: cmd.priceDisplay ?? "lines",
+      presentationSnapshot: cmd.presentationSnapshot ?? null,
       lines: built,
       createdAt: now,
       updatedAt: now,

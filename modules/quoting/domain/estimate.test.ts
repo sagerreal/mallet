@@ -714,3 +714,26 @@ describe("Estimate price display", () => {
     expect(snapshot.lines[0]?.scope).toBe("Includes:\n1. Walls");
   });
 });
+
+describe("Estimate presentation snapshot", () => {
+  const snapshot = {
+    templateName: "Interior",
+    pages: [
+      { key: "cover" as const, title: "", body: "" },
+      { key: "about" as const, title: "About us", body: "Family-run since 2011." },
+    ],
+  };
+
+  it("defaults to null and accepts a valid snapshot", () => {
+    expect(estimate({}).props.presentationSnapshot ?? null).toBeNull();
+    const est = estimate({ presentationSnapshot: snapshot });
+    expect(est.props.presentationSnapshot?.pages).toHaveLength(2);
+  });
+
+  it("rejects an unknown page key and oversized copy from a corrupt row", () => {
+    const bad = { ...snapshot, pages: [{ key: "gallery" as never, title: "", body: "" }] };
+    expect(isOk(Estimate.create({ ...estimate({}).props, presentationSnapshot: bad }))).toBe(false);
+    const huge = { ...snapshot, pages: [{ key: "about" as const, title: "", body: "x".repeat(8001) }] };
+    expect(isOk(Estimate.create({ ...estimate({}).props, presentationSnapshot: huge }))).toBe(false);
+  });
+});

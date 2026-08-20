@@ -129,6 +129,8 @@ const estimateToJson = (estimate: Estimate) => {
     tiers: tiersToJson(estimate),
     termsSnapshot: p.termsSnapshot,
     priceDisplay: estimate.priceDisplay(),
+    // Safe by construction: template name + page copy, no money, no internal fields.
+    presentationSnapshot: p.presentationSnapshot ?? null,
     subtotal: moneyJson(estimate.subtotal()),
     discount: moneyJson(estimate.discountAmount()),
     tax: moneyJson(estimate.taxAmount()),

@@ -86,6 +86,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
     tierNames: null,
     termsSnapshot: null,
     priceDisplay: "lines" as const,
+    presentationSnapshot: null,
     publicToken: null,
     publicUrl: null,
     signature: null,

@@ -1,6 +1,6 @@
 import { asEstimateId, asEstimateLineId, asOrgId, asLeadId, money } from "@mallet/shared/types";
 import { estimates, estimateLines } from "@mallet/shared/db/schema";
-import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, isPriceDisplay, type QuoteTier, type TierNames } from "../domain/estimate";
+import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, isPriceDisplay, type PresentationSnapshot, type QuoteTier, type TierNames } from "../domain/estimate";
 import type { SignedSnapshot } from "../domain/signature";
 
 export type EstimateRow = typeof estimates.$inferSelect;
@@ -75,6 +75,8 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     tierNames: row.tierNames as TierNames | null,
     termsSnapshot: row.termsSnapshot,
     priceDisplay: row.priceDisplay,
+    // Jsonb read-back cast; Estimate.create re-validates every field and fails loud.
+    presentationSnapshot: (row.presentationSnapshot as PresentationSnapshot | null) ?? null,
     signerName: row.signerName,
     signatureSvg: row.signatureSvg,
     signerIp: row.signerIp,
