@@ -30,6 +30,7 @@ export * from "./pricebook-materials";
 export * from "./pricebook-service-materials";
 export * from "./labor-rates";
 export * from "./job-terms";
+export * from "./presentation-templates";
 export * from "./lead-sources";
 export * from "./pipeline-stages";
 export * from "./inbound-endpoints";

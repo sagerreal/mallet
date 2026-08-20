@@ -20,6 +20,15 @@ import { leads } from "./leads";
 // Customer-facing display names for the three Good/Better/Best tiers (jsonb column shape).
 type TierNamesColumn = { good: string; better: string; best: string };
 
+// Frozen presentation attached to a quote (jsonb column shape): the designed pages the customer
+// sees around the estimate, copied from a presentation_template at draft time. Same snapshot
+// semantics as terms_snapshot — later template edits never rewrite a sent quote. Carries no
+// money and no internal fields; safe on every public surface by construction.
+type PresentationSnapshotColumn = {
+  templateName: string;
+  pages: { key: "cover" | "about" | "reviews" | "thanks"; title: string; body: string }[];
+};
+
 // Internal estimating math behind one line (jsonb column shape): the substrate rows that roll up
 // into the line's rate. Money is integer cents. NEVER serialized to any customer-facing surface —
 // redacted exactly like cost_cents.
@@ -91,6 +100,8 @@ export const estimates = pgTable(
     // PaintScout-style proposal). Display-only — rates stay in the data either way, and optional
     // add-on prices always show (adding one changes the total, so its price must be visible).
     priceDisplay: text("price_display").notNull().default("lines"),
+    // The designed proposal pages frozen at draft time — null on a plain quote (the default).
+    presentationSnapshot: jsonb("presentation_snapshot").$type<PresentationSnapshotColumn>(),
 
     // ---- Signature evidence -------------------------------------------------------------------
     //
