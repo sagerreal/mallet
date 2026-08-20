@@ -53,6 +53,8 @@ import { fmt$, fmtPhone } from "@/lib/format";
 import { SignatureRecord } from "@/components/shared/signature-record";
 import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
+import { PhoneCell } from "./lead-modal/lead-header";
+import { EmailBody } from "./lead-modal/more-details";
 import { SheetRow } from "./sheet-row";
 import { EditableSheetTitle } from "./editable-sheet-title";
 import { Trail } from "./trail";
@@ -588,6 +590,7 @@ export function JobModalContent() {
   const techs = useAppStore((s) => s.techs);
   const invoices = useAppStore((s) => s.invoices);
   const updateJob = useAppStore((s) => s.updateJob);
+  const updateLead = useAppStore((s) => s.updateLead);
   const addVisit = useAppStore((s) => s.addVisit);
   const updateVisit = useAppStore((s) => s.updateVisit);
   const removeVisit = useAppStore((s) => s.removeVisit);
@@ -640,6 +643,8 @@ export function JobModalContent() {
   }, [custNotesQ.data, custLeadId, adoptLeadNotes]);
 
   const lead: Lead | undefined = leads.find((l) => l.id === job?.leadId);
+  // Call/Text with no number open this row rather than doing nothing — same as the customer sheet.
+  const [phoneOpen, setPhoneOpen] = useState(false);
 
   if (!job) {
     if (missing && jobQ.isError) {
@@ -790,17 +795,20 @@ export function JobModalContent() {
         </div>
       </div>
 
-      {/* Quiet peer actions — Call/Text stay TAPPABLE when a customer is
-          linked; the call sheet / thread each prompt to add a number in-flow
-          when none is on file. They disable only with NO linked customer (there
-          is nobody to call). */}
+      {/* Quiet peer actions. They disable only with NO linked customer — there is nobody to call.
+          With a customer but NO NUMBER they open the Phone row below rather than stacking a sheet
+          whose whole job is one field: the row is a few inches down, and that sheet is titled with
+          the customer's name, so it reads as having started something else. Same behaviour as the
+          customer sheet. */}
       <div className="sheet-secrow">
         <button
           className="sheet-sec"
           disabled={!lead}
           title={!lead ? "No linked customer" : undefined}
           onClick={() => {
-            if (lead) pushModal(MODAL.CALL, { leadId: lead.id });
+            if (!lead) return;
+            if (phone.trim()) pushModal(MODAL.CALL, { leadId: lead.id });
+            else setPhoneOpen(true);
           }}
         >
           Call
@@ -810,7 +818,9 @@ export function JobModalContent() {
           disabled={!lead}
           title={!lead ? "No linked customer" : undefined}
           onClick={() => {
-            if (lead) pushModal(MODAL.THREAD, { leadId: lead.id });
+            if (!lead) return;
+            if (phone.trim()) pushModal(MODAL.THREAD, { leadId: lead.id });
+            else setPhoneOpen(true);
           }}
         >
           Text
@@ -840,6 +850,39 @@ export function JobModalContent() {
         {/* No Type row. The kind DERIVES from whether a price is committed — the New job
             foot decides it at create, and Build the price's save flips an unpriced job to
             booked work. A manual toggle here was the same fork the create form dropped. */}
+
+        {/* PHONE AND EMAIL LIVE HERE, not only on the customer record.
+            The sheet carried Call and Text but never the NUMBER, so the one fact you need to do
+            either was invisible — and with no number on file there was no way to add one without
+            leaving the job for the customer sheet and coming back. A work order should carry the
+            contact facts needed to work it: who, how to reach them, where. Email and lead source
+            stay on the customer record; nobody emails from a work order.
+
+            Editing writes to the CUSTOMER, not the job: a phone number is a fact about the person,
+            and a copy stored per-job would drift the moment they changed it. */}
+        {lead && (
+          <>
+            <SheetRow
+              label="Phone"
+              value={phone.trim() ? fmtPhone(phone) : "Add"}
+              valueIsHint={!phone.trim()}
+              expandable
+              open={phoneOpen}
+              onOpenChange={setPhoneOpen}
+            >
+              <PhoneCell value={lead.phone ?? ""} onCommit={(v: string) => updateLead(lead.id, { phone: v })} />
+            </SheetRow>
+
+            <SheetRow
+              label="Email"
+              value={lead.email?.trim() ? lead.email : "Add"}
+              valueIsHint={!lead.email?.trim()}
+              expandable
+            >
+              <EmailBody lead={lead} />
+            </SheetRow>
+          </>
+        )}
 
         <SheetRow
           label="Service address"

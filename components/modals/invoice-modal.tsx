@@ -56,6 +56,8 @@ import { InvoiceAuthorizationNote } from "@/components/shared/invoice-authorizat
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { Field } from "@/components/ui/input";
 import { SheetRow } from "./sheet-row";
+import { PhoneCell } from "./lead-modal/lead-header";
+import { EmailBody } from "./lead-modal/more-details";
 import { Trail } from "./trail";
 // Single source for invoice money math + status pill table (features/money).
 import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
@@ -664,6 +666,7 @@ export function InvoiceModalContent() {
 
   const invoices = useAppStore((s) => s.invoices);
   const adoptInvoice = useAppStore((s) => s.adoptInvoice);
+  const updateLead = useAppStore((s) => s.updateLead);
   const leads = useAppStore((s) => s.leads);
   const services = useAppStore((s) => s.services);
   const jobs = useAppStore((s) => s.jobs);
@@ -748,6 +751,9 @@ export function InvoiceModalContent() {
 
   const custName = invCustName(invoice, leads);
   const phone = invPhone(invoice, leads);
+  // The customer behind this invoice, so the contact rows below can edit the RECORD rather than
+  // storing a per-invoice copy that drifts the moment the number changes.
+  const invLead = leads.find((l) => l.id === invoice.leadId);
 
   // ---- edit-block wiring (prototype invCustPick / invSetField / invSetTerms /
   //      invSetLine|invAddLine|invRemoveLine / invSetPricing) -----------------
@@ -1011,6 +1017,35 @@ export function InvoiceModalContent() {
           {/* WHAT "Charge a card" WILL ACTUALLY DO. The sheet never said whether a card was saved,
               so the primary read as a mystery: charge something on file, or ask the customer for a
               number? It names the card when there is one. */}
+          {/* PHONE AND EMAIL, on the invoice itself. Chasing an unpaid bill means reaching the
+              customer, and the sheet showed no way to do either without leaving for the customer
+              record — and no way to ADD one if it was missing, which is exactly when an invoice
+              goes unpaid. Writes to the CUSTOMER: a phone number is a fact about the person.  */}
+          {invLead && (
+            <>
+              <SheetRow
+                label="Phone"
+                value={phone && phone !== "—" ? phone : "Add"}
+                valueIsHint={!phone || phone === "—"}
+                expandable
+              >
+                <PhoneCell
+                  value={invLead.phone ?? ""}
+                  onCommit={(v: string) => updateLead(invLead.id, { phone: v })}
+                />
+              </SheetRow>
+
+              <SheetRow
+                label="Email"
+                value={invLead.email?.trim() ? invLead.email : "Add"}
+                valueIsHint={!invLead.email?.trim()}
+                expandable
+              >
+                <EmailBody lead={invLead} />
+              </SheetRow>
+            </>
+          )}
+
           <SheetRow
             label="Card on file"
             value={savedCard ? `${savedCard.brand} ···${savedCard.last4}` : "No card on file"}
