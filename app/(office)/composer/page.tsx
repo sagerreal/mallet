@@ -51,6 +51,7 @@ import {
   linesForSend,
   applyReviseSeed,
   lineToPayload,
+  presentationSnapshotForPayload,
   matchServiceByName,
   realLines,
   recommendedTier,
@@ -72,6 +73,7 @@ import { useSmsGate } from "@/features/a2p/use-sms-ready";
 import { suggestFromGood } from "./gbb-suggest";
 import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
 import { CustomerSelector } from "./customer-selector";
+import { PresentationTab } from "./presentation-tab";
 import { SiteReference } from "./site-reference";
 import { QuoteCard } from "./quote-card";
 import { PricingCard } from "./pricing-card";
@@ -122,6 +124,26 @@ export default function ComposerPage() {
 
   // Invalidates the cached customer list so the leads hydrator picks up a
   // freshly-created customer (with its server-assigned id) into the store.
+  // Estimate | Presentation full-page tabs (?tab= deep-link, popstate-aware like /dashboard).
+  const [tab, setTab] = useState<"estimate" | "presentation">("estimate");
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab");
+    if (t === "presentation") setTab("presentation");
+    const onPop = () => {
+      const q = new URLSearchParams(window.location.search).get("tab");
+      setTab(q === "presentation" ? "presentation" : "estimate");
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+  function switchTab(t: "estimate" | "presentation") {
+    setTab(t);
+    const url = new URL(window.location.href);
+    if (t === "presentation") url.searchParams.set("tab", "presentation");
+    else url.searchParams.delete("tab");
+    window.history.pushState(null, "", url.pathname + url.search);
+  }
+
   const utils = api.useUtils();
 
   // ---- ?job= boot: "Build the price" from a measured job --------------------
@@ -214,6 +236,7 @@ export default function ComposerPage() {
         // revision's own draft (assertScopeVisitJob runs on every v1.quoting.draft).
         jobId: dto.jobId ?? null,
         priceDisplay: dto.priceDisplay,
+        presentationSnapshot: dto.presentationSnapshot ?? null,
         lines: dto.lines.map((l) => ({
           d: l.description,
           q: l.quantity,
@@ -615,6 +638,11 @@ export default function ComposerPage() {
       // Which numbers the customer sees — 'lines' is the historical default, 'total' the
       // proposal format ($ chip on the line-table header).
       priceDisplay: cs.priceDisplay,
+      // The designed pages frozen onto this quote — ON pages only; absent = plain quote.
+      ...(() => {
+        const snapshot = presentationSnapshotForPayload(cs.presentation);
+        return snapshot ? { presentationSnapshot: snapshot } : {};
+      })(),
       ...(gbb
         ? { recommendedTier: gbb.rec, tierNames: tierNamesForPayload(gbb) }
         : {}),
@@ -834,6 +862,36 @@ export default function ComposerPage() {
     <div>
       <h1>New quote</h1>
 
+      {/* Two full-page tabs, like the office page: Estimate = build the numbers & scope;
+          Presentation = the designed pages the customer opens. The Estimate pane stays MOUNTED
+          (hidden, not unmounted) so QuoteCard-local state survives tab switches. */}
+      <div className="otabs" role="tablist" aria-label="Quote">
+        <button
+          className={tab === "estimate" ? "otab on" : "otab"}
+          role="tab"
+          aria-selected={tab === "estimate"}
+          onClick={() => switchTab("estimate")}
+        >
+          Estimate
+        </button>
+        <button
+          className={tab === "presentation" ? "otab on" : "otab"}
+          role="tab"
+          aria-selected={tab === "presentation"}
+          onClick={() => switchTab("presentation")}
+        >
+          Presentation
+          {cs.presentation && <span className="pill green">on</span>}
+        </button>
+      </div>
+
+      <div hidden={tab !== "presentation"}>
+        {tab === "presentation" && (
+          <PresentationTab state={cs} onUpdate={update} leadName={selectedLead?.name ?? null} />
+        )}
+      </div>
+
+      <div hidden={tab !== "estimate"}>
       <CustomerSelector
         state={cs}
         onUpdate={update}
@@ -962,6 +1020,7 @@ export default function ComposerPage() {
         onSaveDraft={saveDraftComposer}
         onSend={sendComposer}
       />
+      </div>
     </div>
   );
 }

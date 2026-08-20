@@ -193,3 +193,22 @@ export function panelRows(
 export function seedKey(jobId: string, name: string): string {
   return `${jobId}::${name.trim()}`;
 }
+
+// Measurement-notice copy — moved from composer-state.ts (file-cap). Same exports, re-exported
+// there so import sites are unchanged.
+export interface MeasurementGap {
+  kind: string;
+  label: string;
+}
+
+/** Quiet inline notice copy for a pricebook gap — informational, no dead link v1. */
+export function gapNoticeText(gap: MeasurementGap): string {
+  return `No rate set for ${gap.label} — add one in the Pricebook.`;
+}
+
+/** Quiet inline notice copy for rooms whose only trace is "unconfirmed" (no line, no gap). */
+export function unconfirmedRoomsNoticeText(count: number): string | null {
+  if (count <= 0) return null;
+  const noun = count === 1 ? "room has" : "rooms have";
+  return `${count} ${noun} unconfirmed measurements — confirm them on the job before sending.`;
+}

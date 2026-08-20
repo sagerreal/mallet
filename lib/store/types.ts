@@ -249,6 +249,11 @@ export interface Estimate {
   termsSnapshot?: string;
   /** Customer sees one price instead of per-line amounts. Absent = 'lines', today's default. */
   priceDisplay?: "total";
+  /** The designed pages frozen onto this quote at draft time. Absent = plain quote. */
+  presentation?: {
+    templateName: string;
+    pages: { key: "cover" | "about" | "reviews" | "thanks"; title: string; body: string }[];
+  };
   /**
    * The customer's signature, absent when nobody signed.
    *
