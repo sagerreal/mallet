@@ -6,6 +6,7 @@ import {
   laborRates,
   jobTerms,
   leadSources,
+  presentationTemplates,
 } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
@@ -17,6 +18,8 @@ import type {
   LaborRateKind,
   JobTerm,
   LeadSource,
+  PresentationPage,
+  PresentationTemplate,
 } from "../domain/settings-repository";
 import type { OrgNameWriter } from "../app/update-brand";
 import { toOrgSettings } from "./settings-mapper";
@@ -554,6 +557,74 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
           eq(jobTerms.id, term.id),
           eq(jobTerms.orgId, this.orgId),
           isNull(jobTerms.deletedAt),
+        ),
+      )
+      .returning();
+    return rows.length;
+  }
+
+  async listPresentationTemplates(): Promise<PresentationTemplate[]> {
+    const rows = await this.tx
+      .select()
+      .from(presentationTemplates)
+      .where(and(eq(presentationTemplates.orgId, this.orgId), isNull(presentationTemplates.deletedAt)))
+      .orderBy(asc(presentationTemplates.position), asc(presentationTemplates.createdAt))
+      .limit(LIST_LIMIT);
+    return rows.map((r) => ({
+      id: r.id,
+      name: r.name,
+      // Jsonb read-back cast — the shape is ours on the way in (zod-validated at the boundary).
+      pages: r.pages as PresentationPage[],
+      position: r.position,
+    }));
+  }
+
+  async createPresentationTemplate(input: {
+    id: string;
+    orgId: string;
+    name: string;
+    pages: readonly PresentationPage[];
+    position: number;
+  }): Promise<PresentationTemplate> {
+    const rows = await this.tx
+      .insert(presentationTemplates)
+      .values({
+        id: input.id,
+        orgId: this.orgId,
+        name: input.name,
+        pages: [...input.pages],
+        position: input.position,
+      })
+      .returning();
+    const r = rows[0];
+    if (!r) throw new Error("presentation_templates insert returned no row");
+    return { id: r.id, name: r.name, pages: r.pages as PresentationPage[], position: r.position };
+  }
+
+  async savePresentationTemplate(template: PresentationTemplate, updatedAt: Date): Promise<number> {
+    const rows = await this.tx
+      .update(presentationTemplates)
+      .set({ name: template.name, pages: [...template.pages], position: template.position, updatedAt })
+      .where(
+        and(
+          eq(presentationTemplates.id, template.id),
+          eq(presentationTemplates.orgId, this.orgId),
+          isNull(presentationTemplates.deletedAt),
+        ),
+      )
+      .returning();
+    return rows.length;
+  }
+
+  async archivePresentationTemplate(id: string, now: Date): Promise<number> {
+    const rows = await this.tx
+      .update(presentationTemplates)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(presentationTemplates.id, id),
+          eq(presentationTemplates.orgId, this.orgId),
+          isNull(presentationTemplates.deletedAt),
         ),
       )
       .returning();

@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { Phone } from "@mallet/shared/types";
 import type { SettingsSnapshot } from "../app/get-settings";
-import type { PricebookItem, LaborRate, JobTerm, LeadSource } from "../domain/settings-repository";
+import type { PricebookItem, LaborRate, JobTerm, LeadSource, PresentationTemplate } from "../domain/settings-repository";
 import type { OrgSettings } from "../domain/org-settings";
 import { frontDeskReadiness } from "../domain/front-desk-readiness";
 import {
@@ -326,6 +326,31 @@ export const jobTermDTO = z.object({
   position: z.number().int(),
 });
 
+export const presentationPageDTO = z.object({
+  key: z.enum(["cover", "about", "reviews", "thanks"]),
+  on: z.boolean(),
+  title: z.string().max(120),
+  body: z.string().max(8_000),
+});
+
+export const presentationTemplateDTO = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  pages: z.array(presentationPageDTO),
+  position: z.number().int(),
+});
+
+export const presentationTemplateCreateInput = z.object({
+  name: z.string().min(1).max(80),
+  pages: z.array(presentationPageDTO).min(1).max(4).optional(),
+});
+
+export const presentationTemplateUpdateInput = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(1).max(80).optional(),
+  pages: z.array(presentationPageDTO).min(1).max(4).optional(),
+});
+
 export const leadSourceDTO = z.object({
   id: z.string().uuid(),
   label: z.string(),
@@ -515,6 +540,10 @@ export const toPricebookDTO = (i: PricebookItem): z.infer<typeof pricebookItemDT
 export const toLaborRateDTO = (r: LaborRate): z.infer<typeof laborRateDTO> => ({ ...r });
 
 export const toJobTermDTO = (t: JobTerm): z.infer<typeof jobTermDTO> => ({ ...t });
+
+export const toPresentationTemplateDTO = (
+  t: PresentationTemplate,
+): z.infer<typeof presentationTemplateDTO> => ({ ...t, pages: [...t.pages] });
 
 export const toLeadSourceDTO = (s: LeadSource): z.infer<typeof leadSourceDTO> => ({ ...s });
 
