@@ -33,6 +33,7 @@ const toLineView = (line: EstimateLine): QuoteLineView => ({
   quantity: line.props.quantity,
   rateCents: line.props.rate,
   taxable: line.props.taxable,
+  scope: line.props.scope ?? null,
 });
 
 /**

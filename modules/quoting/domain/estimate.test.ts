@@ -618,3 +618,99 @@ describe("Estimate tiered accept", () => {
     expect(r.value.props.acceptedTier).toBeNull();
   });
 });
+
+describe("EstimateLine scope & sub-items", () => {
+  const create = (overrides: Partial<Parameters<typeof EstimateLine.create>[0]>) =>
+    EstimateLine.create({
+      id: asEstimateLineId("00000000-0000-0000-0000-0000000000aa"),
+      description: "Painting",
+      quantity: 1,
+      rate: money(10_000),
+      cost: zeroMoney,
+      isOptional: false,
+      needsPhoto: false,
+      position: 0,
+      tier: null,
+      materialId: null,
+      ...overrides,
+    });
+  const sub = { description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 };
+
+  it("stores trimmed scope and reads blank scope as null", () => {
+    const r = create({ scope: "  Includes:\n1. Walls  " });
+    expect(isOk(r) && r.value.props.scope).toBe("Includes:\n1. Walls");
+    const blank = create({ scope: "   " });
+    expect(isOk(blank) && blank.value.props.scope).toBeNull();
+    const absent = create({});
+    expect(isOk(absent) && absent.value.props.scope).toBeNull();
+  });
+
+  it("rejects scope over 8000 chars", () => {
+    const r = create({ scope: "x".repeat(8001) });
+    expect(!isOk(r) && r.error.field).toBe("scope");
+  });
+
+  it("accepts up to 20 sub-items, normalizing blank unit to null", () => {
+    const r = create({
+      subItems: Array.from({ length: 20 }, () => ({ ...sub, unit: "  " })),
+    });
+    expect(isOk(r) && r.value.props.subItems?.length).toBe(20);
+    expect(isOk(r) && r.value.props.subItems?.[0]?.unit).toBeNull();
+  });
+
+  it("reads absent/empty sub-items as null", () => {
+    const absent = create({});
+    expect(isOk(absent) && absent.value.props.subItems).toBeNull();
+    const empty = create({ subItems: [] });
+    expect(isOk(empty) && empty.value.props.subItems).toBeNull();
+  });
+
+  it("rejects 21 sub-items", () => {
+    const r = create({ subItems: Array.from({ length: 21 }, () => sub) });
+    expect(!isOk(r) && r.error.field).toBe("subItems");
+  });
+
+  it("rejects invalid sub-item fields", () => {
+    expect(isOk(create({ subItems: [{ ...sub, description: "  " }] }))).toBe(false);
+    expect(isOk(create({ subItems: [{ ...sub, description: "x".repeat(501) }] }))).toBe(false);
+    expect(isOk(create({ subItems: [{ ...sub, quantity: -1 }] }))).toBe(false);
+    expect(isOk(create({ subItems: [{ ...sub, quantity: Number.NaN }] }))).toBe(false);
+    expect(isOk(create({ subItems: [{ ...sub, unit: "x".repeat(21) }] }))).toBe(false);
+    expect(isOk(create({ subItems: [{ ...sub, amountCents: -1 }] }))).toBe(false);
+    expect(isOk(create({ subItems: [{ ...sub, amountCents: 1.5 }] }))).toBe(false);
+  });
+
+  it("keeps scope and sub-items when the tier tag clears", () => {
+    const r = create({ scope: "Includes walls", subItems: [sub], tier: "good" });
+    if (!isOk(r)) throw new Error(r.error.message);
+    const resolved = r.value.withoutTier();
+    expect(resolved.props.scope).toBe("Includes walls");
+    expect(resolved.props.subItems?.[0]?.amountCents).toBe(984_000);
+  });
+});
+
+describe("Estimate price display", () => {
+  it("defaults to lines when absent", () => {
+    expect(estimate({}).priceDisplay()).toBe("lines");
+  });
+
+  it("accepts total", () => {
+    expect(estimate({ priceDisplay: "total" }).priceDisplay()).toBe("total");
+  });
+
+  it("rejects an unknown value from a corrupt row", () => {
+    const props = { ...estimate({}).props, priceDisplay: "sections" as never };
+    const r = Estimate.create(props);
+    expect(!isOk(r) && r.error.field).toBe("priceDisplay");
+  });
+
+  it("signed snapshot carries priceDisplay and per-line scope", () => {
+    const est = estimate({
+      priceDisplay: "total",
+      lines: [line({ scope: "Includes:\n1. Walls" })],
+    });
+    const snapshot = est.toSignedSnapshot("Two Day Painting");
+    expect(snapshot.priceDisplay).toBe("total");
+    expect(snapshot.lines[0]?.scope).toBe("Includes:\n1. Walls");
+  });
+});

@@ -131,6 +131,7 @@ export function GbbTiers({
             )}
 
             <LineTable
+              priceMode={state.priceDisplay}
               lines={tier.lines}
               showCost={showCost}
               onUpdateLine={(i, patch) => updateLine(tier, i, patch)}

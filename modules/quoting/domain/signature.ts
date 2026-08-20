@@ -27,6 +27,9 @@ export interface SignedLine {
   readonly rateCents: number;
   readonly isOptional: boolean;
   readonly tier: string | null;
+  /** Scope prose shown under the line, part of what the signer read. Optional: snapshots taken
+   *  before scope existed simply have none. */
+  readonly scope?: string | null;
   /** Whether this optional line was actually selected. An unselected add-on is not part of the deal. */
   readonly included: boolean;
 }
@@ -45,6 +48,9 @@ export interface SignedSnapshot {
   /** The deposit asked for at signing, if any — the $500 in a $20,000 job. */
   readonly depositCents: number;
   readonly chosenTier: string | null;
+  /** Which numbers the signer's page showed ('lines' | 'total'). Optional: older snapshots
+   *  predate the display switch and always showed every amount. */
+  readonly priceDisplay?: string;
   /** Terms text as shown. Already snapshotted separately; repeated here so the record is self-contained. */
   readonly termsText: string | null;
   /** The exact sentence the signer agreed to, stored verbatim rather than reconstructed later. */

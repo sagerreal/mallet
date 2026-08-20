@@ -130,12 +130,14 @@ describe("tierViewsFor", () => {
     const better = views!.tiers[1]!;
     expect(better.fixedLines.map((l) => l.description)).toEqual(["Repair section"]);
     expect(better.optionalLines.map((l) => l.description)).toEqual(["Camera inspection"]);
-    // Redaction: the view carries exactly id/description/quantity/rateCents/taxable — no cost.
+    // Redaction: the view carries exactly these customer-safe keys — no cost, no subItems
+    // (the shop's internal estimating math is exactly as private as cost).
     expect(Object.keys(better.fixedLines[0]!).sort()).toEqual([
       "description",
       "id",
       "quantity",
       "rateCents",
+      "scope",
       "taxable",
     ]);
   });

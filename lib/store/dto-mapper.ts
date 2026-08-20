@@ -487,6 +487,13 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       // Only the EXCEPTION is written — an ordinary taxable line carries no key at all.
       ...(l.taxable ? {} : { notax: true as const }),
       tier: l.tier ?? undefined,                              // GBB tier tag (null → absent)
+      scope: l.scope ?? undefined,                            // proposal prose (null → absent)
+      sub: l.subItems?.map((si) => ({
+        d: si.description,
+        q: si.quantity,
+        unit: si.unit ?? undefined,
+        amt: si.amountCents / 100,                            // cents → dollars
+      })),
     })),
     pricing: {
       disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)
@@ -507,6 +514,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     acceptedTier: dto.acceptedTier ?? undefined,
     tierNames: dto.tierNames ?? undefined,
     termsSnapshot: dto.termsSnapshot ?? undefined,
+    // Only the EXCEPTION is written — 'lines' (the default) carries no key at all.
+    ...(dto.priceDisplay === "total" ? { priceDisplay: "total" as const } : {}),
     // Signature: carried through UNCONVERTED, cents and all. Every other money field on this
     // mapper becomes dollars, and this one deliberately does not — the snapshot is a frozen record
     // of what somebody signed, and a number this app divided by 100 is no longer the number on the

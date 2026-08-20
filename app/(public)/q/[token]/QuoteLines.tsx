@@ -59,6 +59,8 @@ export interface QuoteLineView {
   readonly rateCents: number;
   /** Does this line take sales tax. Absent reads as TRUE (see OptionalLineAmount). */
   readonly taxable?: boolean;
+  /** Scope prose under the line — the proposal's Includes/Excludes/Products, pre-wrap. */
+  readonly scope?: string | null;
 }
 
 /** One Good/Better/Best option as the public page sees it (redacted — no costs). */
@@ -103,6 +105,12 @@ interface QuoteLinesBaseProps {
   readonly payableDepositCents?: number;
   /** Can the shop take a card at all (Connect onboarded + charges enabled). */
   readonly cardPaymentAvailable?: boolean;
+  /**
+   * Show per-line extended amounts. False when priceDisplay is 'total' — the proposal format —
+   * where the customer reads scope and sees ONE price at the bottom. Add-on prices always show:
+   * adding one changes the total, so its price has to be visible. Totals are untouched.
+   */
+  readonly showLineAmounts?: boolean;
 }
 
 interface SingleQuoteLinesProps extends QuoteLinesBaseProps {
@@ -356,6 +364,8 @@ export function QuoteLines(props: QuoteLinesProps) {
           rateCents={line.rateCents}
           taxable={line.taxable}
           showTaxMark={taxBps > 0}
+          scope={line.scope}
+          showAmount={props.showLineAmounts !== false}
         />
       ))}
 

@@ -154,6 +154,15 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
           needsPhoto:  l.photo ?? false,
           taxable:     !l.notax,                        // absent notax = taxable
           tier:        l.tier,                           // GBB tier tag; absent on single quotes
+          scope:       l.scope?.trim() ? l.scope : undefined,
+          subItems:    l.sub?.length
+            ? l.sub.map((si) => ({
+                description: si.d,
+                quantity: si.q,
+                unit: si.unit,
+                amountCents: Math.round(si.amt * 100),   // dollars → cents
+              }))
+            : undefined,
         })),
         // Good/Better/Best: the full three-tier structure persists. The server's
         // draft schema rejects inconsistent payloads (tiered lines require
@@ -161,6 +170,7 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         recommendedTier: draft.recommendedTier,
         tierNames: draft.tierNames,
         termsSnapshot: draft.termsSnapshot?.trim() ? draft.termsSnapshot : undefined,
+        priceDisplay: draft.priceDisplay,
         // The scope-visit job this quote prices (composer ?job=) — accept converts that job
         // into the sold work instead of minting a duplicate.
         jobId: draft.jobId ?? undefined,
@@ -243,6 +253,15 @@ export const createEstimatesSlice: StateCreator<EstimatesSlice & JobsSlice, [], 
         isOptional: l.opt ?? false,
         needsPhoto: l.photo ?? false,
         taxable: !l.notax,
+        scope: l.scope?.trim() ? l.scope : undefined,
+        subItems: l.sub?.length
+          ? l.sub.map((si) => ({
+              description: si.d,
+              quantity: si.q,
+              unit: si.unit,
+              amountCents: Math.round(si.amt * 100), // dollars → cents
+            }))
+          : undefined,
       }));
 
       trpcVanilla.v1.quoting.accept

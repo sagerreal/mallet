@@ -21,6 +21,13 @@ export interface LineRowProps {
    * nothing is taxed, so saying which lines are not is telling the customer nothing.
    */
   readonly showTaxMark?: boolean;
+  /** Scope prose under the description — Includes / Excludes / Products, rendered pre-wrap. */
+  readonly scope?: string | null;
+  /**
+   * Show this line's extended amount. False when the quote's priceDisplay is 'total' — the
+   * proposal format: scope + one price at the bottom. The AMOUNT is hidden, never the line.
+   */
+  readonly showAmount?: boolean;
 }
 
 export function LineRow({
@@ -29,6 +36,8 @@ export function LineRow({
   rateCents,
   taxable,
   showTaxMark = false,
+  scope,
+  showAmount = true,
 }: LineRowProps) {
   const amount = lineAmountCents(quantity, rateCents);
   return (
@@ -37,8 +46,9 @@ export function LineRow({
         {description}
         {quantity !== 1 ? ` × ${quantity}` : ""}
         {showTaxMark && taxable === false && <span className="custline-notax">No tax</span>}
+        {scope?.trim() && <span className="custline-scope">{scope}</span>}
       </span>
-      <b>{fmt$(amount / 100)}</b>
+      {showAmount && <b>{fmt$(amount / 100)}</b>}
     </div>
   );
 }

@@ -33,7 +33,17 @@ export interface ComposerLine {
   /** Provenance: set when the line came from a pricebook MATERIAL (sellable part/equipment).
    * Values are snapshots — this id rides to the server for costing, never live repricing. */
   materialId?: string;
+  /** Customer-facing scope prose under the line (plain text, rendered pre-wrap on the quote). */
+  scope?: string;
+  /** The estimating math behind the price — rolls up into r via withSubPatch. Never customer-visible. */
+  sub?: ComposerSubItem[];
 }
+
+
+export type { ComposerSubItem } from "./sub-items";
+export { emptySubItem, realSubItems, subItemsTotal, withSubPatch, lineToPayload } from "./sub-items";
+import { realSubItems } from "./sub-items";
+import type { ComposerSubItem } from "./sub-items";
 
 export type QuoteFormat = "single" | "gbb";
 export type TierKey = "good" | "better" | "best";
@@ -164,6 +174,9 @@ export interface ComposerState {
    * (?job= / ?change=). An abandoned draft takes them with it — deliberate.
    */
   heldTraces: HeldTrace[];
+  /** Which numbers the customer sees — 'lines' (every amount, today's default) or 'total'
+   *  (scope prose + one price). Cycled by the $ chip on the line-table header. */
+  priceDisplay: "lines" | "total";
 }
 
 export function emptyLine(): ComposerLine {
@@ -173,6 +186,7 @@ export function emptyLine(): ComposerLine {
 export function cloneLines(lines: ComposerLine[]): ComposerLine[] {
   return lines.map((l) => ({ ...l }));
 }
+
 
 export const INITIAL_STATE: ComposerState = {
   leadId: null, // overridden from ?lead= in ComposerPage; else the customer picker shows
@@ -196,6 +210,7 @@ export const INITIAL_STATE: ComposerState = {
   terms: null,
   sendChannel: "text",
   heldTraces: [],
+  priceDisplay: "lines",
 };
 
 /** Append a trace held on this quote (immutable — a new state, a new array). */
@@ -483,6 +498,10 @@ export interface ReviseSeedLine {
    *  shop had excluded. */
   taxable: boolean;
   tier: TierKey | null;
+  /** Customer-facing scope prose, restored verbatim. */
+  scope: string | null;
+  /** The estimating math behind the price (wire shape, cents). */
+  subItems: { description: string; quantity: number; unit: string | null; amountCents: number }[] | null;
 }
 
 export interface ReviseSeed {
@@ -494,6 +513,9 @@ export interface ReviseSeed {
   lines: ReviseSeedLine[];
   recommendedTier: TierKey | null;
   tierNames: { good: string; better: string; best: string } | null;
+  /** Which numbers the customer saw on the original — a revision must not silently re-expose
+   *  per-line amounts a proposal deliberately hid. */
+  priceDisplay: "lines" | "total";
   /**
    * The scope-visit job the ORIGINAL quote priced — carried onto the revision, or the edited
    * quote would accept into a duplicate job (the exact defect convert-on-accept exists to fix,
@@ -519,6 +541,17 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
     ...(l.opt ? { opt: true } : {}),
     ...(l.photo ? { photo: true } : {}),
     ...(l.taxable ? {} : { notax: true }),
+    ...(l.scope?.trim() ? { scope: l.scope } : {}),
+    ...(l.subItems?.length
+      ? {
+          sub: l.subItems.map((si) => ({
+            d: si.description,
+            q: si.quantity,
+            ...(si.unit ? { unit: si.unit } : {}),
+            amt: si.amountCents / 100,
+          })),
+        }
+      : {}),
   });
   const pricing = { disc: seed.discBps / 100, tax: seed.taxBps / 100, dep: seed.depBps / 100 };
   const tiered = seed.lines.some((l) => l.tier != null);
@@ -533,6 +566,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       pricing,
       format: "single",
       lines,
+      priceDisplay: seed.priceDisplay,
     };
   }
 
@@ -552,7 +586,16 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       lines: tierLines(k),
     })),
   };
-  return { ...state, leadId: seed.leadId, jobId: seed.jobId, desc: seed.title, pricing, format: "gbb", gbb };
+  return {
+    ...state,
+    leadId: seed.leadId,
+    jobId: seed.jobId,
+    desc: seed.title,
+    pricing,
+    format: "gbb",
+    gbb,
+    priceDisplay: seed.priceDisplay,
+  };
 }
 
 export interface MeasurementGap {
@@ -671,6 +714,9 @@ export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): E
     if (l.photo != null) e.photo = l.photo;
     if (l.notax != null) e.notax = l.notax;
     if ("tier" in l && l.tier != null) e.tier = l.tier;
+    if (l.scope?.trim()) e.scope = l.scope;
+    const sub = realSubItems(l.sub);
+    if (sub.length > 0) e.sub = sub.map((si) => ({ d: si.d, q: si.q, unit: si.unit, amt: si.amt }));
     return e;
   });
 }

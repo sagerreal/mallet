@@ -45,6 +45,15 @@ const tierNamesInput = z.object({
   best: z.string().trim().min(1).max(60),
 });
 
+// Internal estimating math behind a line — office DTO only; NEVER serialized on a public surface
+// (redacted exactly like cost). Money in integer cents.
+const subItemDTO = z.object({
+  description: z.string(),
+  quantity: z.number(),
+  unit: z.string().nullable(),
+  amountCents: z.number().int(),
+});
+
 const estimateLineDTO = z.object({
   id: z.string().uuid(),
   description: z.string(),
@@ -58,6 +67,10 @@ const estimateLineDTO = z.object({
   taxable: z.boolean(),
   position: z.number().int(),
   tier: tierEnum.nullable(),
+  /** Customer-facing scope prose under the line (plain text, rendered pre-wrap). */
+  scope: z.string().nullable(),
+  /** The estimating math the composer rolls up into the rate. Office eyes only. */
+  subItems: z.array(subItemDTO).nullable(),
 });
 
 const estimateDTO = z.object({
@@ -99,6 +112,8 @@ const estimateDTO = z.object({
   acceptedTier: tierEnum.nullable(),
   tierNames: tierNamesDTO.nullable(),
   termsSnapshot: z.string().nullable(),
+  /** Which numbers the customer sees — 'lines' (every amount) or 'total' (scope + one price). */
+  priceDisplay: z.enum(["lines", "total"]),
   // The unguessable public_token generated at draft time. Never exposed to end-customers via
   // this authed endpoint — they receive only the link, not the ability to enumerate tokens.
   publicToken: z.string().nullable(),
@@ -216,6 +231,21 @@ const lineInput = z.object({
   tier: tierEnum.optional(),
   // Provenance pointer when the line came from a pricebook material (sellable parts).
   materialId: z.string().uuid().nullable().optional(),
+  /** Customer-facing scope prose (Includes / Excludes / Products), plain text. */
+  scope: z.string().trim().min(1).max(8_000).optional(),
+  /** Internal sub-items that roll up into the rate. Bounds mirror the domain's. */
+  subItems: z
+    .array(
+      z.object({
+        description: z.string().trim().min(1).max(500),
+        quantity: z.number().nonnegative().finite(),
+        unit: z.string().trim().min(1).max(20).optional(),
+        amountCents: z.number().int().nonnegative(),
+      }),
+    )
+    .min(1)
+    .max(20)
+    .optional(),
 });
 
 const draftInput = z
@@ -230,6 +260,8 @@ const draftInput = z
     recommendedTier: tierEnum.optional(),
     tierNames: tierNamesInput.optional(),
     termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
+    /** Which numbers the customer sees — omitted means 'lines', today's behavior. */
+    priceDisplay: z.enum(["lines", "total"]).optional(),
     /**
      * The job this quote adds work to — makes it a CHANGE ORDER.
      *
@@ -395,6 +427,8 @@ const toEstimateDTO = (estimate: Estimate) => {
         taxable: lp.taxable,
         position: lp.position,
         tier: lp.tier,
+        scope: lp.scope ?? null,
+        subItems: lp.subItems ? [...lp.subItems] : null,
       };
     }),
     subtotal: money(estimate.subtotal()),
@@ -417,6 +451,7 @@ const toEstimateDTO = (estimate: Estimate) => {
     acceptedTier: p.acceptedTier,
     tierNames: p.tierNames,
     termsSnapshot: p.termsSnapshot,
+    priceDisplay: estimate.priceDisplay(),
     publicToken: p.publicToken ?? null,
     publicUrl: publicUrlFor(p.publicToken ?? null),
     signature: toSignatureDTO(estimate),
@@ -567,10 +602,13 @@ export const createEstimateRouter = () =>
             taxable: line.taxable ?? true,
             tier: line.tier ?? null,
             materialId: line.materialId ?? null,
+            scope: line.scope ?? null,
+            subItems: line.subItems?.map((si) => ({ ...si, unit: si.unit ?? null })) ?? null,
           })),
           recommendedTier: input.recommendedTier ?? null,
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,
+          priceDisplay: input.priceDisplay ?? null,
           changeOrderForJobId: input.changeOrderForJobId ?? null,
           jobId: input.jobId ?? null,
           aiDraftLines:
@@ -789,6 +827,8 @@ export const createEstimateRouter = () =>
               isOptional: line.isOptional ?? false,
               needsPhoto: line.needsPhoto ?? false,
               taxable: line.taxable ?? true,
+              scope: line.scope ?? null,
+              subItems: line.subItems?.map((si) => ({ ...si, unit: si.unit ?? null })) ?? null,
             })),
             chosenTier: input.chosenTier,
           }),

@@ -22,8 +22,10 @@
  * pricebook; the Photo chip returns when it attaches real photos.
  */
 
+import { Fragment, useState } from "react";
 import { fmt$ } from "@/lib/format";
-import type { ComposerLine } from "./composer-state";
+import { realSubItems, withSubPatch, type ComposerLine } from "./composer-state";
+import { ScopeEditor, SubItemEditor } from "./line-depth";
 
 export function LineTable({
   lines,
@@ -35,6 +37,7 @@ export function LineTable({
   materialize,
   provenanceFor,
   taxed = false,
+  priceMode = "lines",
 }: {
   lines: ComposerLine[];
   showCost: boolean;
@@ -53,8 +56,36 @@ export function LineTable({
    * the quote nothing is taxed, so the chip would be a control that decides nothing.
    */
   taxed?: boolean;
+  /** 'total' dims the amount column — those numbers stay yours; the customer sees one price. */
+  priceMode?: "lines" | "total";
 }) {
   const cols = showCost ? 6 : 5;
+  // Which lines have their depth editors open. Presence of DATA lives on the line itself;
+  // these sets are only the expand/collapse UI state, so they reset harmlessly on unmount.
+  const [scopeOpen, setScopeOpen] = useState<ReadonlySet<number>>(new Set());
+  const [subOpen, setSubOpen] = useState<ReadonlySet<number>>(new Set());
+  const toggle = (set: ReadonlySet<number>, i: number): ReadonlySet<number> => {
+    const next = new Set(set);
+    if (next.has(i)) next.delete(i);
+    else next.add(i);
+    return next;
+  };
+  // Rows are index-keyed, so removing one shifts every index above it. Remap both open-sets
+  // through the removal or an open panel silently re-attaches under the WRONG line — inviting
+  // customer-facing scope prose to be typed into a different line's editor.
+  const dropIndex = (set: ReadonlySet<number>, removed: number): ReadonlySet<number> => {
+    const next = new Set<number>();
+    for (const n of set) {
+      if (n === removed) continue;
+      next.add(n > removed ? n - 1 : n);
+    }
+    return next;
+  };
+  const handleRemoveLine = (i: number) => {
+    setScopeOpen(dropIndex(scopeOpen, i));
+    setSubOpen(dropIndex(subOpen, i));
+    onRemoveLine(i);
+  };
 
   return (
     <div className={`lineedit${materialize ? " materialize" : ""}`}>
@@ -88,7 +119,8 @@ export function LineTable({
                 : null;
             const hasContent = Boolean(x.d && x.d.trim());
             return (
-              <tr key={i}>
+              <Fragment key={i}>
+              <tr>
                 <td>
                   <input
                     value={x.d}
@@ -100,6 +132,32 @@ export function LineTable({
                     const src = hasContent ? provenanceFor?.(x.d) : null;
                     return src ? <span className="line-prov">{src}</span> : null;
                   })()}
+                  {hasContent && (
+                    <div className="linehints">
+                      <button
+                        type="button"
+                        className="linehint"
+                        aria-expanded={scopeOpen.has(i)}
+                        aria-controls={`line-scope-${i}`}
+                        title="Scope prose the customer reads under this line — Includes, Excludes, Products"
+                        onClick={() => setScopeOpen(toggle(scopeOpen, i))}
+                      >
+                        {x.scope?.trim() ? "¶ Scope" : "¶ Add scope"}
+                      </button>
+                      <button
+                        type="button"
+                        className="linehint"
+                        aria-expanded={subOpen.has(i)}
+                        aria-controls={`line-sub-${i}`}
+                        title="Your estimate math — rolls up into this line's price, never shown to the customer"
+                        onClick={() => setSubOpen(toggle(subOpen, i))}
+                      >
+                        {realSubItems(x.sub).length > 0
+                          ? `↳ Sub-items (${realSubItems(x.sub).length})`
+                          : "↳ Add sub-items"}
+                      </button>
+                    </div>
+                  )}
                 </td>
                 <td>
                   <input
@@ -117,7 +175,17 @@ export function LineTable({
                     inputMode="decimal"
                     className="num"
                     value={x.r}
-                    aria-label={`Price, line ${i + 1}`}
+                    aria-label={
+                      realSubItems(x.sub).length > 0
+                        ? `Price, line ${i + 1} — set by its sub-items below`
+                        : `Price, line ${i + 1}`
+                    }
+                    disabled={realSubItems(x.sub).length > 0}
+                    title={
+                      realSubItems(x.sub).length > 0
+                        ? "Priced by its sub-items — edit them below"
+                        : undefined
+                    }
                     onChange={(e) => onUpdateLine(i, { r: +e.target.value })}
                   />
                 </td>
@@ -137,7 +205,7 @@ export function LineTable({
                     />
                   </td>
                 )}
-                <td className={`amt${amt === 0 ? " zero" : ""}`}>
+                <td className={`amt${amt === 0 ? " zero" : ""}${priceMode === "total" ? " customer-hidden" : ""}`}>
                   {fmt$(amt)}
                   {showCost && margin !== null && (
                     <div
@@ -177,13 +245,39 @@ export function LineTable({
                       className="lineedit-tool"
                       title="Remove this line"
                       aria-label="Remove this line"
-                      onClick={() => onRemoveLine(i)}
+                      onClick={() => handleRemoveLine(i)}
                     >
                       ✕
                     </button>
                   )}
                 </td>
               </tr>
+              {hasContent && scopeOpen.has(i) && (
+                <tr className="linedetail">
+                  <td colSpan={cols} id={`line-scope-${i}`}>
+                    <ScopeEditor
+                      value={x.scope ?? ""}
+                      lineNo={i + 1}
+                      onChange={(scope) => onUpdateLine(i, { scope: scope || undefined })}
+                    />
+                  </td>
+                </tr>
+              )}
+              {hasContent && subOpen.has(i) && (
+                <tr className="linedetail">
+                  <td colSpan={cols} id={`line-sub-${i}`}>
+                    <SubItemEditor
+                      sub={x.sub ?? []}
+                      lineNo={i + 1}
+                      onChange={(sub) => {
+                        const next = withSubPatch(x, sub);
+                        onUpdateLine(i, { sub: next.sub, r: next.r });
+                      }}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>

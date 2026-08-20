@@ -69,7 +69,8 @@ const clientIp = (req: NextRequest): string | null =>
 
 const moneyJson = (cents: number) => ({ cents, currency: "USD" });
 
-// Redacted line shape for the unauthenticated page: NO cost, NO needsPhoto.
+// Redacted line shape for the unauthenticated page: NO cost, NO needsPhoto, NO subItems —
+// sub-items are the shop's internal estimating math, exactly as private as cost.
 const lineToJson = (l: Estimate["props"]["lines"][number]) => {
   const lp = l.props;
   return {
@@ -81,6 +82,7 @@ const lineToJson = (l: Estimate["props"]["lines"][number]) => {
     taxable: lp.taxable,
     position: lp.position,
     tier: lp.tier,
+    scope: lp.scope ?? null,
   };
 };
 
@@ -126,6 +128,7 @@ const estimateToJson = (estimate: Estimate) => {
     acceptedTier: p.acceptedTier,
     tiers: tiersToJson(estimate),
     termsSnapshot: p.termsSnapshot,
+    priceDisplay: estimate.priceDisplay(),
     subtotal: moneyJson(estimate.subtotal()),
     discount: moneyJson(estimate.discountAmount()),
     tax: moneyJson(estimate.taxAmount()),

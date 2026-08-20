@@ -1489,6 +1489,37 @@
   /* B3 provenance caption — a quiet "pricebook" tag under a drafted line, so the
      owner sees which prices came from their own book vs the AI's off-book adds. */
   .line-prov{display:inline-block;margin:var(--space-2xs) 0 0 var(--space-2xs);font-size:var(--type-xs);font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--green-700)}
+  /* ---------- line depth: scope prose + sub-items (composer) ----------
+     Two quiet hint links under a line's description expand IN-FLOW detail rows —
+     never a popover. The depth panel reuses the manila register (internal-notes
+     voice) for sub-items and the card register for scope (customer-facing copy). */
+  .linehints{display:flex;gap:var(--space-3);margin:var(--space-2xs) 0 0 var(--space-2)}
+  .linehint{background:none;border:0;padding:0;font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
+  .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
+  .linehint[aria-expanded="true"]{color:var(--ink)}
+  .lineedit tbody .linedetail>td{padding:0 var(--space-3) var(--space-3);border-bottom:none}
+  .linedepth{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);padding:var(--space-3)}
+  .linedepth-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2)}
+  .linedepth-tag{font-size:var(--type-xs);letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+  .linedepth-total{font-size:var(--type-sm);font-weight:700;font-variant-numeric:tabular-nums}
+  .linedepth-scope{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font-family:inherit;font-size:var(--type-base);line-height:1.5;padding:var(--space-2) var(--space-3);resize:vertical}
+  .linedepth-scope:focus{border-color:var(--green-600);outline:none}
+  .subrow{display:flex;gap:var(--space-2);align-items:center;margin-bottom:var(--space-2xs)}
+  .lineedit tbody .subrow input{border:1.5px solid transparent;border-radius:var(--radius-sm);padding:var(--space-2);font-family:inherit;font-size:var(--type-base);background:var(--card);color:var(--ink);min-width:0}
+  .lineedit tbody .subrow input:focus{border-color:var(--green-600);outline:none}
+  .subrow input:first-child{flex:1}
+  .lineedit tbody .subrow input.num{width:88px;text-align:right;font-variant-numeric:tabular-nums}
+  .lineedit tbody .subrow input:nth-child(3){width:72px}
+  .linedepth-foot{display:flex;align-items:baseline;gap:var(--space-3);margin-top:var(--space-2)}
+  .linedepth-note{font-size:var(--type-xs);color:var(--ink-3)}
+  /* 'One total' dims the amount column in the EDITOR — the numbers stay yours. */
+  .lineedit .amt.customer-hidden{opacity:.45}
+  /* The $ visibility chip in the quote-card header. Amber when the proposal mode is on —
+     one state change worth noticing, same accent family as the OPTIONAL chip. */
+  .pricevis{border:1px solid var(--line);background:var(--card);color:var(--ink-2);font-family:inherit;font-size:var(--type-xs);font-weight:700;border-radius:var(--radius-xl);padding:var(--space-1) var(--space-3);cursor:pointer;white-space:nowrap}
+  .pricevis:hover{border-color:var(--ink-3);color:var(--ink)}
+  .pricevis.on{background:var(--manila);border-color:var(--manila-line);color:var(--manila-ink)}
+
   .lineedit-tool{border:0;background:transparent;font-family:inherit;font-size:var(--type-base);font-weight:600;color:var(--ink-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap}
   .lineedit-tool:hover{background:var(--card);color:var(--ink)}
   .lineedit-tool.primary{color:var(--ink)}
@@ -1543,6 +1574,11 @@
     .lineedit tbody td:has(>input.num) input{width:100%}
     .lineedit .amt{flex:1 1 auto;padding-right:0}
     .lineedit .rowacts{flex:0 0 100%;padding-right:0}
+    /* Depth panels: the fixed-width qty/unit/amount trio (~318px with gaps) exceeds a 393px
+       phone's panel width, which collapsed the flex:1 description to nothing. Wrap instead:
+       description owns the first line, the numbers flow beneath it. */
+    .subrow{flex-wrap:wrap}
+    .subrow input:first-child{flex:1 1 100%}
     /* Optional/✕ only reveal on hover/focus by default — touch has no
        hover, so they'd stay invisible until a field is tapped into. */
     .lineedit tbody tr .rowacts>*{opacity:1}
@@ -1851,6 +1887,9 @@
   .custlogo{width:46px;height:46px;border-radius:var(--radius);background:var(--card);color:var(--green-900);display:flex;align-items:center;justify-content:center;font-weight:900;font-size:var(--type-lg)}
   .custbody{padding:var(--space-5) var(--space-6) var(--space-6)}
   .custline{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
+  /* Scope prose under a line — the proposal's Includes/Excludes/Products. Pre-wrap keeps the
+     shop's typed numbering and paragraph breaks exactly as written. */
+  .custline-scope{display:block;white-space:pre-wrap;color:var(--ink-2);font-size:var(--type-sm);line-height:1.55;margin-top:var(--space-2);max-width:62ch}
   /* "No tax" marker on a document line. Quiet: it qualifies the line it sits in, it is not a
      status the customer has to act on — and it only renders when the document charges tax. */
   .custline-notax{margin-left:var(--space-2);color:var(--ink-3);font-size:var(--type-xs);font-weight:700;text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}

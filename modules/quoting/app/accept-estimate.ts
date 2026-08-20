@@ -2,7 +2,7 @@ import type { EstimateId, Result, AppError, Clock } from "@mallet/shared/types";
 import { asEstimateLineId, money, notFound, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { EstimateLine } from "../domain/estimate";
-import type { Estimate, QuoteTier } from "../domain/estimate";
+import type { Estimate, EstimateSubItem, QuoteTier } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 import type { SignatureDraft } from "../domain/signature";
 
@@ -16,6 +16,10 @@ export interface AcceptLineInput {
   /** Carried from the STORED line the accept path rebuilt this from — never client-authored
    *  (see select-optional-lines.ts). Omitted it reads as TRUE. */
   readonly taxable?: boolean;
+  /** Customer-facing scope prose — must survive accept or signing destroys the proposal copy. */
+  readonly scope?: string | null;
+  /** Internal estimating math — must survive accept or the sold job loses its costing detail. */
+  readonly subItems?: readonly EstimateSubItem[] | null;
 }
 
 export interface AcceptEstimateCommand {
@@ -78,6 +82,8 @@ export class AcceptEstimateUseCase {
           // Committed accept-time lines are always resolved — never tier-tagged.
           tier: null,
           materialId: null,
+          scope: input.scope ?? null,
+          subItems: input.subItems ?? null,
         });
         if (!isOk(line)) return line;
         built.push(line.value);

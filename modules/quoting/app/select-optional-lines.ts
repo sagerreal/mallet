@@ -33,6 +33,10 @@ const toAcceptLineInput = (line: EstimateLine): AcceptLineInput => {
     // Taxability rides the STORED line like every other priced fact — a token holder toggling
     // an add-on on must not be able to flip it out of the tax base.
     taxable: lp.taxable,
+    // Scope and sub-items ride the stored line too: accept REPLACES the line set, so anything
+    // not copied here is destroyed at the exact moment the customer signs for it.
+    scope: lp.scope ?? null,
+    subItems: lp.subItems ?? null,
   };
 };
 

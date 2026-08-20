@@ -116,9 +116,9 @@ describe("buildAcceptLinesFromSelection", () => {
     if (result.kind !== "lines") throw new Error("expected lines");
     expect(result.lines).toEqual([
       // Fixed line preserved verbatim (incl. cost + needsPhoto).
-      { description: "Labor", quantity: 3, rateCents: 3_333, costCents: 1_200, isOptional: false, needsPhoto: true, taxable: true },
+      { description: "Labor", quantity: 3, rateCents: 3_333, costCents: 1_200, isOptional: false, needsPhoto: true, taxable: true, scope: null, subItems: null },
       // Selected optional line flipped to non-optional, stored content preserved.
-      { description: "Anode rod", quantity: 1.5, rateCents: 999, costCents: 450, isOptional: false, needsPhoto: false, taxable: true },
+      { description: "Anode rod", quantity: 1.5, rateCents: 999, costCents: 450, isOptional: false, needsPhoto: false, taxable: true, scope: null, subItems: null },
       // OPT_B was not selected → dropped from the committed set.
     ]);
   });
@@ -211,7 +211,7 @@ describe("buildAcceptLinesForTier", () => {
     expect(result.kind).toBe("lines");
     if (result.kind !== "lines") throw new Error("expected lines");
     expect(result.lines).toEqual([
-      { description: "Repair section", quantity: 1, rateCents: 35_000, costCents: 100, isOptional: false, needsPhoto: false, taxable: true },
+      { description: "Repair section", quantity: 1, rateCents: 35_000, costCents: 100, isOptional: false, needsPhoto: false, taxable: true, scope: null, subItems: null },
     ]);
   });
 
@@ -247,7 +247,48 @@ describe("buildAcceptLinesForTier", () => {
     expect(result.kind).toBe("lines");
     if (result.kind !== "lines") throw new Error("expected lines");
     expect(result.lines).toEqual([
-      { description: "Replace run", quantity: 1, rateCents: 90_000, costCents: 100, isOptional: false, needsPhoto: false, taxable: true },
+      { description: "Replace run", quantity: 1, rateCents: 90_000, costCents: 100, isOptional: false, needsPhoto: false, taxable: true, scope: null, subItems: null },
     ]);
+  });
+});
+
+describe("accept selection preserves scope and sub-items", () => {
+  it("carries stored scope and subItems onto the committed lines", () => {
+    const scoped = EstimateLine.create({
+      id: asEstimateLineId(FIXED_ID),
+      description: "Painting",
+      quantity: 1,
+      rate: money(10_000),
+      cost: zeroMoney,
+      isOptional: false,
+      needsPhoto: false,
+      position: 0,
+      tier: null,
+      materialId: null,
+      scope: "Includes:\n1. Walls",
+      subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+    });
+    if (!scoped.ok) throw new Error(scoped.error.message);
+    const optional = EstimateLine.create({
+      id: asEstimateLineId(OPT_A_ID),
+      description: "Add-on",
+      quantity: 1,
+      rate: money(5_000),
+      cost: zeroMoney,
+      isOptional: true,
+      needsPhoto: false,
+      position: 1,
+      tier: null,
+      materialId: null,
+    });
+    if (!optional.ok) throw new Error(optional.error.message);
+    const est = makeSentEstimate([scoped.value, optional.value]);
+
+    const selection = buildAcceptLinesFromSelection(est, [OPT_A_ID]);
+    expect(selection.kind).toBe("lines");
+    if (selection.kind !== "lines") return;
+    expect(selection.lines[0]?.scope).toBe("Includes:\n1. Walls");
+    expect(selection.lines[0]?.subItems?.[0]?.amountCents).toBe(984_000);
+    expect(selection.lines[1]?.scope).toBeNull();
   });
 });
