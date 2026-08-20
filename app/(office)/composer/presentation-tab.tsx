@@ -24,10 +24,13 @@ export function PresentationTab({
   state,
   onUpdate,
   leadName,
+  leadJob,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   leadName: string | null;
+  /** The customer's job description — the first choice for the quote title, same as the payload. */
+  leadJob: string | null;
 }) {
   const uid = useId();
   const templatesQuery = api.v1.settings.presentationTemplates.list.useQuery(undefined, {
@@ -87,7 +90,13 @@ export function PresentationTab({
   async function saveEditor() {
     if (!p || !p.templateId || !editKey) return;
     const t = templates.find((x) => x.id === p.templateId);
-    if (!t) return;
+    if (!t) {
+      // The template list is empty or no longer holds this id — archived in another session, or
+      // the query is refetching after a cache eviction. Saying so beats a Save button that
+      // silently does nothing while the office believes their copy landed.
+      setEditError("That template is no longer in your list — reload the page and try again.");
+      return;
+    }
     setEditError(null);
     // Write through to the TEMPLATE (shared content), then mirror into this quote's copy.
     const pages = t.pages.map((page) =>
@@ -105,10 +114,10 @@ export function PresentationTab({
     }
   }
 
-  const quoteTitle =
-    state.desc.trim() ||
-    state.lines.find((l) => l.d.trim())?.d ||
-    "Your quote";
+  // EXACTLY the title buildDraftPayload freezes onto the quote (page.tsx: lead.job || first
+  // line || "Quote") — the preview lied when it showed state.desc, which is the AI prompt box
+  // and never reaches the customer.
+  const quoteTitle = leadJob?.trim() || state.lines.find((l) => l.d.trim())?.d?.trim() || "Quote";
 
   return (
     <div>
@@ -152,6 +161,7 @@ export function PresentationTab({
           >
             <Field label="Template name" style={{ flex: "1 1 240px" }}>
               <input
+                type="text"
                 value={newName}
                 maxLength={80}
                 placeholder="Interior, Exterior repair…"
@@ -171,7 +181,17 @@ export function PresentationTab({
         {createError && (
           <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{createError}</p>
         )}
-        {templates.length === 0 && !newOpen && (
+        {templatesQuery.isPending && (
+          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
+            Loading your templates…
+          </p>
+        )}
+        {templatesQuery.isError && (
+          <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
+            Your templates didn&apos;t load — reload the page to try again.
+          </p>
+        )}
+        {templates.length === 0 && !templatesQuery.isPending && !templatesQuery.isError && !newOpen && (
           <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
             A presentation wraps this quote in your own pages — a cover, who you are, your reviews, a
             thank-you — before the customer reaches the price. Create your first template to start;
@@ -382,6 +402,7 @@ function PageCard({
         <div id={editorId} style={{ marginTop: "var(--space-3)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
           <Field label="Page title">
             <input
+              type="text"
               value={editTitle}
               maxLength={PAGE_TITLE_MAX}
               onChange={(e) => onTitle(e.target.value)}

@@ -46,7 +46,12 @@ const draftMutateAsync = vi.fn();
 const archiveMutate = vi.fn();
 vi.mock("@/lib/trpc/client", () => ({
   api: {
-    useUtils: () => ({ v1: { customers: { list: { invalidate: vi.fn() } } } }),
+    useUtils: () => ({
+      v1: {
+        customers: { list: { invalidate: vi.fn() } },
+        settings: { presentationTemplates: { list: { invalidate: vi.fn() } } },
+      },
+    }),
     v1: {
       quoting: {
         buildFromMeasurements: {
@@ -68,7 +73,14 @@ vi.mock("@/lib/trpc/client", () => ({
         archive: { useMutation: () => ({ mutate: archiveMutate }) },
         rules: { create: { useMutation: () => ({ mutate: vi.fn() }) } },
       },
-      settings: { get: { useQuery: () => ({ data: undefined }) } },
+      settings: {
+        get: { useQuery: () => ({ data: undefined }) },
+        presentationTemplates: {
+          list: { useQuery: () => ({ data: [], isPending: false, isError: false }) },
+          create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
+          update: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },
+        },
+      },
       messaging: { send: { useMutation: () => ({ mutateAsync: vi.fn() }) } },
       notifications: { send: { useMutation: () => ({ mutateAsync: vi.fn() }) } },
       customers: { create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) } },

@@ -886,9 +886,15 @@ export default function ComposerPage() {
       </div>
 
       <div hidden={tab !== "presentation"}>
-        {tab === "presentation" && (
-          <PresentationTab state={cs} onUpdate={update} leadName={selectedLead?.name ?? null} />
-        )}
+        {/* Mounted even while hidden — the page editor holds unsaved copy in component state, and
+            unmounting on a tab switch threw away whatever the office had typed. Same rule as the
+            Estimate pane below. */}
+        <PresentationTab
+          state={cs}
+          onUpdate={update}
+          leadName={selectedLead?.name ?? null}
+          leadJob={selectedLead?.job ?? null}
+        />
       </div>
 
       <div hidden={tab !== "estimate"}>

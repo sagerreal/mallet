@@ -1179,3 +1179,19 @@ describe("presentation — per-quote copy of a template's pages", () => {
     expect(seeded.presentation?.name).toBe("Interior");
   });
 });
+
+describe("presentation — the cover the office previews is the cover the customer gets", () => {
+  it("freezes only ON pages and drops the per-quote toggle flag", () => {
+    const snap = presentationSnapshotForPayload({
+      templateId: "t1",
+      name: "Interior",
+      pages: [
+        { key: "cover", on: true, title: "", body: "" },
+        { key: "about", on: true, title: "About us", body: "Family-run." },
+        { key: "reviews", on: false, title: "Reviews", body: "Five stars." },
+      ],
+    });
+    expect(snap?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(snap?.pages.every((p) => !("on" in p))).toBe(true);
+  });
+});
