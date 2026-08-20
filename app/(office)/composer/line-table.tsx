@@ -70,6 +70,22 @@ export function LineTable({
     else next.add(i);
     return next;
   };
+  // Rows are index-keyed, so removing one shifts every index above it. Remap both open-sets
+  // through the removal or an open panel silently re-attaches under the WRONG line — inviting
+  // customer-facing scope prose to be typed into a different line's editor.
+  const dropIndex = (set: ReadonlySet<number>, removed: number): ReadonlySet<number> => {
+    const next = new Set<number>();
+    for (const n of set) {
+      if (n === removed) continue;
+      next.add(n > removed ? n - 1 : n);
+    }
+    return next;
+  };
+  const handleRemoveLine = (i: number) => {
+    setScopeOpen(dropIndex(scopeOpen, i));
+    setSubOpen(dropIndex(subOpen, i));
+    onRemoveLine(i);
+  };
 
   return (
     <div className={`lineedit${materialize ? " materialize" : ""}`}>
@@ -121,7 +137,8 @@ export function LineTable({
                       <button
                         type="button"
                         className="linehint"
-                        aria-pressed={scopeOpen.has(i)}
+                        aria-expanded={scopeOpen.has(i)}
+                        aria-controls={`line-scope-${i}`}
                         title="Scope prose the customer reads under this line — Includes, Excludes, Products"
                         onClick={() => setScopeOpen(toggle(scopeOpen, i))}
                       >
@@ -130,7 +147,8 @@ export function LineTable({
                       <button
                         type="button"
                         className="linehint"
-                        aria-pressed={subOpen.has(i)}
+                        aria-expanded={subOpen.has(i)}
+                        aria-controls={`line-sub-${i}`}
                         title="Your estimate math — rolls up into this line's price, never shown to the customer"
                         onClick={() => setSubOpen(toggle(subOpen, i))}
                       >
@@ -157,7 +175,11 @@ export function LineTable({
                     inputMode="decimal"
                     className="num"
                     value={x.r}
-                    aria-label={`Price, line ${i + 1}`}
+                    aria-label={
+                      realSubItems(x.sub).length > 0
+                        ? `Price, line ${i + 1} — set by its sub-items below`
+                        : `Price, line ${i + 1}`
+                    }
                     disabled={realSubItems(x.sub).length > 0}
                     title={
                       realSubItems(x.sub).length > 0
@@ -223,16 +245,16 @@ export function LineTable({
                       className="lineedit-tool"
                       title="Remove this line"
                       aria-label="Remove this line"
-                      onClick={() => onRemoveLine(i)}
+                      onClick={() => handleRemoveLine(i)}
                     >
                       ✕
                     </button>
                   )}
                 </td>
               </tr>
-              {scopeOpen.has(i) && (
+              {hasContent && scopeOpen.has(i) && (
                 <tr className="linedetail">
-                  <td colSpan={cols}>
+                  <td colSpan={cols} id={`line-scope-${i}`}>
                     <ScopeEditor
                       value={x.scope ?? ""}
                       lineNo={i + 1}
@@ -241,9 +263,9 @@ export function LineTable({
                   </td>
                 </tr>
               )}
-              {subOpen.has(i) && (
+              {hasContent && subOpen.has(i) && (
                 <tr className="linedetail">
-                  <td colSpan={cols}>
+                  <td colSpan={cols} id={`line-sub-${i}`}>
                     <SubItemEditor
                       sub={x.sub ?? []}
                       lineNo={i + 1}

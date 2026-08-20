@@ -1496,8 +1496,8 @@
   .linehints{display:flex;gap:var(--space-3);margin:var(--space-2xs) 0 0 var(--space-2)}
   .linehint{background:none;border:0;padding:0;font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
   .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
-  .linehint[aria-pressed="true"]{color:var(--ink)}
-  .linedetail>td{padding:0 var(--space-3) var(--space-3)}
+  .linehint[aria-expanded="true"]{color:var(--ink)}
+  .lineedit tbody .linedetail>td{padding:0 var(--space-3) var(--space-3);border-bottom:none}
   .linedepth{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);padding:var(--space-3)}
   .linedepth-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2)}
   .linedepth-tag{font-size:var(--type-xs);letter-spacing:.7px;text-transform:uppercase;color:var(--ink-3);font-weight:700}
@@ -1505,11 +1505,11 @@
   .linedepth-scope{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink);font-family:inherit;font-size:var(--type-base);line-height:1.5;padding:var(--space-2) var(--space-3);resize:vertical}
   .linedepth-scope:focus{border-color:var(--green-600);outline:none}
   .subrow{display:flex;gap:var(--space-2);align-items:center;margin-bottom:var(--space-2xs)}
-  .subrow input{border:1.5px solid transparent;border-radius:var(--radius-sm);padding:var(--space-2);font-family:inherit;font-size:var(--type-base);background:var(--card);color:var(--ink);min-width:0}
-  .subrow input:focus{border-color:var(--green-600);outline:none}
+  .lineedit tbody .subrow input{border:1.5px solid transparent;border-radius:var(--radius-sm);padding:var(--space-2);font-family:inherit;font-size:var(--type-base);background:var(--card);color:var(--ink);min-width:0}
+  .lineedit tbody .subrow input:focus{border-color:var(--green-600);outline:none}
   .subrow input:first-child{flex:1}
-  .subrow input.num{width:88px;text-align:right;font-variant-numeric:tabular-nums}
-  .subrow input:nth-child(3){width:72px}
+  .lineedit tbody .subrow input.num{width:88px;text-align:right;font-variant-numeric:tabular-nums}
+  .lineedit tbody .subrow input:nth-child(3){width:72px}
   .linedepth-foot{display:flex;align-items:baseline;gap:var(--space-3);margin-top:var(--space-2)}
   .linedepth-note{font-size:var(--type-xs);color:var(--ink-3)}
   /* 'One total' dims the amount column in the EDITOR — the numbers stay yours. */
@@ -1518,7 +1518,7 @@
      one state change worth noticing, same accent family as the OPTIONAL chip. */
   .pricevis{border:1px solid var(--line);background:var(--card);color:var(--ink-2);font-family:inherit;font-size:var(--type-xs);font-weight:700;border-radius:var(--radius-xl);padding:var(--space-1) var(--space-3);cursor:pointer;white-space:nowrap}
   .pricevis:hover{border-color:var(--ink-3);color:var(--ink)}
-  .pricevis[aria-pressed="true"]{background:var(--manila);border-color:var(--manila-line);color:var(--manila-ink)}
+  .pricevis.on{background:var(--manila);border-color:var(--manila-line);color:var(--manila-ink)}
 
   .lineedit-tool{border:0;background:transparent;font-family:inherit;font-size:var(--type-base);font-weight:600;color:var(--ink-2);padding:var(--space-2) var(--space-3);border-radius:var(--radius-sm);cursor:pointer;white-space:nowrap}
   .lineedit-tool:hover{background:var(--card);color:var(--ink)}
@@ -1574,6 +1574,11 @@
     .lineedit tbody td:has(>input.num) input{width:100%}
     .lineedit .amt{flex:1 1 auto;padding-right:0}
     .lineedit .rowacts{flex:0 0 100%;padding-right:0}
+    /* Depth panels: the fixed-width qty/unit/amount trio (~318px with gaps) exceeds a 393px
+       phone's panel width, which collapsed the flex:1 description to nothing. Wrap instead:
+       description owns the first line, the numbers flow beneath it. */
+    .subrow{flex-wrap:wrap}
+    .subrow input:first-child{flex:1 1 100%}
     /* Optional/✕ only reveal on hover/focus by default — touch has no
        hover, so they'd stay invisible until a field is tapped into. */
     .lineedit tbody tr .rowacts>*{opacity:1}

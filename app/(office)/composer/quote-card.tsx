@@ -264,8 +264,7 @@ export function QuoteCard({
         </div>
         <button
           type="button"
-          className="pricevis"
-          aria-pressed={state.priceDisplay === "total"}
+          className={`pricevis${state.priceDisplay === "total" ? " on" : ""}`}
           title="Which numbers the customer sees. One total = scope prose + a single price at the bottom; your rates stay in the data either way. Optional add-on prices always show."
           onClick={() =>
             onUpdate({ priceDisplay: state.priceDisplay === "total" ? "lines" : "total" })
