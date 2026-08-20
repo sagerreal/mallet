@@ -251,7 +251,57 @@ suite("settings tRPC router (full stack, live RLS)", () => {
     expect(removed.ok).toBe(true);
   });
 
+  it("presentation templates create/update/remove round-trip, with default pages", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+
+    const created = await caller.v1.settings.presentationTemplates.create({ name: "Interior" });
+    expect(created.name).toBe("Interior");
+    // A new template ships the full page set, all on, bodies empty — no demo copy.
+    expect(created.pages.map((p) => p.key)).toEqual(["cover", "about", "reviews", "thanks"]);
+    expect(created.pages.every((p) => p.on)).toBe(true);
+    expect(created.pages.every((p) => p.body === "")).toBe(true);
+
+    const updated = await caller.v1.settings.presentationTemplates.update({
+      id: created.id,
+      name: "Interior repaint",
+      pages: created.pages.map((p) =>
+        p.key === "about" ? { ...p, title: "About us", body: "Family-run since 2011." } : p,
+      ),
+    });
+    expect(updated.name).toBe("Interior repaint");
+    expect(updated.pages.find((p) => p.key === "about")?.body).toBe("Family-run since 2011.");
+
+    const listed = await caller.v1.settings.presentationTemplates.list();
+    expect(listed.find((t) => t.id === created.id)?.pages.find((p) => p.key === "about")?.body).toBe(
+      "Family-run since 2011.",
+    );
+
+    const removed = await caller.v1.settings.presentationTemplates.remove({ id: created.id });
+    expect(removed.ok).toBe(true);
+    expect((await caller.v1.settings.presentationTemplates.list()).some((t) => t.id === created.id)).toBe(false);
+  });
+
   // ── cross-tenant RLS ──────────────────────────────────────────────────────
+
+  it("org B cannot see or mutate org A's presentation templates (RLS on the new table)", async () => {
+    const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await callerA.v1.settings.presentationTemplates.create({ name: "A-only deck" });
+
+    const callerB = appRouter.createCaller(ctxFor(orgBId, "owner"));
+    expect((await callerB.v1.settings.presentationTemplates.list()).some((t) => t.id === created.id)).toBe(false);
+
+    await expect(
+      callerB.v1.settings.presentationTemplates.update({ id: created.id, name: "stolen" }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      callerB.v1.settings.presentationTemplates.remove({ id: created.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+    // Org A still owns it, unchanged.
+    expect((await callerA.v1.settings.presentationTemplates.list()).find((t) => t.id === created.id)?.name).toBe(
+      "A-only deck",
+    );
+  });
 
   it("org B sees none of org A's collections (RLS)", async () => {
     const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
