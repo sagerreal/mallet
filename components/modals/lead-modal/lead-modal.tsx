@@ -178,6 +178,19 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
     adoptLeadNotes(leadId, items.map(dtoLeadNoteToStore));
   }, [notesQ.data, leadId, adoptLeadNotes]);
 
+  // The shop's pipeline stages — gates the "Pipeline stage" row. A shop with no pipeline never
+  // sees the row (progressive disclosure); a tech's session cannot read it and gets the same
+  // nothing. One cached read, shared with the board.
+  //
+  // MUST STAY ABOVE the `if (!lead) return` below. It lived under it, so the first render — before
+  // the customer had loaded — ran one fewer hook than the second, which is React error #310
+  // ("rendered more hooks than during the previous render") and took the whole modal down with
+  // "Something went wrong." Every customer, every time.
+  const pipelineQ = api.v1.customers.pipeline.board.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+    retry: false,
+  });
+
   const leadTasksQ = api.v1.tasks.list.useQuery(
     { leadId: leadId ?? "", done: false, limit: 100 },
     { enabled: Boolean(lead), refetchOnWindowFocus: false },
@@ -252,13 +265,6 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         ? { label: callLabel(lead), run: () => pushModal(MODAL.CALL, { leadId: lead.id }) }
         : { label: "New quote", run: newQuote };
 
-  // The shop's pipeline stages — gates the "Pipeline stage" row. A shop with no pipeline never
-  // sees the row (progressive disclosure); a tech's session cannot read it and gets the same
-  // nothing. One cached read, shared with the board.
-  const pipelineQ = api.v1.customers.pipeline.board.useQuery(undefined, {
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
   const pipelineStages = pipelineQ.data?.stages ?? [];
 
   const openTasksStore = tasks.filter((t) => t.leadId === lead.id && !t.done);

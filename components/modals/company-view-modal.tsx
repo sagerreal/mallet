@@ -175,6 +175,14 @@ export function CompanyViewModalContent() {
   const pushModal = usePushModal();
   const updateCompany = useAppStore((s) => s.updateCompany);
 
+  // Server rollup — pipeSum over the store's page asserted "$0 open" for any account whose
+  // history predates the loaded page. Store-derived only as a fallback while loading.
+  //
+  // MUST STAY ABOVE the `if (!company) return` below — the same hook-order bug that took the
+  // customer sheet down with React #310. The modal renders once before the record resolves and
+  // again after; a hook below the early return runs only on the second, which React forbids.
+  const rollupsQ = api.v1.companies.rollups.useQuery(undefined, { refetchOnWindowFocus: false });
+
   const companyId = activeModal?.params?.companyId as string | undefined;
   const company = companies.find((c) => c.id === companyId);
 
@@ -192,9 +200,6 @@ export function CompanyViewModalContent() {
   }
 
   const contacts = leads.filter((l) => l.companyId === company.id && !l.archived);
-  // Server rollup — pipeSum over the store's page asserted "\$0 open" for any account
-  // whose history predates the loaded page. Store-derived only as a fallback while loading.
-  const rollupsQ = api.v1.companies.rollups.useQuery(undefined, { refetchOnWindowFocus: false });
   const roll = rollupsQ.data?.find((r) => r.companyId === company.id);
   const openPipe = roll ? roll.openPipeCents / 100 : pipeSum(contacts, estimates, "sent");
   const revenueWon = roll ? roll.revenueWonCents / 100 : pipeSum(contacts, estimates, "accepted");
