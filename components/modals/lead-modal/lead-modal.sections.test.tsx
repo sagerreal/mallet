@@ -32,11 +32,13 @@ interface StoreShape {
 let store: StoreShape;
 let leadQuery: { data: unknown; isLoading: boolean; isError: boolean };
 
+const pushModal = vi.fn();
+
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: StoreShape) => unknown) => sel(store),
   useActiveModal: () => ({ id: "LEAD", params: { leadId: "lead-1" } }),
   useCloseModal: () => vi.fn(),
-  usePushModal: () => vi.fn(),
+  usePushModal: () => pushModal,
   useOpenModal: () => vi.fn(),
 }));
 
@@ -114,10 +116,62 @@ describe("the customer sheet's chapters", () => {
     expect(phone.getAttribute("aria-expanded")).toBe("true");
   });
 
-  it("a closed chapter still says what is inside it", () => {
+  /**
+   * The closed row answers "can I reach this person", so it NAMES the thing rather than counting
+   * boxes. It used to read "1 of 4" — pagination-shaped, and the 1 was usually Lead source, which
+   * is not a way to reach anyone. A customer with no phone and no email still scored 1.
+   */
+  it("a closed chapter shows the number, not a tally", () => {
     seed({ phone: "5105550123", email: "marta@example.com" });
     render(<LeadModal open />);
-    // 2 of 4 filled — readable without opening anything, which is the sheet's grammar.
-    expect(section(/^Contact/).textContent).toMatch(/2 of 4/);
+    expect(section(/^Contact/).textContent).toContain("5105550123");
+    expect(section(/^Contact/).textContent).not.toMatch(/of 4/);
+  });
+
+  it("says Add phone when there is no way to call them", () => {
+    seed({ phone: "", email: "" });
+    render(<LeadModal open />);
+    expect(section(/^Contact/).textContent).toMatch(/Add phone/);
+  });
+
+  // Lead source is not contact information. Scoring it made a customer nobody can reach look
+  // partly filled in.
+  it("does not count lead source as a way to reach someone", () => {
+    seed({ phone: "", email: "", source: "Added manually" });
+    render(<LeadModal open />);
+    expect(section(/^Contact/).textContent).toMatch(/Add phone/);
+  });
+
+  /**
+   * Call and Text with no number used to stack a second sheet whose whole job was one field —
+   * and it was titled with the CUSTOMER'S NAME, so a customer called "New customer" produced a
+   * sheet headed "New customer" over the sheet you were already reading. They now open the Phone
+   * row six inches below, which is what the primary action already did.
+   */
+  it("Call with no number opens the Phone row instead of another sheet", () => {
+    seed({ phone: "", email: "marta@example.com" });
+    render(<LeadModal open />);
+    fireEvent.click(screen.getByRole("button", { name: "Call" }));
+    expect(section(/^Contact/).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("button", { name: /^Phone/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(pushModal).not.toHaveBeenCalled();
+  });
+
+  it("Text with no number does the same", () => {
+    seed({ phone: "", email: "marta@example.com" });
+    render(<LeadModal open />);
+    fireEvent.click(screen.getByRole("button", { name: /^Text/ }));
+    expect(screen.getByRole("button", { name: /^Phone/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(pushModal).not.toHaveBeenCalled();
+  });
+
+  // With a number, the buttons still do their real job.
+  // Stage matters: on a NEW customer with a number, Call is the PRIMARY action and there is no
+  // secondary Call button to click.
+  it("Call with a number opens the call sheet", () => {
+    seed({ phone: "5105550123", stage: "Quoted" });
+    render(<LeadModal open />);
+    fireEvent.click(screen.getByRole("button", { name: "Call" }));
+    expect(pushModal).toHaveBeenCalled();
   });
 });
