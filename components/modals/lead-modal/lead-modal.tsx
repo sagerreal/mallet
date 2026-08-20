@@ -258,9 +258,15 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   // The one loud action — stage-aware AND data-aware (see the header comment).
   type Action = "call" | "quote" | "addphone";
   const primaryKind: Action = !hasPhone ? "addphone" : isNew ? "call" : "quote";
+  // One way to ask for a number, used by the primary AND by Call/Text when there is none.
+  const askForPhone = () => {
+    setContactOpen(true);
+    setPhoneOpen(true);
+  };
+
   const primary =
     primaryKind === "addphone"
-      ? { label: "Add phone", run: () => { setContactOpen(true); setPhoneOpen(true); } }
+      ? { label: "Add phone", run: askForPhone }
       : primaryKind === "call"
         ? { label: callLabel(lead), run: () => pushModal(MODAL.CALL, { leadId: lead.id }) }
         : { label: "New quote", run: newQuote };
@@ -275,16 +281,27 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
       <LeadSheetHeader lead={lead} />
 
       {/* Quiet secondaries — every contact/advance action that is NOT the primary.
-          Call and Text stay tappable even with no number: their sheets prompt to add
-          one in-flow (the #197/#198 behaviour), so nothing here is a dead button.
-          48px: the glove floor the first cut missed. */}
+          48px: the glove floor the first cut missed.
+
+          WITH NO NUMBER ON FILE, Call and Text open the PHONE ROW on this sheet rather than
+          pushing another sheet on top. Both used to stack a second modal whose whole job was one
+          field — and it was titled with the customer's name, so a customer called "New customer"
+          produced a sheet headed "New customer" over the sheet you were already reading. The row
+          is six inches below the button; going to it is the shorter, less startling path, and it
+          is what the primary "Add phone" action already does. */}
       <div className="sheet-secrow">
         {primaryKind !== "call" && (
-          <button className="sheet-sec" onClick={() => pushModal(MODAL.CALL, { leadId: lead.id })}>
+          <button
+            className="sheet-sec"
+            onClick={() => (hasPhone ? pushModal(MODAL.CALL, { leadId: lead.id }) : askForPhone())}
+          >
             Call
           </button>
         )}
-        <button className="sheet-sec" onClick={() => pushModal(MODAL.THREAD, { leadId: lead.id })}>
+        <button
+          className="sheet-sec"
+          onClick={() => (hasPhone ? pushModal(MODAL.THREAD, { leadId: lead.id }) : askForPhone())}
+        >
           Text
           {lead.unread ? (
             <span className="pill blue" style={{ padding: "var(--space-2xs) var(--space-2)", fontSize: "var(--type-xs)" }}>
@@ -461,14 +478,20 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
  * them into a chapter takes that away unless the head carries it, so each one reports what is
  * inside without being opened.
  */
-const CONTACT_FIELDS = 4; // phone · email · source · service address
-
+/**
+ * NOT A COUNT. This read "1 of 4", which is worse than useless on two counts: it reads like
+ * pagination, and the "1" was usually Lead source — "Added manually" is not a way to reach anyone,
+ * so a customer with no phone and no email still scored 1. The collapsed row is meant to answer
+ * "can I reach this person", so it names the thing rather than tallying boxes.
+ *
+ * Phone first because that is what a shop actually needs, and because its absence is the one worth
+ * shouting about — every action on this sheet routes through it.
+ */
 const contactSummary = (lead: Lead): string => {
-  const filled = [lead.phone, lead.email, lead.source, lead.address]
-    .filter((v) => Boolean(v && String(v).trim())).length;
-  // "Add" rather than "0 of 4": a zero count reads as a broken counter, and the empty state of
-  // every other row on this sheet already says Add.
-  return filled === 0 ? "Add" : `${filled} of ${CONTACT_FIELDS}`;
+  const has = (v: unknown): boolean => Boolean(v && String(v).trim());
+  if (has(lead.phone)) return String(lead.phone);
+  if (has(lead.email)) return "Add phone · email on file";
+  return "Add phone";
 };
 
 const workSummary = (noteSnippet: string | null, openTasks: number): string => {
