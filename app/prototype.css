@@ -1470,6 +1470,11 @@
   .lineedit tbody input::placeholder{color:var(--ink-3)}
   .lineedit tbody input:hover{background:var(--green-50)}
   .lineedit tbody input:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  /* A sub-item-priced line locks its Price input. Without these two rules the lock is invisible
+     (the base rules override UA graying) and hover paints the dead field with the editable wash —
+     the exact "invisible-disabled" bug class the .cardacts rules exist to prevent. */
+  .lineedit tbody input:disabled{color:var(--ink-3);cursor:default}
+  .lineedit tbody input:disabled:hover{background:transparent}
   /* No number input in this app uses the native spinner: they are two ~8px hit targets on a
      55-year-old plumber's phone, they sit where the value should be, and nothing in the design
      system draws them. Suppressed once here rather than per-component — this rule replaces three
