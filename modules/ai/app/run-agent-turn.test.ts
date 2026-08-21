@@ -5,6 +5,7 @@ import type { ToolOutcome } from "../domain/tool";
 import { runAgentTurn, type ToolMeta } from "./run-agent-turn";
 
 const usage = { inputTokens: 10, outputTokens: 5, cacheReadTokens: 0 };
+const USAGE = { inputTokens: 1, outputTokens: 1, cacheReadTokens: 0 };
 const turn = (stopReason: AssistantTurn["stopReason"], blocks: AssistantBlock[]): AssistantTurn => ({ stopReason, blocks, usage });
 const text = (t: string): AssistantTurn => turn("end_turn", [{ type: "text", text: t }]);
 const callTool = (id: string, name: string, input: unknown): AssistantTurn =>
@@ -28,13 +29,17 @@ const TOOLS: ToolMeta[] = [
 ];
 
 // Records every tool the loop executes; returns a scripted outcome per tool.
+// `toolUseIds` is a separate array (not folded into `calls`) so every existing `toEqual([{name,
+// input}, ...])` assertion on `calls` keeps working unchanged.
 const recordingExecute = (outcomes: Record<string, ToolOutcome> = {}) => {
   const calls: Array<{ name: string; input: unknown }> = [];
-  const execute = async (name: string, input: unknown): Promise<ToolOutcome> => {
+  const toolUseIds: string[] = [];
+  const execute = async (name: string, input: unknown, toolUseId: string): Promise<ToolOutcome> => {
     calls.push({ name, input });
+    toolUseIds.push(toolUseId);
     return outcomes[name] ?? { ok: true, summary: `${name} ok` };
   };
-  return { calls, execute };
+  return { calls, toolUseIds, execute };
 };
 
 describe("runAgentTurn", () => {
@@ -298,5 +303,75 @@ describe("runAgentTurn", () => {
 
     const firstMsg = llm.requests[0]!.messages[0]!;
     if (firstMsg.kind === "text") expect(firstMsg.text).toBe("hi");
+  });
+
+  // ── onProgress ───────────────────────────────────────────────────────────────────────────────
+
+  it("reports each message as it is appended, in order", async () => {
+    const llm = new FakeLlm([
+      { stopReason: "tool_use", blocks: [{ type: "tool_use", id: "t1", name: "customer_list", input: {} }], usage: USAGE },
+      { stopReason: "end_turn", blocks: [{ type: "text", text: "here they are" }], usage: USAGE },
+    ]);
+    const { execute } = recordingExecute({ customer_list: { ok: true, summary: "two customers" } });
+    const seen: string[] = [];
+
+    const result = await runAgentTurn({
+      llm,
+      system: "s",
+      tools: [{ name: "customer_list", description: "d", inputSchema: {}, mutating: false }],
+      execute,
+      userMessage: "who are my customers",
+      onProgress: async (m) => {
+        seen.push(m.role === "assistant" ? "assistant" : m.kind);
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    // The user's own message, the assistant's tool_use turn, the tool results, the final text.
+    expect(seen).toEqual(["text", "assistant", "tool_results", "assistant"]);
+  });
+
+  it("reports the pending assistant turn before halting for approval", async () => {
+    const llm = new FakeLlm([
+      { stopReason: "tool_use", blocks: [{ type: "tool_use", id: "t1", name: "invoice_send", input: { invoiceId: "x" } }], usage: USAGE },
+    ]);
+    const { execute } = recordingExecute();
+    const seen: string[] = [];
+
+    const result = await runAgentTurn({
+      llm,
+      system: "s",
+      tools: [{ name: "invoice_send", description: "d", inputSchema: {}, mutating: true }],
+      execute,
+      userMessage: "send it",
+      onProgress: async (m) => {
+        seen.push(m.role === "assistant" ? "assistant" : m.kind);
+      },
+    });
+
+    expect(result.status).toBe("needs_approval");
+    // The halt must not lose the assistant turn that proposed the write — it is what the human
+    // is being asked to approve, and it is what the resume replays.
+    expect(seen).toEqual(["text", "assistant"]);
+  });
+
+  // ── ExecuteTool's third argument ─────────────────────────────────────────────────────────────
+
+  it("passes the provider's tool_use id as execute's third argument", async () => {
+    // Two tool_use blocks in the SAME assistant turn, same tool name: only the real id (not a
+    // closure-inferred one) can tell these two calls apart.
+    const llm = new FakeLlm([
+      turn("tool_use", [
+        { type: "tool_use", id: "call-a", name: "customer_list", input: { page: 1 } },
+        { type: "tool_use", id: "call-b", name: "customer_list", input: { page: 2 } },
+      ]),
+      text("done"),
+    ]);
+    const { toolUseIds, execute } = recordingExecute({ customer_list: { ok: true, summary: "ok" } });
+
+    const result = await runAgentTurn({ llm, system: "sys", tools: TOOLS, execute, userMessage: "list all pages" });
+
+    expect(result.status).toBe("completed");
+    expect(toolUseIds).toEqual(["call-a", "call-b"]);
   });
 });

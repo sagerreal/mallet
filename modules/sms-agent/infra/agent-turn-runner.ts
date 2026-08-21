@@ -120,7 +120,9 @@ export function makeAgentTurnRunner(deps: AgentTurnRunnerDeps) {
       mutating: t.mutating,
     }));
 
-    const execute: ExecuteTool = (name, toolInput) => {
+    // toolUseId unused: this driver runs each approved tool_use exactly once (no execution
+    // ledger here yet), so it doesn't need the id to de-duplicate a replay.
+    const execute: ExecuteTool = (name, toolInput, _toolUseId) => {
       const tool = tools.find((t) => t.name === name);
       if (!tool) return Promise.resolve({ ok: false, error: `unknown tool: ${name}` });
       return withTenant(orgId, (tx) => {

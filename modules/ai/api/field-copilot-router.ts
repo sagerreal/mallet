@@ -278,7 +278,9 @@ const runFieldTurn = async (
     : buildOrgOnlyFieldTools({ withTx: withTenant })({ orgId, seesPrice: params.seesPrice, ...agenda });
   const metas: ToolMeta[] = fieldTools.map((t) => t.meta);
 
-  const execute: ExecuteTool = (name, input) => {
+  // toolUseId unused: field tools are all read-only here (no execution ledger needed to
+  // guard against a replayed write).
+  const execute: ExecuteTool = (name, input, _toolUseId) => {
     const tool = fieldTools.find((t) => t.meta.name === name);
     if (!tool) return Promise.resolve({ ok: false as const, error: `unknown tool: ${name}` });
     return tool.execute(input);
