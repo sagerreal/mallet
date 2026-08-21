@@ -55,6 +55,7 @@ import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { PhoneCell } from "./lead-modal/lead-header";
 import { EmailBody } from "./lead-modal/more-details";
+import { JobFilesBody } from "./job-files";
 import { SheetRow } from "./sheet-row";
 import { EditableSheetTitle } from "./editable-sheet-title";
 import { Trail } from "./trail";
@@ -734,6 +735,15 @@ export function JobModalContent() {
 
   const status = JST[job.status] ?? JST.scheduled!;
   const noteCount = jobNoteEntries(job).length;
+  const fileCount = (job.files ?? []).length;
+  // The collapsed row says what is actually in there. "3 · 1 file" beats a bare count, because a
+  // job whose only attachment is a permit should not read as empty.
+  const notesRowValue = [
+    noteCount > 0 ? String(noteCount) : null,
+    fileCount > 0 ? (fileCount === 1 ? "1 file" : `${fileCount} files`) : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   // The latest customer note on the CLOSED row — the whole point of the row. A count would say
   // "3" to a plumber standing at a gate who needs "Gate code 4482". Reused from the customer
   // sheet, which is where that reasoning was written down.
@@ -989,12 +999,21 @@ export function JobModalContent() {
           </button>
         </SheetRow>
 
-        {/* Job notes — read-only feed, only when there is something to read. Named "Job"
-            now that Customer notes sits beside it: two rows both called "Notes" would
-            leave nobody able to tell which record they were reading. */}
-        {noteCount > 0 && (
-          <SheetRow label="Job notes" value={String(noteCount)} expandable>
+        {/* JOB NOTES AND FILES, ONE ROW. A file and the sentence explaining it belong together —
+            a photo or a permit with no note beside it is a mystery six weeks later, and two rows
+            put them a scroll apart. Named "Job" because Customer notes sits below: two rows both
+            called "Notes" left nobody able to tell which record they were reading.
+
+            Rendered whenever there is EITHER a note or a file. It used to be gated on notes alone,
+            so a job carrying only an attachment showed nothing at all. */}
+        {(noteCount > 0 || fileCount > 0) && (
+          <SheetRow label="Job notes" value={notesRowValue} expandable>
             <NoteFeed job={job} />
+            <JobFilesBody
+              jobId={job.id}
+              files={job.files ?? []}
+              onUploaded={() => void utils.v1.jobs.get.invalidate()}
+            />
           </SheetRow>
         )}
 

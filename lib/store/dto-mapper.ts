@@ -20,7 +20,7 @@ import type { RouterOutputs } from "@/lib/trpc/client";
 import { daysSince } from "@/lib/clock";
 import { isVisitPlaced, recalcJobPlacement } from "./visit-placement";
 import { shortWhen } from "@/lib/format";
-import type { Addon, Estimate, Invoice, Job, JobLine, LeadNote, TimeEntry, Visit } from "./types";
+import type { Addon, Estimate, Invoice, Job, JobLine, LeadNote, TimeEntry, Visit , JobFile } from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
 
 export type JobDTO = RouterOutputs["v1"]["visits"]["createVisit"];
@@ -324,7 +324,14 @@ export interface ExecutionDTO {
     via: string | null;
     reason: string | null;
   }[];
-  photos?: { storagePath: string }[];
+  photos?: {
+    id: string;
+    storagePath: string;
+    caption: string | null;
+    // Optional on the wire: an older server does not send them, and null already means image.
+    mimeType?: string | null;
+    fileName?: string | null;
+  }[];
 }
 
 /**
@@ -339,7 +346,7 @@ export interface ExecutionDTO {
  * Addon.id is derived from the array index (stable numeric id for the
  * prototype UI); dbId carries the DB uuid for persistence.
  */
-export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | "photos" | "verify"> {
+export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | "photos" | "files" | "verify"> {
   const lines: JobLine[] = (dto.lines ?? []).map((l) => ({
     d: l.description,
     q: l.quantity,
@@ -358,7 +365,23 @@ export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | 
     ...(a.invoiceSkip ? { invSkip: true } : {}),
   }));
 
-  const photos: string[] = (dto.photos ?? []).map((p) => p.storagePath);
+  // SPLIT ON MIME. Both live in job_photos server-side; the client needs them apart because a
+  // thumbnail grid and a named link are different renders. A NULL mime is an image — every row
+  // written before attachments existed was one, since the upload enum only admitted jpg/png/webp.
+  const isImage = (m: string | null | undefined): boolean => !m || m.startsWith("image/");
+  const photos: string[] = (dto.photos ?? [])
+    .filter((p) => isImage(p.mimeType))
+    .map((p) => p.storagePath);
+  const files: JobFile[] = (dto.photos ?? [])
+    .filter((p) => !isImage(p.mimeType))
+    .map((p) => ({
+      id: p.id,
+      storagePath: p.storagePath,
+      // A document with no name is unopenable in practice, so fall back to the key's tail.
+      name: p.fileName ?? p.storagePath.split("/").pop() ?? "file",
+      mimeType: p.mimeType ?? "application/octet-stream",
+      caption: p.caption,
+    }));
 
   const verifyAns: Record<string, { st: "pass" | "override"; via?: string; reason?: string }> = {};
   for (const v of dto.verifyAnswers ?? []) {
@@ -369,7 +392,7 @@ export function mapExecution(dto: ExecutionDTO): Pick<Job, "lines" | "addons" | 
     };
   }
 
-  return { lines, addons, photos, verify: { ans: verifyAns } };
+  return { lines, addons, photos, files, verify: { ans: verifyAns } };
 }
 
 /**

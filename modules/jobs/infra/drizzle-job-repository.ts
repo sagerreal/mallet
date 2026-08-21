@@ -875,6 +875,8 @@ export class DrizzleJobRepository implements JobRepository {
       jobId: p.jobId,
       storagePath: p.storagePath,
       caption: p.caption,
+      mimeType: p.mimeType,
+      fileName: p.fileName,
       verifyPass: p.verifyPass,
       position: p.position,
       createdAt: now,
