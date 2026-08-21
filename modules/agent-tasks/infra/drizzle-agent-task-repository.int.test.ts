@@ -7,6 +7,18 @@ import { withTenant } from "@mallet/shared/db/tx";
 import { closeDb } from "@mallet/shared/db/client";
 import { DrizzleAgentTaskRepository } from "./drizzle-agent-task-repository";
 
+// WHAT THE CROSS-ORG CASES BELOW DO AND DON'T PROVE.
+//
+// All three tables (agent_tasks, agent_task_messages, agent_tool_executions) are
+// ENABLE + FORCE ROW LEVEL SECURITY, and the runtime role connects NOBYPASSRLS. Inside
+// withTenant, Postgres appends `org_id = current_org_id()` to every statement whether or not
+// the query carries its own `eq(orgId, ...)` predicate. So every "org B can't see/touch org A's
+// row" assertion here proves COMBINED RLS + app-level isolation — the property that actually
+// protects a customer — NOT that the adapter's own `eq(orgId, ...)` predicates are doing
+// anything beyond what RLS already enforces on their own. Isolating that would require a
+// connection that bypasses RLS, which is out of scope for this suite. The app-level predicates
+// remain real defence in depth (and are what lets the composite indexes get used), but a green
+// run here is not license to read them as unproven and remove them.
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
@@ -18,9 +30,12 @@ suite("DrizzleAgentTaskRepository (live RLS)", () => {
 
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
+    // Assign each id the MOMENT its own insert resolves, not after both resolve — if org B's
+    // insert throws (a flaky shared pooler mid-connect), org A's id must already be captured so
+    // afterAll's per-org delete can still find and remove it instead of stranding it.
     const [a] = await admin<{ id: string }[]>`insert into orgs (name) values ('AgentRepo A ' || gen_random_uuid()) returning id`;
-    const [b] = await admin<{ id: string }[]>`insert into orgs (name) values ('AgentRepo B ' || gen_random_uuid()) returning id`;
     orgAId = a!.id;
+    const [b] = await admin<{ id: string }[]>`insert into orgs (name) values ('AgentRepo B ' || gen_random_uuid()) returning id`;
     orgBId = b!.id;
     const [ow] = await admin<{ id: string }[]>`
       insert into users (org_id, auth_user_id, email, role, is_field_crew)
@@ -163,6 +178,28 @@ suite("DrizzleAgentTaskRepository (live RLS)", () => {
     expect(found?.summary).toBe("Sent invoice 1042.");
   });
 
+  it("recordExecution cannot attach a write to another org's task", async () => {
+    const id = randomUUID();
+    await repoFor(orgAId, (r) =>
+      r.create({ id, title: "A's task, ledger-guarded", createdBy: asUserId(ownerAId), createdByRole: "owner", nextActionAt: new Date() }),
+    );
+    const taskId = asAgentTaskId(id);
+    const use = `toolu_${randomUUID()}`;
+
+    // Org B's writer stamps its OWN org_id on the new row, so RLS's WITH CHECK is satisfied —
+    // but the composite FK ties every execution to an agent_tasks row with the SAME org_id, and
+    // no such row exists for org B against this taskId, so the write cannot land at all.
+    await expect(
+      repoFor(orgBId, (r) =>
+        r.recordExecution(taskId, { toolUseId: use, tool: "invoice_send", ok: true, summary: "should never land" }),
+      ),
+    ).rejects.toThrow();
+
+    // Org A's ledger is untouched: nothing was recorded under this toolUseId by anyone.
+    const stillNothing = await repoFor(orgAId, (r) => r.findExecution(use));
+    expect(stillNothing).toBeNull();
+  });
+
   it("findExecution returns nothing for another org's task", async () => {
     const id = randomUUID();
     await repoFor(orgAId, (r) =>
@@ -209,6 +246,16 @@ suite("DrizzleAgentTaskRepository (live RLS)", () => {
     expect(row?.lease_id).toBe(lease);
   });
 
+  it("list from another org never returns that org's tasks", async () => {
+    const id = randomUUID();
+    await repoFor(orgAId, (r) =>
+      r.create({ id, title: "A-only, listed", createdBy: asUserId(ownerAId), createdByRole: "owner", nextActionAt: new Date() }),
+    );
+
+    const page = await repoFor(orgBId, (r) => r.list(toPage({ limit: 50, cursor: null })));
+    expect(page.items).toHaveLength(0);
+  });
+
   it("lists newest-updated-first", async () => {
     const olderId = randomUUID();
     const newerId = randomUUID();
@@ -226,6 +273,18 @@ suite("DrizzleAgentTaskRepository (live RLS)", () => {
     const page = await repoFor(orgAId, (r) => r.list(toPage({ limit: 50, cursor: null })));
     const ids = page.items.map((task) => task.props.id as string);
     expect(ids.indexOf(newerId)).toBeLessThan(ids.indexOf(olderId));
+  });
+
+  it("countOpen from another org counts none of this org's open work", async () => {
+    const id = randomUUID();
+    await repoFor(orgAId, (r) =>
+      r.create({ id, title: "A-only, open", createdBy: asUserId(ownerAId), createdByRole: "owner", nextActionAt: new Date() }),
+    );
+
+    // By this point in the suite org A unambiguously has open work (proven by the other tests),
+    // so a non-zero result here would mean org B's count leaked across the tenant boundary.
+    const fromB = await repoFor(orgBId, (r) => r.countOpen());
+    expect(fromB).toBe(0);
   });
 
   it("countOpen excludes a task once it is done", async () => {
