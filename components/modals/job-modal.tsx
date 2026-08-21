@@ -55,6 +55,7 @@ import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { PhoneCell } from "./lead-modal/lead-header";
 import { EmailBody } from "./lead-modal/more-details";
+import { JobFilesBody } from "./job-files";
 import { SheetRow } from "./sheet-row";
 import { EditableSheetTitle } from "./editable-sheet-title";
 import { Trail } from "./trail";
@@ -883,6 +884,22 @@ export function JobModalContent() {
             </SheetRow>
           </>
         )}
+
+        {/* FILES — documents on the job. Photos have their own surface; this is the permit, the
+            spec sheet, the supplier receipt. Each carries a caption, which is the "note" half of
+            attaching a file to a note. */}
+        <SheetRow
+          label="Files"
+          value={(job.files ?? []).length > 0 ? String((job.files ?? []).length) : "Add"}
+          valueIsHint={(job.files ?? []).length === 0}
+          expandable
+        >
+          <JobFilesBody
+            jobId={job.id}
+            files={job.files ?? []}
+            onUploaded={() => void utils.v1.jobs.get.invalidate()}
+          />
+        </SheetRow>
 
         <SheetRow
           label="Service address"

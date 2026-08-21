@@ -87,13 +87,20 @@ export const jobVerifyAnswerDTO = z.object({
 export const photoUploadUrlInput = z.object({
   jobId: z.string().uuid(),
   objectId: z.string().uuid(),
-  ext: z.enum(["jpg", "jpeg", "png", "webp"]),
+  // Photos AND documents. The set is closed on purpose: storage is a private bucket the app
+  // serves back, so an extension it will hand out has to be one a browser renders safely. No
+  // svg (scriptable), no html, no office macros.
+  ext: z.enum(["jpg", "jpeg", "png", "webp", "heic", "pdf", "csv", "txt"]),
 });
 export const addPhotoInput = z.object({
   jobId: z.string().uuid(),
   id: z.string().uuid().optional(),
   storagePath: z.string().min(1).max(1024),
   caption: z.string().max(2000).nullable().optional(),
+  // What the file IS, and what to call it on screen. Both optional: every caller before
+  // attachments uploaded an image, and a null mime reads as a photo.
+  mimeType: z.string().max(120).nullable().optional(),
+  fileName: z.string().max(255).nullable().optional(),
   verifyPass: z.boolean().optional(),
 });
 export const photoUploadUrlDTO = z.object({ signedUrl: z.string(), token: z.string(), storagePath: z.string() });
@@ -128,6 +135,9 @@ export const jobPhotoDTO = z.object({
   id: z.string().uuid(),
   storagePath: z.string(),
   caption: z.string().nullable(),
+  // Null mime = image; see the schema note. fileName is what a person recognises.
+  mimeType: z.string().nullable(),
+  fileName: z.string().nullable(),
   verifyPass: z.boolean(),
   position: z.number().int(),
 });
@@ -320,7 +330,15 @@ const toVerifyDTO = (v: JobVerifyAnswer) => {
 
 const toPhotoDTO = (ph: JobPhoto) => {
   const p = ph.props;
-  return { id: p.id, storagePath: p.storagePath, caption: p.caption, verifyPass: p.verifyPass, position: p.position };
+  return {
+    id: p.id,
+    storagePath: p.storagePath,
+    caption: p.caption,
+    mimeType: p.mimeType ?? null,
+    fileName: p.fileName ?? null,
+    verifyPass: p.verifyPass,
+    position: p.position,
+  };
 };
 
 const executionFields = (execution: Execution) => ({

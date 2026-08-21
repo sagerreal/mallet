@@ -75,6 +75,8 @@ export const photoToDomain = (row: JobPhotoRow): JobPhoto => {
     jobId: asJobId(row.jobId),
     storagePath: row.storagePath,
     caption: row.caption ?? null,
+    mimeType: row.mimeType ?? null,
+    fileName: row.fileName ?? null,
     verifyPass: row.verifyPass,
     position: row.position,
   });

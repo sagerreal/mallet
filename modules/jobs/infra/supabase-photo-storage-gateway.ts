@@ -22,6 +22,10 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 export const MAX_PHOTO_BYTES = 5 * 1024 * 1024;
 
 // Supported image extensions and their canonical MIME types.
+// IMAGES ONLY. download() exists to feed the AI's image blocks, and the model takes images —
+// handing it a PDF would produce a confident answer about bytes it cannot read. Documents are
+// stored and served to the browser, never downloaded through this path, so they are deliberately
+// absent here rather than mapped and quietly mis-sent.
 const EXT_TO_MEDIA_TYPE: Readonly<Record<string, PhotoMediaType>> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",

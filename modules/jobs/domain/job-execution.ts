@@ -263,6 +263,14 @@ export interface JobPhotoProps {
   /** Org-prefixed key inside the private 'job-photos' bucket (<orgId>/<jobId>/<uuid>.<ext>). */
   readonly storagePath: string;
   readonly caption: string | null;
+  /**
+   * What the file is. Null means IMAGE — every row written before attachments existed was one,
+   * because the upload input only ever admitted jpg/jpeg/png/webp. So null is a known value here,
+   * not an unknown one.
+   */
+  readonly mimeType: string | null;
+  /** The name a person recognises. A storage path is a uuid; a document with no name is unopenable. */
+  readonly fileName: string | null;
   /** True when this upload auto-passed the next photo checklist item. */
   readonly verifyPass: boolean;
   readonly position: number;
@@ -280,6 +288,8 @@ export class JobPhoto {
     jobId: JobId;
     storagePath: string;
     caption: string | null;
+    mimeType?: string | null;
+    fileName?: string | null;
     verifyPass: boolean;
     position: number;
   }): Result<JobPhoto, ValidationError> {
@@ -293,6 +303,8 @@ export class JobPhoto {
         jobId: input.jobId,
         storagePath,
         caption: input.caption,
+        mimeType: input.mimeType ?? null,
+        fileName: input.fileName ?? null,
         verifyPass: input.verifyPass,
         position: input.position,
       }),

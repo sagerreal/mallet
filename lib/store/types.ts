@@ -472,6 +472,15 @@ export interface Job {
   pricing?: { disc: number; tax: number };
   addons: Addon[];
   photos: string[];
+  /**
+   * NON-IMAGE attachments — a permit, a spec sheet, a supplier receipt.
+   *
+   * Kept SEPARATE from `photos` rather than widening it. Photos are shown as thumbnails and
+   * counted in a dozen places; a PDF is a named link. One list holding both would have every
+   * existing consumer render a document as a broken image, and `photos` is a bare string[] with
+   * nowhere to put a filename anyway. Same table server-side, split on mime at the mapper.
+   */
+  files?: JobFile[];
   notes: string;
   special?: string;
   prep?: string;
@@ -814,6 +823,17 @@ export interface RoomOpening {
   wallIndex: number | null;
   widthFt: number;
   heightFt: number;
+}
+
+/** A document attached to a job. Images live in Job.photos; everything else is here. */
+export interface JobFile {
+  id: string;
+  storagePath: string;
+  /** What a person recognises. Falls back to the storage key's tail when the upload sent none. */
+  name: string;
+  mimeType: string;
+  /** The sentence explaining why this is on the job — the half that makes an attachment useful. */
+  caption: string | null;
 }
 
 export interface RoomCard {
