@@ -105,6 +105,19 @@ describe("AgentTask transitions", () => {
     expect(t.props.nextActionNote?.length).toBe(280);
   });
 
+  it.each(["done", "closed"] as const)(
+    "leaves a %s task fully untouched when handed to a human again",
+    (status) => {
+      const original = built({ status, nextActionNote: "already settled" });
+      const t = original.needsYou("anything", LATER);
+      expect(t).toBe(original);
+      expect(t.props.status).toBe(status);
+      expect(t.props.version).toBe(original.props.version);
+      expect(t.props.updatedAt).toEqual(original.props.updatedAt);
+      expect(t.props.nextActionNote).toBe("already settled");
+    },
+  );
+
   it("finishes with a summary and clears the schedule", () => {
     const r = built({ nextActionAt: LATER }).finish("Sent the follow-up; they booked Thursday.", NOW);
     expect(isOk(r)).toBe(true);
@@ -155,6 +168,20 @@ describe("AgentTask transitions", () => {
     expect(t.props.status).toBe("needs_you");
     expect(t.props.nextActionNote).toContain("stuck");
   });
+
+  it.each(["done", "closed"] as const)(
+    "leaves a %s task fully untouched when a stray failure is recorded",
+    (status) => {
+      const original = built({ status, attempts: 4, lastError: null });
+      const t = original.recordFailure("unhandled", LATER);
+      expect(t).toBe(original);
+      expect(t.props.status).toBe(status);
+      expect(t.props.attempts).toBe(4);
+      expect(t.props.lastError).toBeNull();
+      expect(t.props.version).toBe(original.props.version);
+      expect(t.props.updatedAt).toEqual(original.props.updatedAt);
+    },
+  );
 
   it("refuses to close an already-finished task", () => {
     const r = built({ status: "done" }).close(NOW);

@@ -14,6 +14,11 @@ import { MAX_ATTEMPTS, NOTE_MAX, TITLE_MAX } from "../app/agent-task-config";
  *
  * `done` is terminal on purpose: a finished task is finished, and a new ask is a new task. That
  * is what keeps the Done column honest as a record of work actually completed.
+ *
+ * Terminal is absorbing for EVERY transition, including the failure paths. `needsYou` and
+ * `recordFailure` cannot return `Result` (see their doc comments) so a terminal task is not
+ * refused, it is a no-op: the same instance comes back, unchanged, version included. A repair
+ * script or a runner bug calling either on a finished task must not be able to un-finish it.
  */
 export type AgentTaskStatus = "working" | "needs_you" | "done" | "closed";
 
@@ -104,9 +109,11 @@ export class AgentTask {
   /**
    * Hand the task to a human. Cannot fail: this is the disposition for an approval, a stall, a
    * spent attempt budget and a transcript cap, and a task nobody can reach is worse than any
-   * bad note.
+   * bad note. Terminal is absorbing: called on a `done`/`closed` task it is a silent no-op
+   * (same instance, no version bump) — the caller asked for a state the task is already past.
    */
   needsYou(note: string, now: Date): AgentTask {
+    if (TERMINAL.includes(this.p.status)) return this;
     return this.next(
       { status: "needs_you", nextActionAt: null, nextActionNote: clampNote(note) },
       now,
@@ -141,9 +148,12 @@ export class AgentTask {
 
   /**
    * A run failed for real. The task keeps its place until the budget is spent, then asks a human
-   * — never a silent poison row, because the task list IS the dead-letter surface.
+   * — never a silent poison row, because the task list IS the dead-letter surface. Terminal is
+   * absorbing here too: a `done`/`closed` task returns unchanged rather than being flipped back
+   * to `needs_you` — this cannot return `Result` for the same reason `needsYou` cannot.
    */
   recordFailure(lastError: string, now: Date): AgentTask {
+    if (TERMINAL.includes(this.p.status)) return this;
     const attempts = this.p.attempts + 1;
     if (attempts >= MAX_ATTEMPTS) {
       return this.next(
