@@ -11,6 +11,7 @@ import type { AppDeps } from "@/trpc/deps";
 import { buildAgentTools } from "../infra/agent-tools";
 import { fetchEstimateContext, fetchJobInfoContext } from "../infra/estimate-context";
 import { runAgentTurn, type AgentResult, type ExecuteTool, type ToolMeta } from "../app/run-agent-turn";
+import { buildExecuteTool } from "../app/build-execute-tool";
 import { LlmError, type AgentMessage } from "../domain/llm-client";
 import type { ToolDeps } from "../domain/tool";
 import { describeProposal } from "../domain/proposal-summary";
@@ -410,30 +411,26 @@ const drive = async (
   }
   const tools = buildAgentTools();
   const meta: ToolMeta[] = tools.map((t) => ({ name: t.name, description: t.description, inputSchema: t.inputSchema, mutating: t.mutating }));
-  // toolUseId unused: this driver runs each approved tool_use exactly once (no execution
-  // ledger here yet), so it doesn't need the id to de-duplicate a replay.
-  const execute: ExecuteTool = (name, input, _toolUseId) => {
-    const tool = tools.find((t) => t.name === name);
-    if (!tool) return Promise.resolve({ ok: false, error: `unknown tool: ${name}` });
-    return withTenant(ctx.principal.orgId, (tx) => {
-      const deps: ToolDeps = {
-        bus: new OutboxEventBus(tx, ctx.principal.orgId),
-        clock: ctx.deps.clock,
-        ids: ctx.deps.ids,
-        notificationSender: ctx.deps.notificationSender,
-        paymentLinkGateway: ctx.deps.paymentLinkGateway,
-      };
-      const toolCtx = { tx, orgId: ctx.principal.orgId, principal: ctx.principal, deps };
-      // Mirror the MCP propose path: server-mint any enriched args (e.g. the payment idempotency
-      // key) here so handle() receives them — the in-app loop executes each approved tool_use once,
-      // so minting at execute time is replay-safe (ON CONFLICT DO NOTHING is the DB backstop).
-      const enriched =
-        input && typeof input === "object" && tool.enrichArgs
-          ? { ...(input as Record<string, unknown>), ...tool.enrichArgs(input as Record<string, unknown>, toolCtx) }
-          : input;
-      return tool.handle(enriched, toolCtx);
-    });
-  };
+  // The shared executor (modules/ai/app/build-execute-tool.ts) is now the ONE place enrichArgs
+  // runs and a replay ledger could apply — this driver just supplies the per-call tenant tx.
+  const execute: ExecuteTool = buildExecuteTool({
+    tools,
+    principal: ctx.principal,
+    runInTenant: (fn) =>
+      withTenant(ctx.principal.orgId, (tx) => {
+        const deps: ToolDeps = {
+          bus: new OutboxEventBus(tx, ctx.principal.orgId),
+          clock: ctx.deps.clock,
+          ids: ctx.deps.ids,
+          notificationSender: ctx.deps.notificationSender,
+          paymentLinkGateway: ctx.deps.paymentLinkGateway,
+        };
+        return fn({ tx, orgId: ctx.principal.orgId, principal: ctx.principal, deps });
+      }),
+    // No delimiters and no ledger here: a human is watching this turn, each approved tool_use
+    // executes exactly once inside one request, and the office assistant's tests assert on raw
+    // tool-result text — turning delimiters on here would change a shipped surface.
+  });
   try {
     const result = await runAgentTurn({
       llm: ctx.deps.llmClient,
