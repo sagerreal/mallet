@@ -5,7 +5,8 @@
  * Artie's board: the four-column list, the in-flow composer, and the task drawer. Thin shell —
  * all read/write logic lives in features/artie/*; this owns only which panel is open.
  *
- * NOT registered in the shell navigation yet — that's Task 14. The route works standalone.
+ * Registered in the shell navigation by Task 14 (components/shell/sidebar.tsx, more-links.tsx,
+ * topbar.tsx) — this file only owns the page itself.
  */
 
 import { useState } from "react";

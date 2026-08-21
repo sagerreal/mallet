@@ -7,14 +7,18 @@
  * same turn, per the router's `reply` doc comment).
  *
  * IN-FLOW, NOT A MODAL — no popover, no portal. It renders below the board using the sheet
- * grammar (`.sheet-head` / `.sheet-rows` / `.sheet-foot`), the same frame the customer/team
- * thread panes use for an in-page (non-modal) conversation view.
+ * grammar for its head (`.sheet-head` / `.sheet-rows`) and `.composer` (app/prototype.css:2550,
+ * the class `thread-modal.tsx`/`team-chat-modal.tsx` reply rows already use) for the reply row —
+ * NOT `.sheet-foot`, which every other usage in the repo is inside a `.modal` for; team-chat-modal
+ * says outright it takes "deliberately NO `.sheet-foot`: the composer at the bottom already IS
+ * the footer." `.composer` needs no override to work outside a modal.
  *
- * `.sheet-head`/`.sheet-foot` are written for a `.modal` ancestor: their padding/margin/position
- * reference `--modal-pad-x/y`, which is undefined outside one, so the whole declaration falls
- * back to its initial value (padding 0, `top`/`bottom` auto) rather than erroring — a real bug,
- * not a crash. `messages-inbox.tsx` fixes this the same way for its own in-flow thread pane, via
- * a page-scoped CSS rule; done here as inline overrides instead, since no new CSS may be added.
+ * `.sheet-head` is written for a `.modal` ancestor: its padding/margin/position reference
+ * `--modal-pad-x/y`, undefined outside one, so the whole declaration falls back to its initial
+ * value (padding 0, `top` auto) rather than erroring — a real bug, not a crash. Same fix
+ * `messages-inbox.tsx` applies for its own in-flow thread pane via a page-scoped CSS rule
+ * (`.msg-pane-thread .sheet-head{...}`); done here as an inline override instead, since no new
+ * CSS may be added.
  */
 
 import { type CSSProperties, useState } from "react";
@@ -23,7 +27,6 @@ import { userMessage } from "@/lib/trpc/error-map";
 import { agoShort } from "@/lib/format";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Field } from "@/components/ui/input";
 import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { ARTIE_COPY } from "./artie-copy";
@@ -33,15 +36,11 @@ type ArtieTaskDetail = TaskGet["task"];
 type ArtieMessage = TaskGet["messages"][number];
 type ArtiePending = TaskGet["pending"][number];
 
+// See the file doc comment — the messages-inbox.tsx precedent for the same undefined-var trap.
 const INFLOW_HEAD: CSSProperties = {
   position: "static",
   margin: 0,
   padding: "var(--space-4) var(--space-5) var(--space-3)",
-};
-const INFLOW_FOOT: CSSProperties = {
-  position: "static",
-  margin: 0,
-  padding: "var(--space-3) var(--space-5)",
 };
 
 interface TaskDrawerProps {
@@ -80,7 +79,7 @@ function ConversationTurns({ messages }: { messages: readonly ArtieMessage[] }) 
     <div className="stack-3">
       {messages.map((m, i) => (
         <div key={i}>
-          <p className="muted" style={{ fontSize: "var(--type-xs)" }}>{m.role === "user" ? "You" : "Artie"}</p>
+          <p className="muted" style={{ fontSize: "var(--type-xs)" }}>{ARTIE_COPY.drawer.turnLabels[m.role]}</p>
           <p>{m.text}</p>
         </div>
       ))}
@@ -88,59 +87,41 @@ function ConversationTurns({ messages }: { messages: readonly ArtieMessage[] }) 
   );
 }
 
+/**
+ * `resolvePending` (modules/ai/app/run-agent-turn.ts) executes nothing and appends no message
+ * until EVERY pending id in the turn is decided in the SAME `reply` call — a lone per-item click
+ * would redisplay the identical pending set with `task.version` silently bumped, which reads as a
+ * bug rather than a wait state. So this is ONE shared pair, always sending every current pending
+ * id together: "Approve"/"Not this one" when there is exactly one (approving "the group" IS
+ * approving the one), "Approve all N"/"Not any of these" once there is more than one — the label
+ * itself is what tells a shop owner these are decided as a group, not one at a time.
+ */
 function PendingList({
   pending,
   onDecide,
   busy,
 }: {
   pending: readonly ArtiePending[];
-  onDecide: (toolUseId: string, decision: "approve" | "deny") => void;
+  onDecide: (toolUseIds: readonly string[], decision: "approve" | "deny") => void;
   busy: boolean;
 }) {
+  const ids = pending.map((p) => p.toolUseId);
+  const approveLabel =
+    pending.length === 1 ? ARTIE_COPY.drawer.approve : `${ARTIE_COPY.drawer.approveAll} ${pending.length}`;
+  const denyLabel = pending.length === 1 ? ARTIE_COPY.drawer.deny : ARTIE_COPY.drawer.denyAll;
+
   return (
     <div className="stack-3" style={{ marginTop: "var(--space-4)" }}>
       <p>{ARTIE_COPY.drawer.approvalLead}</p>
       {pending.map((p) => (
-        <div key={p.toolUseId} className="stack-2">
-          <p>{p.summary}</p>
-          <div className="cardacts">
-            <Button variant="approve" size="sm" onClick={() => onDecide(p.toolUseId, "approve")} disabled={busy}>
-              {ARTIE_COPY.drawer.approve}
-            </Button>
-            <Button variant="quiet" size="sm" onClick={() => onDecide(p.toolUseId, "deny")} disabled={busy}>
-              {ARTIE_COPY.drawer.deny}
-            </Button>
-          </div>
-        </div>
+        <p key={p.toolUseId}>{p.summary}</p>
       ))}
-    </div>
-  );
-}
-
-function ReplyFooter({
-  draft,
-  onDraft,
-  onSend,
-  onCloseTask,
-  busy,
-}: {
-  draft: string;
-  onDraft: (v: string) => void;
-  onSend: () => void;
-  onCloseTask: () => void;
-  busy: boolean;
-}) {
-  return (
-    <div className="stack-2">
-      <Field label={ARTIE_COPY.drawer.replyPlaceholder}>
-        <textarea value={draft} onChange={(e) => onDraft(e.target.value)} rows={2} disabled={busy} />
-      </Field>
       <div className="cardacts">
-        <Button size="sm" onClick={onSend} disabled={busy || draft.trim() === ""}>
-          {busy ? ARTIE_COPY.drawer.sending : ARTIE_COPY.drawer.send}
+        <Button variant="approve" size="sm" onClick={() => onDecide(ids, "approve")} disabled={busy}>
+          {approveLabel}
         </Button>
-        <Button variant="quiet" size="sm" onClick={onCloseTask} disabled={busy}>
-          {ARTIE_COPY.drawer.close}
+        <Button variant="quiet" size="sm" onClick={() => onDecide(ids, "deny")} disabled={busy}>
+          {denyLabel}
         </Button>
       </div>
     </div>
@@ -148,10 +129,65 @@ function ReplyFooter({
 }
 
 /**
- * Terminal tasks (done/closed) get no composer: the domain refuses `close()` on either, and
- * `reply()` would run a wasted turn only to lose the race at settle time (its `isTerminal()`
- * check discards the transition) — see agent-task.ts. Hiding the controls avoids both the wasted
- * LLM round trip and a CONFLICT sentence that would be misleading for a task nobody raced with.
+ * The reply row (or, for a finished task, the fact stated plainly) and the secondary "Close this
+ * task" action below it — `.sheet-secrow`/`.sheet-sec`, the same secondary-action row team-chat's
+ * "Leave group" uses, and (like `.cardacts`) not modal-pad-dependent.
+ */
+function TaskActions({
+  terminal,
+  draft,
+  onDraft,
+  onSend,
+  onCloseTask,
+  busy,
+}: {
+  terminal: boolean;
+  draft: string;
+  onDraft: (v: string) => void;
+  onSend: () => void;
+  onCloseTask: () => void;
+  busy: boolean;
+}) {
+  if (terminal) {
+    return (
+      <p className="muted" style={{ marginTop: "var(--space-4)" }}>
+        {ARTIE_COPY.drawer.finished}
+      </p>
+    );
+  }
+  return (
+    <>
+      <div className="composer" style={{ marginTop: "var(--space-4)" }}>
+        <input
+          value={draft}
+          onChange={(e) => onDraft(e.target.value)}
+          aria-label={ARTIE_COPY.drawer.replyPlaceholder}
+          placeholder={ARTIE_COPY.drawer.replyPlaceholder}
+          disabled={busy}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSend();
+          }}
+        />
+        <Button size="sm" onClick={onSend} disabled={busy || draft.trim() === ""}>
+          {busy ? ARTIE_COPY.drawer.sending : ARTIE_COPY.drawer.send}
+        </Button>
+      </div>
+      <div className="sheet-secrow">
+        <button type="button" className="sheet-sec" onClick={onCloseTask} disabled={busy}>
+          {ARTIE_COPY.drawer.close}
+        </button>
+      </div>
+    </>
+  );
+}
+
+/**
+ * Terminal tasks (done/closed) get no reply box, no Approve/Deny, no "Close this task" — not to
+ * dodge an LLM round trip (a disabled button would block the submit just as well), but because
+ * the sheet head right above already states the status: showing live controls under a header that
+ * says "Done" or "Closed" would contradict what the person just read. `TaskActions` states the
+ * absence outright (`ARTIE_COPY.drawer.finished`) instead of leaving it to be inferred from
+ * missing buttons.
  */
 function isTerminalStatus(status: ArtieTaskDetail["status"]): boolean {
   return status === "done" || status === "closed";
@@ -180,10 +216,14 @@ function useTaskDrawerActions(taskId: string, version: number) {
   // the fallback for the (never-expected) case that message is blank.
   const onFail = (err: unknown): void => setError(userMessage(err, ARTIE_COPY.conflict));
 
-  const decide = (toolUseId: string, decision: "approve" | "deny"): void => {
+  const decide = (toolUseIds: readonly string[], decision: "approve" | "deny"): void => {
     setError(null);
     reply.mutate(
-      { taskId, version, ...(decision === "approve" ? { approvedToolUseIds: [toolUseId] } : { deniedToolUseIds: [toolUseId] }) },
+      {
+        taskId,
+        version,
+        ...(decision === "approve" ? { approvedToolUseIds: [...toolUseIds] } : { deniedToolUseIds: [...toolUseIds] }),
+      },
       { onSuccess: settle, onError: onFail },
     );
   };
@@ -241,13 +281,8 @@ function TaskDrawerBody({
               {error}
             </p>
           ) : null}
+          <TaskActions terminal={terminal} draft={draft} onDraft={setDraft} onSend={send} onCloseTask={closeTask} busy={busy} />
         </div>
-
-        {!terminal ? (
-          <div className="sheet-foot" style={INFLOW_FOOT}>
-            <ReplyFooter draft={draft} onDraft={setDraft} onSend={send} onCloseTask={closeTask} busy={busy} />
-          </div>
-        ) : null}
       </Card>
     </div>
   );

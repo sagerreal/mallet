@@ -37,8 +37,11 @@ export function useArtieTasks() {
 
   return {
     columns,
+    // Raw flags, not a re-derived "isLoading" — the caller runs these through lib/first-run.ts's
+    // isFirstLoad/shouldShowFirstRun/shouldShowLoadFailed (the shared predicates "Tasks" is named
+    // as a consumer of in that file's own doc comment) rather than a second, easily-diverging copy
+    // of that logic living here.
     total: items.length,
-    isLoading: query.isLoading && items.length === 0 && !query.isFetched,
     isError: query.isError,
     isFetched: query.isFetched,
     isStale: query.isPlaceholderData,

@@ -36,13 +36,20 @@ export const ARTIE_COPY = {
     // Not "Close" — that word is already spoken for by drawer.close (closes the TASK). Distinct
     // wording so the two controls can never be mistaken for one another mid-scroll.
     back: "‹ Back to Artie's tasks",
+    // A lone item reads as "Approve"/"Not this one"; two or more get the *All variants, since the
+    // server only resolves a pending turn when every id in it is decided together (see
+    // task-drawer.tsx's PendingList) — the label has to say "all" or the grouping is invisible.
     approve: "Approve",
     deny: "Not this one",
+    approveAll: "Approve all",
+    denyAll: "Not any of these",
     replyPlaceholder: "Reply to Artie…",
     send: "Send",
     sending: "Sending…",
     close: "Close this task",
     approvalLead: "Artie wants to:",
+    turnLabels: { user: "You", assistant: "Artie" },
+    finished: "This task is finished.",
   },
   /**
    * Fallback text only. The router's CONFLICT errors are written to be read by a person

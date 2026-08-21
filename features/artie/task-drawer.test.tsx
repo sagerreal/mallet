@@ -162,11 +162,36 @@ describe("TaskDrawer", () => {
     expect(closeMutate).toHaveBeenCalledWith({ taskId: "t1", version: 5 }, expect.anything());
   });
 
-  it("hides the composer and the close control for a finished task", () => {
+  it("hides the composer and the close control for a finished task, and says so", () => {
     getQuery.mockReturnValue(resolved(task({ status: "closed" })));
     render(<TaskDrawer taskId="t1" onClose={vi.fn()} />);
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.queryByRole("button", { name: "Close this task" })).toBeNull();
+    expect(screen.getByText("This task is finished.")).toBeTruthy();
+  });
+
+  it("two or more pending proposals get ONE shared Approve all / Not any of these pair", () => {
+    getQuery.mockReturnValue(
+      resolved(task(), [], [pendingItem({ toolUseId: "tu_a" }), pendingItem({ toolUseId: "tu_b", summary: "Also mark the invoice paid" })]),
+    );
+    render(<TaskDrawer taskId="t1" onClose={vi.fn()} />);
+    expect(screen.getByRole("button", { name: "Approve all 2" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Not any of these" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
+    expect(screen.getByText("Text the Hendersons about their water heater quote")).toBeTruthy();
+    expect(screen.getByText("Also mark the invoice paid")).toBeTruthy();
+  });
+
+  it("approving a group sends every pending id together, not one at a time", () => {
+    getQuery.mockReturnValue(
+      resolved(task({ version: 4 }), [], [pendingItem({ toolUseId: "tu_a" }), pendingItem({ toolUseId: "tu_b" })]),
+    );
+    render(<TaskDrawer taskId="t1" onClose={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Approve all 2" }));
+    expect(replyMutate).toHaveBeenCalledWith(
+      { taskId: "t1", version: 4, approvedToolUseIds: ["tu_a", "tu_b"] },
+      expect.anything(),
+    );
   });
 
   it("back returns to the board without touching the server", () => {

@@ -13,6 +13,7 @@
  */
 
 import { agoShort } from "@/lib/format";
+import { isFirstLoad, shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
@@ -82,9 +83,13 @@ export interface ArtieBoardProps {
 
 export function ArtieBoard({ onOpen, onNewTask }: ArtieBoardProps) {
   const board = useArtieTasks();
+  // The shared predicate a list surface's four states are built from (lib/first-run.ts, which
+  // names "Tasks" as an intended consumer) — called directly rather than re-encoding the same
+  // isFetched/isError/count logic here, where a future edit to either side could silently diverge.
+  const listState = { isFetched: board.isFetched, isError: board.isError, count: board.total };
 
-  if (board.isLoading) return <ListLoading />;
-  if (board.isError) {
+  if (isFirstLoad(listState)) return <ListLoading />;
+  if (shouldShowLoadFailed(listState)) {
     return (
       <LoadFailed noun={ARTIE_COPY.loadFailedNoun} onRetry={() => void board.refetch()} retrying={board.isRefetching} />
     );
@@ -94,7 +99,7 @@ export function ArtieBoard({ onOpen, onNewTask }: ArtieBoardProps) {
   // WorkBoard/TodayPane (features/board/work-board.tsx), which draws its four columns under the
   // setup brief rather than swapping them out. The four columns are real work-list structure even
   // on day one; hiding them would teach a new shop nothing about what it's looking at.
-  const firstRun = board.isFetched && board.total === 0;
+  const firstRun = shouldShowFirstRun(listState);
 
   return (
     <>
