@@ -176,6 +176,28 @@ describe("describeProposal", () => {
     expect(s).not.toContain("JSON");
   });
 
+  it("summarizes customer_update with the customer id (not leadId) and changed field names", () => {
+    const s = describeProposal("customer_update", {
+      customerId: "cust-9",
+      phone: "+15551234567",
+      email: "j@example.com",
+    });
+    expect(s).toContain("cust-9");
+    expect(s).not.toContain("?"); // the id resolved — this is the regression the bug produced
+    expect(s).toContain("phone");
+    expect(s).toContain("email");
+    expect(s).not.toContain("customerId"); // the id field itself is never listed as "changed"
+    expect(s).not.toContain("leadId");
+    expect(s).not.toContain("+15551234567"); // no raw PII value on the approval card
+    expect(s).not.toContain("JSON");
+  });
+
+  it("summarizes customer_update with 'nothing' when no field keys are present besides the id", () => {
+    const s = describeProposal("customer_update", { customerId: "cust-10" });
+    expect(s).toContain("cust-10");
+    expect(s).toContain("nothing");
+  });
+
   it("falls back to compact JSON for a tool without a bespoke renderer", () => {
     const s = describeProposal("future_tool", { a: 1 });
     expect(s).toContain("future_tool");

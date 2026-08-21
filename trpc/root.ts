@@ -23,6 +23,7 @@ import { createA2pRouter } from "@mallet/a2p";
 import { createAssemblyRouter } from "@mallet/assemblies";
 import { createQboRouter } from "@mallet/accounting-sync";
 import { createCallRouter } from "@mallet/calls";
+import { createAgentTaskRouter } from "@mallet/agent-tasks";
 
 // The versioned API tree. Clients call trpc.v1.<module>.*; a future v2 can coexist here while v1
 // stays stable. Module routers are composed in — never defined here.
@@ -61,6 +62,7 @@ export const appRouter = router({
     frontdesk: createFrontdeskRouter(),
     a2p: createA2pRouter(),
     qbo: createQboRouter(),
+    agentTasks: createAgentTaskRouter(),
   }),
 });
 
