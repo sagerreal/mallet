@@ -42,7 +42,13 @@ import { api } from "./client";
  */
 
 /** The list domains a mutation can invalidate. Named, so a typo cannot silently invalidate nothing. */
-export type ListDomain = "jobs" | "customers" | "invoices" | "estimates" | "timesheets";
+export type ListDomain =
+  | "jobs"
+  | "customers"
+  | "invoices"
+  | "estimates"
+  | "timesheets"
+  | "settings";
 
 let client: QueryClient | null = null;
 
@@ -104,6 +110,13 @@ const queriesFor = (domain: ListDomain): unknown[][] => {
       return [getQueryKey(api.v1.invoicing.list), getQueryKey(api.v1.invoicing.count)];
     case "estimates":
       return [getQueryKey(api.v1.quoting.list)];
+    case "settings":
+      // NOT a list — the org's own configuration, and the one domain read by TWO audiences. The
+      // office reads v1.settings.get; a technician can only ever see the narrow
+      // v1.settings.fieldToggles. A toggle that refreshed just the office copy would flip on the
+      // owner's screen and leave the crew's phones on the old answer until the 30s stale-time
+      // expired, which is indistinguishable from the save having failed.
+      return [getQueryKey(api.v1.settings.get), getQueryKey(api.v1.settings.fieldToggles)];
     case "timesheets":
     default:
       return [getQueryKey(api.v1.timesheets.list), getQueryKey(api.v1.timesheets.count)];

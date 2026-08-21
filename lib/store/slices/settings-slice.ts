@@ -19,6 +19,7 @@
 
 import type { StateCreator } from "zustand";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { invalidateLists } from "@/lib/trpc/list-cache";
 import { isDefaultSourceLabel } from "@/lib/store/default-sources";
 import { reportWriteError, writeFailure } from "../write-error";
 import { tradeMeasures } from "@/app/(office)/settings/pricebooks";
@@ -718,6 +719,17 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     const col = toggleToField[key];
     void trpcVanilla.v1.settings.updateConfig
       .mutate({ [col]: value })
+      // REFETCH THE SETTINGS READS, or the save is invisible and reads as a failure.
+      //
+      // The optimistic set above is the ONLY thing that moved the switch. Both settings queries are
+      // cached for HYDRATOR_STALE_MS (30s), and SettingsHydrator calls setSettings on every mount —
+      // so navigating away and back inside that window re-seeded the store from the PRE-CLICK
+      // payload and painted the old value back. The write had succeeded; the screen said otherwise.
+      // Reported as "Techs can edit their own times won't save".
+      //
+      // AFTER the mutation resolves, never alongside it: a refetch racing the commit returns the
+      // value from before the write and does the same damage on purpose.
+      .then(() => invalidateLists("settings"))
       .catch((err: unknown) => { set(snapshot); reportWriteError("setToggle", err); });
   },
 
