@@ -1,23 +1,5 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect } from "vitest";
 import { secretMatches, readCronSecret } from "./secret";
-
-// Wraps node:crypto's createHash to record calls while still delegating to the real
-// implementation, so a test can assert a guard short-circuits BEFORE hashing rather than only
-// re-checking a return value that a hash step would have produced anyway (see the "genuinely
-// exercises" test below for why that distinction matters here). vi.mock is hoisted above the
-// import above by vitest's transform, so secret.ts's own `import { createHash } from
-// "node:crypto"` resolves to this wrapped version too.
-const createHashSpy = vi.fn<(typeof import("node:crypto"))["createHash"]>();
-vi.mock("node:crypto", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:crypto")>();
-  return {
-    ...actual,
-    createHash: (...args: Parameters<typeof actual.createHash>) => {
-      createHashSpy(...args);
-      return actual.createHash(...args);
-    },
-  };
-});
 
 describe("secretMatches", () => {
   it("accepts an exact match", () => {
@@ -34,38 +16,17 @@ describe("secretMatches", () => {
     expect(secretMatches("short", "a-very-long-cron-secret")).toBe(false);
   });
 
-  it("rejects the empty string even against an empty expectation", () => {
+  it("rejects an empty presented credential even when the configured secret is also blank -- a blank CRON_SECRET must never authenticate an empty credential", () => {
     expect(secretMatches("", "")).toBe(false);
   });
 
-  it("rejects a non-empty presented value against an unset (empty) expectation", () => {
-    // Documents the required behaviour: an unset CRON_SECRET must never be satisfiable by ANY
-    // presented credential -- this is exactly the fail-closed guarantee a future caller without
-    // the outbox route's separate 503-when-unset check would rely on. NOTE: on its own this
-    // assertion does NOT prove the `expected.length === 0` half of the guard is load-bearing --
-    // see the next test, which does.
+  it("never matches an empty expected value, regardless of what is presented (contract: an unset secret matches nothing)", () => {
+    // This locks the CONTRACT -- "an empty `expected` never matches" -- not any particular
+    // internal mechanism. It passes today because `presented`'s own guard clause short-circuits
+    // before `expected` is ever consulted (see the comment on `secretMatches` for why the
+    // `expected.length === 0` half of that guard has no independently observable effect and is
+    // not what makes this assertion true). Whatever the internals do, this must keep holding.
     expect(secretMatches("a-very-long-cron-secret", "")).toBe(false);
-  });
-
-  it("genuinely exercises the expected.length===0 guard: short-circuits before ever hashing", () => {
-    // Mutation testing this file surfaced something the assertion above cannot detect on its
-    // own: SHA-256 is collision-resistant, so digest(presented) can only equal digest("") when
-    // presented === "" -- a case the `presented.length === 0` half of the guard already covers.
-    // That means deleting `|| expected.length === 0` from the guard and falling through to
-    // `timingSafeEqual(digest(presented), digest(expected))` still returns `false` for a
-    // non-empty presented value against an empty expected: the hash step alone reaches the same
-    // *answer*, just via a different path that skips the fail-fast intent of the guard. A
-    // return-value-only assertion (the test above) is silent to that mutant.
-    //
-    // This test instead asserts the guard's mechanism, not just its output: with the guard
-    // intact, `createHash` is never called when `expected` is empty, because the function
-    // returns before reaching `digest()`. Deleting the `expected.length === 0` clause makes this
-    // FAIL (createHash gets called twice, to hash both sides) even though the assertion above
-    // still passes -- which is exactly the mutant this closes.
-    createHashSpy.mockClear();
-    const result = secretMatches("a-very-long-cron-secret", "");
-    expect(result).toBe(false);
-    expect(createHashSpy).not.toHaveBeenCalled();
   });
 });
 

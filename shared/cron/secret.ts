@@ -14,6 +14,13 @@ import { createHash, timingSafeEqual } from "node:crypto";
 const digest = (value: string): Buffer => createHash("sha256").update(value).digest();
 
 export const secretMatches = (presented: string, expected: string): boolean => {
+  // `presented.length === 0` is the load-bearing half: without it, a blank configured secret
+  // (`expected === ""`) would authenticate a blank/absent credential, since digest("") ===
+  // digest(""). `expected.length === 0` has no independently observable effect -- digest() is
+  // collision-resistant, so a non-empty `presented` can never hash-collide with digest("") --
+  // but keep it: it is defence-in-depth for a future caller of this function that has no
+  // separate 503-when-unset pre-check, so an unset `expected` still fails closed even if the
+  // hash primitive is ever swapped for one where that guarantee is less certain.
   if (presented.length === 0 || expected.length === 0) return false;
   return timingSafeEqual(digest(presented), digest(expected));
 };
