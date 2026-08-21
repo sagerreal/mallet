@@ -55,7 +55,10 @@ export interface AgentTaskRepository {
   appendMessage(taskId: AgentTaskId, message: AgentMessage): Promise<void>;
   loadMessages(taskId: AgentTaskId): Promise<readonly AgentMessage[]>;
 
-  /** Idempotent: a second call with the same toolUseId is a no-op returning the stored row. */
+  /**
+   * Idempotent: a second call with the same toolUseId is a no-op. Nothing is returned — the
+   * signature is `Promise<void>` — a caller that needs the stored result calls `findExecution`.
+   */
   recordExecution(taskId: AgentTaskId, execution: StoredExecution & { readonly tool: string }): Promise<void>;
   findExecution(toolUseId: string): Promise<StoredExecution | null>;
 }

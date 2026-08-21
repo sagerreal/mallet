@@ -146,6 +146,13 @@ export class DrizzleAgentTaskRepository implements AgentTaskRepository {
    *
    * Deliberately does not touch next_action_at — that column belongs to the tenant transaction
    * (schedule_next_step writes it), and a bookkeeping write must never undo the agent's pacing.
+   *
+   * Deliberately omits `isNull(deletedAt)`, unlike every other query on this table. A task can
+   * be soft-deleted while a worker holds its lease (a repair script, an org offboarding mid-wake);
+   * releasing must still succeed then, because a lease this method could not clear is a dangling
+   * `lease_id`/`locked_until` that nothing else will ever clean up — every OTHER read of this row
+   * already filters on `deletedAt`, so a stray lease on a deleted task can't let it be claimed or
+   * acted on again. A released lease on a deleted task is strictly safer than a stuck one.
    */
   async releaseLease(id: AgentTaskId, leaseId: string): Promise<boolean> {
     const rows = await this.tx
