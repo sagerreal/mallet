@@ -4,15 +4,12 @@
  * components/modals/job-files.tsx
  * "Files" — the documents on a job. A permit, a spec sheet, a supplier receipt.
  *
- * WHY A SEPARATE ROW FROM PHOTOS. A photo is looked AT; a document is opened. One list holding
- * both renders a PDF as a broken thumbnail, and `Job.photos` is a bare string[] with nowhere to
- * put a filename. Same table server-side; split on mime at the store mapper.
+ * IT SITS INSIDE THE JOB NOTES ROW, not a row of its own: a file and the sentence explaining it
+ * belong together, and two rows put them a scroll apart.
  *
- * WHY NOT ON A NOTE, which is what was asked for. Job notes are a TEXT BLOB appended line by line
- * (`job.notes` + AppendJobNote) — a note has no identity to hang a file off. What made attaching
- * to a note attractive was the pairing, a file plus the sentence explaining it, and each
- * attachment already carries a CAPTION. So the caption is the note, and it lives with the file
- * instead of six lines away from it.
+ * Documents are still kept apart from PHOTOS in the store — a photo is looked at, a document is
+ * opened, and `Job.photos` is a bare string[] with nowhere to put a filename. Same table
+ * server-side, split on mime at the mapper. What is shared is the ROW they appear in, not the list.
  */
 
 import { useRef, useState } from "react";
@@ -66,7 +63,7 @@ export function JobFilesBody({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-      {files.length === 0 && <p style={{ ...note, margin: 0 }}>Permits, spec sheets, receipts.</p>}
+      {files.length === 0 && <p style={{ ...note, margin: 0 }}>Attach a permit, a spec sheet, a receipt.</p>}
 
       {files.map((f) => (
         <div key={f.id} style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
