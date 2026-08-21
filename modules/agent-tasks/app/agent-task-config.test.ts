@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   TICK_CADENCE_MINUTES, MIN_STEP_MINUTES, MAX_STEP_DAYS, WAKE_BATCH, LEASE_MINUTES,
   MAX_ITERS_PER_WAKE, MAX_ATTEMPTS, MAX_STEPS_PER_TASK, MAX_TRANSCRIPT_BYTES,
-  MAX_OPEN_TASKS_PER_ORG, TITLE_MAX, NOTE_MAX,
+  MAX_OPEN_TASKS_PER_ORG, TITLE_MAX, NOTE_MAX, TICK_BUDGET_MS, TICK_MAX_DURATION_SECONDS,
 } from "./agent-task-config";
 
 describe("agent task config", () => {
@@ -18,9 +18,24 @@ describe("agent task config", () => {
     expect(MAX_ITERS_PER_WAKE).toBeLessThan(15);
   });
 
-  it("holds a lease longer than a wake but no longer than a tick gap", () => {
-    expect(LEASE_MINUTES).toBeGreaterThan(0);
-    expect(LEASE_MINUTES).toBeLessThanOrEqual(TICK_CADENCE_MINUTES);
+  // THE RELATIONSHIP THAT KEEPS TWO WAKES OFF ONE ROW. This assertion used to read
+  // `LEASE_MINUTES <= TICK_CADENCE_MINUTES`, which encoded the defect rather than guarding it: at
+  // LEASE == CADENCE == maxDuration/60 == 5, a wake still genuinely mid-turn lost its fence exactly
+  // as the next tick fired, and that tick reclaimed the row. Two live wakes mint two different
+  // tool_use ids, which neither the version guard nor the execution ledger dedupes — the customer
+  // gets a second text. Both bounds are strict inequalities on purpose.
+  it("holds a lease past the next tick AND past the whole-tick wall clock", () => {
+    expect(LEASE_MINUTES).toBeGreaterThan(TICK_CADENCE_MINUTES);
+    expect(LEASE_MINUTES * 60_000).toBeGreaterThan(TICK_MAX_DURATION_SECONDS * 1_000);
+  });
+
+  it("stops the tick before its own lease window and the platform ceiling close", () => {
+    // The runner must run out of budget while it can still WRITE: before the platform kills it, and
+    // before the lease it is holding expires.
+    expect(TICK_BUDGET_MS).toBeLessThan(TICK_MAX_DURATION_SECONDS * 1_000);
+    expect(TICK_BUDGET_MS).toBeLessThan(LEASE_MINUTES * 60_000);
+    // And with enough of the window left to settle the task it abandons.
+    expect(TICK_MAX_DURATION_SECONDS * 1_000 - TICK_BUDGET_MS).toBeGreaterThanOrEqual(30_000);
   });
 
   it("keeps the batch small enough for sequential dispatch on a max-10 pool", () => {

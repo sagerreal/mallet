@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
@@ -11,6 +11,7 @@ import {
   type AssistantBlock, type AssistantTurn, type LlmClient, type LlmRequest,
 } from "@mallet/ai";
 import { MIN_STEP_MINUTES } from "../app/agent-task-config";
+import { DEFAULT_TIMEZONE } from "../domain/wake-context";
 import { runAgentTaskTick, type TickDeps } from "./agent-task-runner";
 
 /**
@@ -59,9 +60,14 @@ const says = (text: string): AssistantTurn => turn("end_turn", [{ type: "text", 
 /** A fake provider: no Anthropic call ever leaves this suite. */
 class ScriptedLlm implements LlmClient {
   public readonly requests: LlmRequest[] = [];
-  constructor(private readonly turns: AssistantTurn[]) {}
+  constructor(
+    private readonly turns: AssistantTurn[],
+    /** Wall-clock delay per turn. Only the deadline test uses it — see the note there. */
+    private readonly delayMs = 0,
+  ) {}
   async next(request: LlmRequest): Promise<AssistantTurn> {
     this.requests.push(request);
+    if (this.delayMs > 0) await new Promise((resolve) => setTimeout(resolve, this.delayMs));
     const t = this.turns.shift();
     if (!t) throw new Error("ScriptedLlm out of turns");
     return t;
@@ -97,7 +103,7 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
   let orgId = "";
   let ownerId = "";
 
-  const depsWith = (llm: LlmClient, clock: FixedClock): TickDeps => ({
+  const depsWith = (llm: LlmClient, clock: FixedClock, budgetMs?: number): TickDeps => ({
     llm,
     clock,
     ids: uuidGenerator,
@@ -106,7 +112,19 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
     systemPrompt: SYSTEM_PROMPT,
     // One row per tick. See the header: the claim is global and this runner WRITES what it claims.
     batch: 1,
+    ...(budgetMs === undefined ? {} : { budgetMs }),
   });
+
+  const seedMessage = async (
+    taskId: string,
+    role: string,
+    kind: string,
+    blocks: Record<string, unknown>,
+  ): Promise<void> => {
+    await admin`
+      insert into agent_task_messages (org_id, task_id, role, kind, blocks)
+      values (${orgId}, ${taskId}, ${role}, ${kind}, ${JSON.stringify(blocks)}::jsonb)`;
+  };
 
   const seedTask = async (
     day: number,
@@ -163,6 +181,24 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
         and next_action_at <= now() and (locked_until is null or locked_until < now())
         and next_action_at < ${ancient(1)}`;
     expect(older!.n, "a due agent_task predates this suite's 1990 seeds; ordering isolation is unsafe").toBe(0);
+  });
+
+  /**
+   * Unschedule the rows THIS SUITE'S OWN THROWAWAY ORG holds, before each test seeds a new one.
+   *
+   * Read the `where` clause: `org_id = <this file's throwaway org>`. This is emphatically NOT the
+   * global `update agent_tasks set next_action_at = null where next_action_at is not null` that
+   * earned a sibling test a Critical finding — that one unscheduled every real customer-facing task
+   * in the shared production database, irrecoverably. This touches only rows this file created and
+   * is about to stop caring about.
+   *
+   * It is needed because two tests deliberately END with their row still due (the out-of-budget one
+   * never starts its task, and the real-failure one keeps its place for the next tick). Left due,
+   * those rows are OLDER than the next test's seed, so the `batch: 1` claim would take them
+   * instead — the next test would silently assert against the wrong task.
+   */
+  beforeEach(async () => {
+    await admin`update agent_tasks set next_action_at = null where org_id = ${orgId}`;
   });
 
   afterAll(async () => {
@@ -222,7 +258,10 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
       "assistant/assistant",
     ]);
     const seeded = String(messages[0]!.blocks.text);
-    expect(seeded).toContain(clock.now().toISOString());
+    // Local, never UTC — the regression ai-router.ts records. The zone itself is covered by its
+    // own test below; here it is the fallback zone, since this org has no settings row yet.
+    expect(seeded).toContain(DEFAULT_TIMEZONE);
+    expect(seeded).not.toContain(clock.now().toISOString());
     // The persisted line is what the model was actually handed, not a preamble computed in memory.
     expect(llm.requests[0]!.messages[0]).toEqual({ role: "user", kind: "text", text: seeded });
   });
@@ -388,5 +427,120 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
     expect(after.status).toBe("working");
     expect(after.next_action_at?.toISOString()).toBe(ancient(9));
     expect(after.lease_id).toBeNull();
+  });
+
+  it("does not append a date line to a transcript that is still owed tool results", async () => {
+    const clock = new FixedClock(new Date());
+    const taskId = await seedTask(10);
+    // The shape a wake killed between the tool's commit and its transcript write leaves behind —
+    // and NOT a crash-only shape: synthesizeFinal pushes its synthetic results with messages.push
+    // rather than the reporting append, so at MAX_ITERS_PER_WAKE = 3 an iteration-capped wake
+    // leaves the STORED transcript dangling too.
+    await seedMessage(taskId, "user", "text", { text: "chase the Hendersons about EST-1041" });
+    await seedMessage(taskId, "assistant", "assistant", {
+      blocks: [{ type: "tool_use", id: "pend-1", name: "customer_list", input: { limit: 10 } }],
+    });
+    // Ledger row so the resume replays rather than re-executing, exactly as a real recovery would.
+    await admin`
+      insert into agent_tool_executions (org_id, task_id, tool_use_id, tool, ok, summary)
+      values (${orgId}, ${taskId}, 'pend-1', 'customer_list', 'ok', 'REPLAYED ON RESUME')`;
+    const llm = new ScriptedLlm([says("Picking up where I left off.")]);
+
+    const summary = await runAgentTaskTick(depsWith(llm, clock));
+
+    expect(summary.handedOver).toBe(1);
+    const messages = await readMessages(taskId);
+    // No date line anywhere. Appending one would make the tail a USER turn, the loop would stop
+    // recognising the resume, and the provider would get a tool_use with no tool_result — a 400 on
+    // every wake, forever, on precisely the crash-recovery path the ledger exists for.
+    expect(messages.filter((m) => JSON.stringify(m.blocks).includes("[system] You are working for"))).toHaveLength(0);
+    expect(messages.map((m) => `${m.role}/${m.kind}`)).toEqual([
+      "user/text",
+      "assistant/assistant",
+      "user/tool_results",
+      "assistant/assistant",
+    ]);
+    // The loop resolved the pending tool_use FIRST, from the ledger, before calling the provider.
+    expect(JSON.stringify(messages[2]!.blocks)).toContain("REPLAYED ON RESUME");
+    expect(llm.requests).toHaveLength(1);
+  });
+
+  it("stamps the date line with the shop's own timezone, never UTC", async () => {
+    const clock = new FixedClock(new Date());
+    // A zone whose local date differs from UTC's for most of the day. The regression this guards is
+    // recorded in ai-router.ts: toISOString() rolls over at midnight UTC, which is 5pm Pacific, so
+    // every evening the agent believed it was already tomorrow and scheduled onto the wrong day.
+    // booking is notNull with no default; an empty object satisfies it and nothing here reads it.
+    await admin`
+      insert into org_settings (org_id, timezone, booking)
+      values (${orgId}, 'America/New_York', '{}'::jsonb)
+      on conflict (org_id) do update set timezone = 'America/New_York'`;
+    const taskId = await seedTask(11);
+    const llm = new ScriptedLlm([says("Understood.")]);
+
+    await runAgentTaskTick(depsWith(llm, clock));
+
+    const [line] = await readMessages(taskId);
+    const text = String(line!.blocks.text);
+    // Read from THIS org's settings row, not the fallback — a second shop in another zone would
+    // be told a different local time for the same instant.
+    expect(text).toContain("America/New_York");
+    expect(text).toContain("AgentRunner"); // the shop's own name, which the model cannot guess
+    const localDate = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "America/New_York", year: "numeric", month: "2-digit", day: "2-digit",
+    }).format(clock.now());
+    expect(text).toContain(localDate);
+    expect(text).not.toContain(clock.now().toISOString());
+  });
+
+  it("releases a claimed task it never started once the tick is out of budget", async () => {
+    const clock = new FixedClock(new Date());
+    const taskId = await seedTask(12);
+    const before = await readTask(taskId);
+    const llm = new ScriptedLlm([says("never reached")]);
+
+    // budgetMs 0: the claim itself takes longer than that, so the loop is already over budget on
+    // its first row. Nothing is worked, so nothing is written.
+    const summary = await runAgentTaskTick(depsWith(llm, clock, 0));
+
+    expect(summary.claimed).toBe(1);
+    expect(summary.skipped).toBe(1);
+    expect(llm.requests).toHaveLength(0);
+    const after = await readTask(taskId);
+    expect(after.version).toBe(before.version);
+    expect(after.attempts).toBe(before.attempts);
+    expect(after.status).toBe("working");
+    expect(after.next_action_at?.toISOString()).toBe(ancient(12));
+    expect(await readMessages(taskId)).toHaveLength(0);
+    // The lease goes straight back, so the next tick takes it first instead of waiting the window out.
+    expect(after.lease_id).toBeNull();
+    expect(after.locked_until).toBeNull();
+  });
+
+  it("abandons a turn that outruns the tick budget, spending an attempt and leaving a trail", async () => {
+    const clock = new FixedClock(new Date());
+    const taskId = await seedTask(13);
+    // The provider takes LONGER than the whole budget, so the first onProgress after it lands is
+    // guaranteed to be past the deadline however long the claim took. That is what makes this
+    // deterministic rather than a race: persist happens at least DELAY ms after the tick started.
+    const budgetMs = 4_000;
+    const llm = new ScriptedLlm([says("too slow"), says("also too slow")], budgetMs + 500);
+
+    const summary = await runAgentTaskTick(depsWith(llm, clock, budgetMs));
+
+    expect(summary.abandoned).toBe(1);
+    expect(summary.skipped).toBe(0);
+    expect(summary.failed).toBe(0);
+    const after = await readTask(taskId);
+    // A real attempt IS spent here, unlike a provider blip: a task that reliably outlives the
+    // function must retire to a human rather than retry forever at full LLM cost.
+    expect(after.attempts).toBe(1);
+    expect(after.last_error).toBe("tick_budget");
+    expect(after.status).toBe("working");
+    expect(after.next_action_at?.toISOString()).toBe(ancient(13));
+    expect(after.lease_id).toBeNull();
+    // The transcript the turn did produce is kept: the date line plus the assistant turn it
+    // persisted before the deadline tripped.
+    expect((await readMessages(taskId)).length).toBeGreaterThanOrEqual(2);
   });
 });

@@ -214,4 +214,31 @@ describe("AgentTask transitions", () => {
     expect(t.props.status).toBe("working");
     expect(t.props.version).toBe(1);
   });
+
+  it("absorbs a transcript-byte write on a finished task instead of bumping its version", () => {
+    // The lost race `reply` hits: chaining this before resume() on a task the runner just finished
+    // must not turn a CONFLICT into the aggregate's BAD_REQUEST refusal.
+    const done = built({ status: "done", version: 4, transcriptBytes: 10 });
+    const t = done.withTranscriptBytes(9_999, LATER);
+    expect(t).toBe(done);
+    expect(t.props.transcriptBytes).toBe(10);
+    expect(t.props.version).toBe(4);
+  });
+
+  it("knows when it is finished for good", () => {
+    expect(built().isTerminal()).toBe(false);
+    expect(built({ status: "needs_you" }).isTerminal()).toBe(false);
+    expect(built({ status: "done" }).isTerminal()).toBe(true);
+    expect(built({ status: "closed" }).isTerminal()).toBe(true);
+  });
+
+  it("reports a live lease, and treats an expired one as absent", () => {
+    const lease = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    expect(built({ leaseId: lease, lockedUntil: LATER }).isLeaseLive(NOW)).toBe(true);
+    // Expired: not a live worker. Refusing on it would strand the task behind a dead lock.
+    expect(built({ leaseId: lease, lockedUntil: NOW }).isLeaseLive(LATER)).toBe(false);
+    // Half-set rows cannot be "held" either way.
+    expect(built({ leaseId: lease, lockedUntil: null }).isLeaseLive(NOW)).toBe(false);
+    expect(built({ leaseId: null, lockedUntil: LATER }).isLeaseLive(NOW)).toBe(false);
+  });
 });

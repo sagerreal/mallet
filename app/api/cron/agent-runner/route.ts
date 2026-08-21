@@ -26,6 +26,9 @@ export const dynamic = "force-dynamic";
 // wakes is what actually keeps a tick inside this ceiling, not the ceiling itself. 300s is the
 // Vercel Node function max (needs a plan that permits it) and gives a batch of slow wakes room to
 // finish rather than being truncated mid-turn.
+// MUST stay equal to TICK_MAX_DURATION_SECONDS in modules/agent-tasks/app/agent-task-config.ts,
+// which derives LEASE_MINUTES and TICK_BUDGET_MS from it (ADR 0008 §3a). A literal, not the
+// imported constant: Next.js requires this export to be statically analyzable.
 export const maxDuration = 300;
 
 const handle = async (req: Request): Promise<Response> =>

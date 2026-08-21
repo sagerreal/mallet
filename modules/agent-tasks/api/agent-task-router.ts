@@ -4,7 +4,7 @@ import { router, ownerOrOffice, ownerOrOfficeNoTx } from "@/trpc/init";
 import { orThrow } from "@/trpc/errors";
 import { withTenant } from "@mallet/shared/db/tx";
 import { OutboxEventBus } from "@mallet/shared/outbox";
-import { asAgentTaskId, toPage } from "@mallet/shared/types";
+import { asAgentTaskId, ok, toPage } from "@mallet/shared/types";
 import type { JsonValue } from "@mallet/shared/ports";
 import {
   buildAgentTools, buildExecuteTool, describeProposal, runAgentTurn, toolsForRole, LlmError, SYSTEM_PROMPT,
@@ -287,6 +287,28 @@ export const createAgentTaskRouter = () =>
           });
         }
 
+        /**
+         * THE LEASE GATE. The version check above is not enough on its own: a due task can be
+         * mid-wake in the runner with an LLM call in flight and the lease held, and the runner has
+         * not saved yet — so the version still matches and this reply would sail through. Both
+         * turns would then run concurrently for the length of a round trip, and while the
+         * version-guarded save at the end stops the DISPOSITION being corrupted, each side's
+         * transcript appends have already committed independently by then. An interleaved
+         * transcript is not cosmetic: two consecutive assistant turns, or tool results answering
+         * the other side's ids, is a hard provider rejection on every subsequent wake, self-healing
+         * only by burning the attempt budget.
+         *
+         * Refuse, never queue: no blocking and no polling. `isLeaseLive` treats an EXPIRED
+         * `locked_until` as absent, so a hard-killed worker cannot strand the task behind a dead
+         * lock. CONFLICT is in error-map.ts's PASS_THROUGH set, so this sentence reaches the user.
+         */
+        if (loaded.task.isLeaseLive(ctx.deps.clock.now())) {
+          throw new TRPCError({
+            code: "CONFLICT",
+            message: "Artie is working on this right now — give it a moment and reload.",
+          });
+        }
+
         if (approvedIds.length > 0 || deniedIds.length > 0) {
           assertIdsArePending(loaded.messages, approvedIds, deniedIds);
         }
@@ -357,19 +379,25 @@ export const createAgentTaskRouter = () =>
           const repo = new DrizzleAgentTaskRepository(tx, orgId);
           const current = await repo.findById(id);
           if (!current) return { kind: "gone" as const };
+          // Lost the race while the turn was in flight: the runner finished/closed the task, or
+          // claimed it (the narrow window where it became due mid-turn — see the lease gate above).
+          // Both are a CONFLICT the drawer can recover from, never a BAD_REQUEST from a refused
+          // transition, and never a write on a row somebody else now owns.
+          if (current.isTerminal() || current.isLeaseLive(now)) return { kind: "conflict" as const };
           const withBytes = current.withTranscriptBytes(current.props.transcriptBytes + addedBytes, now);
           // A human just engaged: put it back to work so the next tick continues it, unless the
           // turn is itself waiting on another approval.
           const next =
             result.status === "needs_approval"
-              ? withBytes.needsYou(result.assistantText || "I need your OK to continue", now)
-              : orThrow(withBytes.resume(now));
+              ? ok(withBytes.needsYou(result.assistantText || "I need your OK to continue", now))
+              : withBytes.resume(now);
+          if (!next.ok) return { kind: "conflict" as const };
           // THE VERSION RULE: expectedVersion is `current.props.version` — the version just READ
-          // from the database in THIS transaction — never `next.props.version` (the aggregate has
-          // already incremented itself twice in memory by this point and that value matches no
+          // from the database in THIS transaction — never `next.value.props.version` (the aggregate
+          // has already incremented itself twice in memory by this point and that value matches no
           // row).
-          const saved = await repo.save(next, current.props.version);
-          return saved ? { kind: "saved" as const, task: next } : { kind: "conflict" as const };
+          const saved = await repo.save(next.value, current.props.version);
+          return saved ? { kind: "saved" as const, task: next.value } : { kind: "conflict" as const };
         });
 
         if (settled.kind === "gone") {

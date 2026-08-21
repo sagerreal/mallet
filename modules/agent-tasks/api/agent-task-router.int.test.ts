@@ -343,4 +343,55 @@ suite("agent-tasks tRPC entry (full stack, live RLS)", () => {
       expect(crashFound).toBeNull(); // the ledger row did NOT survive either — neither one without the other
     },
   );
+
+  it("refuses a reply while the runner holds a live lease, and allows one once it has expired", async () => {
+    const llm = new ScriptedLlm([text("this must never be reached")]);
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", llm, ownerAId));
+    const created = await caller.v1.agentTasks.create({ title: "Leased", instruction: "chase them" });
+
+    // Exactly the state the runner leaves a row in mid-wake: claimed, lease held, and NOT yet
+    // saved — so the version still matches and the version check alone would let this reply
+    // through. Both turns would then append to one transcript, and two consecutive assistant
+    // turns is a hard provider rejection on every later wake.
+    const heldBy = randomUUID();
+    await admin`
+      update agent_tasks set lease_id = ${heldBy}, locked_until = now() + interval '5 minutes'
+      where id = ${created.id}`;
+
+    await expect(
+      caller.v1.agentTasks.reply({ taskId: created.id, version: created.version, text: "any news?" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    // Refused before the model was ever called, and nothing was appended.
+    expect(llm.requests).toHaveLength(0);
+    const during = await caller.v1.agentTasks.get({ taskId: created.id });
+    expect(during.messages).toHaveLength(1);
+
+    // An EXPIRED lease is not a live worker. Refusing on it would strand the task behind a dead
+    // lock nothing ever clears, so the same reply must now go through.
+    await admin`
+      update agent_tasks set locked_until = now() - interval '1 minute' where id = ${created.id}`;
+    const replied = await caller.v1.agentTasks.reply({
+      taskId: created.id,
+      version: created.version,
+      text: "any news?",
+    });
+    expect(replied.status).toBe("completed");
+    expect(llm.requests).toHaveLength(1);
+  });
+
+  it("reports a lost race against the runner finishing the task as CONFLICT, not BAD_REQUEST", async () => {
+    const llm = new ScriptedLlm([text("Here is where things stand.")]);
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", llm, ownerAId));
+    const created = await caller.v1.agentTasks.create({ title: "Finished under me", instruction: "check in" });
+
+    // The runner finishes the task while this reply's turn is in flight. withTranscriptBytes is
+    // chained before resume() in the settle, so without its terminal no-op guard the aggregate's
+    // refusal surfaced as BAD_REQUEST ("start a new one") — which the drawer has no recovery path
+    // for, unlike CONFLICT.
+    await admin`update agent_tasks set status = 'done', next_action_at = null where id = ${created.id}`;
+
+    await expect(
+      caller.v1.agentTasks.reply({ taskId: created.id, version: created.version, text: "still there?" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
 });

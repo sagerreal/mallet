@@ -1,23 +1,28 @@
 import { and, eq } from "drizzle-orm";
-import { users } from "@mallet/shared/db/schema";
+import { orgs, orgSettings, users } from "@mallet/shared/db/schema";
 import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
 import { logger } from "@mallet/shared/observability";
 import { OutboxEventBus, safeLastError } from "@mallet/shared/outbox";
 import type { IdGenerator } from "@mallet/shared/ports";
 import {
-  asAgentTaskId, asOrgId, asUserId, ok,
-  type AgentTaskId, type Clock, type OrgId, type Result, type UserId, type ValidationError,
+  asAgentTaskId, asOrgId, asUserId,
+  type AgentTaskId, type Clock, type OrgId, type UserId,
 } from "@mallet/shared/types";
 import {
-  buildAgentTools, buildExecuteTool, LlmError, runAgentTurn, toolsForRole,
+  buildAgentTools, buildExecuteTool, runAgentTurn, toolsForRole,
   type AgentMessage, type AgentResult, type AgentTool, type ExecuteTool, type LlmClient,
   type ToolDeps, type ToolMeta,
 } from "@mallet/ai";
 import { isRole, type Principal, type Role } from "@mallet/identity";
 import type { AgentTask } from "../domain/agent-task";
 import { decideWake, type WakeDecision } from "../domain/wake-decision";
+import { awaitsToolResults, dateLine, DEFAULT_TIMEZONE, type WakeOrgContext } from "../domain/wake-context";
 import {
-  LEASE_MINUTES, MAX_ITERS_PER_WAKE, MIN_STEP_MINUTES, WAKE_BATCH,
+  applyDecision, classifyTurnFailure, dispositionOf, TickBudgetExceeded, TICK_BUDGET_ERROR,
+  type WakeDisposition,
+} from "../domain/wake-outcome";
+import {
+  LEASE_MINUTES, MAX_ITERS_PER_WAKE, MIN_STEP_MINUTES, TICK_BUDGET_MS, WAKE_BATCH,
 } from "../app/agent-task-config";
 import { claimDueTasks } from "./claim-due-tasks";
 import { DrizzleAgentTaskRepository } from "./drizzle-agent-task-repository";
@@ -28,11 +33,13 @@ import { buildTaskControlTools } from "./task-control-tools";
  * One bounded tick of the AI employee: claim due tasks across tenants, re-enter each org's RLS,
  * drive the agent loop, write the outcome back under the lease.
  *
- * I/O orchestration only — every judgement it applies lives in `decideWake`, which the unit suite
- * owns (CI does not run integration tests). This file is in `coverage.exclude` for that reason and
- * is proven by `agent-task-runner.int.test.ts` against a live database.
+ * I/O orchestration ONLY. Every branch that is a judgement lives in domain/ under the unit suite —
+ * `decideWake` (what a turn meant), `applyDecision`/`dispositionOf` (which transition that is),
+ * `classifyTurnFailure` (blip vs deadline vs real failure), `awaitsToolResults` (whether a message
+ * may be appended at all) and `dateLine` (what day the agent believes it is). That is what earns
+ * this file its place in `coverage.exclude`; it is proven end-to-end by `agent-task-runner.int.test.ts`.
  *
- * THE THREE PROPERTIES THAT MAKE THIS SAFE TO RUN UNATTENDED:
+ * THE FOUR PROPERTIES THAT MAKE THIS SAFE TO RUN UNATTENDED:
  *
  * 1. It acts as a REAL user, never a sentinel. `write-tools.ts` stamps `ctx.principal.userId` into
  *    `payments.recorded_by_user_id`, a write-once column with no FK (deliberate: the ledger has to
@@ -41,10 +48,13 @@ import { buildTaskControlTools } from "./task-control-tools";
  *    tenant transaction on every wake — and if that person is gone, or their role no longer matches
  *    the snapshot the task was filed with, the task goes to a human instead of running with the
  *    wrong powers.
- * 2. Every write is fenced. The claim stamps `lease_id`; `save` is guarded on the version READ FROM
- *    THE DATABASE and `releaseLease` on that same `lease_id`, so a worker whose lease expired
- *    mid-turn cannot clobber its successor.
- * 3. A committed side effect is never repeated. The tool executor carries the execution ledger, so a
+ * 2. Every write is DOUBLY fenced: on the version READ FROM THE DATABASE, and on the `lease_id`
+ *    this worker was granted at claim. A worker that lost its lease mid-turn physically cannot
+ *    write, so it can neither clobber its successor nor settle a row somebody else now owns.
+ * 3. It stops itself before its own lease window closes (`TICK_BUDGET_MS`), rather than letting the
+ *    platform kill it. A killed tick leaves no trail; a self-stopped one records both the tail it
+ *    never started and the turn it abandoned.
+ * 4. A committed side effect is never repeated. The tool executor carries the execution ledger, so a
  *    wake killed between a tool's commit and its transcript write replays the stored result instead
  *    of re-sending or re-charging.
  */
@@ -55,6 +65,10 @@ export interface TickSummary {
   finished: number;
   handedOver: number;
   backedOff: number;
+  /** Started, then stopped mid-turn at the tick's wall-clock deadline. An attempt WAS spent. */
+  abandoned: number;
+  /** Claimed but never started: the budget ran out first. The lease is released, the row untouched. */
+  skipped: number;
   failed: number;
   raced: number;
   tookMs: number;
@@ -68,10 +82,9 @@ export interface TickDeps {
   readonly paymentLinkGateway: ToolDeps["paymentLinkGateway"];
   readonly systemPrompt: string;
   readonly batch?: number;
+  /** Wall-clock budget for the whole tick. Injected so a test can prove the deadline path. */
+  readonly budgetMs?: number;
 }
-
-/** What one wake settled on. The keys are `TickSummary` counters, so a disposition tallies itself. */
-type Disposition = "scheduled" | "finished" | "handedOver" | "backedOff" | "raced";
 
 /** Everything a wake needs to address its own row. Never another task's. */
 interface WakeRef {
@@ -79,6 +92,8 @@ interface WakeRef {
   readonly taskId: AgentTaskId;
   readonly leaseId: string;
   readonly deps: TickDeps;
+  /** `Date.now()` past which this wake must stop working and settle what it has. */
+  readonly deadlineAt: number;
 }
 
 type WakePlan =
@@ -97,21 +112,6 @@ const HAND_OVER_ROLE_CHANGED =
   "The person who set this up has a different role now, so I stopped. Re-file it if it still needs doing.";
 const BACK_OFF_NOTE = "retrying — the assistant was briefly unavailable";
 
-/**
- * The dated line every wake starts with. Persisted as a real user message BEFORE the transcript is
- * read, never passed as `contextPreamble`: `runAgentTurn` applies a preamble only when the
- * transcript is empty, so it is dropped on exactly the resumed wakes that need it — and a task
- * picked up three days later would otherwise reason from the day it was filed and tell a customer
- * the wrong date.
- */
-const dateLine = (now: Date): AgentMessage => ({
-  role: "user",
-  kind: "text",
-  text:
-    `[system] It is now ${now.toISOString()}. You are working a task in the background — the shop ` +
-    `is not watching this conversation. Before you stop, call schedule_next_step or finish_task.`,
-});
-
 const sizeOf = (message: AgentMessage): number => JSON.stringify(message).length;
 
 const nameOf = (error: unknown): string => (error instanceof Error ? error.name : "unknown");
@@ -128,14 +128,25 @@ const metaOf = (tools: readonly AgentTool[]): ToolMeta[] =>
   }));
 
 /**
- * A transcript whose last message is an assistant turn with an unanswered tool_use. The loop
- * resolves that shape itself (that IS the resume path the execution ledger exists for), and a user
- * message appended after it would leave a dangling tool_use the provider rejects with a 400 — so
- * the date line is skipped on exactly those wakes.
+ * The row is still ours to write: same version we read AND still our lease.
+ *
+ * The lease half is not redundant. The version guard alone lets a worker whose lease expired
+ * mid-turn settle a row that a later tick has since reclaimed and may be actively working — the
+ * version would still match if that tick has not written yet. `findById` already returns `leaseId`,
+ * so the check costs nothing.
  */
-const awaitsToolResults = (messages: readonly AgentMessage[]): boolean => {
-  const last = messages[messages.length - 1];
-  return last?.role === "assistant" && last.blocks.some((b) => b.type === "tool_use");
+const stillOurs = (current: AgentTask, read: AgentTask, ref: WakeRef): boolean =>
+  current.props.version === read.props.version && current.props.leaseId === ref.leaseId;
+
+/** The shop's name and timezone, for the dated line. Same two reads as ai-router's orgPreamble. */
+const readOrgContext = async (tx: TenantTx, orgId: OrgId): Promise<WakeOrgContext> => {
+  const [org] = await tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
+  const [settings] = await tx
+    .select({ timezone: orgSettings.timezone })
+    .from(orgSettings)
+    .where(eq(orgSettings.orgId, orgId))
+    .limit(1);
+  return { name: org?.name ?? null, timezone: settings?.timezone ?? DEFAULT_TIMEZONE };
 };
 
 /**
@@ -159,7 +170,7 @@ const readCreator = async (
 };
 
 /** The read phase: one short tenant transaction that decides whether this wake may run at all. */
-const planWake = async (ref: WakeRef, line: AgentMessage): Promise<WakePlan> =>
+const planWake = async (ref: WakeRef): Promise<WakePlan> =>
   withTenant(ref.orgId, async (tx): Promise<WakePlan> => {
     const repo = repoOf(tx, ref);
     const task = await repo.findById(ref.taskId);
@@ -169,6 +180,9 @@ const planWake = async (ref: WakeRef, line: AgentMessage): Promise<WakePlan> =>
       await repo.releaseLease(ref.taskId, ref.leaseId);
       return { kind: "gone" };
     }
+    // Somebody reclaimed this row between the claim and now, so it is not ours to work.
+    if (task.props.leaseId !== ref.leaseId) return { kind: "gone" };
+
     const creator = await readCreator(tx, ref.orgId, task.props.createdBy);
     if (!creator) return { kind: "hand_over", task, note: HAND_OVER_CREATOR_GONE };
     if (creator.role !== task.props.createdByRole) {
@@ -177,9 +191,12 @@ const planWake = async (ref: WakeRef, line: AgentMessage): Promise<WakePlan> =>
 
     const principal: Principal = { userId: creator.userId, orgId: ref.orgId, role: creator.role };
     const existing = await repo.loadMessages(ref.taskId);
+    // A transcript still owed tool results is resumed AS IS — see awaitsToolResults for why a
+    // message appended here would 400 the provider on every wake.
     if (awaitsToolResults(existing)) {
       return { kind: "ready", task, principal, messages: existing, seededBytes: 0 };
     }
+    const line = dateLine(ref.deps.clock.now(), await readOrgContext(tx, ref.orgId));
     await repo.appendMessage(ref.taskId, line);
     return { kind: "ready", task, principal, messages: [...existing, line], seededBytes: sizeOf(line) };
   });
@@ -218,8 +235,8 @@ const buildCatalogExecutor = (
       ),
   });
 
-const wakeOne = async (ref: WakeRef): Promise<Disposition> => {
-  const plan = await planWake(ref, dateLine(ref.deps.clock.now()));
+const wakeOne = async (ref: WakeRef): Promise<WakeDisposition> => {
+  const plan = await planWake(ref);
   if (plan.kind === "gone") return "raced";
   if (plan.kind === "hand_over") {
     return settle(ref, plan.task, plan.task.props.transcriptBytes, {
@@ -240,12 +257,15 @@ const wakeOne = async (ref: WakeRef): Promise<Disposition> => {
       : runCatalogTool(name, input, toolUseId);
 
   let bytes = task.props.transcriptBytes + plan.seededBytes;
-  // onProgress is fail-fast by design: if this rejects, the whole turn rejects and the tick records
-  // a real failure. That is correct — a transcript we could not persist is a transcript the next
-  // wake would re-derive from a tool call it already ran.
+  // onProgress is fail-fast by design: runAgentTurn awaits it without catching, so this is also the
+  // tick's deadline hook — a message boundary is the only point at which the stored transcript is
+  // consistent enough to abandon the turn. If the append itself fails, the turn rejects too, which
+  // is correct: a transcript we could not persist is one the next wake would re-derive from a tool
+  // call it already ran.
   const persist = async (message: AgentMessage): Promise<void> => {
     bytes += sizeOf(message);
     await withTenant(ref.orgId, (tx) => repoOf(tx, ref).appendMessage(ref.taskId, message));
+    if (Date.now() > ref.deadlineAt) throw new TickBudgetExceeded();
   };
 
   let result: AgentResult;
@@ -261,9 +281,16 @@ const wakeOne = async (ref: WakeRef): Promise<Disposition> => {
       onProgress: persist,
     });
   } catch (error: unknown) {
+    const kind = classifyTurnFailure(error);
     // A provider blip must not spend a budget: every task in a rate-limited org would otherwise
-    // burn one in the same tick. A NON-retryable LlmError is a real failure and falls through.
-    if (error instanceof LlmError && error.retryable) return backOff(ref, task);
+    // burn one in the same tick. Our own deadline DOES spend one, so a task that reliably outlives
+    // the function retires to a human instead of retrying forever at full LLM cost.
+    if (kind === "back_off") return backOff(ref, task);
+    if (kind === "abandon") {
+      logger.warn({ orgId: ref.orgId, taskId: ref.taskId }, "agent.task.wake.abandoned");
+      await recordFailure(ref, TICK_BUDGET_ERROR);
+      return "abandoned";
+    }
     throw error;
   }
 
@@ -277,68 +304,66 @@ const wakeOne = async (ref: WakeRef): Promise<Disposition> => {
   return settle(ref, task, bytes, decision);
 };
 
-const applyTo = (
-  task: AgentTask,
-  decision: WakeDecision,
-  now: Date,
-): Result<AgentTask, ValidationError> =>
-  decision.kind === "schedule"
-    ? task.scheduleNext(decision.at, decision.note, now)
-    : decision.kind === "finish"
-      ? task.finish(decision.summary, now)
-      : ok(task.needsYou(decision.note, now));
-
-const dispositionOf = (decision: WakeDecision): Disposition =>
-  decision.kind === "schedule" ? "scheduled" : decision.kind === "finish" ? "finished" : "handedOver";
-
 /**
  * The write phase: the task row is written exactly ONCE per wake, then the lease is released.
  *
- * `read` is the task as it was when this wake started. A different version in the row now means a
- * human replied (or a repair script ran) while the turn was thinking: their write wins and this
- * turn's disposition is discarded. The transcript rows this wake already committed stay — they are
- * what the human's own resume reads.
+ * `read` is the task as it was when this wake started. A different version, or a lease that is no
+ * longer ours, means somebody else owns this row now: their write wins and this turn's disposition
+ * is discarded. The transcript rows this wake already committed stay — they are what the human's
+ * own resume reads.
  */
 const settle = async (
   ref: WakeRef,
   read: AgentTask,
   bytes: number,
   decision: WakeDecision,
-): Promise<Disposition> => {
+): Promise<WakeDisposition> => {
   const now = ref.deps.clock.now();
-  const written = await withTenant(ref.orgId, async (tx) => {
+  const outcome = await withTenant(ref.orgId, async (tx): Promise<WakeDisposition> => {
     const repo = repoOf(tx, ref);
     const current = await repo.findById(ref.taskId);
-    if (!current || current.props.version !== read.props.version) {
+    if (!current || !stillOurs(current, read, ref)) {
       await repo.releaseLease(ref.taskId, ref.leaseId);
-      return false;
+      return "raced";
     }
-    const settled = applyTo(current, decision, now);
-    if (!settled.ok) {
-      await repo.releaseLease(ref.taskId, ref.leaseId);
-      return false;
-    }
+    const settled = applyDecision(current, decision, now);
     // expectedVersion is ALWAYS the version READ FROM THE DATABASE, never the in-memory
     // aggregate's. Both transitions below have already incremented it while the row still holds
     // `current.props.version`; guarding on the composed value matches zero rows, so `save` would
     // return false forever and every wake would report "raced" while persisting nothing.
+    if (!settled.ok) {
+      // The aggregate refused the transition. Recording a failure (rather than reporting "raced")
+      // is what stops this becoming a full paid LLM turn every tick forever: "raced" left
+      // next_action_at untouched and no trail at all.
+      logger.error(
+        { orgId: ref.orgId, taskId: ref.taskId, decision: decision.kind },
+        "agent.task.wake.transition-refused",
+      );
+      await repo.save(
+        current.recordFailure(safeLastError({ kind: "apperror", error: settled.error }), now),
+        current.props.version,
+      );
+      await repo.releaseLease(ref.taskId, ref.leaseId);
+      return "failed";
+    }
     const saved = await repo.save(settled.value.withTranscriptBytes(bytes, now), current.props.version);
     // Released whatever the save decided: a lease we keep past our turn only delays the next one.
     await repo.releaseLease(ref.taskId, ref.leaseId);
-    return saved;
+    return saved ? dispositionOf(decision) : "raced";
   });
-  if (!written) return "raced";
-  logger.info({ orgId: ref.orgId, taskId: ref.taskId, decision: decision.kind }, "agent.task.wake.settled");
-  return dispositionOf(decision);
+  if (outcome !== "raced" && outcome !== "failed") {
+    logger.info({ orgId: ref.orgId, taskId: ref.taskId, decision: decision.kind }, "agent.task.wake.settled");
+  }
+  return outcome;
 };
 
 /** A retryable provider failure: come back soon, spending neither the attempt nor the step budget. */
-const backOff = async (ref: WakeRef, read: AgentTask): Promise<Disposition> => {
+const backOff = async (ref: WakeRef, read: AgentTask): Promise<WakeDisposition> => {
   const now = ref.deps.clock.now();
   await withTenant(ref.orgId, async (tx) => {
     const repo = repoOf(tx, ref);
     const current = await repo.findById(ref.taskId);
-    if (current && current.props.version === read.props.version) {
+    if (current && stillOurs(current, read, ref)) {
       const later = new Date(now.getTime() + MIN_STEP_MINUTES * 60_000);
       const next = current.deferTo(later, BACK_OFF_NOTE, now);
       // expectedVersion is ALWAYS the version READ FROM THE DATABASE — see settle().
@@ -351,24 +376,33 @@ const backOff = async (ref: WakeRef, read: AgentTask): Promise<Disposition> => {
 };
 
 /**
- * A real failure. `lastError` is a low-cardinality discriminator from `safeLastError` and nothing
- * else — never transcript content, note text or model output. The task keeps its place (and its
- * due time) until the attempt budget is spent, then the aggregate hands it to a human.
+ * A real failure. `lastError` is a low-cardinality discriminator and nothing else — never
+ * transcript content, note text or model output. The task keeps its place (and its due time) until
+ * the attempt budget is spent, then the aggregate hands it to a human.
  */
 const recordFailure = async (ref: WakeRef, lastError: string): Promise<void> => {
   const now = ref.deps.clock.now();
   await withTenant(ref.orgId, async (tx) => {
     const repo = repoOf(tx, ref);
     const current = await repo.findById(ref.taskId);
-    if (!current) return;
-    // expectedVersion is ALWAYS the version READ FROM THE DATABASE — see settle().
-    await repo.save(current.recordFailure(lastError, now), current.props.version);
+    // Only ours to write. Not skipped when the row is gone: the lease is still released, exactly as
+    // planWake does — a lease this path could not clear is one nothing else will ever clean up.
+    if (current && current.props.leaseId === ref.leaseId) {
+      // expectedVersion is ALWAYS the version READ FROM THE DATABASE — see settle().
+      await repo.save(current.recordFailure(lastError, now), current.props.version);
+    }
     await repo.releaseLease(ref.taskId, ref.leaseId);
   });
 };
 
+/** Claimed but never started. Untouched, so the lease goes back and the next tick takes it first. */
+const releaseUnstarted = async (ref: WakeRef): Promise<void> => {
+  await withTenant(ref.orgId, (tx) => repoOf(tx, ref).releaseLease(ref.taskId, ref.leaseId));
+};
+
 export const runAgentTaskTick = async (deps: TickDeps): Promise<TickSummary> => {
   const startedAt = Date.now();
+  const deadlineAt = startedAt + (deps.budgetMs ?? TICK_BUDGET_MS);
   const leaseId = deps.ids.newId();
 
   const claimed = await claimDueTasks({
@@ -384,6 +418,8 @@ export const runAgentTaskTick = async (deps: TickDeps): Promise<TickSummary> => 
     finished: 0,
     handedOver: 0,
     backedOff: 0,
+    abandoned: 0,
+    skipped: 0,
     failed: 0,
     raced: 0,
     tookMs: 0,
@@ -392,7 +428,24 @@ export const runAgentTaskTick = async (deps: TickDeps): Promise<TickSummary> => 
   // SEQUENTIAL, never Promise.all: the app pool is max 10 and the request path shares it. The
   // outbox relay dispatches sequentially for exactly this reason.
   for (const row of claimed) {
-    const ref: WakeRef = { orgId: asOrgId(row.orgId), taskId: asAgentTaskId(row.id), leaseId, deps };
+    const ref: WakeRef = {
+      orgId: asOrgId(row.orgId),
+      taskId: asAgentTaskId(row.id),
+      leaseId,
+      deps,
+      deadlineAt,
+    };
+    // Stop CLAIMING new work while there is still lease window left to write in. claimDueTasks
+    // stamps one shared locked_until for the whole batch at tick start and never renews it, so the
+    // later a wake starts the less fence it has left — and being killed by the platform instead
+    // would leave this tail leased-but-unworked with no trail.
+    if (Date.now() > deadlineAt) {
+      summary.skipped += 1;
+      await releaseUnstarted(ref).catch((error: unknown) => {
+        logger.error({ orgId: ref.orgId, taskId: ref.taskId, err: nameOf(error) }, "agent.task.release-failed");
+      });
+      continue;
+    }
     try {
       const disposition = await wakeOne(ref);
       summary[disposition] += 1;

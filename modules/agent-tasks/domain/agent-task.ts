@@ -188,8 +188,37 @@ export class AgentTask {
     return this.next({ attempts, lastError }, now);
   }
 
-  /** Bookkeeping the runner owns; never a status change. */
+  /**
+   * Bookkeeping both writers own (the runner per wake, `reply` per interactive turn); never a
+   * status change.
+   *
+   * Terminal is absorbing here too, like `needsYou` and `recordFailure`: on a `done`/`closed` task
+   * this is a silent no-op returning the same instance. Without that guard it still bumped `version`
+   * and `updatedAt` on a finished task, and — worse — a caller chaining it before `resume()` in a
+   * lost race got the aggregate's BAD_REQUEST refusal ("start a new one") instead of the CONFLICT
+   * the drawer is built to recover from. A byte count on a task nobody will read again is worth
+   * nothing; not being able to tell a lost race from bad input costs a real recovery path.
+   */
   withTranscriptBytes(bytes: number, now: Date): AgentTask {
+    if (TERMINAL.includes(this.p.status)) return this;
     return this.next({ transcriptBytes: bytes }, now);
+  }
+
+  /** Finished for good. A new ask is a new task. */
+  isTerminal(): boolean {
+    return TERMINAL.includes(this.p.status);
+  }
+
+  /**
+   * A worker holds this task RIGHT NOW, so nothing else may drive its conversation.
+   *
+   * A lease whose `lockedUntil` has PASSED counts as absent, not held. An expired lease is not a
+   * live worker, and treating it as one would strand the task behind a dead lock that nothing else
+   * ever clears — the claim's own predicate ignores a stale `locked_until` for exactly this reason,
+   * and every path the runner controls releases its lease explicitly, so a stale lease means a
+   * hard-killed process rather than work in progress.
+   */
+  isLeaseLive(now: Date): boolean {
+    return this.p.leaseId !== null && this.p.lockedUntil !== null && this.p.lockedUntil > now;
   }
 }
