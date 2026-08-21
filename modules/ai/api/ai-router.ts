@@ -415,7 +415,6 @@ const drive = async (
   // runs and a replay ledger could apply — this driver just supplies the per-call tenant tx.
   const execute: ExecuteTool = buildExecuteTool({
     tools,
-    principal: ctx.principal,
     runInTenant: (fn) =>
       withTenant(ctx.principal.orgId, (tx) => {
         const deps: ToolDeps = {

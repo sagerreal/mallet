@@ -1,5 +1,4 @@
 import type { TenantTx } from "@mallet/shared/db/tx";
-import type { Principal } from "@mallet/identity";
 import type { AgentTool, ToolContext, ToolOutcome } from "../domain/tool";
 import type { ExecuteTool } from "./run-agent-turn";
 
@@ -36,7 +35,6 @@ export interface ExecutionLedger {
 
 export interface BuildExecuteToolParams {
   readonly tools: readonly AgentTool[];
-  readonly principal: Principal;
   /** Opens the short per-call tenant transaction and builds the ToolContext. Injected so this
    *  module has no database import and can be unit-tested. */
   readonly runInTenant: <T>(fn: (ctx: ToolContext) => Promise<T>) => Promise<T>;
@@ -46,8 +44,33 @@ export interface BuildExecuteToolParams {
   readonly ledger?: ExecutionLedger;
 }
 
+/**
+ * A short, obviously-inert stand-in for a boundary marker found INSIDE a tool's own summary.
+ * Never equal to either real marker, so it can never itself be mistaken for a boundary.
+ */
+const NEUTRALIZED_MARKER = "[neutralized-marker]";
+
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+const OPEN_PATTERN = new RegExp(escapeRegExp(TOOL_RESULT_OPEN), "gi");
+const CLOSE_PATTERN = new RegExp(escapeRegExp(TOOL_RESULT_CLOSE), "gi");
+
+/**
+ * Neutralises any occurrence of either boundary marker that the record itself contains
+ * (case-insensitive), BEFORE the real markers are added. Without this, attacker-controlled text
+ * — e.g. a lead's `notes` field, `z.string().max(2000)` from an unauthenticated intake POST,
+ * re-emitted verbatim by `customer_get` — containing the literal closing marker would close the
+ * untrusted block early from the model's point of view, and everything the attacker put after it
+ * in that same field would read as if it were outside the untrusted region. Sanitising (rather
+ * than a per-call nonce) so the system prompt can keep naming these two fixed strings, which is
+ * what keeps its rule easy to state and this behaviour easy to regression-test. The content
+ * itself is never dropped — only the marker text is swapped for an inert placeholder.
+ */
+const sanitizeMarkers = (summary: string): string =>
+  summary.replace(OPEN_PATTERN, NEUTRALIZED_MARKER).replace(CLOSE_PATTERN, NEUTRALIZED_MARKER);
+
 const delimit = (summary: string): string =>
-  `${TOOL_RESULT_OPEN}\n${summary}\n${TOOL_RESULT_CLOSE}`;
+  `${TOOL_RESULT_OPEN}\n${sanitizeMarkers(summary)}\n${TOOL_RESULT_CLOSE}`;
 
 export const buildExecuteTool = (params: BuildExecuteToolParams): ExecuteTool => {
   const { tools, runInTenant, ledger } = params;
