@@ -97,6 +97,8 @@ const BARE_CONTEXT: PublicInvoiceContext = {
   chargesEnabled: true,
   business: { address: null, phone: null, email: null, site: null, license: null },
   customerName: null,
+  customerPhone: null,
+  customerEmail: null,
   serviceAddress: null,
   serviceAt: null,
   wording: { invoiceFooter: null, payInstructions: null, receiptNote: null },

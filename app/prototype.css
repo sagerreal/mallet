@@ -1882,7 +1882,10 @@
   .invactions{display:flex;justify-content:center;margin-top:var(--space-4)}
 
   /* ---------- customer quote page ---------- */
-  .custmodal{max-width:470px;padding:0;overflow:hidden}
+  /* 520px, MATCHING .invcard on /i/[token] and /q/[token]. It was 470, so the preview wrapped
+     lines at a different measure than the page it previews — the same document reading as two
+     different documents. */
+  .custmodal{max-width:520px;padding:0;overflow:hidden}
   /* The foreground MUST be themed, not a raw #fff. --green-900 inverts to near-white under
      [data-theme="dark"], so a hard-coded white here rendered the shop's name and invoice number
      at 1.09:1 — white on near-white — on the customer's own copy of their bill. --green-50 is

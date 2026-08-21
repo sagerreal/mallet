@@ -1166,11 +1166,11 @@ export function InvoiceModalContent() {
           >
             Preview as customer
           </button>
-          {priKind !== "done" ? (
-            <button className="btn ghost" style={{ flex: 1, minHeight: 44 }} onClick={close}>
-              Done
-            </button>
-          ) : null}
+          {/* No "Done" here. It only ever called close(), which the ✕ in the corner already does —
+              a third button competing for the eye beside Archive and Preview, doing nothing the
+              header does not. The real "Done" is the PRIMARY below, and only on a hand-made
+              invoice, where it commits the draft. Two controls with one label and two different
+              jobs is what made this footer unreadable. */}
         </div>
         {priKind === "send" ? (
           <button className="sheet-pri" disabled={busy} onClick={() => void send()}>
