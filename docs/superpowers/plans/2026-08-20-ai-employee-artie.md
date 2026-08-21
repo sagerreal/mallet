@@ -53,6 +53,8 @@ Every task's requirements implicitly include this section.
 - **New schema files MUST be re-exported from `shared/db/schema/index.ts`** or drizzle-kit does not see them and the generated migration is silently empty.
 - **`orgId` must be `.references(() => orgs.id, { onDelete: "cascade" })`** — integration teardown is `delete from orgs where id in (…)` against the **shared live DB**; without cascade the delete fails and leaves permanent garbage.
 - **Never `pgEnum`.** Status columns are `text().notNull().default(…)` + a `check()` constraint.
+- **Never bind a JS `Date` directly into a raw `sql` template.** This repo's postgres.js driver runs with `prepare: false` (mandatory for the Supabase transaction pooler) and a bare `Date` parameter throws a `TypeError` at execution. Bind `d.toISOString()` and cast in SQL — `${d.toISOString()}::timestamptz` — exactly as `shared/db/keyset.ts` does; its header comment documents the same crash. This bites only raw `sql` templates, not Drizzle's typed column builders.
+- **ADR numbering:** the runner's ADR is **0008**. 0006 (remote MCP server) and 0007 (MCP confirm flow) are already taken.
 - **jsonb payloads are typed `Readonly<Record<string, JsonValue>>`.** `JsonValue` excludes `undefined`, `Date` and `BigInt`, so a lossy value is a compile error at the write site. Pre-serialize dates as `d?.toISOString() ?? null`.
 - **Any table whose rows can be written more than once per transaction needs `bigserial seq`.** `created_at` defaults to `now()` = `transaction_timestamp()`, constant within a tx, and a random-UUID PK gives no order. This cannot be retrofitted once rows exist.
 - **No magic numbers.** Named constants in a `*-config.ts`-style module with their own unit test, per `shared/outbox/relay/relay-config.ts`.
@@ -197,7 +199,7 @@ Terminal failure is **always** `needs_you`, never a silent poison row. The task 
 - MODIFY: `components/shell/sidebar.tsx`, `mobile-tabs.tsx`, `tab-roots.ts`, `topbar.tsx`, `more-links.tsx`, `e2e/helpers/routes.ts`.
 
 **Docs**
-- `docs/adr/0006-agent-task-runner.md`
+- `docs/adr/0008-agent-task-runner.md`
 
 ---
 
@@ -1714,7 +1716,7 @@ git commit -m "feat(agent-tasks): repository over three tables — versioned sav
 **Files:**
 - Create: `modules/agent-tasks/infra/claim-due-tasks.ts`
 - Create: `modules/agent-tasks/infra/claim-due-tasks.int.test.ts`
-- Modify: `docs/adr/0003-transactional-outbox.md` (a one-paragraph amendment note pointing at ADR 0006)
+- Modify: `docs/adr/0003-transactional-outbox.md` (a one-paragraph amendment note pointing at ADR 0008)
 
 **Interfaces:**
 - Produces: `claimDueTasks(opts: { batch: number; leaseMinutes: number; leaseId: string; now: Date }): Promise<readonly ClaimedTask[]>` where `ClaimedTask = { id: string; orgId: string; attempts: number }`
@@ -1738,7 +1740,7 @@ import { ownerDb } from "@mallet/shared/db/owner-client";
  * modules/agent-tasks/infra/claim-due-tasks.ts
  * The one cross-tenant statement in the AI employee, and the one place ownerDb is touched.
  *
- * ADR 0006 (amending ADR 0003 §2) names agent_tasks the second table the BYPASSRLS connection may
+ * ADR 0008 (amending ADR 0003 §2) names agent_tasks the second table the BYPASSRLS connection may
  * touch, and restricts it to the queue columns: this statement reads and writes only
  * (id, org_id, status, next_action_at, locked_until, lease_id, attempts). It must NEVER touch
  * `title` or the conversation — those are tenant content and are read inside withTenant.
@@ -3364,7 +3366,7 @@ git commit -m "feat(agent-tasks): the runner — leased, fenced, replay-safe, an
 - Create: `app/api/cron/agent-runner/route.ts`
 - Create: `app/api/cron/agent-runner/route.int.test.ts`
 - Modify: `vercel.json`
-- Modify: `docs/adr/0006-agent-task-runner.md` (created here)
+- Modify: `docs/adr/0008-agent-task-runner.md` (created here)
 
 **Interfaces:**
 - Consumes: `runAgentTaskTick`, `secretMatches`, `readCronSecret`.
@@ -3504,7 +3506,7 @@ Then make `TICK_CADENCE_MINUTES` in `modules/agent-tasks/app/agent-task-config.t
 
 - [ ] **Step 4: Write the ADR**
 
-Create `docs/adr/0006-agent-task-runner.md` covering, in the house style of ADR 0004:
+Create `docs/adr/0008-agent-task-runner.md` covering, in the house style of ADR 0004:
 - **Context:** the assistant is request-scoped; an employee needs work that survives a closed laptop.
 - **Decision:** durable `agent_tasks` + a leased, scheduler-driven runner over the existing loop.
 - **Amendment to ADR 0003 §2:** `agent_tasks` is the **second** table the BYPASSRLS owner connection may touch. The restriction, stated as a rule a reviewer can check: the owner connection may read and write only `(id, org_id, status, next_action_at, locked_until, lease_id, attempts)` and must **never** touch `title` or anything in `agent_task_messages`. `claimDueTasks` returns `id, org_id, attempts` and nothing else; the body is read inside `withTenant`.
@@ -3518,7 +3520,7 @@ Create `docs/adr/0006-agent-task-runner.md` covering, in the house style of ADR 
 ```bash
 pnpm typecheck && pnpm lint
 npx vitest run --config vitest.integration.config.ts app/api/cron/agent-runner/route.int.test.ts
-git add app/api/cron/agent-runner vercel.json docs/adr/0006-agent-task-runner.md
+git add app/api/cron/agent-runner vercel.json docs/adr/0008-agent-task-runner.md
 git commit -m "feat(agent-tasks): the runner's cron entry point — no parameters, fail-closed both ways"
 ```
 
