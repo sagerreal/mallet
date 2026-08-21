@@ -1,10 +1,10 @@
 // Public surface for the agent-tasks module — the only sanctioned import seam.
 //
-// NOTE: the router (Task 10, `api/agent-task-router.ts`) and the runner (Task 12,
-// `infra/agent-task-runner.ts`) do not exist yet. Their exports are deliberately left out —
-// a barrel referencing a missing file fails `pnpm typecheck` for every consumer. Add them here
-// once those tasks land.
+// NOTE: the router (`api/agent-task-router.ts`) does not exist yet. Its export is deliberately
+// left out — a barrel referencing a missing file fails `pnpm typecheck` for every consumer. Add it
+// here once that task lands.
 export { AgentTask, type AgentTaskProps, type AgentTaskStatus } from "./domain/agent-task";
 export type { AgentTaskRepository, AgentTaskFilter, StoredExecution } from "./domain/agent-task-repository";
 export { DrizzleAgentTaskRepository } from "./infra/drizzle-agent-task-repository";
+export { runAgentTaskTick, type TickSummary, type TickDeps } from "./infra/agent-task-runner";
 export * from "./app/agent-task-config";

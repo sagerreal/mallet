@@ -85,6 +85,26 @@ describe("AgentTask transitions", () => {
     }
   });
 
+  it("defers a wake without spending the attempt or the step budget", () => {
+    // The back-off after a retryable provider failure. No work happened, so the failure trail and
+    // both budgets must survive it — scheduleNext would spend a step and wipe attempts/lastError.
+    const task = built({ attempts: 3, lastError: "external_service:anthropic", stepsTaken: 4, version: 2 });
+    const r = task.deferTo(LATER, "retrying — the assistant was briefly unavailable", NOW);
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.props.attempts).toBe(3);
+    expect(r.value.props.lastError).toBe("external_service:anthropic");
+    expect(r.value.props.stepsTaken).toBe(4);
+    expect(r.value.props.status).toBe("working");
+    expect(r.value.props.nextActionAt).toBe(LATER);
+    expect(r.value.props.nextActionNote).toBe("retrying — the assistant was briefly unavailable");
+    expect(r.value.props.version).toBe(3);
+  });
+
+  it("refuses to defer a task that is already finished", () => {
+    expect(isOk(built({ status: "done" }).deferTo(LATER, "later", NOW))).toBe(false);
+  });
+
   it("refuses to schedule a task that is already done", () => {
     const done = built({ status: "done" });
     const r = done.scheduleNext(LATER, "again", NOW);

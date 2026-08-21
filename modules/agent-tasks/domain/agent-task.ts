@@ -107,6 +107,24 @@ export class AgentTask {
   }
 
   /**
+   * Come back to this later WITHOUT counting the wake against any budget.
+   *
+   * The runner's back-off for a RETRYABLE provider failure. No work happened, so neither the
+   * attempt budget (MAX_ATTEMPTS) nor the step budget (MAX_STEPS_PER_TASK) may be spent on it, and
+   * the accumulated failure trail must survive: `scheduleNext` would spend a step AND reset
+   * `attempts`/`lastError`, so one rate-limited provider would hand every task in the org to a
+   * human after MAX_STEPS_PER_TASK blips — the same poisoning the attempt budget is spared.
+   */
+  deferTo(at: Date, note: string, now: Date): Result<AgentTask, ValidationError> {
+    if (TERMINAL.includes(this.p.status)) {
+      return err(validation("this task is already finished", "status"));
+    }
+    return ok(
+      this.next({ status: "working", nextActionAt: at, nextActionNote: clampNote(note) }, now),
+    );
+  }
+
+  /**
    * Hand the task to a human. Cannot fail: this is the disposition for an approval, a stall, a
    * spent attempt budget and a transcript cap, and a task nobody can reach is worse than any
    * bad note. Terminal is absorbing: called on a `done`/`closed` task it is a silent no-op
