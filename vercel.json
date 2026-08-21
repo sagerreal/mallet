@@ -1,7 +1,8 @@
 {
   "regions": ["pdx1"],
   "crons": [
-    { "path": "/api/cron/outbox", "schedule": "0 9 * * *" }
+    { "path": "/api/cron/outbox", "schedule": "0 9 * * *" },
+    { "path": "/api/cron/agent-runner", "schedule": "*/5 * * * *" }
   ],
   "buildCommand": "node scripts/db-verify.mjs && next build"
 }
