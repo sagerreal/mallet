@@ -58,6 +58,7 @@ export const ROUTES: readonly RouteDef[] = [
   { path: "/jobs?tab=schedule", name: "jobs-schedule", audience: "office" },
   { path: "/jobs?tab=timesheets", name: "jobs-timesheets", audience: "office" },
   { path: "/money", name: "money", audience: "office", mobile: true },
+  { path: "/artie", name: "artie", audience: "office" },
   { path: "/composer", name: "composer", audience: "office" },
   { path: "/messages", name: "messages", audience: "office" },
   // The four tabs as they stand. `?tab=payments` and `?tab=quickbooks` still RESOLVE (they are

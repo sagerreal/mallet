@@ -1,7 +1,8 @@
 import { describe, it, expect, afterAll } from "vitest";
 import { closeOwnerDb } from "@mallet/shared/db/owner-client";
 import { closeDb } from "@mallet/shared/db/client";
-import { GET } from "./route";
+import { TICK_MAX_DURATION_SECONDS } from "@mallet/agent-tasks";
+import { GET, maxDuration } from "./route";
 
 // Gated the same way as the outbox route's int test: an absent env silently skips (0 assertions,
 // exit 0) rather than failing, so a CI run without .env.local reports nothing tested, not a pass.
@@ -15,6 +16,20 @@ suite("agent-runner cron route", () => {
   afterAll(async () => {
     await closeOwnerDb();
     await closeDb();
+  });
+
+  // LEASE_MINUTES (agent-task-config.ts) is derived from TICK_MAX_DURATION_SECONDS, which exists
+  // only to describe this route's actual `maxDuration`. If someone raises `maxDuration` (e.g. on a
+  // bigger Vercel plan) without moving the constant, the lease margin silently shrinks toward zero
+  // and a tick that is still genuinely in flight can be re-claimed by the next one — two concurrent
+  // wakes on the same task, which nothing else dedupes, i.e. a duplicate text or payment link sent
+  // to a real customer (ADR 0008 §3). `maxDuration` is a plain module export, so this is the one
+  // test that can actually catch the drift — it cannot live in the unit suite (CI's only suite):
+  // importing this route module pulls in shared/db/client.ts, which calls loadConfig() at module
+  // scope and throws outside an environment with DB/Supabase env set. That import is safe here only
+  // because vitest.integration.config.ts loads .env.local first.
+  it("keeps maxDuration equal to TICK_MAX_DURATION_SECONDS", () => {
+    expect(maxDuration).toBe(TICK_MAX_DURATION_SECONDS);
   });
 
   it("401s with no credential, and does not echo the secret", async () => {
