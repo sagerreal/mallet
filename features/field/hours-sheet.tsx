@@ -76,15 +76,20 @@ const OFF_LABELS: Record<OffRow["kind"], string> = {
  * instead of a day nobody worked. Without this row the week's summary counted eight hours the
  * register could not explain: `offRows` was derived and then never drawn.
  */
-function OffSheetRow({ row, editable, onEdit }: {
+function OffSheetRow({ row, editable, busy, onDelete }: {
   row: OffRow;
   editable: boolean;
-  onEdit: (entryId: string | null) => void;
+  busy: boolean;
+  onDelete: (entryId: string) => void;
 }) {
+  // Destruction is never one tap — the same arming the punched editor's Delete uses.
+  const [armed, setArmed] = useState(false);
+  const day = sheetDayLabel(row.workDate);
+
   return (
     <div className="sh-entry">
       <div className="sh-row">
-        <span className="sh-cell day">{sheetDayLabel(row.workDate)}</span>
+        <span className="sh-cell day">{day}</span>
         <span className="sh-span">
           <span className="sh-off">{OFF_LABELS[row.kind]}</span>
           <span className="sh-off-note">paid time off — no clock</span>
@@ -94,15 +99,34 @@ function OffSheetRow({ row, editable, onEdit }: {
           <span className="u">h</span>
         </span>
         <span className="sh-acts">
+          {/* REMOVE, NOT EDIT.
+              This was a pencil calling onEdit, and nothing answered: MyHoursTimeEditor renders
+              only inside SheetRow, so the one control on a day off did nothing at all. It went
+              unnoticed because no surface could create these rows yet — the moment one can, a
+              mistyped PTO day needs a way out. Removing and re-adding is that way; correcting the
+              LENGTH in place is a follow-up. The server still refuses an approved row, so this
+              cannot rewrite a signed week. */}
           {editable ? (
-            <button
-              type="button"
-              className="sh-ico"
-              aria-label={`Edit the time off on ${sheetDayLabel(row.workDate)}`}
-              onClick={() => onEdit(row.entry.id)}
-            >
-              <Pencil />
-            </button>
+            armed ? (
+              <button
+                type="button"
+                className="sh-armed"
+                aria-label={`Really remove the time off on ${day}?`}
+                disabled={busy}
+                onClick={() => onDelete(row.entry.id)}
+              >
+                Really remove?
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="sh-ico"
+                aria-label={`Remove the time off on ${day}`}
+                onClick={() => setArmed(true)}
+              >
+                <Close />
+              </button>
+            )
           ) : null}
         </span>
       </div>
@@ -361,7 +385,8 @@ export function HoursSheet({ entries, stamps, ...actions }: HoursSheetProps) {
                 actions.canEditOwnTimes &&
                 editabilityOf(entry.row.entry, actions.today, actions.myUserId).editable
               }
-              onEdit={actions.onEdit}
+              busy={actions.saving}
+              onDelete={(entryId) => actions.onDelete(entryId)}
             />
           ) : (
             <SheetRow

@@ -332,10 +332,14 @@ describe("a day off in the register", () => {
     expect(rows()[1]?.textContent).toContain("Holiday");
   });
 
-  it("is editable when the shop allows it", () => {
+  it("can be removed when the shop allows it — two taps, never one", () => {
     sheet([offEntry()]);
-    fireEvent.click(screen.getByRole("button", { name: /^Edit the time off on/ }));
-    expect(onEdit).toHaveBeenCalledWith("off");
+    // WAS: a pencil that called onEdit and nothing answered — MyHoursTimeEditor renders only
+    // inside SheetRow, so a day off's only control did nothing. Now it removes the row, armed.
+    fireEvent.click(screen.getByRole("button", { name: /^Remove the time off on/ }));
+    expect(onDelete, "one tap must not destroy a payroll row").not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^Really remove the time off on/ }));
+    expect(onDelete).toHaveBeenCalledWith("off");
   });
 });
 
@@ -351,9 +355,9 @@ describe("a shop that keeps timesheet changes with the office", () => {
     expect(screen.queryByRole("button", { name: /^Edit the shift on/ })).toBeNull();
   });
 
-  it("draws no pencil on a day off either", () => {
+  it("draws no remove control on a day off either", () => {
     sheet([offEntry()], { canEditOwnTimes: false });
-    expect(screen.queryByRole("button", { name: /^Edit the time off on/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Remove the time off on/ })).toBeNull();
   });
 
   it("still lets him SEE what a shift was made of — looking is not editing", () => {

@@ -2178,6 +2178,11 @@
   .sh-span{grid-column:2/6;display:flex;align-items:center;gap:var(--space-3)}
   .sh-off{font-size:var(--type-base);font-weight:700;background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3)}
   .sh-off-note{font-size:var(--type-sm);color:var(--ink-3)}
+  /* the ARMED remove on a day off: a word, not a red icon. The acts cell is otherwise 30px of
+     glyph, and a tap that destroys a payroll row has to say so before it lands. Same red tokens
+     as .btn.danger — one destructive colour in the app, not a second one invented here. */
+  .sh-armed{font-size:var(--type-sm);font-weight:700;color:var(--red);background:var(--red-bg);border:1px solid color-mix(in srgb,var(--red) 45%,transparent);border-radius:var(--radius-pill);padding:var(--space-1) var(--space-3);cursor:pointer;white-space:nowrap}
+  .sh-armed:hover{background:color-mix(in srgb,var(--red) 16%,var(--red-bg));border-color:var(--red)}
   /* his own sign-off, in the pager beside the week it signs */
   .wk-submit{display:inline-flex;align-items:center;gap:var(--space-2);flex-wrap:wrap}
   .wk-submit-err{font-size:var(--type-sm);color:var(--red)}
