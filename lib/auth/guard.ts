@@ -63,16 +63,55 @@ const resolveWithTtl = async (token: string): Promise<Principal | null> => {
 const resolveWithTtlCached = cache(resolveWithTtl);
 
 // ---------------------------------------------------------------------------
-// Authenticate an access token → Principal, failing closed to null.
-// Used by getSessionPrincipal for callers that do not go through guardRole.
+// Authenticate an access token → one of FOUR distinguishable outcomes.
 // ---------------------------------------------------------------------------
-const principalFromToken = async (token: string | null | undefined): Promise<Principal | null> => {
-  if (!token) return null;
+// WHY THIS IS NOT `Principal | null`. It used to be, and every failure collapsed into the same
+// null: no token, a bad token, a real account with no org, and "the database did not answer". The
+// root route turns null into redirect("/welcome"), so during a connection-pooler outage a fully
+// provisioned OWNER was shown "Set up your shop" — one button press from provisioning a SECOND org
+// and buying it a phone number (identity-router's signup buys the shop its line). The old comment
+// here said a transient error "must fail closed to re-auth"; the caller sent it to onboarding
+// instead. Naming the outcomes is what makes the caller's choice explicit.
+export type PrincipalLookup =
+  /** Verified, and the account belongs to an org. */
+  | { readonly status: "ok"; readonly principal: Principal }
+  /** No token, or one that does not verify — the caller belongs at /login. */
+  | { readonly status: "unauthenticated" }
+  /** Verified, resolved, and genuinely a member of no org — the ONLY state /welcome is for. */
+  | { readonly status: "unprovisioned" }
+  /** We could not find out. A DB/pooler/JWKS failure is never an answer about membership. */
+  | { readonly status: "unavailable" };
+
+const errText = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const lookupPrincipalFromToken = async (
+  token: string | null | undefined,
+): Promise<PrincipalLookup> => {
+  if (!token) return { status: "unauthenticated" };
+  const deps = getAppDeps();
+
+  // Local ES256 verify FIRST — network-free once JWKS is warm — so an expired token is told apart
+  // from a good token whose org lookup failed. Same two-phase shape as resolveWithTtl above.
+  let verified: Awaited<ReturnType<typeof deps.tokenVerifier.verify>>;
   try {
-    const result = await getAppDeps().authProvider.authenticate(token);
-    return result.ok ? result.value : null;
-  } catch {
-    return null; // a transient auth-provider/network error must fail closed to re-auth, not a 500
+    verified = await deps.tokenVerifier.verify(token);
+  } catch (error) {
+    // A JWKS fetch that fails is a network problem, not a verdict on this token.
+    logger.error({ err: errText(error) }, "auth.lookup.verify_threw");
+    return { status: "unavailable" };
+  }
+  if (!verified) return { status: "unauthenticated" };
+
+  try {
+    const result = await deps.authProvider.authenticate(token);
+    // Once the token has verified locally, authenticate's only remaining failure is
+    // "account is not provisioned in any org" — see SupabaseAuthProvider.
+    return result.ok ? { status: "ok", principal: result.value } : { status: "unprovisioned" };
+  } catch (error) {
+    // DbPrincipalResolver runs app_resolve_principal over the pooled connection and does not catch,
+    // so this is where an unreachable database lands. It must NOT read as "you have no workspace".
+    logger.error({ err: errText(error) }, "auth.lookup.resolve_threw");
+    return { status: "unavailable" };
   }
 };
 
@@ -80,12 +119,20 @@ const principalFromToken = async (token: string | null | undefined): Promise<Pri
 // Public API
 // ---------------------------------------------------------------------------
 
-// Server-side session → Principal. Uses the SAME auth path as the API (Bearer → verify → resolve),
-// so shells and backend can never disagree about who the caller is.
-export const getSessionPrincipal = async (): Promise<Principal | null> => {
+// Server-side session → the full outcome. Uses the SAME auth path as the API
+// (Bearer → verify → resolve), so shells and backend can never disagree about who the caller is.
+// Prefer this over getSessionPrincipal wherever the caller ROUTES on the answer: only this form
+// can tell "no org" apart from "no database".
+export const lookupSessionPrincipal = async (): Promise<PrincipalLookup> => {
   const supabase = await createSupabaseServer();
   const { data } = await supabase.auth.getSession();
-  return principalFromToken(data.session?.access_token);
+  return lookupPrincipalFromToken(data.session?.access_token);
+};
+
+// The narrow form, for callers that only need "is there a principal" and do not branch on WHY not.
+export const getSessionPrincipal = async (): Promise<Principal | null> => {
+  const lookup = await lookupSessionPrincipal();
+  return lookup.status === "ok" ? lookup.principal : null;
 };
 
 // Layout guard: anonymous → login; authenticated-but-unprovisioned → welcome; wrong role → their

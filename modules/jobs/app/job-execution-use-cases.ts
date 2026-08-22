@@ -436,6 +436,8 @@ export interface AddJobPhotoCommand {
   readonly id?: string;
   readonly storagePath: string;
   readonly caption: string | null;
+  readonly mimeType?: string | null;
+  readonly fileName?: string | null;
   readonly verifyPass: boolean;
   readonly position?: number;
 }
@@ -462,6 +464,8 @@ export class AddJobPhotoUseCase {
       jobId: cmd.jobId,
       storagePath: cmd.storagePath,
       caption: cmd.caption,
+      mimeType: cmd.mimeType ?? null,
+      fileName: cmd.fileName ?? null,
       verifyPass: cmd.verifyPass,
       position: cmd.position ?? 0,
     });

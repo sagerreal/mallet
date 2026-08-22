@@ -863,7 +863,7 @@ export const createFieldRouter = () =>
         const useCase = new AddJobPhotoUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
           await useCase.exec(
-            { jobId, id: input.id, storagePath: input.storagePath, caption: input.caption ?? null, verifyPass: input.verifyPass ?? false },
+            { jobId, id: input.id, storagePath: input.storagePath, caption: input.caption ?? null, mimeType: input.mimeType ?? null, fileName: input.fileName ?? null, verifyPass: input.verifyPass ?? false },
             ctx.principal.orgId,
           ),
         );

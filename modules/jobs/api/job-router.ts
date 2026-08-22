@@ -35,7 +35,7 @@ import { ListCallbackCandidatesUseCase } from "../app/list-callback-candidates";
 import { ConfirmCallbackUseCase } from "../app/confirm-callback";
 import { DismissCallbackUseCase } from "../app/dismiss-callback";
 import { CallbackAutopsyUseCase } from "../app/callback-autopsy";
-import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO } from "./job-dto";
+import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO , addPhotoInput } from "./job-dto";
 import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
@@ -225,7 +225,8 @@ const setAddonStatusInput = z.object({ jobId: z.string().uuid(), addonId: z.stri
 const setAddonInvSkipInput = z.object({ jobId: z.string().uuid(), addonId: z.string().uuid(), invoiceSkip: z.boolean() });
 // setVerifyAnswerInput moved to job-dto.ts — shared with the tech field-router.
 const photoUploadUrlInput = z.object({ jobId: z.string().uuid(), objectId: z.string().uuid(), ext: z.string().min(1).max(10) });
-const addPhotoInput = z.object({ jobId: z.string().uuid(), id: z.string().uuid().optional(), storagePath: z.string().min(1).max(1024), caption: z.string().max(2000).nullable().optional(), verifyPass: z.boolean().optional() });
+// The SHARED schema, not a local copy. This was duplicated, so widening the field surface for
+// attachments left the office one behind — the exact drift the shared input exists to prevent.
 const removePhotoInput = z.object({ jobId: z.string().uuid(), photoId: z.string().uuid() });
 
 const photoUploadUrlDTO = z.object({ signedUrl: z.string(), token: z.string(), storagePath: z.string() });
@@ -798,7 +799,7 @@ export const createJobRouter = () =>
         const useCase = new AddJobPhotoUseCase(repo, ctx.deps.clock, ctx.deps.ids);
         const r = orThrow(
           await useCase.exec(
-            { jobId: asJobId(input.jobId), id: input.id, storagePath: input.storagePath, caption: input.caption ?? null, verifyPass: input.verifyPass ?? false },
+            { jobId: asJobId(input.jobId), id: input.id, storagePath: input.storagePath, caption: input.caption ?? null, mimeType: input.mimeType ?? null, fileName: input.fileName ?? null, verifyPass: input.verifyPass ?? false },
             ctx.principal.orgId,
           ),
         );
