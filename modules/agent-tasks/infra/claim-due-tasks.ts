@@ -4,8 +4,10 @@ import { ownerDb } from "@mallet/shared/db/owner-client";
 /**
  * modules/agent-tasks/infra/claim-due-tasks.ts
  * The one cross-tenant statement in the AI employee feature, and the only place within
- * `modules/agent-tasks` that touches `ownerDb` (the outbox relay is a separate, unrelated
- * caller of the same owner connection elsewhere in the codebase).
+ * `modules/agent-tasks` that touches `ownerDb`. It is NOT the owner connection's second caller
+ * overall — there are eleven, inventoried in ADR 0008 §2 (the outbox relay plus a set of
+ * webhook/public-token tenant resolvers, one of which both reads and writes tenant content). The
+ * narrow-column rule below is this statement's own contract, not a property of that connection.
  *
  * This is deliberately NOT a repository method. `AgentTaskRepository` is constructed with a
  * transaction already scoped to one org (`modules/agent-tasks/domain/agent-task-repository.ts`)

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { LlmClient, LlmRequest, AssistantTurn, AssistantBlock } from "../domain/llm-client";
+import type { LlmClient, LlmRequest, AssistantTurn, AssistantBlock, AgentMessage } from "../domain/llm-client";
 import { LlmError } from "../domain/llm-client";
 import type { ToolOutcome } from "../domain/tool";
 import { runAgentTurn, type ToolMeta } from "./run-agent-turn";
@@ -161,6 +161,41 @@ describe("runAgentTurn", () => {
     expect(result.status).toBe("completed");
     if (result.status === "completed") expect(result.text).toBe("final synthesis");
     expect(calls.length).toBeLessThanOrEqual(3); // bounded
+  });
+
+  it("PERSISTS the cap wrap-up: the stored transcript never ends in an unanswered tool_use", async () => {
+    // `onProgress` is the ONLY thing a durable driver persists through, so this array IS the stored
+    // transcript. synthesizeFinal used to `messages.push` its synthetic tool_results and to drop the
+    // wrap-up assistant turn entirely — so the in-memory transcript was resolved while the STORED
+    // one ended in a dangling tool_use. MAX_ITERS_PER_WAKE is 3, so reaching the cap is ordinary
+    // pacing, and the provider rejects a dangling tool_use unconditionally on every later wake.
+    const stored: AgentMessage[] = [];
+    const llm = new FakeLlm([callTool("t1", "customer_list", {}), text("here is where things stand")]);
+    const result = await runAgentTurn({
+      llm,
+      system: "sys",
+      tools: TOOLS,
+      execute: recordingExecute().execute,
+      userMessage: "x",
+      maxIters: 1,
+      onProgress: async (m) => {
+        stored.push(m);
+      },
+    });
+
+    expect(result.status).toBe("completed");
+    // Every tool_use in the STORED transcript is answered by the message that follows it.
+    stored.forEach((m, i) => {
+      if (m.role === "assistant" && m.blocks.some((b) => b.type === "tool_use")) {
+        expect(stored[i + 1]).toMatchObject({ role: "user", kind: "tool_results" });
+      }
+    });
+    expect(stored.some((m) => m.role === "user" && m.kind === "tool_results")).toBe(true);
+    // And the wrap-up turn — a paid provider call — is on the record rather than discarded.
+    expect(stored[stored.length - 1]).toMatchObject({ role: "assistant", kind: "assistant" });
+    // The one-shot steering sentence is NOT conversation and must never be persisted: a driver
+    // that renders user text would show it to the shop owner as though they had typed it.
+    expect(stored.some((m) => m.role === "user" && m.kind === "text" && m.text.includes("tool-use limit"))).toBe(false);
   });
 
   it("surfaces a model refusal as a refused result", async () => {

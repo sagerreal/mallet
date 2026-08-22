@@ -50,6 +50,13 @@ export const ARTIE_COPY = {
     approvalLead: "Artie wants to:",
     turnLabels: { user: "You", assistant: "Artie" },
     finished: "This task is finished.",
+    /**
+     * Shown INSTEAD of the reply box while a proposal is undecided. Stated, not merely implied by a
+     * missing control — and it is not a style preference: prose sent on top of an unanswered
+     * `tool_use` is refused by the server (`assertNotAwaitingDecision`) because persisting it would
+     * permanently brick the task.
+     */
+    awaitingDecision: "Answer the above before replying.",
   },
   /**
    * Fallback text only. The router's CONFLICT errors are written to be read by a person

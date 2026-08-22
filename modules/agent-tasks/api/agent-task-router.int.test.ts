@@ -379,6 +379,162 @@ suite("agent-tasks tRPC entry (full stack, live RLS)", () => {
     expect(llm.requests).toHaveLength(1);
   });
 
+  it("REFUSES a typed reply while a tool_use is unanswered — before any model call, and appends nothing", async () => {
+    // THE MOST CONSEQUENTIAL REFUSAL ON THIS SURFACE. Artie proposes, the task goes needs_you, and
+    // the owner types "yes, go ahead" instead of pressing Approve. Persisting that user message
+    // strands the assistant tool_use with no matching tool_result, which the provider rejects
+    // UNCONDITIONALLY — on this request and on every later one. The row would be permanently
+    // unusable while reporting "temporarily unavailable", and because it sits in needs_you
+    // (next_action_at null) no wake would ever revisit it.
+    const ownerCaller = appRouter.createCaller(ctxWith(orgAId, "owner", new ScriptedLlm([]), ownerAId));
+    const created = await ownerCaller.v1.agentTasks.create({ title: "Prose over a proposal", instruction: "stand by" });
+
+    const proposeLlm = new ScriptedLlm([callTool("toolu_prose_guard", "task_create", { text: `prose-guard-${randomUUID()}` })]);
+    const proposed = await appRouter
+      .createCaller(ctxWith(orgAId, "owner", proposeLlm, ownerAId))
+      .v1.agentTasks.reply({ taskId: created.id, version: created.version, text: "please add that follow-up" });
+    expect(proposed.status).toBe("needs_approval");
+
+    const before = await ownerCaller.v1.agentTasks.get({ taskId: created.id });
+    expect(before.pending).toHaveLength(1);
+
+    // neverCalledLlm proves the guard fires BEFORE the model — this is not "it failed some other way".
+    const replyCaller = appRouter.createCaller(ctxWith(orgAId, "owner", neverCalledLlm, ownerAId));
+    await expect(
+      replyCaller.v1.agentTasks.reply({
+        taskId: created.id,
+        version: proposed.task.version,
+        text: "yes, go ahead",
+      }),
+    ).rejects.toMatchObject({ code: "CONFLICT", message: expect.stringContaining("approve or decline") });
+
+    // Nothing was written: the transcript still ends in the unanswered tool_use, the proposal is
+    // still answerable by Approve, and the version did not move.
+    const after = await ownerCaller.v1.agentTasks.get({ taskId: created.id });
+    expect(after.pending).toHaveLength(1);
+    expect(after.pending[0]?.toolUseId).toBe(before.pending[0]?.toolUseId);
+    expect(after.messages).toHaveLength(before.messages.length);
+    expect(after.task.version).toBe(proposed.task.version);
+
+    // ...and the approval it was blocking still works, so the guard closes a hole without closing
+    // the door.
+    const approved = await appRouter
+      .createCaller(ctxWith(orgAId, "owner", new ScriptedLlm([text("Done.")]), ownerAId))
+      .v1.agentTasks.reply({
+        taskId: created.id,
+        version: proposed.task.version,
+        approvedToolUseIds: [before.pending[0]!.toolUseId],
+      });
+    expect(approved.status).toBe("completed");
+  });
+
+  it("two OVERLAPPING replies cannot both run: the second is refused before it executes anything", async () => {
+    // `reply` is ownerOrOffice and holds the row across an LLM round trip, so two office users on
+    // the shared "Needs you" queue (or one owner in two tabs) could both approve the same tool_use.
+    // Each buildExecuteTool consults the ledger in its OWN transaction, so before the lease both
+    // found nothing, both executed, and the unique (org_id, tool_use_id) silently swallowed the
+    // second ledger row — two texts, or two payment records, with no error anywhere.
+    const ownerCaller = appRouter.createCaller(ctxWith(orgAId, "owner", new ScriptedLlm([]), ownerAId));
+    const created = await ownerCaller.v1.agentTasks.create({ title: "Double approval", instruction: "stand by" });
+
+    const taskText = `double-approve-${randomUUID()}`;
+    const proposeLlm = new ScriptedLlm([callTool("toolu_double", "task_create", { text: taskText })]);
+    const proposed = await appRouter
+      .createCaller(ctxWith(orgAId, "owner", proposeLlm, ownerAId))
+      .v1.agentTasks.reply({ taskId: created.id, version: created.version, text: "add that task" });
+    expect(proposed.status).toBe("needs_approval");
+    const pending = await ownerCaller.v1.agentTasks.get({ taskId: created.id });
+    const toolUseId = pending.pending[0]!.toolUseId;
+
+    // The winner is PARKED mid-turn on a gate, so the loser genuinely overlaps it rather than
+    // arriving after it finished — which is the only interleaving that could double-execute.
+    let reachedModel = (): void => {};
+    const atModel = new Promise<void>((resolve) => {
+      reachedModel = resolve;
+    });
+    let releaseWinner = (): void => {};
+    const held = new Promise<void>((resolve) => {
+      releaseWinner = resolve;
+    });
+    const gatedLlm: LlmClient = {
+      next: async () => {
+        reachedModel();
+        await held;
+        return text("Done — I created that task.");
+      },
+    };
+
+    const winner = appRouter
+      .createCaller(ctxWith(orgAId, "owner", gatedLlm, ownerAId))
+      .v1.agentTasks.reply({ taskId: created.id, version: proposed.task.version, approvedToolUseIds: [toolUseId] });
+
+    await atModel; // the winner now holds the lease and is genuinely mid-turn
+
+    const loserLlm = new ScriptedLlm([text("this must never be reached")]);
+    await expect(
+      appRouter
+        .createCaller(ctxWith(orgAId, "owner", loserLlm, ownerAId))
+        .v1.agentTasks.reply({ taskId: created.id, version: proposed.task.version, approvedToolUseIds: [toolUseId] }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+    // THE ASSERTION THAT KILLS THE MUTANT: the loser never entered the loop at all. Without the
+    // acquired lease it would have passed the version check (the winner has not settled yet) and
+    // called its own model — the ledger replay would have hidden the double business write, but the
+    // second concurrent turn is the defect, and this is what sees it.
+    expect(loserLlm.requests).toHaveLength(0);
+
+    releaseWinner();
+    const settled = await winner;
+    expect(settled.status).toBe("completed");
+
+    // Exactly ONE business write, and exactly ONE ledger row.
+    const rows = await admin<{ id: string }[]>`select id from tasks where org_id = ${orgAId} and text = ${taskText}`;
+    expect(rows).toHaveLength(1);
+    const [led] = await admin<{ n: number }[]>`
+      select count(*)::int as n from agent_tool_executions
+      where org_id = ${orgAId} and tool_use_id = ${toolUseId}`;
+    expect(led?.n).toBe(1);
+
+    // And the lease is RELEASED, not left fencing the runner out for the rest of the window.
+    const [row] = await admin<{ lease_id: string | null; locked_until: string | null }[]>`
+      select lease_id, locked_until from agent_tasks where id = ${created.id}`;
+    expect(row?.lease_id).toBeNull();
+    expect(row?.locked_until).toBeNull();
+  });
+
+  it("releases the lease even when the turn THROWS — a failed reply must not fence the runner out", async () => {
+    const boom: LlmClient = {
+      next: () => Promise.reject(new Error("provider exploded")),
+    };
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", boom, ownerAId));
+    const created = await caller.v1.agentTasks.create({ title: "Throwing reply", instruction: "stand by" });
+
+    await expect(
+      caller.v1.agentTasks.reply({ taskId: created.id, version: created.version, text: "any news?" }),
+    ).rejects.toThrow();
+
+    const [row] = await admin<{ lease_id: string | null; locked_until: string | null }[]>`
+      select lease_id, locked_until from agent_tasks where id = ${created.id}`;
+    expect(row?.lease_id).toBeNull();
+    expect(row?.locked_until).toBeNull();
+  });
+
+  it("refuses to close a task while the runner holds a live lease, so close and reply agree", async () => {
+    const caller = appRouter.createCaller(ctxWith(orgAId, "owner", new ScriptedLlm([]), ownerAId));
+    const created = await caller.v1.agentTasks.create({ title: "Closing under the runner", instruction: "go" });
+    await admin`
+      update agent_tasks set lease_id = ${randomUUID()}, locked_until = now() + interval '5 minutes'
+      where id = ${created.id}`;
+
+    await expect(
+      caller.v1.agentTasks.close({ taskId: created.id, version: created.version }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // Expired counts as absent here too, or a hard-killed worker would strand the task.
+    await admin`update agent_tasks set locked_until = now() - interval '1 minute' where id = ${created.id}`;
+    const closed = await caller.v1.agentTasks.close({ taskId: created.id, version: created.version });
+    expect(closed.status).toBe("closed");
+  });
+
   it("reports a lost race against the runner finishing the task as CONFLICT, not BAD_REQUEST", async () => {
     const llm = new ScriptedLlm([text("Here is where things stand.")]);
     const caller = appRouter.createCaller(ctxWith(orgAId, "owner", llm, ownerAId));

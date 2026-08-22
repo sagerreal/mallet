@@ -148,7 +148,8 @@ export const jobVerifyAnswers = pgTable(
   ],
 );
 
-// A field photo. storagePath is the org-prefixed key inside the private 'job-photos' bucket
+// A field ATTACHMENT — a photo or a document. storagePath is the org-prefixed key inside the
+// private 'job-photos' bucket
 // (<org_id>/<job_id>/<uuid>.<ext>). verifyPass true when the upload auto-passed the next photo
 // checklist item (mirrors addJobPhoto's auto-pass). caption is optional free text.
 export const jobPhotos = pgTable(
@@ -159,6 +160,14 @@ export const jobPhotos = pgTable(
     jobId: uuid("job_id").notNull(),
     storagePath: text("storage_path").notNull(),
     caption: text("caption"),
+    // WHAT THIS FILE IS. Null on every row written before attachments existed, and those are all
+    // photos — the ext enum only ever admitted jpg/png/webp — so a null reads as an image rather
+    // than as unknown. Carried because a PDF and a JPEG need different treatment on screen: one
+    // renders inline, the other is a link with a name.
+    mimeType: text("mime_type"),
+    // The name the person recognises. A storage path is a uuid; "permit-2939-silva.pdf" is what
+    // they actually look for, and a document with no name is unopenable in practice.
+    fileName: text("file_name"),
     verifyPass: boolean("verify_pass").notNull().default(false),
     position: integer("position").notNull().default(0),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

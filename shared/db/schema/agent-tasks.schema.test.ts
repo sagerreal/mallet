@@ -31,8 +31,13 @@ describe("agent_tasks schema", () => {
     expect(col("lease_id")?.notNull).toBe(false);
   });
 
-  it("exposes the composite unique a child table's FK can target", () => {
-    expect(cfg.uniqueConstraints.some((u) => u.name === "agent_tasks_org_id_uq")).toBe(true);
+  // COLUMNS, not just the name. A name-only assertion proves nothing about the guarantee: the
+  // constraint could be re-pointed at any pair of columns while keeping its name, and this test
+  // would still pass while every child table's composite FK lost its target.
+  it("exposes the composite (org_id, id) unique a child table's FK can target", () => {
+    const uq = cfg.uniqueConstraints.find((u) => u.name === "agent_tasks_org_id_uq");
+    expect(uq).toBeDefined();
+    expect(uq?.columns.map((c) => c.name)).toEqual(["org_id", "id"]);
   });
 
   it("orders the conversation by a bigserial seq, not a timestamp", () => {
@@ -43,9 +48,20 @@ describe("agent_tasks schema", () => {
     expect(seq?.notNull).toBe(true);
   });
 
-  it("keys the execution ledger on the provider's tool_use id", () => {
+  /**
+   * THE ENTIRE REPLAY GUARANTEE, asserted on its COLUMNS.
+   *
+   * `(org_id, tool_use_id)` is what makes "we already ran this exact tool call" a database fact
+   * rather than a hope: `buildExecuteTool` consults it before executing, and `recordExecution`
+   * writes with `onConflictDoNothing` against it. Swap it to `(org_id, tool)` and the name still
+   * reads right — while the ledger now dedupes by TOOL, so the second `sms_send` of a task is
+   * silently swallowed as a replay and never sent. A name-only assertion cannot see that.
+   */
+  it("keys the execution ledger on (org_id, tool_use_id) — the provider's own id, not the tool name", () => {
     const led = getTableConfig(agentToolExecutions);
     expect(led.name).toBe("agent_tool_executions");
-    expect(led.uniqueConstraints.some((u) => u.name === "agent_tool_executions_org_use_uq")).toBe(true);
+    const uq = led.uniqueConstraints.find((u) => u.name === "agent_tool_executions_org_use_uq");
+    expect(uq).toBeDefined();
+    expect(uq?.columns.map((c) => c.name)).toEqual(["org_id", "tool_use_id"]);
   });
 });

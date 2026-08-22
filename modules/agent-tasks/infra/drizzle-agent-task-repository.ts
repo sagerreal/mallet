@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull, sql as rawSql } from "drizzle-orm";
+import { and, asc, desc, eq, isNull, lte, or, sql as rawSql } from "drizzle-orm";
 import { agentTasks, agentTaskMessages, agentToolExecutions } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import {
@@ -133,6 +133,34 @@ export class DrizzleAgentTaskRepository implements AgentTaskRepository {
           eq(agentTasks.orgId, this.orgId),
           eq(agentTasks.version, expectedVersion),
           isNull(agentTasks.deletedAt),
+        ),
+      )
+      .returning({ id: agentTasks.id });
+    return rows.length > 0;
+  }
+
+  /**
+   * Takes the lease in ONE atomic statement — the UPDATE itself is what makes this caller the
+   * owner, exactly as `claimDueTasks` does for the runner. Two concurrent callers cannot both
+   * match: Postgres serializes the row write, and the loser's predicate no longer holds.
+   *
+   * The free-lease predicate (`lease_id is null OR locked_until is null OR locked_until <= now`)
+   * mirrors `claimDueTasks`' own, so the two writers agree about what "held" means.
+   *
+   * `now` and `lockedUntil` go through drizzle's column encoders (`lte(column, date)` and `.set()`),
+   * never a bare `${date}` inside a raw `sql` template — postgres.js under `prepare: false` cannot
+   * bind a JS `Date` as a query parameter (see shared/db/keyset.ts).
+   */
+  async acquireLease(id: AgentTaskId, leaseId: string, lockedUntil: Date, now: Date): Promise<boolean> {
+    const rows = await this.tx
+      .update(agentTasks)
+      .set({ leaseId, lockedUntil })
+      .where(
+        and(
+          eq(agentTasks.id, id),
+          eq(agentTasks.orgId, this.orgId),
+          isNull(agentTasks.deletedAt),
+          or(isNull(agentTasks.leaseId), isNull(agentTasks.lockedUntil), lte(agentTasks.lockedUntil, now)),
         ),
       )
       .returning({ id: agentTasks.id });

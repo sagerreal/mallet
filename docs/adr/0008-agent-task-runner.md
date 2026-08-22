@@ -12,11 +12,31 @@
 
 ### 2. Amendment to ADR 0003 §2: `agent_tasks` is the second, still-narrow exception to RLS
 
-ADR 0003 §2 named the BYPASSRLS **owner connection** the single sanctioned non-RLS runtime path, and scoped it to the outbox relay's own bookkeeping. This ADR widens that by exactly one table. `modules/agent-tasks/infra/claim-due-tasks.ts` is now the **only other** caller of the owner connection in the codebase, and the rule a reviewer can mechanically check is:
+ADR 0003 §2 named the BYPASSRLS **owner connection** the single sanctioned non-RLS runtime path, and scoped it to the outbox relay's own bookkeeping. This ADR widens that by exactly one table: `modules/agent-tasks/infra/claim-due-tasks.ts`, whose rule a reviewer can mechanically check is:
 
 > The owner connection may read and write `agent_tasks` only through the columns `id, org_id, status, deleted_at, next_action_at, locked_until, lease_id, attempts` — via one atomic `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` — and must never read `title` or anything in `agent_task_messages`.
 
 (This list has one more column than the plan's original text — `deleted_at` — because the claim's `WHERE` clause filters on it to skip soft-deleted rows; verified against the shipped statement, not assumed from the plan.)
+
+**A correction to an earlier draft of this section, which said something false twice.** It claimed `claimDueTasks` was "the *only other* caller of the owner connection in the codebase" and that every owner-connection caller returns "ids/status columns only, never tenant content". Both are wrong, and a security review that trusted them would have drawn the wrong map. A grep for `@mallet/shared/db/owner-client` finds **eleven** production callers, not two:
+
+| Caller | Shape |
+|---|---|
+| `shared/outbox/relay/relay.ts` | the ADR 0003/0004 relay claim + bookkeeping |
+| `modules/agent-tasks/infra/claim-due-tasks.ts` | this ADR's claim |
+| `modules/quoting/infra/drizzle-public-estimate-reader.ts` | token → estimate; **reads AND writes** (`update(estimates)`), and reads estimate lines and the org name — real tenant content |
+| `modules/invoicing/app/public-invoice.ts` | public invoice-by-token read |
+| `modules/messaging/infra/drizzle-message-repository.ts` | inbound SMS, before the org is known |
+| `modules/calls/infra/drizzle-call-directory.ts` | inbound call routing |
+| `modules/inbound/infra/drizzle-inbound-endpoint-resolver.ts` | web-form token → endpoint |
+| `modules/sms-agent/infra/drizzle-sms-agent-readers.ts` | SMS-agent reads |
+| `modules/a2p/infra/drizzle-registration-repository.ts` | A2P registration state |
+| `app/api/inbound/[channel]/[token]/route.ts` | inbound webhook entry |
+| `shared/db/owner-client.ts` | the client itself |
+
+They exist for a coherent reason — a webhook, a public token or a relay row arrives with **no authenticated org**, so something has to resolve which tenant it belongs to before `withTenant` can be entered — but that reason is "resolve the tenant", not "return ids only", and several of them go on to read (and one to write) tenant content on that connection.
+
+What this does **not** change: the §2 column restriction above is real and is honoured. `claimDueTasks`' `SET` list is `lease_id, locked_until`; its `WHERE` reads `status, deleted_at, next_action_at, locked_until`; its `RETURNING` is `id, org_id, attempts`. It is the only **cross-tenant** statement in `modules/agent-tasks` (the repository is constructed from an already-org-scoped tx and has no method that could express "every org"). The false part was only the surrounding claim about the rest of the codebase. Widening the owner connection's *inventory* is not what this ADR does; adding one narrow statement to it is.
 
 Verified true of the code as shipped: the statement's `SET` list is `lease_id, locked_until`; its `WHERE` reads `status, deleted_at, next_action_at, locked_until`; its `RETURNING` is `id, org_id, attempts`. No `title`, no join to `agent_task_messages`, no `SELECT *`. The task body — `title`, the transcript, everything an attacker-adjacent or merely-private tenant might care about — is read exactly once the org id is known, inside `withTenant(orgId)`, by `DrizzleAgentTaskRepository`, under ordinary RLS. The owner connection never sees it. Everything else the runner needs (the creator's current role, the transcript, the task row for writing) also goes through `withTenant`, not the owner connection — `claimDueTasks` is the *only* cross-tenant statement in the module, by construction (`AgentTaskRepository` is built from an already-org-scoped tx and has no method that could express "every org").
 
@@ -72,25 +92,33 @@ concurrently for a round trip. The final version-guarded `save` still protects t
 each side's transcript appends commit independently before that, and an interleaved transcript (two
 consecutive assistant turns, or tool results answering the other side's ids) is a **hard provider
 rejection on every subsequent wake**, self-healing only by burning the attempt budget. `reply` now
-refuses against a live lease with a `CONFLICT` a person can act on, and re-checks the lease (and
-terminality) at settle time. It refuses; it never blocks or polls.
+**acquires** the lease for the duration of its turn (`acquireLease`, one atomic UPDATE against the
+free-lease predicate), releases it on every exit path including a throw, and fences its settle write
+on holding that same `lease_id`. A caller that cannot take it gets a `CONFLICT` a person can act on.
+It refuses; it never blocks or polls.
 
 **An expired lease counts as ABSENT, not held**, in both the claim's predicate and
 `AgentTask.isLeaseLive`. Every path the runner controls releases its lease explicitly, so a stale
 `locked_until` means a hard-killed process — and refusing on it would strand the task behind a dead
 lock nothing ever clears.
 
-**The residual, stated because neither review found it stated anywhere.** `reply` refuses when a
-lease is *already* held, but the reverse ordering is still open: a human can begin a `reply` on a
-task that is due-and-unleased, and the runner can claim it a few hundred milliseconds later, during
-the reply's LLM round trip. Both then append. The window is narrow (it requires `status = working`
-AND `next_action_at <= now` AND the two to interleave inside one round trip), the disposition is
-still safe (one side gets `CONFLICT` from the version guard, and `reply` also re-checks the lease
-before writing), and no business side effect is duplicated — a mutating tool still needs a per-turn
-approval the runner cannot supply on its own. Closing it completely means making `reply` **acquire**
-the lease for the duration of its turn rather than merely checking it, which needs an
-`acquireLease(id, leaseId, until)` on the repository and a release on every exit path. That is the
-right fix; it is deliberately not in this change, which was scoped to the fencing.
+**The residual an earlier draft deferred is now CLOSED, and the reason it had to be.** That draft
+recorded the reverse ordering as an accepted risk — a human begins a `reply` on a due-and-unleased
+task and the runner claims it milliseconds later — and argued no business side effect could be
+duplicated, because a mutating tool needs a per-turn approval the runner cannot supply. True of
+runner-versus-human. It missed **human versus human**: `reply` is `ownerOrOffice` and two office
+users on the shared "Needs you" queue (or one owner in two browser tabs) can approve the *same*
+`tool_use` concurrently. `buildExecuteTool` consults the execution ledger in its OWN short
+transaction, so both find nothing, both execute, and the unique `(org_id, tool_use_id)` swallows the
+second ledger row via `onConflictDoNothing` — **two texts, or two payment records, and no error
+anywhere**. Exactly the harm §3 gives as the lease's reason to exist, reached without the runner
+being involved at all.
+
+So `reply` acquires (`REPLY_LEASE_MS`, sized to outlive the tRPC route's own `maxDuration` so a
+request killed at the ceiling stays fenced for as long as it really ran), releases in a `finally`,
+and settles only while it still holds the lease it took. `close` deliberately CHECKS rather than
+acquires: it is one version-guarded UPDATE inside one transaction, which Postgres already serializes,
+so a lease would add nothing but a window in which the request could die holding one.
 
 ### 4. Why approvals do not persist across a wake boundary
 
@@ -119,6 +147,6 @@ Carried from the implementation plan's deferral table (`docs/superpowers/plans/2
 
 ## Consequences
 
-- The owner (BYPASSRLS) connection now has exactly two sanctioned callers — the outbox relay and `claimDueTasks` — both narrow, both auditable by grep, both returning ids/status columns only, never tenant content.
+- The owner (BYPASSRLS) connection gains exactly one new caller: `claimDueTasks`. It is narrow, auditable by grep, and returns ids/status columns only. It is NOT the second caller overall — see the correction in §2 for the real inventory of eleven, and for why several of the pre-existing ones legitimately do read tenant content on that connection.
 - The scheduler cadence is an operational decision, not a code decision: `vercel.json`'s `*/5 * * * *` entry requires a Vercel plan that permits sub-daily cron, and `TICK_CADENCE_MINUTES` (`modules/agent-tasks/app/agent-task-config.ts`) must equal whatever cadence is actually driving the route — Vercel Cron or an external pinger — or the agent will promise the shop a wake time the scheduler cannot keep. Neither the cadence choice nor that constant was changed by this ADR; it records the dependency.
 - A wake is bounded on four independent axes (`MAX_ITERS_PER_WAKE`, `TICK_BUDGET_MS`, `maxDuration`, `WAKE_BATCH`), so a single slow task or a whole slow tick degrades gracefully into "picked up next tick" rather than a stuck queue or an exhausted function. `TICK_BUDGET_MS` is the one the runner enforces on itself; `maxDuration` is the platform's backstop, and reaching it means the self-imposed budget was mis-derived — see §3a.

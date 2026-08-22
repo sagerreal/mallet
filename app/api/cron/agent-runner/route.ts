@@ -51,15 +51,30 @@ const handle = async (req: Request): Promise<Response> =>
       return Response.json({ error: "the assistant is not switched on for this server" }, { status: 503 });
     }
 
-    const summary = await runAgentTaskTick({
-      llm: deps.llmClient,
-      clock: deps.clock,
-      ids: deps.ids,
-      notificationSender: deps.notificationSender,
-      paymentLinkGateway: deps.paymentLinkGateway,
-      systemPrompt: SYSTEM_PROMPT,
-    });
-    return Response.json(summary, { status: 200 });
+    // Wrapped exactly like the outbox route wraps its own relay call, and for the same reason: a
+    // throw from `claimDueTasks` (a pool exhaustion, a driver error, an owner-connection failure)
+    // happens BEFORE any task is leased, so nothing is stranded — but without this it surfaces as a
+    // generic Next.js 500 with no structured log line, leaving a scheduler seeing repeated 500s and
+    // no record of what failed. A throw AFTER tasks are claimed is already safe by design: the
+    // lease expires and the next tick re-claims, and the execution ledger stops any committed side
+    // effect repeating.
+    try {
+      const summary = await runAgentTaskTick({
+        llm: deps.llmClient,
+        clock: deps.clock,
+        ids: deps.ids,
+        notificationSender: deps.notificationSender,
+        paymentLinkGateway: deps.paymentLinkGateway,
+        systemPrompt: SYSTEM_PROMPT,
+      });
+      return Response.json(summary, { status: 200 });
+    } catch (error: unknown) {
+      logger.error(
+        { err: error instanceof Error ? error.message : String(error) },
+        "agent.cron.tick-failed",
+      );
+      return Response.json({ error: "tick failed" }, { status: 500 });
+    }
   });
 
 export const GET = handle;

@@ -3,11 +3,25 @@ import {
   TICK_CADENCE_MINUTES, MIN_STEP_MINUTES, MAX_STEP_DAYS, WAKE_BATCH, LEASE_MINUTES,
   MAX_ITERS_PER_WAKE, MAX_ATTEMPTS, MAX_STEPS_PER_TASK, MAX_TRANSCRIPT_BYTES,
   MAX_OPEN_TASKS_PER_ORG, TITLE_MAX, NOTE_MAX, TICK_BUDGET_MS, TICK_MAX_DURATION_SECONDS,
+  REPLY_LEASE_MS, TRPC_MAX_DURATION_SECONDS,
 } from "./agent-task-config";
 
 describe("agent task config", () => {
-  it("never promises a wake sooner than the scheduler can serve", () => {
-    expect(MIN_STEP_MINUTES).toBeGreaterThanOrEqual(TICK_CADENCE_MINUTES * 2);
+  /**
+   * NOT a restatement of the definition. `MIN_STEP_MINUTES = TICK_CADENCE_MINUTES * 2` and
+   * `expect(MIN_STEP_MINUTES).toBeGreaterThanOrEqual(TICK_CADENCE_MINUTES * 2)` are the same
+   * expression written twice — the assertion could not fail for any reason the source did not
+   * already spell out. These two are the RELATIONSHIPS the number exists to hold, either of which a
+   * plausible retuning of the multiplier could break:
+   *
+   *  - strictly MORE than one cadence, or a wake promised for exactly one cadence out can fall due
+   *    inside the very window the current tick is still running in;
+   *  - more than one whole tick's WALL CLOCK (TICK_BUDGET_MS), or the tick that was supposed to
+   *    serve the promise is itself still working when the promise comes due.
+   */
+  it("never promises a wake the scheduler can still be busy missing", () => {
+    expect(MIN_STEP_MINUTES).toBeGreaterThan(TICK_CADENCE_MINUTES);
+    expect(MIN_STEP_MINUTES * 60_000).toBeGreaterThan(TICK_BUDGET_MS);
   });
 
   it("bounds a wake to a month", () => {
@@ -36,6 +50,13 @@ describe("agent task config", () => {
     expect(TICK_BUDGET_MS).toBeLessThan(LEASE_MINUTES * 60_000);
     // And with enough of the window left to settle the task it abandons.
     expect(TICK_MAX_DURATION_SECONDS * 1_000 - TICK_BUDGET_MS).toBeGreaterThanOrEqual(30_000);
+  });
+
+  // The interactive fence: a `reply` killed at the platform ceiling must still be fenced for the
+  // whole time it was actually running, or the runner reclaims the row mid-turn and two writers
+  // append to one transcript. Strictly greater, so there is real margin rather than a tie.
+  it("holds a reply's lease past the longest request that can hold it", () => {
+    expect(REPLY_LEASE_MS).toBeGreaterThan(TRPC_MAX_DURATION_SECONDS * 1_000);
   });
 
   it("keeps the batch small enough for sequential dispatch on a max-10 pool", () => {

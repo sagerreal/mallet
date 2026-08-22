@@ -302,4 +302,58 @@ suite("DrizzleAgentTaskRepository (live RLS)", () => {
     const after = await repoFor(orgAId, (r) => r.countOpen());
     expect(after).toBe(before - 1);
   });
+  // ── acquireLease: the atomic take that makes `reply` safe against a second human ─────────────
+
+  it("acquireLease is a TAKE, not a check: a second holder is refused while the first's lease is live", async () => {
+    const id = randomUUID();
+    await repoFor(orgAId, (r) =>
+      r.create({ id, title: "Leasable", createdBy: asUserId(ownerAId), createdByRole: "owner", nextActionAt: new Date() }),
+    );
+    const taskId = asAgentTaskId(id);
+    const now = new Date();
+    const until = new Date(now.getTime() + 60_000);
+
+    const first = randomUUID();
+    expect(await repoFor(orgAId, (r) => r.acquireLease(taskId, first, until, now))).toBe(true);
+
+    // A second caller — a second office user, or the same owner in another tab — is refused. This
+    // is the whole guarantee: without it both would go on to execute the same approved tool.
+    const second = randomUUID();
+    expect(await repoFor(orgAId, (r) => r.acquireLease(taskId, second, until, now))).toBe(false);
+    expect((await repoFor(orgAId, (r) => r.findById(taskId)))?.props.leaseId).toBe(first);
+
+    // Released, and now takeable again.
+    expect(await repoFor(orgAId, (r) => r.releaseLease(taskId, first))).toBe(true);
+    expect(await repoFor(orgAId, (r) => r.acquireLease(taskId, second, until, now))).toBe(true);
+  });
+
+  it("treats an EXPIRED lease as absent, so a hard-killed worker cannot strand the task", async () => {
+    const id = randomUUID();
+    await repoFor(orgAId, (r) =>
+      r.create({ id, title: "Stale lease", createdBy: asUserId(ownerAId), createdByRole: "owner", nextActionAt: new Date() }),
+    );
+    const taskId = asAgentTaskId(id);
+    const dead = randomUUID();
+    await admin`
+      update agent_tasks set lease_id = ${dead}, locked_until = now() - interval '1 minute'
+      where id = ${id}`;
+
+    const now = new Date();
+    const taker = randomUUID();
+    expect(await repoFor(orgAId, (r) => r.acquireLease(taskId, taker, new Date(now.getTime() + 60_000), now))).toBe(true);
+    expect((await repoFor(orgAId, (r) => r.findById(taskId)))?.props.leaseId).toBe(taker);
+  });
+
+  it("cannot acquire another org's lease", async () => {
+    const id = randomUUID();
+    await repoFor(orgAId, (r) =>
+      r.create({ id, title: "A's only", createdBy: asUserId(ownerAId), createdByRole: "owner", nextActionAt: new Date() }),
+    );
+    const now = new Date();
+    const fromB = await repoFor(orgBId, (r) =>
+      r.acquireLease(asAgentTaskId(id), randomUUID(), new Date(now.getTime() + 60_000), now),
+    );
+    expect(fromB).toBe(false);
+    expect((await repoFor(orgAId, (r) => r.findById(asAgentTaskId(id))))?.props.leaseId).toBeNull();
+  });
 });

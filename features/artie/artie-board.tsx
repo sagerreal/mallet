@@ -7,9 +7,9 @@
  * staged" first on the customers pipeline board (features/customers/pipeline-board.tsx).
  *
  * Rides the same kanban classes as the work board and the pipeline board — `.board > .col >
- * .kcard`, `.col-head` with a `.sum` count — and adds no new CSS. Reads `useArtieTasks`' ONE
- * query and slices it into columns client-side, so a count can never disagree with the cards
- * rendered beside it.
+ * .kcard`, `.col-head` with a `.sum` count — and adds no new CSS. Reads `useArtieTasks`, which
+ * fetches ONE PAGE PER COLUMN (batched into a single HTTP request) so open work can never fall off
+ * the board, and whose counts come from the same rows the cards do.
  */
 
 import { agoShort } from "@/lib/format";
@@ -51,18 +51,23 @@ function ArtieColumn({
   columnKey,
   label,
   tasks,
+  truncated,
   onOpen,
 }: {
   columnKey: ArtieStatus;
   label: string;
   tasks: readonly ArtieTask[];
+  truncated: boolean;
   onOpen: (taskId: string) => void;
 }) {
   return (
     <section className="col" data-testid={`artie-col-${columnKey}`} aria-label={`${label} column`}>
       <div className="col-head" data-testid="artie-col-head">
         <span>{label}</span>
-        <span className="sum">{tasks.length}</span>
+        {/* "25+" when the status holds more rows than this page fetched. A bare "25" beside a
+            column that actually has hundreds is a count that lies; the finished columns are a
+            recent view on purpose (there is no archive path yet), so it has to say so. */}
+        <span className="sum">{truncated ? `${tasks.length}+` : tasks.length}</span>
       </div>
       {tasks.length === 0 ? (
         <p className="muted">{ARTIE_COPY.emptyColumn}</p>
@@ -121,6 +126,7 @@ export function ArtieBoard({ onOpen, onNewTask }: ArtieBoardProps) {
             columnKey={column.key}
             label={ARTIE_COPY.columns[column.key]}
             tasks={column.tasks}
+            truncated={column.truncated}
             onOpen={onOpen}
           />
         ))}

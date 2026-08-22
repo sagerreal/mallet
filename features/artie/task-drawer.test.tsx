@@ -170,6 +170,29 @@ describe("TaskDrawer", () => {
     expect(screen.getByText("This task is finished.")).toBeTruthy();
   });
 
+  it("renders NO reply box while a proposal is undecided — the approval pair is the only transcript action", () => {
+    // Prose sent on top of an unanswered tool_use is refused by the server
+    // (assertNotAwaitingDecision) because persisting it would strand the tool_use and brick the
+    // task for ever. A box that cannot succeed must not be rendered.
+    getQuery.mockReturnValue(resolved(task(), [], [pendingItem()]));
+    render(<TaskDrawer taskId="t1" onClose={vi.fn()} />);
+    expect(screen.queryByRole("textbox")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Send" })).toBeNull();
+    // The absence is STATED, not left to be inferred from a missing control.
+    expect(screen.getByText("Answer the above before replying.")).toBeTruthy();
+    // The approval pair, and the one way out that never touches the transcript, both stay.
+    expect(screen.getByRole("button", { name: "Approve" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Not this one" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Close this task" })).toBeTruthy();
+  });
+
+  it("brings the reply box back once nothing is pending", () => {
+    getQuery.mockReturnValue(resolved(task()));
+    render(<TaskDrawer taskId="t1" onClose={vi.fn()} />);
+    expect(screen.getByRole("textbox")).toBeTruthy();
+    expect(screen.queryByText("Answer the above before replying.")).toBeNull();
+  });
+
   it("two or more pending proposals get ONE shared Approve all / Not any of these pair", () => {
     getQuery.mockReturnValue(
       resolved(task(), [], [pendingItem({ toolUseId: "tu_a" }), pendingItem({ toolUseId: "tu_b", summary: "Also mark the invoice paid" })]),

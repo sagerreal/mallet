@@ -73,6 +73,34 @@ const LEASE_MARGIN_MINUTES = 5;
  */
 export const LEASE_MINUTES = LEASE_FLOOR_MINUTES + LEASE_MARGIN_MINUTES;
 
+/**
+ * The platform ceiling on ONE INTERACTIVE request, in seconds — the `maxDuration` exported by
+ * `app/api/trpc/[trpc]/route.ts`, which is the route every `reply` arrives on. Named here for the
+ * same reason `TICK_MAX_DURATION_SECONDS` is: the lease below is derived from it, so the number the
+ * platform will actually enforce is the number the fence is built on. It MUST equal that route's
+ * own export — asserted in tick-max-duration.test.ts by reading the route file as text.
+ */
+export const TRPC_MAX_DURATION_SECONDS = 300;
+
+/**
+ * How long a human `reply` OWNS the task, in ms.
+ *
+ * `reply` does not merely check the runner's lease — it takes one. Checking is not enough: two
+ * office users working the shared "Needs you" queue, or one owner in two browser tabs, can both
+ * approve the same `tool_use`. Each `buildExecuteTool` call consults the execution ledger in its
+ * OWN transaction, so two concurrent approvals both find nothing, both execute, and the unique
+ * `(org_id, tool_use_id)` swallows the second ledger row with `onConflictDoNothing` — two texts, or
+ * two payment records, and no error anywhere. That is exactly the harm ADR 0008 section 3 gives as
+ * the lease's reason to exist.
+ *
+ * Sized to OUTLIVE the request that holds it: a reply killed at the platform ceiling must still be
+ * fenced for the whole time it was actually running, or the runner reclaims the row mid-turn and
+ * the concurrency returns. Every traceable exit path releases the lease explicitly (including a
+ * throw), so the only way to hold it for the full window is a platform kill — which is precisely
+ * the case the window is sized for.
+ */
+export const REPLY_LEASE_MS = (TRPC_MAX_DURATION_SECONDS + 60) * 1_000;
+
 /** LLM rounds per wake. Deliberately far below runAgentTurn's default of 15: one wake must fit
  *  inside the route's maxDuration, and the task's own next_action_at is how work continues. */
 export const MAX_ITERS_PER_WAKE = 3;

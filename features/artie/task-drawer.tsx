@@ -3,8 +3,10 @@
 /**
  * features/artie/task-drawer.tsx
  * One task, opened from the board: what Artie has said so far, what it is waiting on, and the
- * two ways a person answers it — a reply, or a decision on a pending proposal (never both on the
- * same turn, per the router's `reply` doc comment).
+ * two ways a person answers it — a reply, or a decision on a pending proposal. Never both, and not
+ * merely "not at the same time": while anything is pending the reply box is not rendered AT ALL,
+ * because the server refuses a typed reply in that state (see `TaskActions`, and
+ * `assertNotAwaitingDecision` in the router). A control that cannot succeed is not offered.
  *
  * IN-FLOW, NOT A MODAL — no popover, no portal. It renders below the board using the sheet
  * grammar for its head (`.sheet-head` / `.sheet-rows`) and `.composer` (app/prototype.css:2550,
@@ -135,6 +137,7 @@ function PendingList({
  */
 function TaskActions({
   terminal,
+  awaitingDecision,
   draft,
   onDraft,
   onSend,
@@ -142,6 +145,7 @@ function TaskActions({
   busy,
 }: {
   terminal: boolean;
+  awaitingDecision: boolean;
   draft: string;
   onDraft: (v: string) => void;
   onSend: () => void;
@@ -153,6 +157,35 @@ function TaskActions({
       <p className="muted" style={{ marginTop: "var(--space-4)" }}>
         {ARTIE_COPY.drawer.finished}
       </p>
+    );
+  }
+  /**
+   * NO REPLY BOX WHILE A PROPOSAL IS UNDECIDED, and this is a correctness guard, not a layout
+   * preference.
+   *
+   * A transcript ending in an unanswered `tool_use` is a RESUME: the server's loop recognises that
+   * exact shape and resolves it. Typing "yes, go ahead" instead of pressing Approve appends a user
+   * message ahead of it, the loop stops recognising the resume, and the provider is handed a
+   * `tool_use` with no matching `tool_result` — which it rejects for ever, on this request and on
+   * every later wake. The task would be permanently unusable, reported as "temporarily
+   * unavailable". The server refuses that reply outright (`assertNotAwaitingDecision`), so
+   * rendering the box would only offer an action that cannot succeed.
+   *
+   * "Close this task" STAYS. It is not the refused action — it never touches the transcript, and it
+   * is the owner's only way out of a proposal they want neither to approve nor to deny.
+   */
+  if (awaitingDecision) {
+    return (
+      <>
+        <p className="muted" style={{ marginTop: "var(--space-4)" }}>
+          {ARTIE_COPY.drawer.awaitingDecision}
+        </p>
+        <div className="sheet-secrow">
+          <button type="button" className="sheet-sec" onClick={onCloseTask} disabled={busy}>
+            {ARTIE_COPY.drawer.close}
+          </button>
+        </div>
+      </>
     );
   }
   return (
@@ -258,6 +291,9 @@ function TaskDrawerBody({
 }) {
   const { draft, setDraft, error, busy, decide, send, closeTask } = useTaskDrawerActions(taskId, task.version);
   const terminal = isTerminalStatus(task.status);
+  // While anything is pending, the approval pair is the only transcript-touching action that can
+  // succeed — see TaskActions for why a typed reply is refused rather than merely discouraged.
+  const awaitingDecision = !terminal && pending.length > 0;
 
   return (
     <div className="stack-3">
@@ -275,13 +311,21 @@ function TaskDrawerBody({
 
         <div className="sheet-rows" style={{ padding: "var(--space-4) var(--space-5)" }}>
           <ConversationTurns messages={messages} />
-          {!terminal && pending.length > 0 ? <PendingList pending={pending} onDecide={decide} busy={busy} /> : null}
+          {awaitingDecision ? <PendingList pending={pending} onDecide={decide} busy={busy} /> : null}
           {error ? (
             <p role="alert" style={{ color: "var(--red)" }}>
               {error}
             </p>
           ) : null}
-          <TaskActions terminal={terminal} draft={draft} onDraft={setDraft} onSend={send} onCloseTask={closeTask} busy={busy} />
+          <TaskActions
+            terminal={terminal}
+            awaitingDecision={awaitingDecision}
+            draft={draft}
+            onDraft={setDraft}
+            onSend={send}
+            onCloseTask={closeTask}
+            busy={busy}
+          />
         </div>
       </Card>
     </div>

@@ -72,6 +72,28 @@ const sanitizeMarkers = (summary: string): string =>
 const delimit = (summary: string): string =>
   `${TOOL_RESULT_OPEN}\n${sanitizeMarkers(summary)}\n${TOOL_RESULT_CLOSE}`;
 
+/**
+ * The boundary applies to FAILURES too. A tool error is not always Mallet's own prose: an error
+ * summary routinely quotes the record it failed on ("no customer matches <name>"), and that
+ * name came from an unauthenticated intake POST. Returning it undelimited hands the model
+ * attacker-authored text OUTSIDE the untrusted region the system prompt teaches it to distrust —
+ * which is the whole guard, defeated through the one path nobody wrapped.
+ *
+ * NOT applied to the REPLAY branch, and that is a deliberate scope line rather than a judgement
+ * that it is safe. A replayed summary is the same untrusted record text and arguably deserves the
+ * same dressing — but `agent-task-runner.int.test.ts`'s replay case uses the ABSENCE of a marker as
+ * its fingerprint for "the tool did not really run", and that assertion was reviewed and approved on
+ * that reading. Changing it is a decision for the owner, not a side effect of this fix. RESIDUAL, so
+ * it is on the record: a wake recovering from a crash replays undelimited text where a fresh wake
+ * would have delimited it.
+ */
+const delimitOutcome = (outcome: ToolOutcome, on: boolean): ToolOutcome => {
+  if (!on) return outcome;
+  return outcome.ok
+    ? { ok: true, summary: delimit(outcome.summary) }
+    : { ok: false, error: delimit(outcome.error) };
+};
+
 export const buildExecuteTool = (params: BuildExecuteToolParams): ExecuteTool => {
   const { tools, runInTenant, ledger } = params;
 
@@ -84,6 +106,7 @@ export const buildExecuteTool = (params: BuildExecuteToolParams): ExecuteTool =>
     if (ledger) {
       const previous = await ledger.find(toolUseId);
       if (previous) {
+        // Returned RAW — see the note on `delimitOutcome` for why the replay branch is left alone.
         return previous.ok
           ? { ok: true, summary: previous.summary }
           : { ok: false, error: previous.summary };
@@ -110,8 +133,7 @@ export const buildExecuteTool = (params: BuildExecuteToolParams): ExecuteTool =>
         });
       }
 
-      if (!outcome.ok) return outcome;
-      return params.delimitResults ? { ok: true, summary: delimit(outcome.summary) } : outcome;
+      return delimitOutcome(outcome, params.delimitResults === true);
     });
   };
 };

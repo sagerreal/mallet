@@ -189,21 +189,39 @@ export const runAgentTurn = async (params: RunAgentParams): Promise<AgentResult>
     return { status: "completed", text: textOf(turn.blocks), transcript: messages, usage };
   }
 
-  return synthesizeFinal(params, messages, usage); // iteration cap hit
+  return synthesizeFinal(params, messages, usage, append); // iteration cap hit
 };
 
-// The cap wrap-up: one final tool-LESS call so the user gets a summary, not a dangling loop. If the
-// transcript ends in an unanswered assistant tool_use, answer each with a synthetic error result
-// FIRST — otherwise the request carries a dangling tool_use (no matching tool_result) and the API
-// rejects it (400). A refusal on the wrap-up is surfaced as refused, not a blank completion.
+/**
+ * The cap wrap-up: one final tool-LESS call so the user gets a summary, not a dangling loop. If the
+ * transcript ends in an unanswered assistant tool_use, answer each with a synthetic error result
+ * FIRST — otherwise the request carries a dangling tool_use (no matching tool_result) and the API
+ * rejects it (400). A refusal on the wrap-up is surfaced as refused, not a blank completion.
+ *
+ * BOTH WRITES GO THROUGH `append`, NEVER `messages.push`. `append` is the only caller of
+ * `onProgress`, and a durable driver (modules/agent-tasks' runner) persists EXCLUSIVELY through
+ * `onProgress` — so a push here resolves the in-memory transcript and leaves the STORED one ending
+ * in an unanswered `tool_use`. That is not an exotic crash path: `MAX_ITERS_PER_WAKE` is 3, so
+ * hitting the cap is ordinary pacing, and the next wake (or a human `reply`) then hands the
+ * provider a dangling tool_use — a hard 400 that never self-heals, because the row is stuck in a
+ * status nothing revisits. The same reasoning applies to the wrap-up assistant turn: it was paid
+ * for and then discarded, so the next wake had no record that the summary was ever produced.
+ *
+ * The steering sentence ("You have reached the tool-use limit…") is deliberately NOT appended: it
+ * is one-shot instruction to the model, not conversation, and a driver that renders user text
+ * would show it to the shop owner as though they had typed it.
+ */
 const synthesizeFinal = async (
   params: RunAgentParams,
   messages: AgentMessage[],
   priorUsage: LlmUsage,
+  append: (message: AgentMessage) => Promise<void>,
 ): Promise<AgentResult> => {
   const tail = messages[messages.length - 1];
   if (tail?.role === "assistant" && tail.blocks.some(isToolUse)) {
-    messages.push({
+    // Awaited, and BEFORE the wrap-up call: if the provider then fails, the persisted transcript
+    // is already coherent rather than dangling.
+    await append({
       role: "user",
       kind: "tool_results",
       results: tail.blocks.filter(isToolUse).map((tu) => ({ toolUseId: tu.id, content: "tool-use limit reached; this tool was not run", isError: true })),
@@ -216,6 +234,7 @@ const synthesizeFinal = async (
     effort: "low",
   });
   const usage = addUsage(priorUsage, finalTurn.usage);
+  await append({ role: "assistant", kind: "assistant", blocks: finalTurn.blocks });
   if (finalTurn.stopReason === "refusal") {
     return { status: "refused", text: textOf(finalTurn.blocks) || "The request was declined.", transcript: messages, usage };
   }

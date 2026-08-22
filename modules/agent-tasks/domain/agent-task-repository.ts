@@ -49,6 +49,20 @@ export interface AgentTaskRepository {
    */
   save(task: AgentTask, expectedVersion: number): Promise<boolean>;
 
+  /**
+   * TAKES the lease, atomically, or refuses — one statement, so two callers racing for the same row
+   * cannot both win. Returns `true` only if this caller now owns it.
+   *
+   * A lease is FREE when no `lease_id` is stamped, or when `locked_until` has already passed: an
+   * expired lease counts as ABSENT everywhere in this feature (`claimDueTasks`' predicate and
+   * `AgentTask.isLeaseLive` agree), because every path a worker controls releases explicitly, so a
+   * stale `locked_until` means a hard-killed process — and refusing on it would strand the task
+   * behind a dead lock nothing ever clears.
+   *
+   * The caller MUST release on every exit path, including a throw.
+   */
+  acquireLease(id: AgentTaskId, leaseId: string, lockedUntil: Date, now: Date): Promise<boolean>;
+
   /** Releases a lease and writes bookkeeping. Returns false when the lease was lost (a race). */
   releaseLease(id: AgentTaskId, leaseId: string): Promise<boolean>;
 
