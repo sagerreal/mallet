@@ -140,4 +140,49 @@ suite("claimDueTasks", () => {
     const mySlice = mine(claimed);
     expect(mySlice.map((c) => c.id).sort()).toEqual([ids[0], ids[1]].sort());
   });
+
+  // REGRESSION (the batch bound). The original form of this claim,
+  // `update ... where id in (select ... limit n for update skip locked)`, ignored the bound
+  // entirely and leased EVERY due row: `limit 2` took all 6 candidates, and 20 candidates took all
+  // 20. Postgres runs that sub-SELECT as a SubPlan re-executed once per candidate outer row, and
+  // because SKIP LOCKED yields a different set on each execution nearly every row matches one of
+  // them. Which plan the planner picks depends on the table's statistics, so the 4-row fixture
+  // above caught it only intermittently — it passed on one run and failed on the next against
+  // identical code. Twelve candidates against a batch of 3 is what made it deterministic when the
+  // cause was measured, so that is what guards it.
+  //
+  // These rows are deleted at the end rather than left behind: the claim is GLOBAL, so nine
+  // unclaimed rows dated older than every other suite's ANCIENT would sort ahead of them and could
+  // starve a concurrently running suite's own claim.
+  it("never leases more than the batch, with many more candidates than the bound", async () => {
+    // Older than this file's ANCIENT, so these sort ahead of every other suite's seeded rows too
+    // and the claimed set is unambiguously ours.
+    const OLDEST = "1971-01-01T00:00:00Z";
+    const batch = 3;
+    const ids: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      ids.push(await seed(new Date(Date.parse(OLDEST) + i * 60 * 60 * 1000).toISOString()));
+    }
+
+    try {
+      const claimed = await claimDueTasks({ batch, leaseMinutes: 5, leaseId: randomUUID(), now: new Date() });
+
+      // The hard contract, across all orgs. Under the old statement this was 12, not 3.
+      expect(claimed.length).toBeLessThanOrEqual(batch);
+      // And ours specifically: these 12 are the oldest rows in the table, so the batch is all ours.
+      expect(mine(claimed)).toHaveLength(batch);
+
+      // The lease must be stamped on exactly `batch` rows — the returned set and the persisted
+      // state have to agree, which is what the over-claim broke (it returned 12 AND leased 12).
+      // Scoped to THIS test's ids, not to the org: earlier tests in this file lease rows in the
+      // same org and those leases persist, so an org-wide count reads 8 rather than 3.
+      const [leased] = await admin<{ n: number }[]>`
+        select count(*)::int as n from agent_tasks
+        where id = any(${ids}) and lease_id is not null`;
+      expect(leased!.n).toBe(batch);
+    } finally {
+      await admin`delete from agent_tasks where id = any(${ids})`;
+    }
+  });
+
 });

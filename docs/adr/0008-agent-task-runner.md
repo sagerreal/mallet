@@ -14,7 +14,7 @@
 
 ADR 0003 §2 named the BYPASSRLS **owner connection** the single sanctioned non-RLS runtime path, and scoped it to the outbox relay's own bookkeeping. This ADR widens that by exactly one table: `modules/agent-tasks/infra/claim-due-tasks.ts`, whose rule a reviewer can mechanically check is:
 
-> The owner connection may read and write `agent_tasks` only through the columns `id, org_id, status, deleted_at, next_action_at, locked_until, lease_id, attempts` — via one atomic `UPDATE … WHERE id IN (SELECT … FOR UPDATE SKIP LOCKED)` — and must never read `title` or anything in `agent_task_messages`.
+> The owner connection may read and write `agent_tasks` only through the columns `id, org_id, status, deleted_at, next_action_at, locked_until, lease_id, attempts` — via one atomic `UPDATE … FROM <cte>` whose CTE carries the `FOR UPDATE SKIP LOCKED` (see § below — the `WHERE id IN (SELECT …)` form does NOT hold the batch bound) — and must never read `title` or anything in `agent_task_messages`.
 
 (This list has one more column than the plan's original text — `deleted_at` — because the claim's `WHERE` clause filters on it to skip soft-deleted rows; verified against the shipped statement, not assumed from the plan.)
 
@@ -44,7 +44,26 @@ Verified true of the code as shipped: the statement's `SET` list is `lease_id, l
 
 The outbox relay's claim also uses `FOR UPDATE SKIP LOCKED` with no lease, and ADR 0004 §4 accepted that two overlapping ticks can both dispatch the same row — because outbox handlers are a **documented idempotent contract**. An agent wake is not: a turn can send a text message or create a payment link, and a duplicate wake sends the customer a second message, which is not something a retry policy can undo after the fact. So `claimDueTasks` stamps `lease_id` + `locked_until` in the same statement that claims the row, and every later write to that row (`save`, `releaseLease`) carries the lease id as a fencing token — a worker whose lease already expired can never win a write race against whoever reclaimed the row. This is a real behavioral fork from the outbox precedent, made for the reason the outbox's own ADR named as the boundary of its own safety argument.
 
-What live-DB testing actually surfaced while building this: the claim statement had to be wrapped in `ownerDb.transaction(...)`, not for atomicity (a lone statement is already atomic) and not for the lease semantics above, but because `ownerQueryClient` is a **pooled** client (`max: 2`), and the first statement(s) issued against a freshly constructed pooled connection could — non-deterministically — return a `RETURNING` set larger than the statement's own `LIMIT`, even with `LIMIT` inlined as a literal. Reproduced with `max: 2`, not reproduced at `max: 1`, not reproduced once the statement was pinned to one connection via an explicit transaction. **Removing the wrap as a "simplification" silently reopens a batch-cap violation** — no error, no exception, just more leased rows than `batch` asked for, discovered only by counting.
+What live-DB testing actually surfaced while building this: **the batch bound requires a CTE.** The
+obvious form — `UPDATE … WHERE id IN (SELECT … ORDER BY … LIMIT n FOR UPDATE SKIP LOCKED)` —
+silently ignores the bound. Measured against the live DB, `limit 2` over 6 due rows leased all 6, and
+over 20 due rows leased all 20. It reproduces with raw postgres.js as well as through drizzle, inside
+an explicit transaction and in autocommit alike; the sub-SELECT executed on its own returns exactly 2
+every time, so it is the `IN (...)` that breaks it. Cause: the planner runs that sub-SELECT as a
+SubPlan re-executed once per candidate outer row, and because `SKIP LOCKED` yields a different set on
+each execution, nearly every row appears in some execution's result and matches. The `LIMIT` is
+honoured — it bounds each execution, not the update. A CTE containing `FOR UPDATE` is never inlined by
+Postgres, so it is materialised and evaluated exactly once, which is what actually enforces the bound
+(verified: 36 consecutive trials, 6 and 20 candidates, in-transaction and autocommit, all claimed
+exactly 2).
+
+An earlier revision of this ADR and of `claim-due-tasks.ts` attributed the same symptom to the
+**pooled** owner client (`max: 2`) and prescribed wrapping the statement in `ownerDb.transaction(...)`.
+That was wrong in both directions and is recorded here because it was load-bearing documentation for a
+while: the wrapper does not fix the over-claim — with the `IN (...)` form it made it reproduce 30/30
+instead of intermittently, which is how the real cause above was finally isolated — and the pool was
+never involved. The statement now runs through plain `ownerDb.execute()`; a single statement is
+already atomic and needs no explicit transaction.
 
 ### 3a. The lease's margin, and the residual race it does not close
 
