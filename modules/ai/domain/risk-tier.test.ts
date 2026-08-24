@@ -106,13 +106,17 @@ const EXPECTED_WRITE_TIERS: Record<string, RiskTier> = {
   task_set_done: "operational",
   quote_draft: "operational",
   customer_create: "operational",
-  timesheet_approve_week: "operational",
-  // Touches what someone owes or has paid.
+  // Touches what someone owes or has paid — timesheet_approve_week lives here too: it is payroll
+  // approval, "the only trigger for hours leaving Mallet" to QuickBooks, and "unrecoverable
+  // through this tool" (its own docstring). It is NOT undoable from inside the app the way the
+  // group above is, so it cannot sit under "operational" no matter how schedule-shaped its name
+  // reads — see the dedicated test below.
   invoice_draft: "money",
   invoice_create_from_job: "money",
   invoice_update: "money",
   invoice_record_payment: "money",
   quote_accept: "money",
+  timesheet_approve_week: "money",
   // Not undoable from inside the app, or redirects where documents and payment links land.
   invoice_void: "destructive",
   job_cancel: "destructive",
@@ -156,5 +160,17 @@ describe("the tool catalog's risk tiers", () => {
     // (or comms-less) catalog would pass them while proving nothing.
     expect(comms).toHaveLength(3);
     for (const t of comms) expect(t.mutating).toBe(true);
+  });
+
+  it("keeps timesheet_approve_week at money, not operational — payroll is not a schedule edit", () => {
+    // Named individually, on top of the exhaustive EXPECTED_WRITE_TIERS check above, because this
+    // is the one entry in the whole catalog most likely to get "tidied" back into the operational
+    // block it visually resembles (job_schedule, job_assign, task_* all sit right next to it and
+    // ARE undoable in-app). Payroll approval is not: it is "the only trigger for hours leaving
+    // Mallet" to QuickBooks and "unrecoverable through this tool — re-approving returns count 0"
+    // (the tool's own docstring). `operational` auto-approves unattended at `assisted`; `money`
+    // never does, at any level — that gap is the whole point of this test.
+    const tool = tools.find((t) => t.name === "timesheet_approve_week");
+    expect(tool?.riskTier).toBe("money");
   });
 });

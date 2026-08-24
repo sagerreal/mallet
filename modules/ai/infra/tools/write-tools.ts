@@ -1100,7 +1100,14 @@ export const timesheetApproveWeekTool: AgentTool = {
   inputSchema: jsonSchema(timesheetApproveWeekInput),
   input: timesheetApproveWeekInput,
   mutating: true,
-  riskTier: "operational",
+  // money, not operational — despite touching no invoice. Approval is "the only trigger for hours
+  // leaving Mallet" to QuickBooks (approve-week.ts's own words) and "unrecoverable through this
+  // tool: re-approving returns count 0." `operational` auto-approves unattended at `assisted`;
+  // a task like "close out last week's hours" would then push a tech's pay to payroll with nobody
+  // looking, which is exactly what the owner-facing settings copy promises never happens ("Prices,
+  // payments and anything it can't undo still come to you."). Do not move this back down to
+  // tidy the comment blocks below — see risk-tier.test.ts's dedicated assertion.
+  riskTier: "money",
   // Fingerprint on userId + sorted dates so any change in the approval scope is caught at confirm.
   async fingerprint(input, _ctx): Promise<string> {
     const parsed = parseTool(timesheetApproveWeekInput, input);

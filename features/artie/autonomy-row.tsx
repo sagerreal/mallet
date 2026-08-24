@@ -31,7 +31,9 @@ interface LevelCopy {
   readonly consequence: string;
 }
 
-// Copy is verbatim from the brief — functional, not chatty, and specific about what stays gated.
+// Copy is verbatim from the brief for Supervised/Assisted — functional, not chatty, and specific
+// about what stays gated. Autonomous's line was corrected in a later security review: it promised
+// initiative Artie does not have (see that entry's own comment below).
 const LEVELS: readonly LevelCopy[] = [
   {
     value: "supervised",
@@ -47,8 +49,15 @@ const LEVELS: readonly LevelCopy[] = [
   {
     value: "autonomous",
     label: "Autonomous",
+    // Today this behaves exactly like Assisted (see modules/agent-tasks/domain/autonomy.ts's
+    // AUTO_APPROVED — the two rows are byte-identical on purpose, pending routines/triggers).
+    // The old copy here promised "works on its own initiative and opens its own follow-ups",
+    // which is not built — a promise this level cannot keep is worse than no promise, so the
+    // copy stays honest about today rather than describing a feature that does not exist yet.
+    // Worded differently than Assisted's line (not just prefixed) so a screen reader — and the
+    // regression test below — can tell the two rows apart even though they mean the same thing.
     consequence:
-      "Artie also works on its own initiative and opens its own follow-ups. Prices, payments and anything it can't undo still come to you.",
+      "Right now, Artie treats this the same as Assisted: it sends routine replies and books work without asking. Prices, payments and anything it can't undo still come to you.",
   },
 ];
 
@@ -123,7 +132,9 @@ export function AutonomyRow() {
             ))}
           </ul>
           {error && (
-            <p role="alert" style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
+            // Token alone, no hex fallback — this repo forbids raw colour values (design-system.md);
+            // --red-700 is a defined token everywhere else it's used (see page.tsx, branding-card.tsx).
+            <p role="alert" style={{ color: "var(--red-700)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
               {error}
             </p>
           )}

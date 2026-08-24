@@ -125,7 +125,7 @@ describe("decideWake", () => {
       expect(d.kind).toBe("hand_over");
     });
 
-    it("hands over a turn mixing comms and money even when autonomous, naming the money tool", () => {
+    it("hands over a turn mixing comms and money even when autonomous, naming ONLY the money tool", () => {
       const d = decideWake({
         ...base,
         result: needsApprovalFor([
@@ -140,8 +140,47 @@ describe("decideWake", () => {
       });
       expect(d.kind).toBe("hand_over");
       // Named specifically, not just "something is pending" — the human has to see WHICH call
-      // is the one blocking an otherwise-routine turn.
-      if (d.kind === "hand_over") expect(d.note).toContain("invoice_update");
+      // is the one blocking an otherwise-routine turn. message_send is comms, which autonomous
+      // WOULD auto-approve on its own — it is not what stopped this turn, so it must not appear
+      // in the note next to the tool that actually did.
+      if (d.kind === "hand_over") {
+        expect(d.note).toContain("invoice_update");
+        expect(d.note).not.toContain("message_send");
+      }
+    });
+
+    it("names every blocking tool when more than one pending call failed, not just the first", () => {
+      const d = decideWake({
+        ...base,
+        result: needsApprovalFor([
+          { toolUseId: "m1", tool: "invoice_update" },
+          { toolUseId: "m2", tool: "invoice_void" },
+        ]),
+        level: "autonomous",
+        pendingTiers: [
+          { toolUseId: "m1", tier: "money" },
+          { toolUseId: "m2", tier: "destructive" },
+        ],
+      });
+      expect(d.kind).toBe("hand_over");
+      if (d.kind === "hand_over") {
+        expect(d.note).toContain("invoice_update");
+        expect(d.note).toContain("invoice_void");
+      }
+    });
+
+    it("falls back to naming every pending tool when pendingTiers carries no tier info to filter by", () => {
+      // pendingTiers empty is the runner's bounded second decide (see the test just below) — there
+      // is no tier information to distinguish a "blocking" tool from a fine one, so the note must
+      // still say something useful rather than going blank.
+      const d = decideWake({
+        ...base,
+        result: needsApprovalFor([{ toolUseId: "c1", tool: "message_send" }]),
+        level: "autonomous",
+        pendingTiers: [],
+      });
+      expect(d.kind).toBe("hand_over");
+      if (d.kind === "hand_over") expect(d.note).toContain("message_send");
     });
 
     it("hands over rather than auto-approving nothing when pendingTiers is empty", () => {

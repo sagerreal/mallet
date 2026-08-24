@@ -55,7 +55,14 @@ describe("AutonomyRow", () => {
     open();
     expect(screen.getByText(/Artie drafts everything and waits for your OK/)).toBeTruthy();
     expect(screen.getByText(/Artie sends routine replies and books work on its own/)).toBeTruthy();
-    expect(screen.getByText(/Artie also works on its own initiative/)).toBeTruthy();
+    // Autonomous's copy must not promise initiative that does not exist: routines/triggers (the
+    // only thing that would let Artie act "on its own initiative" or "open its own follow-ups")
+    // are deferred, and AUTO_APPROVED.autonomous is byte-identical to .assisted today. A security
+    // review caught the old copy claiming otherwise — this must stay honest about today, not
+    // silently regress back to promising work the settings row cannot yet do.
+    expect(screen.getByText(/the same as Assisted/)).toBeTruthy();
+    expect(screen.queryByText(/own initiative/)).toBeNull();
+    expect(screen.queryByText(/opens its own follow-ups/)).toBeNull();
   });
 
   it("saves the level an owner picks", () => {

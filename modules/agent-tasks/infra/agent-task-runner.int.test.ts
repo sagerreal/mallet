@@ -603,4 +603,44 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
       select count(*)::int as n from agent_tool_executions where org_id = ${orgId} and tool_use_id = 'm1'`;
     expect(ledger!.n).toBe(0);
   });
+
+  it("respects a level changed mid-wake, not the value seen before the LLM turn ran", async () => {
+    const clock = new FixedClock(new Date());
+    const taskId = await seedTask(16);
+    await admin`
+      insert into org_settings (org_id, agent_autonomy, booking)
+      values (${orgId}, 'assisted', '{}'::jsonb)
+      on conflict (org_id) do update set agent_autonomy = excluded.agent_autonomy`;
+    // The scripted provider flips the org DOWN to "supervised" as a side effect of answering the
+    // turn — standing in for an owner who panics and changes the setting while this wake's one LLM
+    // round trip (which can take up to TICK_BUDGET_MS, four minutes) is still in flight. Before this
+    // fix, `planWake` had already snapshotted "assisted" before this call ever ran, and the
+    // auto-approve decision below would still have consumed that stale snapshot. After the fix, the
+    // level is re-read fresh immediately before the decision, so it sees "supervised" instead.
+    class LevelFlippingLlm implements LlmClient {
+      private called = false;
+      async next(): Promise<AssistantTurn> {
+        if (!this.called) {
+          this.called = true;
+          await admin`update org_settings set agent_autonomy = 'supervised' where org_id = ${orgId}`;
+        }
+        return callTool("c2", "invoice_send", { invoiceId: randomUUID() });
+      }
+    }
+    const llm = new LevelFlippingLlm();
+
+    const summary = await runAgentTaskTick(depsWith(llm, clock));
+
+    // invoice_send is "comms" — the same tool that auto-runs at "assisted" in the test above. If
+    // the runner had decided on the pre-turn snapshot, this would also auto-run. Instead it must
+    // hand over, because the level it actually consulted was "supervised" as of right before the
+    // decision — proving the re-read, not the plan-time value, is what the decision saw.
+    expect(summary.handedOver).toBe(1);
+    const after = await readTask(taskId);
+    expect(after.status).toBe("needs_you");
+    expect(after.next_action_note).toContain("invoice_send");
+    const [ledger] = await admin<{ n: number }[]>`
+      select count(*)::int as n from agent_tool_executions where org_id = ${orgId} and tool_use_id = 'c2'`;
+    expect(ledger!.n).toBe(0);
+  });
 });

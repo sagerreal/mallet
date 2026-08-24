@@ -114,13 +114,13 @@ type WakePlan =
       readonly principal: Principal;
       readonly messages: readonly AgentMessage[];
       readonly seededBytes: number;
-      /**
-       * The org's live autonomy level. Read HERE, inside this wake's own tenant transaction, on
-       * every wake — never snapshotted onto the task row. An owner who switches to Supervised
-       * mid-flight has to reach work already in progress, which is the entire point of the
-       * control; reading it once at task-creation time (or caching it across wakes) would not.
-       */
-      readonly level: AutonomyLevel;
+      // Deliberately NO autonomy level here. It used to be read at this point and carried through
+      // to the approval decision — which meant the value the decision consumed was whatever the
+      // org's setting was BEFORE the LLM turn below, not at the moment it was actually used. That
+      // turn can run for up to TICK_BUDGET_MS (four minutes), so an owner who flipped to Supervised
+      // mid-turn would still get auto-approved work out of a wake already in flight. `wakeOne` now
+      // reads the level itself, in its own short `withTenant`, immediately before the decision that
+      // consumes it — see the comment there. Putting it back here would silently reintroduce the gap.
     };
 
 const HAND_OVER_CREATOR_GONE = "The person who set this up is no longer on the team, so I stopped.";
@@ -170,6 +170,10 @@ const readOrgContext = async (tx: TenantTx, orgId: OrgId): Promise<WakeOrgContex
  * repository method that does NOT lazy-create the org_settings row. A brand-new org with no
  * settings row at all still gets a real answer (`DEFAULT_AUTONOMY`, "supervised") rather than
  * gaining one as a side effect of a background wake.
+ *
+ * Called from exactly one place: `wakeOne`, in its own short transaction, immediately before the
+ * approval decision that consumes it. Do NOT call this from `planWake` — see that function's own
+ * comment for why reading it before the LLM turn is the bug, not a harmless duplicate.
  */
 const readAutonomyLevel = (tx: TenantTx, orgId: OrgId): Promise<AutonomyLevel> =>
   new DrizzleSettingsRepository(tx, orgId).getAgentAutonomy();
@@ -215,16 +219,15 @@ const planWake = async (ref: WakeRef): Promise<WakePlan> =>
     }
 
     const principal: Principal = { userId: creator.userId, orgId: ref.orgId, role: creator.role };
-    const level = await readAutonomyLevel(tx, ref.orgId);
     const existing = await repo.loadMessages(ref.taskId);
     // A transcript still owed tool results is resumed AS IS — see awaitsToolResults for why a
     // message appended here would 400 the provider on every wake.
     if (awaitsToolResults(existing)) {
-      return { kind: "ready", task, principal, messages: existing, seededBytes: 0, level };
+      return { kind: "ready", task, principal, messages: existing, seededBytes: 0 };
     }
     const line = dateLine(ref.deps.clock.now(), await readOrgContext(tx, ref.orgId));
     await repo.appendMessage(ref.taskId, line);
-    return { kind: "ready", task, principal, messages: [...existing, line], seededBytes: sizeOf(line), level };
+    return { kind: "ready", task, principal, messages: [...existing, line], seededBytes: sizeOf(line) };
   });
 
 /** The catalog executor: least privilege, untrusted-data markers on, replay ledger wired. */
@@ -306,7 +309,7 @@ const wakeOne = async (ref: WakeRef): Promise<WakeDisposition> => {
     });
   }
 
-  const { task, principal, messages, level } = plan;
+  const { task, principal, messages } = plan;
   const control = buildTaskControlTools(ref.taskId, { now: () => ref.deps.clock.now() });
   const catalog = toolsForRole(buildAgentTools(), principal.role);
   const runCatalogTool = buildCatalogExecutor(ref, principal, catalog);
@@ -349,6 +352,14 @@ const wakeOne = async (ref: WakeRef): Promise<WakeDisposition> => {
   const first = await attemptTurn(ref, task, () => runTurn());
   if (first.kind === "settled") return first.disposition;
   let result = first.result;
+
+  // Read the level HERE, immediately before the decision that consumes it — never the value
+  // `planWake` would have seen before the turn above ran. That turn can take up to TICK_BUDGET_MS
+  // (four minutes) of wall clock, so reading any earlier is exactly the bug this closes: an owner
+  // who flips to Supervised mid-turn would otherwise not be honoured until whatever LATER wake
+  // happens to re-plan. One extra read, in its own short `withTenant` (mirrors `persist`'s own
+  // scoped transaction below) — never cached, so there is nothing here that can go stale.
+  const level = await withTenant(ref.orgId, (tx) => readAutonomyLevel(tx, ref.orgId));
 
   let decision = decideWake({
     result,

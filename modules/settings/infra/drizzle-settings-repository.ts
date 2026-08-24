@@ -253,9 +253,10 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
    * Focused, side-effect-free read of how much this shop lets Artie act without asking. No lazy
    * create (mirrors getTechSeesPrice/getTimezone/getTaxBps): a shop that never opened Settings
    * has no row to read this from and resolves to DEFAULT_AUTONOMY ("supervised") — the schema's
-   * own default — rather than any more permissive guess. This is the read Task 17's runner calls
-   * INSIDE the tenant transaction on the approval path, so a just-saved downgrade to Supervised
-   * is visible to work already in flight, never a value cached before the owner panicked.
+   * own default — rather than any more permissive guess. This is the read `wakeOne` in
+   * agent-task-runner.ts calls, in its OWN short tenant transaction, immediately before the
+   * approval decision that consumes it (never earlier, and never cached) — so a just-saved
+   * downgrade to Supervised reaches work already in flight, not just the next task to be planned.
    *
    * Narrowed defensively even though the DB check constraint already guarantees the value: same
    * reasoning as paymentProvider's read below — anything else is corruption, and falling back to

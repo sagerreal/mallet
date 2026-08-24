@@ -252,12 +252,14 @@ export interface OrgSettingsProps {
   readonly stripeOnboardedAt: Date | null;
   // --- AI employee (Artie) autonomy ---
   /**
-   * How much this shop lets Artie do without asking a human first. READ LIVE at approval time,
-   * never snapshotted onto a task — see modules/agent-tasks/domain/autonomy.ts for the policy
-   * this feeds and why a live read is a load-bearing safety property, not an implementation
-   * detail: a task that keeps acting autonomously after the owner panics and switches to
-   * Supervised is a broken control. Defaults to "supervised": a shop that never opened Settings
-   * keeps asking before every action, the same "secure by default" reasoning as techEditsTimes.
+   * How much this shop lets Artie do without asking a human first. READ LIVE, immediately before
+   * the approval decision that consumes it, never snapshotted onto a task and never read any
+   * earlier in the wake — see modules/agent-tasks/domain/autonomy.ts for the policy this feeds
+   * and why a live read at that exact moment is a load-bearing safety property, not an
+   * implementation detail: a task that keeps acting autonomously after the owner panics and
+   * switches to Supervised is a broken control. Defaults to "supervised": a shop that never
+   * opened Settings keeps asking before every action, the same "secure by default" reasoning as
+   * techEditsTimes.
    */
   readonly agentAutonomy: AutonomyLevel;
   readonly createdAt: Date;

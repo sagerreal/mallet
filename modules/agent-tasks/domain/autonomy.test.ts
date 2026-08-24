@@ -32,6 +32,14 @@ describe("autoApproves", () => {
   it("treats an unrecognised level as supervised", () => {
     expect(autoApproves("comms", "nonsense" as AutonomyLevel)).toBe(false);
   });
+
+  it("refuses to auto-approve money at assisted — the exact guard payroll approval now relies on", () => {
+    // timesheet_approve_week is tiered "money" (see risk-tier.test.ts), specifically so this stays
+    // false: assisted is the level where comms + operational run unattended, and payroll approval
+    // must never join that set no matter how many other operational-looking tools sit next to it
+    // in the catalog.
+    expect(autoApproves("money", "assisted")).toBe(false);
+  });
 });
 
 describe("canRunUnattended", () => {

@@ -65,10 +65,24 @@ export const decideWake = (input: WakeInput): WakeDecision => {
     }
     // Always name the tools waiting, not whatever the model said in prose: the reviewer needs
     // to know WHICH call is gated, and the assistant's text (often addressed past the gate, e.g.
-    // "I'd send this") does not reliably say that. This also names the OFFENDING tool when a
-    // mixed turn is handed over for exactly one bad call.
-    const tools = input.result.pending.map((p) => p.tool).join(", ");
-    return { kind: "hand_over", note: `I need your OK to run: ${tools}` };
+    // "I'd send this") does not reliably say that.
+    //
+    // Name ONLY the tool(s) that actually failed autoApproves, not every pending tool_use in the
+    // turn — a mixed turn can carry a comms call sitting right next to the money call that
+    // stopped it, and naming both leaves the human reading "Needs you" to guess which one is the
+    // actual reason. `pendingTiers` can be empty (the runner's bounded second decide passes `[]`
+    // on purpose — see its own comment), in which case there is no tier information to filter by
+    // at all, so fall back to the full pending list rather than naming nothing.
+    const toolNameFor = (toolUseId: string): string | undefined =>
+      input.result.status === "needs_approval"
+        ? input.result.pending.find((p) => p.toolUseId === toolUseId)?.tool
+        : undefined;
+    const blocking = input.pendingTiers
+      .filter((p) => !autoApproves(p.tier, input.level))
+      .map((p) => toolNameFor(p.toolUseId))
+      .filter((name): name is string => name !== undefined);
+    const tools = blocking.length > 0 ? blocking : input.result.pending.map((p) => p.tool);
+    return { kind: "hand_over", note: `I need your OK to run: ${tools.join(", ")}` };
   }
   if (input.result.status === "refused") {
     return { kind: "hand_over", note: "I could not do this one. Over to you." };
