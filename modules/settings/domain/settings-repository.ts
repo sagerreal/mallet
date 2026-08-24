@@ -1,4 +1,8 @@
 import type { OrgSettings, BookingCfg } from "./org-settings";
+// Type-only: no runtime dependency on the agent-tasks module. See org-settings.ts's import of
+// the same type for why this cross-module type import (through the barrel, per the module-
+// boundary lint rule) is the sanctioned shared-kernel pattern.
+import type { AutonomyLevel } from "@mallet/agent-tasks";
 
 // --- Collection value types ----------------------------------------------
 // Plain row shapes — not full aggregates (no per-row invariants beyond a non-empty label,
@@ -112,6 +116,21 @@ export interface SettingsRepository {
    * getConfig, since getConfig's lazy insert would make every org look pre-existing.
    */
   hasConfig(): Promise<boolean>;
+
+  /**
+   * Focused, side-effect-free read of how much this shop lets Artie act without asking — the
+   * runner (modules/agent-tasks) calls this INSIDE its tenant transaction on the approval path,
+   * so a permission downgrade the owner just saved reaches work already in flight (see
+   * modules/agent-tasks/domain/autonomy.ts: a snapshotted level is a broken safety control, not
+   * a simplification worth taking).
+   *
+   * No lazy create — mirrors getTechSeesPrice/getTimezone/getTaxBps: an org that never opened
+   * Settings has no row to read this from, and MUST resolve to the schema's own default
+   * ("supervised"), not to whatever an absent row might otherwise imply. Defaulting to anything
+   * more permissive would silently hand a shop that never chose to open Settings more autonomy
+   * than it ever granted.
+   */
+  getAgentAutonomy(): Promise<AutonomyLevel>;
 
   // --- pricebook_items ---------------------------------------------------
 

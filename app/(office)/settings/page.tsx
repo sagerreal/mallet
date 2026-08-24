@@ -36,6 +36,7 @@ import { QuickbooksCard } from "./quickbooks-card";
 import { SquareCard } from "./square-card";
 import { CrewHoursCard } from "./crew-hours-card";
 import { TimezoneCard } from "./timezone-card";
+import { AutonomyRow } from "@/features/artie/autonomy-row";
 import { ImportCard } from "./import-card";
 import { FoldCard } from "./fold-card";
 import { api } from "@/lib/trpc/client";
@@ -103,6 +104,10 @@ function SecCompany() {
           noticed. A settings page you have to remember to visit is how "Refferal" survives for a
           year. */}
       <TimezoneCard />
+      {/* Same group: this is also "how the shop runs" — how much of it Artie may run without
+          asking. Owner-only to change (settings-router.ts's inline gate); everyone who can see
+          this page can see the live value. */}
+      <AutonomyRow />
     </>
   );
 }

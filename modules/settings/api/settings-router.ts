@@ -48,6 +48,7 @@ import {
   updateDocumentsInput,
   toSettingsDTO,
   toOrgSettingsDTO,
+  agentAutonomyDTO,
   toPricebookDTO,
   toLaborRateDTO,
   toJobTermDTO,
@@ -129,6 +130,9 @@ const updateConfigInput = z.object({
   // the origin; an empty string is treated the same by the geocode-on-save flow.
   serviceOriginAddress: z.string().max(500).nullable().optional(),
   booking: bookingCfgInputDTO.optional(),
+  // Owner-only to change — enforced by the inline role check at the top of updateConfig's
+  // resolver below, NOT by this schema (zod has no notion of "which role sent this request").
+  agentAutonomy: agentAutonomyDTO.optional(),
 });
 
 // Layer 5: thin transport. Parse/normalize input at the boundary, construct the org-scoped
@@ -213,6 +217,17 @@ export const createSettingsRouter = () =>
       .input(updateConfigInput)
       .output(orgSettingsDTO)
       .mutation(async ({ ctx, input }) => {
+        // Autonomy is the one setting an office account may not change: it decides what the
+        // assistant may do to customers and money without a human, and "office" is the most
+        // widely shared login in a small shop. No procedure builder in trpc/init.ts is
+        // owner-only (six builders, none of them), so this is an inline gate rather than a
+        // seventh builder for one field on one mutation.
+        if (input.agentAutonomy !== undefined && ctx.principal.role !== "owner") {
+          throw new TRPCError({
+            code: "FORBIDDEN",
+            message: "only the owner can change what the assistant may do on its own",
+          });
+        }
         const repo = new DrizzleSettingsRepository(ctx.tx, ctx.principal.orgId);
         // Inject the Census-backed Geocoder (a port; the use-case never sees the HTTP details).
         // Constructed here at the composition seam — the settings module owns no geocoder infra.

@@ -1,5 +1,11 @@
 import type { OrgId, Result, ValidationError } from "@mallet/shared/types";
 import { validation, ok, err } from "@mallet/shared/types";
+// AutonomyLevel is a type-only import — this pulls no runtime code from the agent-tasks module
+// (settings and agent-tasks are otherwise independent modules; agent-tasks/domain/autonomy.ts
+// owns this union and the policy keyed on it, same shared-kernel pattern as RiskTier in @mallet/ai).
+// Imported through the barrel, never the deep path — the module-boundary lint rule requires it,
+// and a type-only import is erased at build time regardless of which module it flows through.
+import type { AutonomyLevel } from "@mallet/agent-tasks";
 
 // --- Constants -----------------------------------------------------------
 
@@ -244,6 +250,18 @@ export interface OrgSettingsProps {
   readonly stripeDetailsSubmitted: boolean;
   /** First time charges went live (stamped once). Null until then. */
   readonly stripeOnboardedAt: Date | null;
+  // --- AI employee (Artie) autonomy ---
+  /**
+   * How much this shop lets Artie do without asking a human first. READ LIVE, immediately before
+   * the approval decision that consumes it, never snapshotted onto a task and never read any
+   * earlier in the wake — see modules/agent-tasks/domain/autonomy.ts for the policy this feeds
+   * and why a live read at that exact moment is a load-bearing safety property, not an
+   * implementation detail: a task that keeps acting autonomously after the owner panics and
+   * switches to Supervised is a broken control. Defaults to "supervised": a shop that never
+   * opened Settings keeps asking before every action, the same "secure by default" reasoning as
+   * techEditsTimes.
+   */
+  readonly agentAutonomy: AutonomyLevel;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -551,6 +569,11 @@ export class OrgSettings {
       originLat: fields.originLat !== undefined ? fields.originLat : this.p.originLat,
       originLng: fields.originLng !== undefined ? fields.originLng : this.p.originLng,
       booking: fields.booking !== undefined ? fields.booking : this.p.booking,
+      // Artie's autonomy level. Listed explicitly for the same reason every field above is:
+      // patch() merges a HAND-WRITTEN field list, not a spread, and an omission here would
+      // silently drop the office's/owner's edit exactly like the Mon-Fri hours bug did.
+      agentAutonomy:
+        fields.agentAutonomy !== undefined ? fields.agentAutonomy : this.p.agentAutonomy,
       updatedAt: now,
     });
   }

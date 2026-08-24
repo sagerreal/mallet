@@ -178,6 +178,21 @@ export const orgSettings = pgTable(
     // Null until the first Tap to Pay setup call; created once and reused — readers register
     // to it when the phone connects. Stored beside the connected account id it belongs to.
     stripeTerminalLocationId: text("stripe_terminal_location_id"),
+    // ── AI employee (Artie) autonomy ─────────────────────────────────────────
+    // How much this shop lets Artie do without asking a human first — see
+    // modules/agent-tasks/domain/autonomy.ts for the policy this column feeds. READ LIVE at
+    // approval time, never snapshotted onto a task: a permission downgrade that does not reach
+    // in-flight work is not a permission control.
+    //
+    // Defaults to 'supervised' so every existing shop keeps asking-before-acting until an owner
+    // opts up — the same "secure by default, shop opts in" convention as techEditsTimes. A shop
+    // that never opened Settings must read the SAME value as one that explicitly chose the most
+    // conservative level; see DrizzleSettingsRepository.getAgentAutonomy's no-lazy-create rule.
+    //
+    // money and destructive tool tiers never auto-approve at ANY level — that invariant is
+    // enforced in code (autoApproves), never by what is stored here, so a bad value in this
+    // column can widen what gets asked about but can never widen what gets auto-run.
+    agentAutonomy: text("agent_autonomy").notNull().default("supervised"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -187,5 +202,12 @@ export const orgSettings = pgTable(
     // Enumerated in the DB, not just in zod: this column decides where a shop's money goes, and a
     // typo'd value must not be storable at all.
     check("org_settings_payment_provider_ck", sql`${t.paymentProvider} in ('stripe','square')`),
+    // Same reasoning as the payment-provider check: this value decides what the assistant may do
+    // to a customer or their money with no human in the loop, and a typo'd level must not be
+    // storable at all.
+    check(
+      "org_settings_agent_autonomy_ck",
+      sql`${t.agentAutonomy} in ('supervised','assisted','autonomous')`,
+    ),
   ],
 );

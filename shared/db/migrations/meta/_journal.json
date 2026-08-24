@@ -1233,6 +1233,13 @@
       "when": 1787314125654,
       "tag": "0175_agent_tasks_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1787590336850,
+      "tag": "0176_agent_autonomy_level",
+      "breakpoints": true
     }
   ]
 }

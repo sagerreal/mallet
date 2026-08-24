@@ -36,6 +36,10 @@ import {
 
 // ---------------------------------------------------------------------------
 // READ TOOLS — all mutating: false, no human-approval gate required.
+//
+// riskTier is "operational" on every tool below: a tier only means something for a tool the loop
+// can gate, and a read is never gated (mutating: false short-circuits that check regardless of
+// tier). It's a placeholder value that satisfies AgentTool's required field, not a risk judgment.
 // ---------------------------------------------------------------------------
 
 // ===================== CONTEXT TOOL =====================
@@ -52,6 +56,7 @@ export const getContextTool: AgentTool = {
   inputSchema: jsonSchema(contextInput),
   input: contextInput,
   mutating: false,
+  riskTier: "operational",
   async handle(_input, ctx): Promise<ToolOutcome> {
     const rows = await ctx.tx.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, ctx.orgId)).limit(1);
     const orgName = rows[0]?.name ?? "your organization";
@@ -85,6 +90,7 @@ export const customerListTool: AgentTool = {
   inputSchema: jsonSchema(listInput),
   input: listInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx: ToolContext): Promise<ToolOutcome> {
     const parsed = listInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -116,6 +122,7 @@ export const invoiceListTool: AgentTool = {
   inputSchema: jsonSchema(invoiceListInput),
   input: invoiceListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -156,6 +163,7 @@ export const estimateListTool: AgentTool = {
   inputSchema: jsonSchema(estimateListInput),
   input: estimateListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = estimateListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -192,6 +200,7 @@ export const customerGetTool: AgentTool = {
   inputSchema: jsonSchema(customerGetInput),
   input: customerGetInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = customerGetInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -228,6 +237,7 @@ export const customerFindTool: AgentTool = {
   inputSchema: jsonSchema(customerFindInput),
   input: customerFindInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = customerFindInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -253,6 +263,7 @@ export const estimateGetTool: AgentTool = {
   inputSchema: jsonSchema(estimateGetInput),
   input: estimateGetInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = estimateGetInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -290,6 +301,7 @@ export const invoiceGetTool: AgentTool = {
   inputSchema: jsonSchema(invoiceGetInput),
   input: invoiceGetInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = invoiceGetInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -323,6 +335,7 @@ export const jobListTool: AgentTool = {
   inputSchema: jsonSchema(jobListInput),
   input: jobListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = jobListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -356,6 +369,7 @@ export const jobGetTool: AgentTool = {
   inputSchema: jsonSchema(jobGetInput),
   input: jobGetInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = jobGetInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -385,6 +399,7 @@ export const taskListTool: AgentTool = {
   inputSchema: jsonSchema(taskListInput),
   input: taskListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = taskListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -420,6 +435,7 @@ export const memberListTool: AgentTool = {
   inputSchema: jsonSchema(memberListInput),
   input: memberListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(_input, ctx): Promise<ToolOutcome> {
     const rows = await ctx.tx
       .select({ id: users.id, name: users.name, role: users.role, isFieldCrew: users.isFieldCrew, email: users.email, skillTags: users.skillTags })
@@ -450,6 +466,7 @@ export const companyListTool: AgentTool = {
   inputSchema: jsonSchema(companyListInput),
   input: companyListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = companyListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -471,6 +488,7 @@ export const companyGetTool: AgentTool = {
   inputSchema: jsonSchema(companyGetInput),
   input: companyGetInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = companyGetInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -497,6 +515,7 @@ export const timesheetListTool: AgentTool = {
   inputSchema: jsonSchema(timesheetListInput),
   input: timesheetListInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = timesheetListInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);
@@ -536,6 +555,7 @@ export const notificationDueRemindersTool: AgentTool = {
   inputSchema: jsonSchema(notificationDueRemindersInput),
   input: notificationDueRemindersInput,
   mutating: false,
+  riskTier: "operational",
   async handle(input, ctx): Promise<ToolOutcome> {
     const parsed = notificationDueRemindersInput.safeParse(input);
     if (!parsed.success) return invalid(parsed.error.issues);

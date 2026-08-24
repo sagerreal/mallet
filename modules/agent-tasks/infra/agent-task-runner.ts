@@ -11,11 +11,20 @@ import {
 import {
   buildAgentTools, buildExecuteTool, runAgentTurn, toolsForRole,
   type AgentMessage, type AgentResult, type AgentTool, type ExecuteTool, type LlmClient,
-  type ToolDeps, type ToolMeta,
+  type PendingAction, type RiskTier, type ToolDeps, type ToolMeta,
 } from "@mallet/ai";
 import { isRole, type Principal, type Role } from "@mallet/identity";
+// A value import of the settings module's own Drizzle adapter — the one focused read
+// (`getAgentAutonomy`) that does NOT lazy-create the org_settings row, exactly as `readOrgContext`
+// below reads `timezone`. `@mallet/settings` is a sibling module's public barrel, not a `domain/`
+// reach-through, so this is the sanctioned seam (unlike settings' OWN import of `AutonomyLevel`,
+// which stays type-only for the reason recorded in that module's barrel).
+import { DrizzleSettingsRepository } from "@mallet/settings";
 import type { AgentTask } from "../domain/agent-task";
 import { decideWake, type WakeDecision } from "../domain/wake-decision";
+// Relative, not the barrel: `type AutonomyLevel` alone is erased at runtime, so this carries none
+// of the barrel's eager-load weight (see wake-decision.ts's identical import for `autoApproves`).
+import type { AutonomyLevel } from "../domain/autonomy";
 import { awaitsToolResults, dateLine, DEFAULT_TIMEZONE, type WakeOrgContext } from "../domain/wake-context";
 import {
   applyDecision, classifyTurnFailure, dispositionOf, TickBudgetExceeded, TICK_BUDGET_ERROR,
@@ -105,6 +114,13 @@ type WakePlan =
       readonly principal: Principal;
       readonly messages: readonly AgentMessage[];
       readonly seededBytes: number;
+      // Deliberately NO autonomy level here. It used to be read at this point and carried through
+      // to the approval decision — which meant the value the decision consumed was whatever the
+      // org's setting was BEFORE the LLM turn below, not at the moment it was actually used. That
+      // turn can run for up to TICK_BUDGET_MS (four minutes), so an owner who flipped to Supervised
+      // mid-turn would still get auto-approved work out of a wake already in flight. `wakeOne` now
+      // reads the level itself, in its own short `withTenant`, immediately before the decision that
+      // consumes it — see the comment there. Putting it back here would silently reintroduce the gap.
     };
 
 const HAND_OVER_CREATOR_GONE = "The person who set this up is no longer on the team, so I stopped.";
@@ -148,6 +164,19 @@ const readOrgContext = async (tx: TenantTx, orgId: OrgId): Promise<WakeOrgContex
     .limit(1);
   return { name: org?.name ?? null, timezone: settings?.timezone ?? DEFAULT_TIMEZONE };
 };
+
+/**
+ * The org's live autonomy level, read the same way `readOrgContext` reads `timezone` — a focused
+ * repository method that does NOT lazy-create the org_settings row. A brand-new org with no
+ * settings row at all still gets a real answer (`DEFAULT_AUTONOMY`, "supervised") rather than
+ * gaining one as a side effect of a background wake.
+ *
+ * Called from exactly one place: `wakeOne`, in its own short transaction, immediately before the
+ * approval decision that consumes it. Do NOT call this from `planWake` — see that function's own
+ * comment for why reading it before the LLM turn is the bug, not a harmless duplicate.
+ */
+const readAutonomyLevel = (tx: TenantTx, orgId: OrgId): Promise<AutonomyLevel> =>
+  new DrizzleSettingsRepository(tx, orgId).getAgentAutonomy();
 
 /**
  * The creator as they are RIGHT NOW, inside the tenant transaction. Returns null when the row is
@@ -235,6 +264,41 @@ const buildCatalogExecutor = (
       ),
   });
 
+/** Resolve each pending tool_use's `riskTier` from the catalog the model was actually offered. */
+const tiersOf = (
+  pending: readonly PendingAction[],
+  catalog: readonly AgentTool[],
+): readonly { readonly toolUseId: string; readonly tier: RiskTier }[] =>
+  pending.map((p) => ({
+    toolUseId: p.toolUseId,
+    // Cannot happen — every pending action names a mutating catalog tool, and every AgentTool
+    // carries a required riskTier (a compile error otherwise). Fails to the strictest tier rather
+    // than trusting an unrecognised name, on the same "fail closed" reasoning as `readCreator`.
+    tier: catalog.find((t) => t.name === p.tool)?.riskTier ?? "destructive",
+  }));
+
+/** Either the turn's result, or a disposition the caller must return immediately (already settled
+ *  or scheduled for later — nothing further to do this wake). */
+type TurnAttempt = { readonly kind: "result"; readonly result: AgentResult } | { readonly kind: "settled"; readonly disposition: WakeDisposition };
+
+const attemptTurn = async (ref: WakeRef, task: AgentTask, run: () => Promise<AgentResult>): Promise<TurnAttempt> => {
+  try {
+    return { kind: "result", result: await run() };
+  } catch (error: unknown) {
+    const kind = classifyTurnFailure(error);
+    // A provider blip must not spend a budget: every task in a rate-limited org would otherwise
+    // burn one in the same tick. Our own deadline DOES spend one, so a task that reliably outlives
+    // the function retires to a human instead of retrying forever at full LLM cost.
+    if (kind === "back_off") return { kind: "settled", disposition: await backOff(ref, task) };
+    if (kind === "abandon") {
+      logger.warn({ orgId: ref.orgId, taskId: ref.taskId }, "agent.task.wake.abandoned");
+      await recordFailure(ref, TICK_BUDGET_ERROR);
+      return { kind: "settled", disposition: "abandoned" };
+    }
+    throw error;
+  }
+};
+
 const wakeOne = async (ref: WakeRef): Promise<WakeDisposition> => {
   const plan = await planWake(ref);
   if (plan.kind === "gone") return "raced";
@@ -268,39 +332,69 @@ const wakeOne = async (ref: WakeRef): Promise<WakeDisposition> => {
     if (Date.now() > ref.deadlineAt) throw new TickBudgetExceeded();
   };
 
-  let result: AgentResult;
-  try {
-    result = await runAgentTurn({
+  // One closure, called at most twice: the fresh turn, and — only on an auto-approved
+  // needs_approval — the bounded single re-entry that resumes it with those ids approved.
+  // Re-entering costs no extra LLM round trip: `runAgentTurn` resolves the pending tool_use turn
+  // (execute + append tool_results) before it ever calls the model again.
+  const runTurn = (resume?: { readonly priorMessages: readonly AgentMessage[]; readonly approvedToolUseIds: readonly string[] }): Promise<AgentResult> =>
+    runAgentTurn({
       llm: ref.deps.llm,
       system: ref.deps.systemPrompt,
       tools: [...metaOf(catalog), ...control.meta],
       execute,
-      priorMessages: messages,
+      priorMessages: resume?.priorMessages ?? messages,
+      approvedToolUseIds: resume?.approvedToolUseIds,
       maxIters: MAX_ITERS_PER_WAKE,
       effort: "medium",
       onProgress: persist,
     });
-  } catch (error: unknown) {
-    const kind = classifyTurnFailure(error);
-    // A provider blip must not spend a budget: every task in a rate-limited org would otherwise
-    // burn one in the same tick. Our own deadline DOES spend one, so a task that reliably outlives
-    // the function retires to a human instead of retrying forever at full LLM cost.
-    if (kind === "back_off") return backOff(ref, task);
-    if (kind === "abandon") {
-      logger.warn({ orgId: ref.orgId, taskId: ref.taskId }, "agent.task.wake.abandoned");
-      await recordFailure(ref, TICK_BUDGET_ERROR);
-      return "abandoned";
-    }
-    throw error;
-  }
 
-  const decision = decideWake({
+  const first = await attemptTurn(ref, task, () => runTurn());
+  if (first.kind === "settled") return first.disposition;
+  let result = first.result;
+
+  // Read the level HERE, immediately before the decision that consumes it — never the value
+  // `planWake` would have seen before the turn above ran. That turn can take up to TICK_BUDGET_MS
+  // (four minutes) of wall clock, so reading any earlier is exactly the bug this closes: an owner
+  // who flips to Supervised mid-turn would otherwise not be honoured until whatever LATER wake
+  // happens to re-plan. One extra read, in its own short `withTenant` (mirrors `persist`'s own
+  // scoped transaction below) — never cached, so there is nothing here that can go stale.
+  const level = await withTenant(ref.orgId, (tx) => readAutonomyLevel(tx, ref.orgId));
+
+  let decision = decideWake({
     result,
     control: control.outcome(),
     stepsTaken: task.props.stepsTaken,
     transcriptBytes: bytes,
     now: ref.deps.clock.now(),
+    level,
+    pendingTiers: result.status === "needs_approval" ? tiersOf(result.pending, catalog) : [],
   });
+
+  if (decision.kind === "auto_approve") {
+    // Bound to a const before the closure below: `decision` (a `let`, reassigned a few lines down)
+    // loses its narrowed type inside a callback, so the approved ids are captured here instead.
+    const { toolUseIds: approvedToolUseIds } = decision;
+    const second = await attemptTurn(ref, task, () =>
+      runTurn({ priorMessages: result.transcript, approvedToolUseIds }),
+    );
+    if (second.kind === "settled") return second.disposition;
+    result = second.result;
+    // Bounded to exactly ONE re-entry per wake: `pendingTiers: []` forces this second decide to
+    // hand over on ANY needs_approval it hits, rather than consulting the policy again — see
+    // decideWake's "empty pendingTiers never auto-approves" branch. Without this bound, a model
+    // that kept proposing auto-approvable work could keep the loop re-entering forever in one tick.
+    decision = decideWake({
+      result,
+      control: control.outcome(),
+      stepsTaken: task.props.stepsTaken,
+      transcriptBytes: bytes,
+      now: ref.deps.clock.now(),
+      level,
+      pendingTiers: [],
+    });
+  }
+
   return settle(ref, task, bytes, decision);
 };
 

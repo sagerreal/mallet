@@ -70,6 +70,7 @@ const baseProps = (overrides: Partial<OrgSettingsProps> = {}): OrgSettingsProps 
   stripePayoutsEnabled: false,
   stripeDetailsSubmitted: false,
   stripeOnboardedAt: null,
+  agentAutonomy: "supervised",
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
   ...overrides,

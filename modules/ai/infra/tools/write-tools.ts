@@ -80,6 +80,7 @@ export const quoteDraftTool: AgentTool = {
   inputSchema: jsonSchema(quoteDraftInput),
   input: quoteDraftInput,
   mutating: true,
+  riskTier: "operational",
   // What the human approved is "a quote for THIS customer" — if the lead is renamed/re-staged (or
   // vanishes) between propose and confirm, the confirm gate refuses and asks for a fresh proposal.
   async fingerprint(input, ctx): Promise<string> {
@@ -127,6 +128,7 @@ export const invoiceSendTool: AgentTool = {
   inputSchema: jsonSchema(invoiceSendInput),
   input: invoiceSendInput,
   mutating: true,
+  riskTier: "comms",
   // The human approved sending THIS invoice at THIS total/status — if it was edited, paid against,
   // or voided between propose and confirm, the confirm gate refuses rather than send stale terms.
   async fingerprint(input, ctx): Promise<string> {
@@ -156,6 +158,7 @@ export const quoteSendTool: AgentTool = {
   inputSchema: jsonSchema(quoteSendInput),
   input: quoteSendInput,
   mutating: true,
+  riskTier: "comms",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(quoteSendInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -205,6 +208,7 @@ export const notificationSendInvoiceReminderTool: AgentTool = {
   inputSchema: jsonSchema(notificationSendInvoiceReminderInput),
   input: notificationSendInvoiceReminderInput,
   mutating: true,
+  riskTier: "comms",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(notificationSendInvoiceReminderInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -273,6 +277,7 @@ export const jobScheduleTool: AgentTool = {
   inputSchema: jsonSchema(jobScheduleInput),
   input: jobScheduleInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(jobScheduleInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -307,6 +312,7 @@ export const jobAssignTool: AgentTool = {
   inputSchema: jsonSchema(jobAssignInput),
   input: jobAssignInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(jobAssignInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -354,6 +360,7 @@ export const jobStartTool: AgentTool = {
   inputSchema: jsonSchema(jobIdInput),
   input: jobIdInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(jobIdInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -377,6 +384,7 @@ export const jobCompleteTool: AgentTool = {
   inputSchema: jsonSchema(jobIdInput),
   input: jobIdInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(jobIdInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -404,6 +412,7 @@ export const jobCancelTool: AgentTool = {
   inputSchema: jsonSchema(jobCancelInput),
   input: jobCancelInput,
   mutating: true,
+  riskTier: "destructive",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(jobCancelInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -427,6 +436,7 @@ export const jobRescheduleTool: AgentTool = {
   inputSchema: jsonSchema(jobRescheduleInput),
   input: jobRescheduleInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(jobRescheduleInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -459,6 +469,7 @@ export const taskSetDoneTool: AgentTool = {
   inputSchema: jsonSchema(taskSetDoneInput),
   input: taskSetDoneInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(taskSetDoneInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -482,6 +493,7 @@ export const taskUpdateTool: AgentTool = {
   inputSchema: jsonSchema(taskUpdateInput),
   input: taskUpdateInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(taskUpdateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -515,6 +527,7 @@ export const taskRemoveTool: AgentTool = {
   inputSchema: jsonSchema(taskRemoveInput),
   input: taskRemoveInput,
   mutating: true,
+  riskTier: "destructive",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(taskRemoveInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -540,6 +553,7 @@ export const invoiceUpdateTool: AgentTool = {
   inputSchema: jsonSchema(invoiceUpdateInput),
   input: invoiceUpdateInput,
   mutating: true,
+  riskTier: "money",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(invoiceUpdateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -593,6 +607,7 @@ export const customerUpdateTool: AgentTool = {
   inputSchema: jsonSchema(customerUpdateInput),
   input: customerUpdateInput,
   mutating: true,
+  riskTier: "destructive",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(customerUpdateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -643,6 +658,7 @@ export const quoteAcceptTool: AgentTool = {
   inputSchema: jsonSchema(quoteAcceptInput),
   input: quoteAcceptInput,
   mutating: true,
+  riskTier: "money",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(quoteAcceptInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -697,6 +713,7 @@ export const quoteDeclineTool: AgentTool = {
   inputSchema: jsonSchema(quoteDeclineInput),
   input: quoteDeclineInput,
   mutating: true,
+  riskTier: "destructive",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(quoteDeclineInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -722,6 +739,7 @@ export const visitPatchTool: AgentTool = {
   inputSchema: jsonSchema(visitPatchInput),
   input: visitPatchInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(visitPatchInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -765,6 +783,7 @@ export const taskCreateTool: AgentTool = {
   inputSchema: jsonSchema(taskCreateInput),
   input: taskCreateInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(taskCreateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -803,6 +822,7 @@ export const customerCreateTool: AgentTool = {
   inputSchema: jsonSchema(customerCreateInput),
   input: customerCreateInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, _ctx): Promise<string> {
     const parsed = parseTool(customerCreateInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -885,6 +905,7 @@ export const invoiceDraftTool: AgentTool = {
   inputSchema: jsonSchema(invoiceDraftInput),
   input: invoiceDraftInput,
   mutating: true,
+  riskTier: "money",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(invoiceDraftInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -918,6 +939,7 @@ export const invoiceCreateFromJobTool: AgentTool = {
   inputSchema: jsonSchema(invoiceCreateFromJobInput),
   input: invoiceCreateFromJobInput,
   mutating: true,
+  riskTier: "money",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(invoiceCreateFromJobInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -952,6 +974,7 @@ export const scheduleVisitTool: AgentTool = {
   inputSchema: jsonSchema(scheduleVisitInput),
   input: scheduleVisitInput,
   mutating: true,
+  riskTier: "operational",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(scheduleVisitInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -995,6 +1018,7 @@ export const invoiceRecordPaymentTool: AgentTool = {
   inputSchema: jsonSchema(invoiceRecordPaymentInput),
   input: invoiceRecordPaymentWithKeyInput,
   mutating: true,
+  riskTier: "money",
   // Inject a server-minted idempotency key at propose time. It is added to the frozen args before
   // fingerprinting, so the confirm leg gets the same key verbatim — no second mint, no double-charge.
   enrichArgs(validated, ctx): Record<string, unknown> {
@@ -1048,6 +1072,7 @@ export const invoiceVoidTool: AgentTool = {
   inputSchema: jsonSchema(invoiceVoidInput),
   input: invoiceVoidInput,
   mutating: true,
+  riskTier: "destructive",
   async fingerprint(input, ctx): Promise<string> {
     const parsed = parseTool(invoiceVoidInput, input);
     if (!parsed.success) return ENTITY_NOT_FOUND;
@@ -1075,6 +1100,14 @@ export const timesheetApproveWeekTool: AgentTool = {
   inputSchema: jsonSchema(timesheetApproveWeekInput),
   input: timesheetApproveWeekInput,
   mutating: true,
+  // money, not operational — despite touching no invoice. Approval is "the only trigger for hours
+  // leaving Mallet" to QuickBooks (approve-week.ts's own words) and "unrecoverable through this
+  // tool: re-approving returns count 0." `operational` auto-approves unattended at `assisted`;
+  // a task like "close out last week's hours" would then push a tech's pay to payroll with nobody
+  // looking, which is exactly what the owner-facing settings copy promises never happens ("Prices,
+  // payments and anything it can't undo still come to you."). Do not move this back down to
+  // tidy the comment blocks below — see risk-tier.test.ts's dedicated assertion.
+  riskTier: "money",
   // Fingerprint on userId + sorted dates so any change in the approval scope is caught at confirm.
   async fingerprint(input, _ctx): Promise<string> {
     const parsed = parseTool(timesheetApproveWeekInput, input);

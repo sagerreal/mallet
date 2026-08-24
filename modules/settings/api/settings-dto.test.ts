@@ -13,9 +13,14 @@ import {
   updateDocumentsInput,
   documentWordingDTO,
   toSettingsDTO,
+  agentAutonomyDTO,
 } from "./settings-dto";
 import { OrgSettings } from "../domain/org-settings";
 import { baseSettingsProps } from "../domain/org-settings.fixtures";
+// Deep-imported (not the @mallet/agent-tasks barrel): a VALUE import of that barrel drags in the
+// task router/runner's eager loadConfig() call, which blows up without DB env. ESLint's
+// no-restricted-imports boundary is relaxed for test files for exactly this reason.
+import { AUTONOMY_LEVELS } from "../../agent-tasks/domain/autonomy";
 
 describe("bookingServiceDTO", () => {
   const baseService = {
@@ -235,5 +240,20 @@ describe("toSettingsDTO documents projection", () => {
       receiptNote: "Paid in full.",
       changeOrderAgreement: null,
     });
+  });
+});
+
+describe("agentAutonomyDTO", () => {
+  // DRIFT TRIPWIRE: agentAutonomyDTO's z.enum(...) is a literal copy of AUTONOMY_LEVELS,
+  // duplicated (not imported) because a VALUE import of the @mallet/agent-tasks barrel would
+  // pull in the task runner's eager loadConfig() call. Zod's enum has no link back to the
+  // source union, so a level added to AUTONOMY_LEVELS but missed here would compile clean and
+  // this schema would silently reject the new value at the API boundary — this only catches
+  // that by actually parsing every real level.
+  it("parses every AUTONOMY_LEVELS value", () => {
+    for (const level of AUTONOMY_LEVELS) {
+      const parsed = agentAutonomyDTO.safeParse(level);
+      expect(parsed.success).toBe(true);
+    }
   });
 });
