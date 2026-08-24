@@ -63,6 +63,7 @@ const base = (): OrgSettingsProps => ({
   stripePayoutsEnabled: false,
   stripeDetailsSubmitted: false,
   stripeOnboardedAt: null,
+  agentAutonomy: "supervised",
   createdAt: new Date("2026-01-01"),
   updatedAt: new Date("2026-01-01"),
 });

@@ -5,10 +5,12 @@ import { randomUUID } from "node:crypto";
 import { asOrgId, asUserId, systemClock } from "@mallet/shared/types";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb } from "@mallet/shared/db/client";
+import { withTenant } from "@mallet/shared/db/tx";
 import type { AuthProvider, Principal, Role } from "@mallet/identity";
 import { appRouter } from "@/trpc/root";
 import { TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
 import type { Context } from "@/trpc/init";
+import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
 
 // Capstone: exercise the full settings stack via createCaller — auth gate, RBAC, org-scoped
 // transaction, use-case, Drizzle repo, and live RLS — without spinning up HTTP.
@@ -124,6 +126,70 @@ suite("settings tRPC router (full stack, live RLS)", () => {
 
     const snap = await caller.v1.settings.get();
     expect(snap.config.measurementEstimating).toBe(true);
+  });
+
+  // ── agentAutonomy: fail-closed default + owner-only write ────────────────
+  //
+  // Task 16's own hazard, proved directly rather than assumed: getAgentAutonomy skips getConfig's
+  // lazy insert on purpose (Task 17's runner calls it inside the tenant tx on the approval path,
+  // where writing a row is not this read's job), so a brand-new org has no row to fall back to.
+  // It must resolve to the SAME value the schema itself defaults to — "supervised" — never
+  // anything more permissive, or a shop that never opened Settings would silently be granted more
+  // autonomy than it ever chose.
+  //
+  // Uses its OWN throwaway org (never orgAId/orgBId, both of which already have a row from the
+  // tests above) and deletes it in afterAll, per this suite's live-DB rule.
+  describe("agentAutonomy", () => {
+    let freshOrgId = "";
+
+    beforeAll(async () => {
+      const [o] = await admin<{ id: string }[]>`
+        insert into orgs (name) values ('AgentAutonomy ' || gen_random_uuid()) returning id`;
+      freshOrgId = o!.id;
+    });
+
+    afterAll(async () => {
+      if (freshOrgId) await admin`delete from orgs where id = ${freshOrgId}`;
+    });
+
+    it("reads supervised on a brand-new org with no org_settings row, and creates no row doing it", async () => {
+      const orgId = asOrgId(freshOrgId);
+      const level = await withTenant(orgId, (tx) =>
+        new DrizzleSettingsRepository(tx, orgId).getAgentAutonomy(),
+      );
+      expect(level).toBe("supervised");
+
+      // The read is side-effect-free — proves this wasn't secretly a lazy getConfig call.
+      const hasRow = await withTenant(orgId, (tx) =>
+        new DrizzleSettingsRepository(tx, orgId).hasConfig(),
+      );
+      expect(hasRow).toBe(false);
+    });
+
+    it("updateConfig refuses agentAutonomy from an office caller, but still saves their other edits", async () => {
+      const office = appRouter.createCaller(ctxFor(freshOrgId, "office"));
+      const owner = appRouter.createCaller(ctxFor(freshOrgId, "owner"));
+
+      await expect(
+        office.v1.settings.updateConfig({ agentAutonomy: "autonomous", markupBps: 4500 }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+
+      // The refused mutation applied NONE of its fields — the office-only field cannot sneak a
+      // partial write through, now or after a future refactor.
+      const afterReject = await owner.v1.settings.get();
+      expect(afterReject.config.markupBps).not.toBe(4500);
+      expect(afterReject.config.agentAutonomy).toBe("supervised");
+
+      // Office can still change everything else in the very next call, as long as
+      // agentAutonomy is left out of it.
+      const cfg = await office.v1.settings.updateConfig({ markupBps: 4600 });
+      expect(cfg.markupBps).toBe(4600);
+      expect(cfg.agentAutonomy).toBe("supervised");
+
+      // Only the owner may raise the level.
+      const raised = await owner.v1.settings.updateConfig({ agentAutonomy: "assisted" });
+      expect(raised.agentAutonomy).toBe("assisted");
+    });
   });
 
   // ── T3: requiredCerts round-trip ──────────────────────────────────────────

@@ -195,6 +195,12 @@ export const documentWordingDTO = z.object({
 
 // --- Org config DTO --------------------------------------------------------
 
+// Mirrors modules/agent-tasks/domain/autonomy.ts's AutonomyLevel union; kept as a local literal
+// enum here (not imported) for the same reason as laborRateKindDTO above — DTO≠domain. Used for
+// both the read side (orgSettingsDTO below) and the write side (updateConfigInput in
+// settings-router.ts).
+export const agentAutonomyDTO = z.enum(["supervised", "assisted", "autonomous"]);
+
 export const orgSettingsDTO = z.object({
   trade: z.string(),
   markupBps: z.number().int(),
@@ -248,6 +254,13 @@ export const orgSettingsDTO = z.object({
   originLat: z.number().nullable(),
   originLng: z.number().nullable(),
   booking: bookingCfgDTO,
+  /**
+   * How much this shop lets Artie act without asking. Owner-only to CHANGE — see the inline
+   * `ctx.principal.role === "owner"` gate in updateConfig's resolver, because updateConfig
+   * itself is ownerOrOffice and "office" is the most widely shared login in a small shop. Any
+   * role that can read config at all may read this value.
+   */
+  agentAutonomy: agentAutonomyDTO,
 });
 
 // --- Brand DTO -------------------------------------------------------------
@@ -524,6 +537,7 @@ export const toOrgSettingsDTO = (s: OrgSettings): z.infer<typeof orgSettingsDTO>
     serviceOriginAddress: p.serviceOriginAddress,
     originLat: p.originLat,
     originLng: p.originLng,
+    agentAutonomy: p.agentAutonomy,
     booking: {
       ...p.booking,
       services: p.booking.services.map((svc) => ({

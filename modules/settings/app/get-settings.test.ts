@@ -60,6 +60,7 @@ export class FakeSettingsRepository implements SettingsRepository {
       docChangeOrderAgreement: null,
       stripeConnectedAccountId: null, stripeChargesEnabled: false, stripePayoutsEnabled: false,
       stripeDetailsSubmitted: false, stripeOnboardedAt: null,
+      agentAutonomy: "supervised",
       createdAt: new Date("2026-07-01T00:00:00Z"),
       updatedAt: new Date("2026-07-01T00:00:00Z"),
     });
@@ -75,6 +76,10 @@ export class FakeSettingsRepository implements SettingsRepository {
   async getTimezone(): Promise<string> { return this.config?.props.timezone ?? "America/Los_Angeles"; }
 
   async getTaxBps(): Promise<number> { return this.config?.props.taxBps ?? 0; }
+
+  async getAgentAutonomy(): Promise<"supervised" | "assisted" | "autonomous"> {
+    return this.config?.props.agentAutonomy ?? "supervised";
+  }
 
   async hasConfig(): Promise<boolean> { return this.config !== null; }
 

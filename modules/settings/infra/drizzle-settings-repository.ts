@@ -10,6 +10,13 @@ import {
 } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
+// Type-only: the @mallet/agent-tasks barrel also re-exports the task router/runner, which pull
+// @mallet/shared/db/tx and call loadConfig() at module load. A VALUE import of that barrel here
+// would drag DB-config validation into every settings unit test that reaches this file, so the
+// runtime helpers below (DEFAULT_AGENT_AUTONOMY, isKnownAgentAutonomy) are deliberately
+// re-declared locally rather than imported — same reasoning as DEFAULT_TIMEZONE/DEFAULT_TAX_BPS
+// just below, extended to a cross-module boundary.
+import type { AutonomyLevel } from "@mallet/agent-tasks";
 import type { OrgSettings, BookingCfg } from "../domain/org-settings";
 import type {
   SettingsRepository,
@@ -39,6 +46,16 @@ const toLaborRateKind = (kind: string): LaborRateKind => (kind === "flat_fee" ? 
 // and the two must not drift: a shop that never opened Settings must resolve to the same zone
 // whichever path asks.
 const DEFAULT_TIMEZONE = "America/Los_Angeles";
+
+// Mirrors org_settings.agent_autonomy's schema default and its check constraint's value set.
+// Duplicated here rather than imported from agent-tasks' isAutonomyLevel/DEFAULT_AUTONOMY (see
+// the import comment above): a focused read that skips the lazy create has no row to read it
+// from, and a shop that never opened Settings must resolve to the SAME, most conservative level,
+// never anything more permissive. Must stay in sync with org_settings_agent_autonomy_ck and
+// agent-tasks' AUTONOMY_LEVELS.
+const DEFAULT_AGENT_AUTONOMY: AutonomyLevel = "supervised";
+const isKnownAgentAutonomy = (value: string): value is AutonomyLevel =>
+  value === "supervised" || value === "assisted" || value === "autonomous";
 
 // Mirrors org_settings.tax_bps's schema default, for the same reason DEFAULT_TIMEZONE is here: a
 // focused read that skips the lazy create has no row to read it from. 0 = the shop has not set a
@@ -169,6 +186,8 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
         stripePayoutsEnabled: p.stripePayoutsEnabled,
         stripeDetailsSubmitted: p.stripeDetailsSubmitted,
         stripeOnboardedAt: p.stripeOnboardedAt,
+        // Artie's per-shop autonomy level — see modules/agent-tasks/domain/autonomy.ts.
+        agentAutonomy: p.agentAutonomy,
         updatedAt: p.updatedAt,
       })
       // Guard: match by org_id (the unique identity of this row) + RLS double-checks.
@@ -228,6 +247,29 @@ export class DrizzleSettingsRepository implements SettingsRepository, OrgNameWri
     // lazy-creating keeps this read side-effect-free, and a shop that never opened Settings still
     // gets a real zone instead of UTC, which would file a West-coast evening on tomorrow's sheet.
     return rows[0]?.timezone ?? DEFAULT_TIMEZONE;
+  }
+
+  /**
+   * Focused, side-effect-free read of how much this shop lets Artie act without asking. No lazy
+   * create (mirrors getTechSeesPrice/getTimezone/getTaxBps): a shop that never opened Settings
+   * has no row to read this from and resolves to DEFAULT_AUTONOMY ("supervised") — the schema's
+   * own default — rather than any more permissive guess. This is the read Task 17's runner calls
+   * INSIDE the tenant transaction on the approval path, so a just-saved downgrade to Supervised
+   * is visible to work already in flight, never a value cached before the owner panicked.
+   *
+   * Narrowed defensively even though the DB check constraint already guarantees the value: same
+   * reasoning as paymentProvider's read below — anything else is corruption, and falling back to
+   * the most conservative level can only ever under-claim what a shop chose, never over-grant
+   * autonomy it never opted into.
+   */
+  async getAgentAutonomy(): Promise<AutonomyLevel> {
+    const rows = await this.tx
+      .select({ agentAutonomy: orgSettings.agentAutonomy })
+      .from(orgSettings)
+      .where(eq(orgSettings.orgId, this.orgId))
+      .limit(1);
+    const value = rows[0]?.agentAutonomy;
+    return value !== undefined && isKnownAgentAutonomy(value) ? value : DEFAULT_AGENT_AUTONOMY;
   }
 
   /**

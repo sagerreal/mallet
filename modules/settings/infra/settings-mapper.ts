@@ -5,6 +5,14 @@ import { OrgSettings, type BookingCfg } from "../domain/org-settings";
 // The persistence row shape, inferred from the schema.
 export type OrgSettingsRow = typeof orgSettings.$inferSelect;
 
+// Narrows org_settings.agent_autonomy's text column against the DB check constraint's own value
+// set. Duplicated rather than imported from agent-tasks' isAutonomyLevel: a VALUE import of the
+// @mallet/agent-tasks barrel here would drag its task router/runner (and their eager DB-config
+// load) into every settings unit test that reaches this mapper. Must stay in sync with
+// org_settings_agent_autonomy_ck and agent-tasks' AUTONOMY_LEVELS.
+const isKnownAgentAutonomy = (value: string): value is "supervised" | "assisted" | "autonomous" =>
+  value === "supervised" || value === "assisted" || value === "autonomous";
+
 /**
  * Reconstruct the OrgSettings aggregate from a DB row.
  * The booking column is jsonb — trusted (written only by this app) but corrupt data
@@ -91,6 +99,10 @@ export const toOrgSettings = (row: OrgSettingsRow, orgName: string): OrgSettings
     stripePayoutsEnabled: row.stripePayoutsEnabled,
     stripeDetailsSubmitted: row.stripeDetailsSubmitted,
     stripeOnboardedAt: row.stripeOnboardedAt ?? null,
+    // Narrowed from the DB's text column — the check constraint already guarantees the value, so
+    // anything else is corruption. Falling back to "supervised" is the safe read: it can only
+    // ever under-claim what a shop chose, never over-grant autonomy it never opted into.
+    agentAutonomy: isKnownAgentAutonomy(row.agentAutonomy) ? row.agentAutonomy : "supervised",
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

@@ -76,6 +76,7 @@ const baseRow = (): OrgSettingsRow => ({
   stripeDetailsSubmitted: false,
   stripeOnboardedAt: null,
   stripeTerminalLocationId: null,
+  agentAutonomy: "supervised",
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
 });
@@ -198,5 +199,27 @@ describe("toOrgSettings — paymentProvider", () => {
   // falling back to stripe can only ever under-claim what a shop connected.
   it("falls back to stripe rather than trusting an unknown value", () => {
     expect(toOrgSettings({ ...baseRow(), paymentProvider: "paypal" }, "Acme").props.paymentProvider).toBe("stripe");
+  });
+});
+
+/**
+ * HOW MUCH THIS SHOP LETS ARTIE DO. Every existing org must default to "supervised" — asking
+ * before every action — until an owner explicitly opts up.
+ */
+describe("toOrgSettings — agentAutonomy", () => {
+  it("defaults every existing org to supervised", () => {
+    expect(toOrgSettings(baseRow(), "Acme").props.agentAutonomy).toBe("supervised");
+  });
+
+  it("carries assisted/autonomous through when that is what the row says", () => {
+    expect(toOrgSettings({ ...baseRow(), agentAutonomy: "assisted" }, "Acme").props.agentAutonomy).toBe("assisted");
+    expect(toOrgSettings({ ...baseRow(), agentAutonomy: "autonomous" }, "Acme").props.agentAutonomy).toBe("autonomous");
+  });
+
+  // The DB check constraint already guarantees the value. Anything else is corruption, and
+  // falling back to supervised can only ever under-claim what a shop chose — never grant Artie
+  // more autonomy than any human on that shop's team ever selected.
+  it("falls back to supervised rather than trusting an unknown value", () => {
+    expect(toOrgSettings({ ...baseRow(), agentAutonomy: "yolo" }, "Acme").props.agentAutonomy).toBe("supervised");
   });
 });
