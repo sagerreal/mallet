@@ -72,6 +72,22 @@ export const classifyTurnFailure = (error: unknown): "back_off" | "abandon" | "f
 };
 
 /**
+ * `auto_approve` is never a wake's FINAL decision — it means "re-enter the loop with these ids
+ * approved", not "settle the task row". The runner intercepts it in `wakeOne` before either
+ * function below ever sees it (re-entering once, then re-deciding on the result of that). An
+ * `asserts` guard rather than a plain `if`, so the compiler — not just a runtime throw — proves
+ * `decision.note` below can never read `undefined` off the variant that has no such field. Throwing
+ * (instead of silently falling into the hand-over branch) is deliberate: the tick's own per-task
+ * try/catch still stops one bad decision from stranding the rest of the batch, and a loud crash
+ * here is far cheaper to notice than a wrong note written to a shop's task.
+ */
+function assertSettleable(decision: WakeDecision): asserts decision is Exclude<WakeDecision, { kind: "auto_approve" }> {
+  if (decision.kind === "auto_approve") {
+    throw new Error("auto_approve must be resolved by the runner before settling a wake");
+  }
+}
+
+/**
  * The ONE transition a decision maps to. `needsYou` cannot fail by design (the hand-over path must
  * never itself refuse), so it is lifted into an ok Result to give all three branches one shape.
  */
@@ -80,12 +96,14 @@ export const applyDecision = (
   decision: WakeDecision,
   now: Date,
 ): Result<AgentTask, ValidationError> => {
+  assertSettleable(decision);
   if (decision.kind === "schedule") return task.scheduleNext(decision.at, decision.note, now);
   if (decision.kind === "finish") return task.finish(decision.summary, now);
   return ok(task.needsYou(decision.note, now));
 };
 
 export const dispositionOf = (decision: WakeDecision): WakeDisposition => {
+  assertSettleable(decision);
   if (decision.kind === "schedule") return "scheduled";
   if (decision.kind === "finish") return "finished";
   return "handedOver";

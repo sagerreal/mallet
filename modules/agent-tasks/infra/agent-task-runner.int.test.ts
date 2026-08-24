@@ -543,4 +543,64 @@ suite("runAgentTaskTick (live RLS, scripted provider)", () => {
     // persisted before the deadline tripped.
     expect((await readMessages(taskId)).length).toBeGreaterThanOrEqual(2);
   });
+
+  /**
+   * Task 17: the runner ACTS on the org's autonomy level. Both tests below share this file's org —
+   * appended LAST so setting `agent_autonomy` here cannot leak into any test above (each of which
+   * runs against the default "supervised" level a fresh org has with no settings row at all).
+   */
+
+  it("auto-approves a comms-only turn once the org is assisted, and the tool actually runs", async () => {
+    const clock = new FixedClock(new Date());
+    const taskId = await seedTask(14);
+    await admin`
+      insert into org_settings (org_id, agent_autonomy, booking)
+      values (${orgId}, 'assisted', '{}'::jsonb)
+      on conflict (org_id) do update set agent_autonomy = excluded.agent_autonomy`;
+    // invoice_send is riskTier "comms" — auto-approved once the org is assisted (this file's other
+    // approval test, above, proves the SAME tool hands over under the default "supervised"). The
+    // invoice does not exist, so the tool itself still errors; the point is that it RAN — a ledger
+    // row for "c1" — rather than sitting in needs_approval forever with nobody to approve it.
+    const llm = new ScriptedLlm([
+      callTool("c1", "invoice_send", { invoiceId: randomUUID() }),
+      callTool("f1", "finish_task", { summary: "Couldn't find that invoice — flagging for review." }),
+      says("Understood."),
+    ]);
+
+    const summary = await runAgentTaskTick(depsWith(llm, clock));
+
+    expect(summary.finished).toBe(1);
+    expect(summary.handedOver).toBe(0);
+    const after = await readTask(taskId);
+    expect(after.status).toBe("done");
+    expect(after.next_action_note).toBe("Couldn't find that invoice — flagging for review.");
+    // The mutating tool RAN under auto-approval — contrast the ledger count of 0 in "hands over a
+    // task whose turn asked for an approval" above, where the same kind of tool never executes.
+    const [ledger] = await admin<{ n: number }[]>`
+      select count(*)::int as n from agent_tool_executions where org_id = ${orgId} and tool_use_id = 'c1'`;
+    expect(ledger!.n).toBe(1);
+  });
+
+  it("still hands over a money-tier proposal even when the org is autonomous", async () => {
+    const clock = new FixedClock(new Date());
+    const taskId = await seedTask(15);
+    await admin`
+      insert into org_settings (org_id, agent_autonomy, booking)
+      values (${orgId}, 'autonomous', '{}'::jsonb)
+      on conflict (org_id) do update set agent_autonomy = excluded.agent_autonomy`;
+    // invoice_update is riskTier "money" — autoApproves refuses money at every level, the one
+    // invariant this whole feature exists to protect. Run at the MOST permissive level on purpose:
+    // if this ever passed at "autonomous" the invariant would be broken everywhere else too.
+    const llm = new ScriptedLlm([callTool("m1", "invoice_update", { invoiceId: randomUUID() })]);
+
+    const summary = await runAgentTaskTick(depsWith(llm, clock));
+
+    expect(summary.handedOver).toBe(1);
+    const after = await readTask(taskId);
+    expect(after.status).toBe("needs_you");
+    expect(after.next_action_note).toContain("invoice_update");
+    const [ledger] = await admin<{ n: number }[]>`
+      select count(*)::int as n from agent_tool_executions where org_id = ${orgId} and tool_use_id = 'm1'`;
+    expect(ledger!.n).toBe(0);
+  });
 });

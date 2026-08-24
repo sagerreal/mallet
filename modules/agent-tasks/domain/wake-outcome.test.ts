@@ -105,3 +105,18 @@ describe("dispositionOf", () => {
     expect(dispositionOf({ kind: "hand_over", note: "n" })).toBe("handedOver");
   });
 });
+
+describe("auto_approve is never a settleable decision", () => {
+  // The runner must resolve `auto_approve` (re-enter the loop, then re-decide) before either
+  // function here ever sees it. A slip that let one through must crash loudly, not write a task
+  // row with a note nobody set.
+  const autoApprove = { kind: "auto_approve" as const, toolUseIds: ["t1"] };
+
+  it("refuses to settle it", () => {
+    expect(() => applyDecision(built(), autoApprove, NOW)).toThrow(/auto_approve/);
+  });
+
+  it("refuses to name it a disposition", () => {
+    expect(() => dispositionOf(autoApprove)).toThrow(/auto_approve/);
+  });
+});
