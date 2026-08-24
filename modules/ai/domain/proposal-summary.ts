@@ -159,8 +159,10 @@ const describeTaskRemove = (args: Record<string, JsonValue>): string =>
 
 const describeCustomerUpdate = (args: Record<string, JsonValue>): string => {
   // Named, not valued: a phone number or address on an approval card is PII on screen.
-  const fields = Object.keys(args).filter((k) => k !== "leadId");
-  return `Edit customer ${String(args.leadId ?? "?")} — changing: ${fields.length > 0 ? fields.join(", ") : "nothing"}.`;
+  // customerUpdateInput keys its target on `customerId`, not `leadId` — reading the wrong key
+  // rendered "Edit customer ?" and listed `customerId` itself as a changed field.
+  const fields = Object.keys(args).filter((k) => k !== "customerId");
+  return `Edit customer ${String(args.customerId ?? "?")} — changing: ${fields.length > 0 ? fields.join(", ") : "nothing"}.`;
 };
 
 const describeInvoiceUpdate = (args: Record<string, JsonValue>): string => {

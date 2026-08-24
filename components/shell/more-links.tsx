@@ -28,6 +28,9 @@ export const OFFICE_LINKS: readonly MoreLink[] = [
   { href: "/jobs", label: "Jobs" },
   { href: "/dashboard?tab=pricebook", label: "Pricebook" },
   { href: "/money", label: "Money" },
+  // The AI employee's board — a top-level page like Settings, not a bottom tab, so a phone
+  // reaches it here rather than through #mobiletabs.
+  { href: "/artie", label: "Artie" },
   { href: "/settings", label: "Settings" },
 ];
 

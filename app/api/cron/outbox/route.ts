@@ -1,5 +1,6 @@
-import { randomUUID, createHash, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { loadConfig } from "@mallet/shared/config";
+import { secretMatches, readCronSecret } from "@mallet/shared/cron";
 import { runWithContext, logger } from "@mallet/shared/observability";
 import { runOutboxRelay } from "@mallet/shared/outbox";
 import { buildOutboxHandlers } from "@/trpc/outbox-registry";
@@ -14,17 +15,11 @@ export const dynamic = "force-dynamic";
 // tick re-claims its rows next time without poisoning them — but it improves throughput.
 export const maxDuration = 60;
 
-// Constant-time comparison over fixed-length SHA-256 digests (so unequal lengths don't leak and
-// there's no early-exit timing oracle on the secret).
-const secretMatches = (presented: string, expected: string): boolean =>
-  timingSafeEqual(createHash("sha256").update(presented).digest(), createHash("sha256").update(expected).digest());
-
 const handle = async (req: Request): Promise<Response> => {
   const config = loadConfig();
   if (!config.CRON_SECRET) return new Response("cron not configured", { status: 503 });
 
-  const bearer = req.headers.get("authorization")?.replace(/^Bearer\s+/i, "");
-  const presented = bearer ?? req.headers.get("x-cron-secret") ?? "";
+  const presented = readCronSecret(req) ?? "";
   if (!presented || !secretMatches(presented, config.CRON_SECRET)) {
     logger.warn("unauthorized outbox cron request"); // never logs the presented value
     return new Response("unauthorized", { status: 401 });

@@ -27,6 +27,7 @@ export type MaterialId = Brand<string, "MaterialId">;
 export type QuotingRuleId = Brand<string, "QuotingRuleId">;
 export type OutboundCallId = Brand<string, "OutboundCallId">;
 export type AssemblyId = Brand<string, "AssemblyId">;
+export type AgentTaskId = Brand<string, "AgentTaskId">;
 
 export const asOrgId = (v: string): OrgId => v as OrgId;
 export const asUserId = (v: string): UserId => v as UserId;
@@ -49,6 +50,7 @@ export const asMaterialId = (v: string): MaterialId => v as MaterialId;
 export const asQuotingRuleId = (v: string): QuotingRuleId => v as QuotingRuleId;
 export const asOutboundCallId = (v: string): OutboundCallId => v as OutboundCallId;
 export const asAssemblyId = (v: string): AssemblyId => v as AssemblyId;
+export const asAgentTaskId = (v: string): AgentTaskId => v as AgentTaskId;
 
 // Phone is a validated value object — E.164 (US). Parsed at the boundary from untrusted input.
 export type Phone = Brand<string, "Phone">;

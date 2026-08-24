@@ -33,6 +33,10 @@ export default defineConfig({
         // DB-orchestration infra covered by pnpm test:int (like the repos). The relay's PURE logic
         // (disposition.ts, last-error.ts) stays counted and is unit-tested.
         "shared/outbox/relay/relay.ts",
+        // The agent runner is the same shape: pure I/O orchestration whose only judgement is
+        // decideWake, which the unit suite owns at 100%. Proven by agent-task-runner.int.test.ts.
+        // (Also matched by modules/**/infra/** below; named here so the reason is on the record.)
+        "modules/agent-tasks/infra/agent-task-runner.ts",
         "modules/invoicing/app/invoice-paid-audit-handler.ts",
         "modules/**/infra/**",
         "modules/**/api/**",
