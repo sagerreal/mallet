@@ -12,7 +12,7 @@ export { buildAgentTools } from "./infra/agent-tools";
 export { describeProposal } from "./domain/proposal-summary";
 export type { LlmClient, LlmRequest, AssistantTurn, AgentMessage, AssistantBlock, Effort } from "./domain/llm-client";
 export { LlmError } from "./domain/llm-client";
-export type { AgentTool, ToolContext, ToolDeps, ToolOutcome } from "./domain/tool";
+export type { AgentTool, ToolContext, ToolDeps, ToolOutcome, RiskTier } from "./domain/tool";
 // THE one tool executor every driver of the loop goes through — see build-execute-tool.ts for
 // the replay ledger and untrusted-content guards it carries.
 export { buildExecuteTool, TOOL_RESULT_OPEN, TOOL_RESULT_CLOSE, type ExecutionLedger, type BuildExecuteToolParams } from "./app/build-execute-tool";

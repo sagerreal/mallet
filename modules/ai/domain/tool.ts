@@ -38,6 +38,18 @@ export type ToolOutcome = { readonly ok: true; readonly summary: string } | { re
 // never collide with a real fingerprint like `lead:<id>:<name>:<stage>`.
 export const ENTITY_NOT_FOUND = "__entity_not_found__";
 
+/**
+ * What kind of damage a tool can do, and therefore what it takes to run it unattended.
+ *
+ * REQUIRED on every AgentTool, with no default, so a new tool without one is a compile error —
+ * `pnpm typecheck` runs in CI and the tool-surface integration test does not.
+ *
+ * `destructive` covers more than deletion: customer_update can change an email, a phone number
+ * and a service address, which redirects priced documents and payment links. That is a
+ * delivery-redirection primitive, so it lives here and never auto-approves.
+ */
+export type RiskTier = "comms" | "operational" | "money" | "destructive";
+
 // A tool = the model-facing spec (name/description/JSON-schema — MCP-shaped) + a `mutating` flag that
 // drives human-approval gating + a handler that runs under a tenant tx. Read tools run unattended;
 // mutating tools (send money/messages, dispatch) pause for approval before the handler ever runs.
@@ -55,6 +67,7 @@ export interface AgentTool {
   readonly inputSchema: Record<string, unknown>;
   readonly input: z.ZodType;
   readonly mutating: boolean;
+  readonly riskTier: RiskTier;
   enrichArgs?(validated: Record<string, unknown>, ctx: ToolContext): Record<string, unknown>;
   fingerprint?(input: unknown, ctx: ToolContext): Promise<string>;
   handle(input: unknown, ctx: ToolContext): Promise<ToolOutcome>;
