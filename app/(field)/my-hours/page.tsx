@@ -47,6 +47,7 @@ import { HoursSubmit } from "@/features/field/hours-submit";
 import { weekSummary, type OvertimePolicy } from "@/features/field/hours-sheet-derive";
 import { StillOpenBanner } from "@/features/field/my-hours-still-open";
 import { AddBlockForm } from "@/features/field/my-hours-add-block";
+import { AddTimeOffForm } from "@/features/field/my-hours-add-time-off";
 import { useMyHoursWrites } from "@/features/field/use-my-hours-writes";
 
 type Writes = ReturnType<typeof useMyHoursWrites>;
@@ -298,6 +299,13 @@ export default function MyHoursPage() {
   });
   const writes = useMyHoursWrites();
   const [addOpen, setAddOpen] = useState(false);
+  /**
+   * Time off is its own form, not a fifth chip on Add-a-day's Type control: the row carries a
+   * LENGTH and no punch times (time_entries_kind_shape_check), and a sick day typed as 08:00–16:00
+   * would count as WORKED hours against the overtime threshold. One open at a time — two expanded
+   * editors under one pager is two answers to "what am I recording".
+   */
+  const [offOpen, setOffOpen] = useState(false);
 
   /**
    * Days he evidently worked and sent nothing in. Its own query rather than derived from the rows
@@ -335,6 +343,26 @@ export default function MyHoursPage() {
     />
   );
 
+  const timeOff = (
+    <AddTimeOffForm
+      today={today}
+      techUserId={myUserId}
+      saving={writes.adding}
+      error={writes.createError}
+      onAdd={writes.addTimeOff}
+      onCancel={() => setOffOpen(false)}
+    />
+  );
+
+  const openAdd = (): void => {
+    setOffOpen(false);
+    setAddOpen(true);
+  };
+  const openOff = (): void => {
+    setAddOpen(false);
+    setOffOpen(true);
+  };
+
   if (isFirstLoad(listState)) {
     return (
       <Screen>
@@ -354,8 +382,9 @@ export default function MyHoursPage() {
   if (shouldShowFirstRun(listState)) {
     return (
       <Screen>
-        <NoHoursYet onAdd={canEditOwnTimes ? () => setAddOpen(true) : null} />
-        {addOpen && canEditOwnTimes ? addBlock : null}
+        <NoHoursYet onAdd={canEditOwnTimes ? openAdd : null} />
+        {canEditOwnTimes && addOpen ? addBlock : null}
+        {canEditOwnTimes && offOpen ? timeOff : null}
       </Screen>
     );
   }
@@ -371,21 +400,31 @@ export default function MyHoursPage() {
         suggestEndFor={suggestEndFor}
         unreported={unreported}
         onAcceptDay={acceptDay}
-        onEnterOwn={() => setAddOpen(true)}
+        onEnterOwn={openAdd}
         overtimePolicy={overtimePolicy}
         canEditOwnTimes={canEditOwnTimes}
         addButton={
           /* In the week pager, not at the foot of the page: this is not a correction path, it is
              the only way hours are ever recorded, so it belongs beside the week it writes into.
-             Hidden while the form is open — the form IS the control then — and hidden entirely
-             when the shop keeps changes with the office, because the server would refuse it. */
-          addOpen || !canEditOwnTimes ? null : (
-            <Button variant="primary" onClick={() => setAddOpen(true)}>
-              Add a day
-            </Button>
+             Hidden while either form is open — the form IS the control then — and hidden entirely
+             when the shop keeps changes with the office, because the server would refuse it.
+
+             Time off sits beside it as a QUIET sibling: same week, same pager, but recording a day
+             off is the rarer act and must not compete with the primary one. */
+          addOpen || offOpen || !canEditOwnTimes ? null : (
+            <>
+              <Button variant="primary" onClick={openAdd}>
+                Add a day
+              </Button>
+              <Button variant="quiet" onClick={openOff}>
+                Add time off
+              </Button>
+            </>
           )
         }
-        addForm={addOpen && canEditOwnTimes ? addBlock : null}
+        addForm={
+          canEditOwnTimes && addOpen ? addBlock : canEditOwnTimes && offOpen ? timeOff : null
+        }
       />
     </Screen>
   );
