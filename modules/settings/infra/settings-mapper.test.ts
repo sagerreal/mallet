@@ -1,6 +1,10 @@
 import { describe, it, expect } from "vitest";
 import { type OrgSettingsRow, toOrgSettings } from "./settings-mapper";
 import type { BookingCfg } from "../domain/org-settings";
+// Deep-imported (not the @mallet/agent-tasks barrel): a VALUE import of that barrel drags in the
+// task router/runner's eager loadConfig() call, which blows up without DB env. ESLint's
+// no-restricted-imports boundary is relaxed for test files for exactly this reason.
+import { AUTONOMY_LEVELS } from "../../agent-tasks/domain/autonomy";
 
 // ── Fixtures ────────────────────────────────────────────────────────────────
 
@@ -221,5 +225,18 @@ describe("toOrgSettings — agentAutonomy", () => {
   // more autonomy than any human on that shop's team ever selected.
   it("falls back to supervised rather than trusting an unknown value", () => {
     expect(toOrgSettings({ ...baseRow(), agentAutonomy: "yolo" }, "Acme").props.agentAutonomy).toBe("supervised");
+  });
+
+  // DRIFT TRIPWIRE: isKnownAgentAutonomy in settings-mapper.ts is a literal copy of
+  // AUTONOMY_LEVELS, duplicated because a VALUE import of the @mallet/agent-tasks barrel would
+  // pull in the task runner's eager loadConfig() call. `value is AutonomyLevel` is a type
+  // predicate, not an exhaustiveness check — TypeScript will not flag it as stale if a level is
+  // added to AUTONOMY_LEVELS but missed here, so nothing but a real value driven through the
+  // mapper would catch the silent coercion back to "supervised".
+  it("carries every AUTONOMY_LEVELS value through unchanged", () => {
+    for (const level of AUTONOMY_LEVELS) {
+      const settings = toOrgSettings({ ...baseRow(), agentAutonomy: level }, "Acme");
+      expect(settings.props.agentAutonomy).toBe(level);
+    }
   });
 });

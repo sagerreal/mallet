@@ -11,6 +11,10 @@ import { appRouter } from "@/trpc/root";
 import { TRADE_KEYS } from "@/app/(office)/settings/trade-playbooks";
 import type { Context } from "@/trpc/init";
 import { DrizzleSettingsRepository } from "../infra/drizzle-settings-repository";
+// Deep-imported (not the @mallet/agent-tasks barrel): a VALUE import of that barrel drags in the
+// task router/runner's eager loadConfig() call, which blows up without DB env. ESLint's
+// no-restricted-imports boundary is relaxed for test files for exactly this reason.
+import { AUTONOMY_LEVELS } from "../../agent-tasks/domain/autonomy";
 
 // Capstone: exercise the full settings stack via createCaller — auth gate, RBAC, org-scoped
 // transaction, use-case, Drizzle repo, and live RLS — without spinning up HTTP.
@@ -189,6 +193,26 @@ suite("settings tRPC router (full stack, live RLS)", () => {
       // Only the owner may raise the level.
       const raised = await owner.v1.settings.updateConfig({ agentAutonomy: "assisted" });
       expect(raised.agentAutonomy).toBe("assisted");
+    });
+
+    // DRIFT TRIPWIRE: DEFAULT_AGENT_AUTONOMY/isKnownAgentAutonomy in
+    // drizzle-settings-repository.ts are a literal copy of AUTONOMY_LEVELS, duplicated because a
+    // VALUE import of the @mallet/agent-tasks barrel would drag in the task runner's eager
+    // loadConfig() call. `value is AutonomyLevel` is a type predicate, not an exhaustiveness
+    // check, so a level added to AUTONOMY_LEVELS but missed here would compile clean and every
+    // write of that level would silently read back coerced to "supervised" — only a real
+    // write-then-read against the live row for every level catches that.
+    it("round-trips every AUTONOMY_LEVELS value through the repository's own copy", async () => {
+      const orgId = asOrgId(freshOrgId);
+      const owner = appRouter.createCaller(ctxFor(freshOrgId, "owner"));
+
+      for (const level of AUTONOMY_LEVELS) {
+        await owner.v1.settings.updateConfig({ agentAutonomy: level });
+        const read = await withTenant(orgId, (tx) =>
+          new DrizzleSettingsRepository(tx, orgId).getAgentAutonomy(),
+        );
+        expect(read).toBe(level);
+      }
     });
   });
 
