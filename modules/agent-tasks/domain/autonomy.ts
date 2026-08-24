@@ -18,13 +18,15 @@ export type AutonomyLevel = (typeof AUTONOMY_LEVELS)[number];
 export const DEFAULT_AUTONOMY: AutonomyLevel = "supervised";
 
 // `autonomous` is BYTE-IDENTICAL to `assisted` on purpose, not a placeholder someone forgot to
-// finish. The autonomous UI copy promises Artie "works on its own initiative and opens its own
-// follow-ups" — that behaviour is `canRunUnattended` below, and it has ZERO production callers
-// today: routines and triggers (what would actually call it) are deferred, not built. Until they
-// ship, there is nothing for a wider auto-approve set to gate, so widening this row would grant a
-// permission with no corresponding capability to use it responsibly. Do NOT "de-duplicate" these
-// two rows into one — when routines/triggers land, `autonomous` is meant to diverge from
-// `assisted` right here, and this table is where that change belongs.
+// finish. What autonomous is MEANT to add is working unattended — advancing work nobody started
+// and opening its own follow-ups — which is `canRunUnattended` below, and that has ZERO production
+// callers today: routines and triggers, the things that would call it, are deferred rather than
+// built. Until they ship there is nothing for a wider auto-approve set to gate, so widening this
+// row would grant a permission with no capability behind it. The settings copy says so in as many
+// words ("Right now, Artie treats this the same as Assisted") rather than describing the feature
+// we intend to build — see features/artie/autonomy-row.tsx. Do NOT "de-duplicate" these two rows
+// into one: when routines/triggers land, `autonomous` diverges from `assisted` right here, and
+// this table is where that change belongs.
 const AUTO_APPROVED: Record<AutonomyLevel, readonly RiskTier[]> = {
   supervised: [],
   assisted: ["comms", "operational"],
