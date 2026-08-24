@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
+import type { RiskTier } from "./tool";
 
 // Same hermetic stubs as agent-tools.test.ts, required here for the same reason: importing the
 // real catalog pulls every domain module's barrel transitively into `../infra/agent-tools`, and
@@ -72,14 +73,74 @@ vi.mock("@mallet/shared/db/schema", () => ({
 // Import after mocks are hoisted so the vi.mock() factories above capture the mocked modules.
 import { buildAgentTools } from "../infra/agent-tools";
 
-const MONEY_OR_WORSE = new Set(["money", "destructive"]);
+const LEGAL_TIERS = new Set<RiskTier>(["comms", "operational", "money", "destructive"]);
+
+/**
+ * Every mutating tool's tier, pinned exhaustively.
+ *
+ * A tier is a security boundary, not a label: the autonomy policy auto-approves `comms` and
+ * `operational` with no human present, so a tool that drifts DOWN into either of those starts
+ * running unattended on live customer data. Spot-checking a handful of names does not defend that
+ * boundary — an earlier version of this file asserted four of the five `money` tools, leaving
+ * `invoice_draft` and `invoice_create_from_job` unasserted while its own name claimed "every".
+ *
+ * Compared with `toEqual`, so this one assertion also catches the two failures a per-name loop
+ * cannot see: a NEW mutating tool that nobody classified, and a tool silently dropped from the
+ * catalog.
+ */
+const EXPECTED_WRITE_TIERS: Record<string, RiskTier> = {
+  // Leaves the building, but cannot move money or destroy anything.
+  invoice_send: "comms",
+  quote_send: "comms",
+  notification_send_invoice_reminder: "comms",
+  // Rearranges the shop's own schedule and records; undoable from inside the app.
+  job_schedule: "operational",
+  job_assign: "operational",
+  job_start: "operational",
+  job_complete: "operational",
+  job_reschedule: "operational",
+  schedule_visit: "operational",
+  visit_patch: "operational",
+  task_create: "operational",
+  task_update: "operational",
+  task_set_done: "operational",
+  quote_draft: "operational",
+  customer_create: "operational",
+  timesheet_approve_week: "operational",
+  // Touches what someone owes or has paid.
+  invoice_draft: "money",
+  invoice_create_from_job: "money",
+  invoice_update: "money",
+  invoice_record_payment: "money",
+  quote_accept: "money",
+  // Not undoable from inside the app, or redirects where documents and payment links land.
+  invoice_void: "destructive",
+  job_cancel: "destructive",
+  quote_decline: "destructive",
+  task_remove: "destructive",
+  customer_update: "destructive",
+};
 
 describe("the tool catalog's risk tiers", () => {
   const tools = buildAgentTools();
 
-  it("gives every tool a tier", () => {
-    const missing = tools.filter((t) => !t.riskTier).map((t) => t.name);
-    expect(missing).toEqual([]);
+  it("pins the tier of every mutating tool", () => {
+    const actual = Object.fromEntries(
+      tools.filter((t) => t.mutating).map((t) => [t.name, t.riskTier]),
+    );
+    expect(actual).toEqual(EXPECTED_WRITE_TIERS);
+  });
+
+  it("only ever uses a tier the policy knows how to weigh", () => {
+    // `riskTier` being required is a COMPILE-time guarantee, so a test for "is it present" cannot
+    // fail — a violating tool would not build. What the compiler cannot catch is a value cast into
+    // place (`"whatever" as RiskTier`) or a tool assembled from config rather than a literal. An
+    // unrecognised tier falling through the policy's branches is precisely how something ends up
+    // treated as safe, so assert the values at runtime.
+    const illegal = tools
+      .filter((t) => !LEGAL_TIERS.has(t.riskTier))
+      .map((t) => `${t.name}=${String(t.riskTier)}`);
+    expect(illegal).toEqual([]);
   });
 
   it("classifies contact-field mutation as destructive, not operational", () => {
@@ -89,15 +150,11 @@ describe("the tool catalog's risk tiers", () => {
     expect(tool?.riskTier).toBe("destructive");
   });
 
-  it("keeps every money-moving tool out of the auto-approvable tiers", () => {
-    for (const name of ["invoice_record_payment", "invoice_void", "quote_accept", "invoice_update"]) {
-      expect(MONEY_OR_WORSE.has(tools.find((t) => t.name === name)?.riskTier ?? "")).toBe(true);
-    }
-  });
-
   it("marks every comms tool mutating, so the gate sees it at all", () => {
-    for (const t of tools.filter((x) => x.riskTier === "comms")) {
-      expect(t.mutating).toBe(true);
-    }
+    const comms = tools.filter((x) => x.riskTier === "comms");
+    // Guards against vacuity: this and the assertions above all filter the catalog, so an empty
+    // (or comms-less) catalog would pass them while proving nothing.
+    expect(comms).toHaveLength(3);
+    for (const t of comms) expect(t.mutating).toBe(true);
   });
 });
