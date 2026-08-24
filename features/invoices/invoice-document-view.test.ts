@@ -94,6 +94,9 @@ describe("invoiceDocumentView — the document-of-record half", () => {
     );
     expect(view.parties).toEqual({
       customerName: "Dana Reyes",
+      // The customer's own contact now rides the document — a name alone does not identify a bill.
+      customerPhone: "(704) 555-0134",
+      customerEmail: null,
       serviceAddress: "18 Aspen Ct, Dublin, CA 94568",
     });
   });
@@ -137,5 +140,30 @@ describe("invoiceDocumentView — the document-of-record half", () => {
       license: "C36-1029384",
     };
     expect(invoiceDocumentView(inv(), business).business).toEqual(business);
+  });
+});
+
+/**
+ * THE CUSTOMER'S OWN CONTACT ON THE BILL. A name alone does not identify an invoice — two people
+ * with the same name on one street are the same bill — and the shop chasing it needs a number
+ * without opening another record. Absent ones are OMITTED, never printed as an empty label.
+ */
+describe("invoiceDocumentView — customer contact", () => {
+  it("carries the phone and email off the record", () => {
+    const view = invoiceDocumentView(inv({ phone: "(704) 555-0134", email: "dana@example.com" }));
+    expect(view.parties.customerPhone).toBe("(704) 555-0134");
+    expect(view.parties.customerEmail).toBe("dana@example.com");
+  });
+
+  // A blank phone is the store's empty state, not a value. Passing "" through would print a
+  // labelled line with nothing after it.
+  it("treats a blank phone as absent", () => {
+    const view = invoiceDocumentView(inv({ phone: "" }));
+    expect(view.parties.customerPhone).toBeNull();
+  });
+
+  it("treats a missing email as absent", () => {
+    const view = invoiceDocumentView(inv({ email: undefined }));
+    expect(view.parties.customerEmail).toBeNull();
   });
 });

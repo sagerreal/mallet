@@ -48,6 +48,8 @@ function view(over: Partial<PublicInvoiceView> = {}): PublicInvoiceView {
     // on purpose: the invariant these tests protect is that nothing unset ever prints a label.
     business: { address: null, phone: null, email: null, site: null, license: null },
     customerName: null,
+    customerPhone: null,
+    customerEmail: null,
     serviceAddress: null,
     invoicedAt: new Date("2026-08-05T18:00:00.000Z"),
     serviceAt: null,

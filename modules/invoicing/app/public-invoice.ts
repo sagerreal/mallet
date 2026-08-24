@@ -167,6 +167,11 @@ async function loadDocumentContext(
     chargesEnabled: Boolean(target.connectedAccountId && target.chargesEnabled),
     business,
     customerName: lead?.props.name ?? null,
+    // The customer's own contact, so the bill says who it is FOR precisely enough that the shop
+    // can chase it and the customer recognises it as theirs. Read from the LEAD, same source as
+    // the name — the invoice's stored copy could be stale.
+    customerPhone: lead?.props.phone ?? null,
+    customerEmail: lead?.props.email ?? null,
     // Nullable by design — most leads are created without one (see the leads.address comment).
     serviceAddress: lead?.props.address ?? null,
     serviceAt,

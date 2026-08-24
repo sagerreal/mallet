@@ -72,7 +72,7 @@ type CustMethod = "card" | "ach";
 //  (the later rule) keeps the brand padding/background/flex.
 // ===========================================================================
 
-function CustHead({ brand }: { brand: Brand }) {
+function CustHead({ brand, invoiceNum }: { brand: Brand; invoiceNum: string }) {
   return (
     <div className="sheet-head custhead" style={{ background: brand.color }}>
       <div className="custlogo" style={{ color: brand.color }}>
@@ -83,7 +83,11 @@ function CustHead({ brand }: { brand: Brand }) {
             it should be one for assistive tech and for anything that asks "does this
             modal have a title?". Same type/weight, so nothing moves. */}
         <h2 style={{ fontWeight: 800, fontSize: "var(--type-lg)", margin: 0, letterSpacing: "inherit", fontFamily: "inherit" }}>{brand.name}</h2>
-        <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>{brand.tagline}</div>
+        {/* THE INVOICE NUMBER, matching /i/[token]. This showed the shop's TAGLINE, which the real
+            page never renders — so the one line a customer uses to identify the bill was missing
+            from the preview of it, and a preview that differs from the thing it previews is worse
+            than none. */}
+        <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>Invoice {invoiceNum}</div>
       </div>
       {/* ModalHost provides close — no duplicate custCloseBtn() ✕ here. */}
     </div>
@@ -292,7 +296,7 @@ export function CustInvoiceModalContent() {
 
   return (
     <>
-      <CustHead brand={brand} />
+      <CustHead brand={brand} invoiceNum={invoice.num} />
       <div className="custbody">
         {/* Preview banner — this surface is a LOOK at what the customer sees, never a place to
             take money. Its one caller (invoice-modal.tsx's "Preview as customer") already has

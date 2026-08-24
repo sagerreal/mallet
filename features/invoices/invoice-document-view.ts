@@ -98,6 +98,10 @@ export function invoiceDocumentView(
       // `cust` is "" for a record whose lead the server could not name; the document's own
       // present() gate treats blank as unset and omits the row.
       customerName: invoice.cust,
+      // Already on the record — the invoice carries the contact it was raised against, so this
+      // needs no lead lookup (a technician's store holds no leads at all).
+      customerPhone: invoice.phone || null,
+      customerEmail: invoice.email ?? null,
       serviceAddress: invoice.serviceAddress ?? null,
     },
     lines: (invoice.lines ?? []).map((line) => ({

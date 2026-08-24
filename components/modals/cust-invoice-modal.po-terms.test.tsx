@@ -80,9 +80,14 @@ describe("CustInvoiceModalContent — Net terms + PO on the face", () => {
     expect(screen.getByText("Invoice INV-810 · Net 30 · due Sep 2 · PO 4471")).toBeTruthy();
   });
 
+  /**
+   * TWICE IS CORRECT, and matches /i/[token]: the branded header carries "Invoice INV-810" and so
+   * does the face line. The header used to show the shop's TAGLINE instead — a line the real page
+   * never renders — so the preview omitted the one string a customer uses to identify the bill.
+   */
   it("shows the invoice number alone when there is nothing to say", () => {
     mockInvoices = [inv({ termsDays: 0, dueAt: null, poNumber: undefined })];
     render(<CustInvoiceModalContent />);
-    expect(screen.getByText("Invoice INV-810")).toBeTruthy();
+    expect(screen.getAllByText("Invoice INV-810").length).toBe(2);
   });
 });

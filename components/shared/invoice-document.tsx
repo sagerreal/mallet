@@ -120,6 +120,15 @@ export interface InvoiceDocumentDates {
 export interface InvoiceDocumentParties {
   readonly customerName?: string | null;
   readonly serviceAddress?: string | null;
+  /**
+   * The customer's own phone and email, under their name in "Bill to".
+   *
+   * A bill has to say who it is FOR precisely enough that the shop can chase it and the customer
+   * can recognise it as theirs. A name alone does neither — two Bev Chens on one street are the
+   * same bill. NEVER PRINT A LABEL WITH NO VALUE still applies: absent ones are simply omitted.
+   */
+  readonly customerPhone?: string | null;
+  readonly customerEmail?: string | null;
 }
 
 export interface InvoiceDocumentProps {
@@ -260,19 +269,34 @@ function PartiesBlock({ parties }: { parties: InvoiceDocumentParties }) {
         marginBottom: "var(--space-3)",
       }}
     >
-      {customerName && <PartyCell label="Bill to" value={customerName} />}
+      {customerName && (
+        <PartyCell
+          label="Bill to"
+          value={customerName}
+          // Contact sits UNDER the name in the same cell, not as its own "Phone" / "Email" cells:
+          // three labelled boxes for one party reads as three parties.
+          extra={[present(parties.customerPhone), present(parties.customerEmail)].filter(
+            (v): v is string => Boolean(v),
+          )}
+        />
+      )}
       {serviceAddress && <PartyCell label="Service address" value={serviceAddress} />}
     </div>
   );
 }
 
-function PartyCell({ label, value }: { label: string; value: string }) {
+function PartyCell({ label, value, extra = [] }: { label: string; value: string; extra?: readonly string[] }) {
   return (
     <div style={{ minWidth: 180 }}>
       <div className="muted" style={{ fontSize: "var(--type-xs)", fontWeight: 700 }}>
         {label}
       </div>
       <div style={{ fontSize: "var(--type-sm)" }}>{value}</div>
+      {extra.map((line) => (
+        <div key={line} className="muted" style={{ fontSize: "var(--type-sm)" }}>
+          {line}
+        </div>
+      ))}
     </div>
   );
 }

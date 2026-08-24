@@ -203,7 +203,12 @@ export default async function PublicInvoicePage({
               // `termsFace` already carries "Net 30 · due Sep 2"; a second Due segment would
               // print the same date twice.
             }}
-            parties={{ customerName: view.customerName, serviceAddress: view.serviceAddress }}
+            parties={{
+              customerName: view.customerName,
+              customerPhone: view.customerPhone,
+              customerEmail: view.customerEmail,
+              serviceAddress: view.serviceAddress,
+            }}
             termsFace={line}
             title={view.title}
             lines={view.lines.map((l) => ({

@@ -71,6 +71,9 @@ export interface PublicInvoiceContext {
   readonly authorization: PublicInvoiceAuthorization | null;
   /** leads.name for the invoice's own lead. Null only when the lead is gone. */
   readonly customerName: string | null;
+  /** The customer's own phone/email. Absent ones are omitted from the document, never labelled. */
+  readonly customerPhone: string | null;
+  readonly customerEmail: string | null;
   /** leads.address — null on most leads, and omitted from the document when it is. */
   readonly serviceAddress: string | null;
   /** The source job's completed visit. Null when there is no job, or no completed visit. */
@@ -143,6 +146,8 @@ export interface PublicInvoiceView {
   /** The signature this bill rests on — see PublicInvoiceContext.authorization. */
   readonly authorization: PublicInvoiceAuthorization | null;
   readonly customerName: string | null;
+  readonly customerPhone: string | null;
+  readonly customerEmail: string | null;
   readonly serviceAddress: string | null;
   /** When the bill was raised — invoices.created_at, always present. */
   readonly invoicedAt: Date;
@@ -163,7 +168,7 @@ export const toPublicInvoiceView = (
   context: PublicInvoiceContext,
 ): PublicInvoiceView => {
   const p = invoice.props;
-  const { orgName, chargesEnabled, business, customerName, serviceAddress, serviceAt, wording, authorization } =
+  const { orgName, chargesEnabled, business, customerName, customerPhone, customerEmail, serviceAddress, serviceAt, wording, authorization } =
     context;
   return {
     num: p.num,
@@ -199,6 +204,8 @@ export const toPublicInvoiceView = (
     business,
     authorization,
     customerName,
+    customerPhone,
+    customerEmail,
     serviceAddress,
     // The bill's own creation stamp. Always present — an invoice cannot exist without one.
     invoicedAt: p.createdAt,
