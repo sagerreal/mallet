@@ -20,6 +20,9 @@ export const toDomain = (row: LeadRow): Lead => {
     email: row.email,
     customFields: (row.customFields as { label: string; value: string }[] | null) ?? null,
     source: row.source,
+    // NOT NULL DEFAULT '{}' in the column, so the coalesce is only for a row read back
+    // through a partial select that did not ask for it.
+    tags: row.tags ?? [],
     stage: row.stage,
     value: money(row.valueCents),
     unread: row.unread,

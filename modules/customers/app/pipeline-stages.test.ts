@@ -41,7 +41,7 @@ const makeLead = (over: Partial<Parameters<typeof Lead.create>[0]> = {}) => {
   const r = Lead.create({
     id: asLeadId("33333333-3333-3333-3333-333333333333"),
     orgId: ORG, name: "Marta Feldkamp", phone: null, email: null, customFields: null,
-    source: null, stage: "new", value: money(0), unread: false, wonAt: null,
+    source: null, tags: [], stage: "new", value: money(0), unread: false, wonAt: null,
     companyId: null, role: null, notes: null, lossReason: null,
     pipelineStageId: null, address: null, createdAt: NOW, updatedAt: NOW, ...over,
   });

@@ -60,6 +60,7 @@ function makeLead(overrides: Partial<Lead> = {}): Lead {
     name: "Ada Lovelace",
     phone: "+15550001234",
     source: "referral",
+    tags: [],
     stage: "New customer",
     age: 3,
     job: "",
@@ -564,6 +565,7 @@ describe("addLead (with trpcVanilla mock)", () => {
       name: "Ada Lovelace",
       phone: "+15550001234",
       source: "Added manually",
+      tags: [],
       stage: "New customer",
       job: "",
     });
@@ -586,6 +588,7 @@ describe("addLead (with trpcVanilla mock)", () => {
       name: "Ada Lovelace",
       phone: "+15550001234",
       source: "Added manually",
+      tags: [],
       stage: "New customer",
       job: "",
     });
@@ -609,7 +612,7 @@ describe("addLead (with trpcVanilla mock)", () => {
     });
     const slice = makeSlice();
     const { persisted } = slice.state.addLead({
-      name: "Existing Dedup", phone: "", source: "", stage: "New customer", job: "",
+      name: "Existing Dedup", phone: "", source: "", tags: [], stage: "New customer", job: "",
     });
     const reconciled = await persisted;
     expect(reconciled.stage).toBe("Quote Sent");
@@ -619,7 +622,7 @@ describe("addLead (with trpcVanilla mock)", () => {
     mockCreate.mockRejectedValue(new Error("network error"));
     const slice = makeSlice();
     const { persisted } = slice.state.addLead({
-      name: "Fail", phone: "", source: "", stage: "New customer", job: "",
+      name: "Fail", phone: "", source: "", tags: [], stage: "New customer", job: "",
     });
     expect(slice.state.leads).toHaveLength(1);
     await persisted.catch(() => undefined);

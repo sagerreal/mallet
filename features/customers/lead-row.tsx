@@ -36,8 +36,19 @@ function LeadCell({ lead, col }: LeadCellProps) {
       // The stored value is E.164 (the domain Phone, persisted as phoneE164), so the raw column
       // read "+15105550199" while every other surface showed "(510) 555-0199".
       return <>{lead.phone ? fmtPhone(lead.phone) : <span className="muted">—</span>}</>;
-    case "source":
-      return <SrcPill src={lead.source} />;
+    case "tags":
+      // One pill per tag, in the order the office chose them. An untagged customer gets the same
+      // em-dash every other empty cell in this table uses — not an empty pill, which reads as a
+      // tag whose name failed to load.
+      return lead.tags?.length ? (
+        <span className="tagcell">
+          {lead.tags.map((t) => (
+            <SrcPill key={t} src={t} />
+          ))}
+        </span>
+      ) : (
+        <span className="muted">—</span>
+      );
     case "stage":
       // The DERIVED group, never the stored `lead.stage`. That column read "New customer" on every
       // row of a 678-customer book because nothing maintains it; this is computed from estimates,

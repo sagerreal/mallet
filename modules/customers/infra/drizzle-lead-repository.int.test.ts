@@ -150,4 +150,123 @@ suite("DrizzleLeadRepository against live Supabase RLS", () => {
     }
     expect(rejected).toBe(true);
   });
+
+  // -------------------------------------------------------------------------
+  // TAGS. Two things only the real database can answer: that a text[] column round-trips
+  // through the mapper as a list, and that the tag search clause is valid SQL. The search is
+  // hand-written `sql` (array_to_string over the column) rather than a drizzle operator, and a
+  // rendering mistake there throws at query time — the exact shape of bug a screenshot hides,
+  // because the list just comes back empty.
+  // -------------------------------------------------------------------------
+
+  it("stores and reads back a tag set", async () => {
+    const orgA = asOrgId(orgAId);
+    const lead = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadRepository(tx, orgA);
+      const { lead } = await repo.ensureCustomer({
+        name: "Tagged Tina", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null,
+        tags: ["Google", "Repeat customer"],
+      });
+      return repo.findById(lead.props.id);
+    });
+    expect(lead?.props.tags).toEqual(["Google", "Repeat customer"]);
+  });
+
+  it("normalises on the way in — blanks dropped, case-duplicates collapsed", async () => {
+    const orgA = asOrgId(orgAId);
+    const lead = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadRepository(tx, orgA);
+      const { lead } = await repo.ensureCustomer({
+        name: "Messy Marvin", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null,
+        tags: ["Google", "  ", "google", " Referral "],
+      });
+      return repo.findById(lead.props.id);
+    });
+    expect(lead?.props.tags).toEqual(["Google", "Referral"]);
+  });
+
+  it("an untagged customer reads back an empty list, never null", async () => {
+    const orgA = asOrgId(orgAId);
+    const lead = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadRepository(tx, orgA);
+      const { lead } = await repo.ensureCustomer({
+        name: "Plain Pat", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null,
+      });
+      return repo.findById(lead.props.id);
+    });
+    expect(lead?.props.tags).toEqual([]);
+  });
+
+  it("finds a customer by a tag — the search clause is real SQL", async () => {
+    const orgA = asOrgId(orgAId);
+    const marker = `Zzt${Math.floor(100000 + Math.random() * 899999)}`;
+    const names = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadRepository(tx, orgA);
+      await repo.ensureCustomer({
+        name: "Searchable Sam", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null, tags: [marker],
+      });
+      const page = await repo.list(toPage({ limit: 50 }), { search: marker });
+      return page.items.map((l) => l.props.name);
+    });
+    expect(names).toContain("Searchable Sam");
+  });
+
+  /**
+   * The separator matters. Joined on a SPACE, tags {"Yard","Sign"} would answer a search for
+   * "yard sign" — a match that exists only because two unrelated labels sit next to each other in
+   * an array. The join uses a newline, which the search box cannot produce.
+   */
+  it("does not match ACROSS two adjacent tags", async () => {
+    const orgA = asOrgId(orgAId);
+    const a = `Aaa${Math.floor(100000 + Math.random() * 899999)}`;
+    const b = `Bbb${Math.floor(100000 + Math.random() * 899999)}`;
+    const names = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadRepository(tx, orgA);
+      await repo.ensureCustomer({
+        name: "Adjacent Ann", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null, tags: [a, b],
+      });
+      const page = await repo.list(toPage({ limit: 50 }), { search: `${a} ${b}` });
+      return page.items.map((l) => l.props.name);
+    });
+    expect(names).not.toContain("Adjacent Ann");
+  });
+
+  it("a tag search cannot reach another org's customer", async () => {
+    const marker = `Xtn${Math.floor(100000 + Math.random() * 899999)}`;
+    await withTenant(asOrgId(orgBId), (tx) =>
+      new DrizzleLeadRepository(tx, asOrgId(orgBId)).ensureCustomer({
+        name: "Other Shop Tagged", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null, tags: [marker],
+      }),
+    );
+    const orgA = asOrgId(orgAId);
+    const names = await withTenant(orgA, async (tx) => {
+      const page = await new DrizzleLeadRepository(tx, orgA).list(toPage({ limit: 50 }), { search: marker });
+      return page.items.map((l) => l.props.name);
+    });
+    expect(names).not.toContain("Other Shop Tagged");
+  });
+
+  it("save() replaces the whole set, so a tag can be removed", async () => {
+    const orgA = asOrgId(orgAId);
+    const tags = await withTenant(orgA, async (tx) => {
+      const repo = new DrizzleLeadRepository(tx, orgA);
+      const { lead } = await repo.ensureCustomer({
+        name: "Retag Rita", phone: freshPhone(), email: null, source: null,
+        companyId: null, role: null, notes: null, address: null,
+        tags: ["Google", "Referral"],
+      });
+      const patched = lead.patch({ tags: ["Referral"] }, new Date());
+      if (!isOk(patched)) throw new Error("patch rejected");
+      await repo.save(patched.value);
+      const reread = await repo.findById(lead.props.id);
+      return reread?.props.tags;
+    });
+    expect(tags).toEqual(["Referral"]);
+  });
 });

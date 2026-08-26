@@ -35,6 +35,11 @@ export function toStoreLead(dto: LeadDTO): Lead {
     name: dto.name,
     phone: dto.phone ?? "",
     source: dto.source ?? "",
+    // Defaulted, not spread blind: an unconditional [...dto.tags] THREW on any response
+    // without the key (a cached page from a previous deploy, or a partial fixture), and the
+    // throw happens inside the adopt effect — it blanks the whole customer sheet rather than
+    // losing one field. Mirrors the customFields/notes/address guards below.
+    tags: dto.tags ? [...dto.tags] : [],
     stage: backendStageToStore(dto.stage),
     ...(dto.group ? { group: dto.group } : {}),
     age: daysAgo(dto.createdAt),

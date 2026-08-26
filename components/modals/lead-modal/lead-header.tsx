@@ -36,16 +36,20 @@ export function LeadSheetHeader({ lead }: { lead: Lead }) {
         }}
         label="Customer name"
       />
-      {/* One constant-weight meta line: stage + source. The phone number does NOT
+      {/* One constant-weight meta line: stage + tags. The phone number does NOT
           live here — it had two homes (header meta when filled, quiet row when
           empty), which left nowhere obvious to edit it. The Phone row below is its
-          only home in every state. */}
+          only home in every state.
+
+          Tags replaced `source` here. Source is machine-written provenance now and no screen
+          edits it, so leaving it would have pinned "Added manually" — true of 122 customers on
+          the live book — to the top of the record with no way to change it. */}
       <div className="sheet-meta">
         <span className={`stage-pill ${stagePillCls(lead.stage)}`}>
           <span className="dot" aria-hidden="true" />
           {lead.stage}
         </span>
-        {lead.source && <span>{lead.source}</span>}
+        {lead.tags?.length ? <span>{lead.tags.join(", ")}</span> : null}
         {/* customer > quote > job > invoice. THE ONLY plural anchor: a customer accumulates quotes,
             jobs and invoices over years, so these positions carry counts and open a chooser. Two
             unique indexes make the chain 1:1 downstream, so the other three sheets are singular. */}

@@ -1,6 +1,10 @@
 /**
  * features/customers/customers-columns.tsx
- * Collapsible column picker — checkboxes to show/hide columns (§4.3).
+ * The customers table's column set and their relative widths.
+ *
+ * THERE IS NO PICKER ANY MORE. customers-view renders `DEFAULT_COLS` verbatim, so a definition
+ * that is not in that list is unreachable — which is what the old `source` column had become.
+ * Adding a column here without adding it to DEFAULT_COLS ships nothing.
  */
 
 /**
@@ -20,7 +24,7 @@ export const ALL_COL_DEFS: Record<string, { l: string; w: number }> = {
   value:   { l: "Value",   w: 9 },
   latest:  { l: "Latest",  w: 10 },
   phone:   { l: "Phone",   w: 14 },
-  source:  { l: "Source",  w: 12 },
+  tags:    { l: "Tags",    w: 16 },
   age:     { l: "Days",    w: 7 },
   email:   { l: "Email",   w: 20 },
   address: { l: "Address", w: 24 },
@@ -45,4 +49,8 @@ export function colWidths(visible: readonly string[]): string[] {
 // had touched, so it discriminated nothing; the address is the one fact that differs on every row
 // and, in the trades, the thing people actually recall — "the house on Fort Clatsop" lands where a
 // surname does not.
-export const DEFAULT_COLS = ["name", "stage", "address", "phone"] as const;
+//
+// `tags` joins them because the office asked for it on the list, and because with no picker left
+// there is no other way to reach it. It sits last: it is the supplementary fact, and the three
+// before it are how you find the row in the first place.
+export const DEFAULT_COLS = ["name", "stage", "address", "phone", "tags"] as const;

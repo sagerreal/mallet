@@ -3,7 +3,7 @@ import { railRowsFor, wonRowsFor } from "./derive";
 import type { Estimate, Lead } from "@/lib/store/types";
 
 const mkLead = (over: Partial<Lead> = {}): Lead => ({
-  id: "lead-default", name: "Test Customer", phone: "", source: "", stage: "lead",
+  id: "lead-default", name: "Test Customer", phone: "", source: "", tags: [], stage: "lead",
   age: 0, job: "", last: "", archived: false, ...over,
 });
 

@@ -81,7 +81,7 @@ describe("opening a customer outside the loaded page", () => {
     leadQuery = {
       data: {
         id: "lead-off-page", name: "Zsofia Quennell", phone: "+15550001111", email: null,
-        source: null, stage: "new", value: { cents: 0, currency: "USD" }, unread: false,
+        source: null, tags: ["Referral"], stage: "new", value: { cents: 0, currency: "USD" }, unread: false,
         notes: null, address: null, companyId: null, role: null,
         createdAt: new Date().toISOString(),
       },

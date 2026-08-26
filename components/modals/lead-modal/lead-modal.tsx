@@ -42,7 +42,7 @@ import type { Estimate, Lead } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
 import { fmtPhone } from "@/lib/format";
 import { AddressInput } from "@/components/ui/address-input";
-import { SourcePicker } from "@/features/customers/source-picker";
+import { TagPicker } from "@/features/customers/tag-picker";
 import { ModalLoading } from "../modal-loading";
 
 /**
@@ -252,6 +252,8 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   }
 
   const hasPhone = Boolean(lead.phone && lead.phone.trim());
+  // Defensive default: a store row hydrated by an older path may predate the column.
+  const tagList = lead.tags ?? [];
   const isNew = lead.stage === "New customer";
   const canVisit = lead.stage !== "Won" && lead.stage !== "Lost";
 
@@ -374,19 +376,22 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
           <EmailBody lead={lead} />
         </SheetRow>
 
-        {/* Lead source has ONE home now, and this is it for an existing customer. It used to be a
-            line of TEXT in the header that rendered nothing at all when empty — so a customer typed
-            in a hurry with the source skipped had no way back, even though the API has always
-            accepted the change. */}
+        {/* Tags have ONE home and this is it for an existing customer. The single-select "Lead
+            source" this replaced was a line of TEXT in the header that rendered nothing at all when
+            empty — so a customer typed in a hurry had no way back, even though the API always
+            accepted the change.
+
+            onChange sends the FULL set, which is how a tag is removed: `updateLead` posts what the
+            customer should end up with, not a delta. */}
         <SheetRow
-          label="Lead source"
-          value={lead.source?.trim() ? lead.source : "Add"}
-          valueIsHint={!lead.source?.trim()}
+          label="Tags"
+          value={tagList.length > 0 ? tagList.join(", ") : "Add"}
+          valueIsHint={tagList.length === 0}
           expandable
         >
-          <SourcePicker
-            value={lead.source ?? ""}
-            onPick={(source) => updateLead(lead.id, { source })}
+          <TagPicker
+            value={tagList}
+            onChange={(tags) => updateLead(lead.id, { tags: [...tags] })}
           />
         </SheetRow>
 

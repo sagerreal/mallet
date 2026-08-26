@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { asLeadId, asOrgId, zeroMoney, money, Phone, isOk } from "@mallet/shared/types";
 import { Lead, type LeadProps } from "./lead";
+import { MAX_TAGS, MAX_TAG_LENGTH } from "./customer-tags";
 
 const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
   id: asLeadId("11111111-1111-1111-1111-111111111111"),
@@ -10,6 +11,7 @@ const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
   email: null,
   customFields: null,
   source: "web",
+  tags: [],
   stage: "new",
   value: zeroMoney,
   unread: false,
@@ -275,5 +277,76 @@ describe("Lead.create — defaults", () => {
   it("address round-trips through Lead.create", () => {
     const lead = unwrap(Lead.create(baseProps({ address: "789 Oak St" })));
     expect(lead.props.address).toBe("789 Oak St");
+  });
+});
+
+/**
+ * Tags are normalised and bounded by the factory, so no caller can store a list the picker would
+ * then have to render defensively. Normalisation runs BEFORE the count check on purpose: twenty
+ * pastes of one tag is one tag, not a rejection.
+ */
+describe("Lead tags", () => {
+  const withTags = (tags: readonly string[]) => Lead.create(baseProps({ tags }));
+
+  it("defaults to an empty list", () => {
+    const r = Lead.create(baseProps());
+    expect(isOk(r) && r.value.props.tags).toEqual([]);
+  });
+
+  it("normalises through the factory", () => {
+    const r = withTags(["  Google ", "google", ""]);
+    expect(isOk(r) && r.value.props.tags).toEqual(["Google"]);
+  });
+
+  it("accepts exactly MAX_TAGS", () => {
+    const r = withTags(Array.from({ length: MAX_TAGS }, (_, i) => `Tag ${i}`));
+    expect(isOk(r)).toBe(true);
+  });
+
+  it("rejects one tag over the cap, naming the field", () => {
+    const r = withTags(Array.from({ length: MAX_TAGS + 1 }, (_, i) => `Tag ${i}`));
+    expect(isOk(r)).toBe(false);
+    if (!isOk(r)) expect(r.error.field).toBe("tags");
+  });
+
+  /** Duplicates collapse first, so a list that LOOKS over the cap can still be valid. */
+  it("does not count case-duplicates towards the cap", () => {
+    const dupes = Array.from({ length: MAX_TAGS + 5 }, () => "Google");
+    const r = withTags(dupes);
+    expect(isOk(r) && r.value.props.tags).toEqual(["Google"]);
+  });
+
+  it("rejects an over-long tag", () => {
+    const r = withTags(["x".repeat(MAX_TAG_LENGTH + 1)]);
+    expect(isOk(r)).toBe(false);
+    if (!isOk(r)) expect(r.error.field).toBe("tags");
+  });
+
+  it("patch REPLACES the set — that is how a tag is removed", () => {
+    const base = Lead.create(baseProps({ tags: ["Google", "Referral"] }));
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ tags: ["Referral"] }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual(["Referral"]);
+  });
+
+  it("patch can clear every tag", () => {
+    const base = Lead.create(baseProps({ tags: ["Google"] }));
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ tags: [] }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual([]);
+  });
+
+  it("patch leaves tags alone when the field is absent", () => {
+    const base = Lead.create(baseProps({ tags: ["Google"] }));
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ name: "Renamed" }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual(["Google"]);
+  });
+
+  it("patch normalises too — a picker cannot smuggle a duplicate in", () => {
+    const base = Lead.create(baseProps());
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ tags: ["Google", "GOOGLE"] }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual(["Google"]);
   });
 });

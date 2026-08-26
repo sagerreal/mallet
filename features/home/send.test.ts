@@ -34,7 +34,7 @@ vi.mock("@/lib/store/app-store", () => ({
 // ---- fixtures ---------------------------------------------------------------
 
 const lead: Lead = {
-  id: "l1", name: "Maria Ortiz", phone: "555-0100", source: "web", stage: "Quote Sent",
+  id: "l1", name: "Maria Ortiz", phone: "555-0100", source: "web", tags: [], stage: "Quote Sent",
   age: 3, job: "Water heater leaking", last: "",
 };
 

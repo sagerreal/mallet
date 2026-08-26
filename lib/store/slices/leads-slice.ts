@@ -86,6 +86,11 @@ export function buildLeadUpdatePayload(
       payload.name = patch.name;
     } else if (key === "source") {
       payload.source = patch.source;
+    } else if (key === "tags") {
+      // The whole set, every time — the router treats `tags` as a replacement, so sending it is
+      // how a tag gets REMOVED. An empty array is a real value here (cleared), not "unchanged";
+      // absence is what means unchanged, and absence is a key that isn't in the patch at all.
+      payload.tags = [...(patch.tags ?? [])];
     } else if (key === "stage") {
       // Store Lead.stage is a display string; the router validates the enum
       // server-side. Map display → enum before sending.
@@ -138,6 +143,7 @@ function reconcileLeadFromDTO(
     phone: string | null;
     email: string | null;
     source: string | null;
+    tags?: string[];
     stage: string;
     value: { cents: number; currency: string };
     unread: boolean;
@@ -156,6 +162,11 @@ function reconcileLeadFromDTO(
     phone: dto.phone ?? "",
     email: dto.email ?? undefined,
     source: dto.source ?? "",
+    // Adopt the SERVER's set, not the one we sent: it is normalised (trimmed, case-deduped), so a
+    // shop that ticks "google" under an existing "Google" sees the one tag it actually has rather
+    // than a second spelling that vanishes on the next refetch. Optional-guarded like the fields
+    // below it — an older deployment's response omitting the key must not clear the row's tags.
+    tags: dto.tags !== undefined ? [...dto.tags] : current.tags,
     // DTO carries the DB enum; the store renders display strings.
     stage: backendStageToStore(dto.stage),
     value: dto.value.cents / 100,

@@ -27,7 +27,19 @@ export const leads = pgTable(
     name: text("name").notNull(),
     phoneE164: text("phone_e164"),
     email: text("email"),
+    // WHERE THE ROW CAME FROM — system provenance, not a user field. Written by the front desk
+    // ("AI Front Desk"), the inbound web form, the CSV importer ("Import") and the manual-create
+    // path ("Added manually"); read by the composer's draft-run to name the request. It is NOT
+    // `tags` and the two must never be conflated: the office used to pick a marketing label here,
+    // which is why 122 of 183 populated values on the live book read "Added manually" or "Import".
+    // That picker is now `tags` below; this column stays machine-written and is no longer editable.
     source: text("source"),
+    // The office's own labels for this customer ("Google", "Referral", "Commercial", …).
+    // A set, not a single value — a customer found on Nextdoor who is also a repeat customer is
+    // both. The selectable vocabulary lives in `lead_sources` (see that table's note); this column
+    // stores the chosen labels, so removing a label from the vocabulary never rewrites history.
+    // Empty array (never null) so every read is a list and no call site needs a null branch.
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
     stage: text("stage").notNull().default("new"),
     valueCents: integer("value_cents").notNull().default(0),
     unread: boolean("unread").notNull().default(false),

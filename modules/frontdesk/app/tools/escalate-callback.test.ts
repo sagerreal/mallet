@@ -74,6 +74,7 @@ const buildLead = (input: EnsureCustomerInput): Lead => {
     email: input.email,
     customFields: null,
     source: input.source,
+    tags: [...(input.tags ?? [])],
     stage: "new" as LeadStage,
     value: zeroMoney,
     unread: true,

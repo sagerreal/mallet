@@ -13,6 +13,8 @@ export interface EnsureCustomerCommand {
   readonly role: string | null;
   readonly notes: string | null;
   readonly address: string | null;
+  /** Office-chosen labels for a new customer. Omitted by every system caller. */
+  readonly tags?: readonly string[];
 }
 
 // Get-or-create a customer. Validation lives here and in the domain factory; the repository
@@ -38,6 +40,7 @@ export class EnsureCustomerUseCase {
       role: cmd.role,
       notes: cmd.notes,
       address: cmd.address,
+      tags: cmd.tags,
     });
 
     if (created) {

@@ -61,7 +61,7 @@ vi.mock("@/lib/store/app-store", () => {
 const LEAD_ID = "11111111-1111-4111-8111-111111111111";
 
 const lead: Lead = {
-  id: LEAD_ID, name: "Maria Ortiz", phone: "555-0100", source: "web", stage: "Quote Sent",
+  id: LEAD_ID, name: "Maria Ortiz", phone: "555-0100", source: "web", tags: [], stage: "Quote Sent",
   age: 3, job: "Water heater leaking", last: "",
 };
 

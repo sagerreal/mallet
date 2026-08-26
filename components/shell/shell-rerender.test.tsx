@@ -63,8 +63,8 @@ function makeStore() {
       { id: "t2", t: "Task 2", due: null, leadId: null, done: true },
     ],
     leads: [
-      { id: "l1", name: "Pat", phone: "555", source: "web", stage: "won", age: 0, job: "", last: "", archived: false },
-      { id: "l2", name: "Sam", phone: "555", source: "web", stage: "won", age: 0, job: "", last: "", archived: true },
+      { id: "l1", name: "Pat", phone: "555", source: "web", tags: [], stage: "won", age: 0, job: "", last: "", archived: false },
+      { id: "l2", name: "Sam", phone: "555", source: "web", tags: [], stage: "won", age: 0, job: "", last: "", archived: true },
     ],
     jobs: [
       mkJ("j1", false, "scheduled"),

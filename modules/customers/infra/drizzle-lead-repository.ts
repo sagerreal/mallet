@@ -23,6 +23,7 @@ import type {
   LeadFilter,
 } from "../domain/lead-repository";
 import { toDomain } from "./lead-mapper";
+import { normalizeTags } from "../domain/customer-tags";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
 // app.current_org_id), so RLS appends `org_id = current_org_id()` to every statement — this
@@ -45,6 +46,10 @@ export class DrizzleLeadRepository implements LeadRepository {
         email: input.email,
         customFields: null, // created leads start with no custom fields
         source: input.source,
+        // Normalised here as well as in the domain: this insert bypasses Lead.create (it has to,
+        // so ON CONFLICT can do the dedupe), making it the one write that would otherwise store a
+        // raw list. Absent from every system caller → the empty set.
+        tags: [...normalizeTags(input.tags ?? [])],
         companyId: input.companyId,
         role: input.role,
         // Belt-and-suspenders: new leads are born read. unread is only raised by
@@ -161,6 +166,11 @@ export class DrizzleLeadRepository implements LeadRepository {
         ilike(leads.phoneE164, like),
         ilike(leads.email, like),
         ilike(leads.address, like),
+        // Tags are searchable so "google" finds the customers filed under it. Joined on a NEWLINE
+        // rather than a space on purpose: a separator the search box cannot produce means a query
+        // can never match across two adjacent tags (tags {"Yard","Sign"} must not answer "yard
+        // sign" — only the single tag "Yard sign" should).
+        sql`array_to_string(${leads.tags}, E'\n') ilike ${like}`,
       );
       if (cond) conds.push(cond);
     }
@@ -339,6 +349,7 @@ export class DrizzleLeadRepository implements LeadRepository {
         email: p.email,
         customFields: p.customFields as { label: string; value: string }[] | null,
         source: p.source,
+        tags: [...p.tags],
         stage: p.stage,
         valueCents: p.value,
         unread: p.unread,
