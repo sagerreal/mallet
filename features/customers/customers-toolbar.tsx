@@ -36,7 +36,7 @@ export function CustomersToolbar({
   total,
   filtered,
   countsLoading = false,
-  searchPlaceholder = "Search name, address, phone, email…",
+  searchPlaceholder = "Search name, address, phone, email, tags…",
 }: ToolbarProps) {
   return (
     <div className="toolbar">

@@ -24,7 +24,7 @@ class Repo implements Partial<LeadRepository> {
     const lead = Lead.create({
       id: asLeadId(randomUUID()), orgId: ORG, name,
       phone: parsed && isOk(parsed) ? parsed.value : null,
-      email: null, customFields: null, source: null, stage: "new", value: zeroMoney,
+      email: null, customFields: null, source: null, tags: [], stage: "new", value: zeroMoney,
       unread: false, wonAt: null, companyId: null, role: null, notes: null,
       lossReason: null, pipelineStageId: null, address: null, createdAt: now, updatedAt: now,
     });

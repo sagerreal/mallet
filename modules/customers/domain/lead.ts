@@ -1,5 +1,6 @@
 import type { LeadId, OrgId, CompanyId, Phone, Money, Result, ValidationError } from "@mallet/shared/types";
 import { validation, ok, err } from "@mallet/shared/types";
+import { normalizeTags, tagsWithinLength, MAX_TAGS, MAX_TAG_LENGTH } from "./customer-tags";
 
 // The pipeline stages a lead moves through. A fixed enum for the pilot — custom per-org
 // stages (the prototype's draggable columns) are deferred (YAGNI) until a tenant needs them.
@@ -24,7 +25,14 @@ export interface LeadProps {
   readonly email: string | null;
   /** Office-defined {label, value} pairs — display-only facts, order preserved. */
   readonly customFields: readonly { label: string; value: string }[] | null;
+  /**
+   * WHERE THE ROW CAME FROM — machine-written provenance ("AI Front Desk", "Import",
+   * "Added manually"), not a label anybody chose. No longer editable from any screen; the office's
+   * own labels are `tags`. Read by the composer's draft-run to name a request.
+   */
   readonly source: string | null;
+  /** The office's own labels for this customer. Always a list, empty when untagged — never null. */
+  readonly tags: readonly string[];
   readonly stage: LeadStage;
   readonly value: Money;
   readonly unread: boolean;
@@ -57,7 +65,16 @@ export class Lead {
     const name = props.name.trim();
     if (name.length === 0) return err(validation("lead name is required", "name"));
     if (props.value < 0) return err(validation("lead value cannot be negative", "value"));
-    return ok(new Lead({ ...props, name }));
+    // Normalise BEFORE the count check so twenty pastes of the same tag are one tag, not a
+    // rejection — and so the limits describe the stored set rather than what was typed at it.
+    const tags = normalizeTags(props.tags ?? []);
+    if (tags.length > MAX_TAGS) {
+      return err(validation(`a customer can carry at most ${MAX_TAGS} tags`, "tags"));
+    }
+    if (!tagsWithinLength(tags)) {
+      return err(validation(`a tag cannot be longer than ${MAX_TAG_LENGTH} characters`, "tags"));
+    }
+    return ok(new Lead({ ...props, name, tags }));
   }
 
   // Move to a target stage. Reaching "won" stamps wonAt once; re-moving to the current stage
@@ -95,8 +112,9 @@ export class Lead {
     return new Lead({ ...this.p, unread: true, updatedAt: now });
   }
 
-  // Patch a subset of scalar fields. Undefined = keep current; explicit null is allowed for
-  // phone/email/source/companyId/role. All invariants are re-validated through Lead.create so the
+  // Patch a subset of fields. Undefined = keep current; explicit null is allowed for
+  // phone/email/source/companyId/role. `tags` REPLACES the set (it is not merged) — the picker
+  // sends what the customer should end up with, so an untick has to be able to remove one. All invariants are re-validated through Lead.create so the
   // domain stays the single source of truth. stage/unread have their own methods and are NOT
   // patched here.
   patch(
@@ -106,6 +124,7 @@ export class Lead {
       email?: string | null;
       customFields?: readonly { label: string; value: string }[] | null;
       source?: string | null;
+      tags?: readonly string[];
       value?: Money;
       companyId?: CompanyId | null;
       role?: string | null;
@@ -136,6 +155,7 @@ export class Lead {
       email: fields.email !== undefined ? fields.email : this.p.email,
       customFields: fields.customFields !== undefined ? fields.customFields : this.p.customFields,
       source: fields.source !== undefined ? fields.source : this.p.source,
+      tags: fields.tags !== undefined ? fields.tags : this.p.tags,
       value: fields.value !== undefined ? fields.value : this.p.value,
       companyId: fields.companyId !== undefined ? fields.companyId : this.p.companyId,
       role: fields.role !== undefined ? fields.role : this.p.role,

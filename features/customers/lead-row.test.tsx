@@ -60,3 +60,43 @@ describe("LeadRow — the phone cell", () => {
     expect(screen.getByText("—")).toBeTruthy();
   });
 });
+
+/**
+ * The Tags cell. It replaced the single-value Source pill, which had become unreachable anyway
+ * (the column picker is gone and `source` was not in DEFAULT_COLS).
+ */
+describe("LeadRow — the Tags cell", () => {
+  const rowWithTags = (tags: string[] | undefined) => {
+    const l = { ...lead, tags } as unknown as Lead;
+    render(
+      <table><tbody>
+        <LeadRow lead={l} visibleCols={["tags"]} onOpen={vi.fn()} />
+      </tbody></table>,
+    );
+  };
+
+  it("renders one pill per tag", () => {
+    rowWithTags(["Google", "Repeat customer"]);
+    expect(screen.getByText("Google")).toBeTruthy();
+    expect(screen.getByText("Repeat customer")).toBeTruthy();
+  });
+
+  it("keeps the chosen order", () => {
+    rowWithTags(["Yelp", "Angi"]);
+    const pills = Array.from(document.querySelectorAll(".pill.src")).map((n) => n.textContent);
+    expect(pills).toEqual(["Yelp", "Angi"]);
+  });
+
+  /** An empty pill would read as a tag whose name failed to load. */
+  it("shows the table's em-dash for an untagged customer, not an empty pill", () => {
+    rowWithTags([]);
+    expect(screen.getByText("—")).toBeTruthy();
+    expect(document.querySelector(".pill.src")).toBeNull();
+  });
+
+  /** Defensive: a store row hydrated by an older path may predate the field. */
+  it("survives a lead with no tags field at all", () => {
+    rowWithTags(undefined);
+    expect(screen.getByText("—")).toBeTruthy();
+  });
+});

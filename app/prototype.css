@@ -929,6 +929,9 @@
   .pill.amber{background:var(--amber-bg);color:var(--amber)}
   .pill.red{background:var(--red-bg);color:var(--red)}
   .pill.src{background:var(--card);border:1px solid var(--line);color:var(--ink-2);font-weight:600}
+  /* A customer's tags in one table cell. Wraps rather than truncating: a second tag is the
+     common case, and a row that silently hides one is worse than a row that grows. */
+  .tagcell{display:flex;flex-wrap:wrap;gap:var(--space-1)}
   /* ---- "The work order" design system ---- */
   .fig{font-family:var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
   .display{font-family:var(--font-display);font-weight:600;letter-spacing:-.02em}

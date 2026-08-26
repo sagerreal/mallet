@@ -69,7 +69,13 @@ export interface Lead {
   phone: string;
   /** Office-defined {label, value} pairs — persisted on the lead. */
   customFields?: { label: string; value: string }[] | null;
+  /**
+   * Machine-written provenance ("Import", "AI Front Desk"). Read-only in the UI — the office's
+   * own labels are `tags`. "" when unset (the store flattens null to empty string).
+   */
   source: string;
+  /** The office's labels. Always an array, empty when untagged — never undefined. */
+  tags: string[];
   stage: string;
   /**
    * Where this customer's WORK has got to — derived server-side, supplied on the LIST read only.

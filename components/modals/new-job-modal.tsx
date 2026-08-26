@@ -352,6 +352,8 @@ export function NewJobModalContent() {
         name: custName || "New customer",
         phone: phone.trim(),
         source: "Added manually",
+        // A new customer starts untagged; the office tags from the customer list or the sheet.
+        tags: [],
         stage: "Contacted",
         job,
         address: addr.trim() || undefined,

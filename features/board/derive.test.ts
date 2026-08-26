@@ -29,7 +29,7 @@ const item = (over: Partial<BoardItem>): BoardItem => ({
 });
 
 const lead = (over: Partial<Lead> = {}): Lead => ({
-  id: "l1", name: "Maria Ortiz", phone: "555-0100", source: "web", stage: "New customer",
+  id: "l1", name: "Maria Ortiz", phone: "555-0100", source: "web", tags: [], stage: "New customer",
   age: 2, job: "Water heater leaking", last: "", ...over,
 });
 

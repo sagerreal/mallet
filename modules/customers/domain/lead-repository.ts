@@ -10,11 +10,21 @@ export interface EnsureCustomerInput {
   readonly name: string;
   readonly phone: Phone | null;
   readonly email: string | null;
+  /** Machine-written provenance. System callers set this; no screen does. */
   readonly source: string | null;
   readonly companyId: CompanyId | null;
   readonly role: string | null;
   readonly notes: string | null;
   readonly address: string | null;
+  /**
+   * The office's labels, chosen at intake. Absent from every system caller (the front desk and
+   * the importer have no opinion about how a shop files a customer) and only ever set by the
+   * new-customer modal, so it is optional rather than a required empty array.
+   *
+   * Applies to a genuinely NEW customer only — a dedupe hit returns the existing record
+   * untouched, exactly like every other field here.
+   */
+  readonly tags?: readonly string[];
 }
 
 export interface EnsureCustomerResult {
@@ -23,7 +33,7 @@ export interface EnsureCustomerResult {
 }
 
 export interface LeadFilter {
-  /** Free-text across name, phone, email and address — matched in the database, not over a page. */
+  /** Free-text across name, phone, email, address and tags — matched in the database, not over a page. */
   readonly search?: string;
   /** Narrow to one lead source ("Added manually", "Website form", …). */
   readonly source?: string;

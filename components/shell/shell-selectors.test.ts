@@ -23,7 +23,7 @@ function mkTask(overrides: Partial<Task> = {}): Task {
 
 function mkLead(overrides: Partial<Lead> = {}): Lead {
   return {
-    id: "l1", name: "Pat", phone: "555", source: "web",
+    id: "l1", name: "Pat", phone: "555", source: "web", tags: [],
     stage: "won", age: 0, job: "", last: "",
     ...overrides,
   };

@@ -1,10 +1,15 @@
 /**
  * components/modals/new-customer-modal.tsx
  * Faithful port of prototype ovQuick / openQuickAdd (lines 1106-1143).
- * Exact field order: Name, Phone (with dup-hint), Service address (autocomplete),
- * Customer type (Person/Biz chip toggle), Business name (hidden when Person), Lead source (chip dropdown),
- * Book a visit reveal, More details reveal, footer.
- * NO subtitle. Button label: "Add customer" → "Create job" / "Create estimate visit".
+ * Field order: Name, Phone (with dup-hint), Service address (autocomplete), Customer type
+ * (Person/Biz chip toggle), Business name (hidden when Person), Tags, More details, footer.
+ * NO subtitle. Button label: "Add customer", always.
+ *
+ * IT CREATES A CUSTOMER AND NOTHING ELSE. A "Book a visit" reveal used to sit between Tags and
+ * More details, carrying a job description, a yes/no booking and "✦ Build the price →" — so this
+ * one form could mint a customer, a job, an unplaced visit and a composer hand-off. All of it is
+ * gone: intake is intake. Jobs are booked from the job surfaces and priced from the composer,
+ * where a schedule and a price actually live.
  *
  * Sheet frame (#253 grammar): sticky .sheet-head holds the title; the terminal
  * create is THE .sheet-pri docked in a sticky .sheet-foot with Cancel quiet
@@ -15,31 +20,19 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { useRouter } from "next/navigation";
 import { Modal } from "./modal";
 import { useCloseModal, useOpenModal, useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api, type RouterOutputs } from "@/lib/trpc/client";
 import { AddressInput } from "@/components/ui/address-input";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
-import { SourcePicker } from "@/features/customers/source-picker";
-import { toStoreLead } from "@/features/customers/leads-hydrator";
-import { Field, FieldGroup } from "@/components/ui/input";
+import { TagPicker } from "@/features/customers/tag-picker";
+import { Field } from "@/components/ui/input";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 
-/**
- * Book a visit alongside the new customer, or not. ONE booking shape — an unpriced job
- * (kind "estimate": someone goes out, the price comes after) — because the Job/Estimate
- * fork is gone everywhere: kind derives from whether a price is committed, and nothing
- * in this modal commits one. The priced path from here is "✦ Build the price →", which
- * deliberately goes to the COMPOSER (customer alone + a quote; the job is born when the
- * quote is accepted).
- */
-type VisitPurpose = "book" | null;
-
 /** The staged (below-the-essentials) rows — one open at a time. */
-type RowKey = "type" | "source" | "book" | "more";
+type RowKey = "type" | "tags" | "more";
 
 /** Clip a collapsed-row summary to the row word budget. */
 function clip(s: string, max = 28): string {
@@ -50,17 +43,10 @@ function clip(s: string, max = 28): string {
 /** The create mutation's success payload (leadDTO + the dedup `created` flag). */
 type CreatedCustomer = RouterOutputs["v1"]["customers"]["create"];
 
-/** Default estimate-visit length in hours (mirrors new-job-modal's NJ_HOURS.estimate). */
-const ESTIMATE_VISIT_HOURS = 0.5;
-
 export function NewCustomerModal({ open, instant }: { open: boolean; instant?: boolean }) {
-  const router = useRouter();
   const close = useCloseModal();
   const openModal = useOpenModal();
   const activeModal = useActiveModal();
-  const addJob = useAppStore((s) => s.addJob);
-  const addVisit = useAppStore((s) => s.addVisit);
-  const adoptLead = useAppStore((s) => s.adoptLead);
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
 
@@ -109,12 +95,8 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   const [openRow, setOpenRow] = useState<RowKey | null>(null);
   const toggleRow = (k: RowKey) => setOpenRow((prev) => (prev === k ? null : k));
 
-  // Source picker state
-  const [source, setSource] = useState<string>("");
-
-  // Book a visit row
-  const [jobDesc, setJobDesc] = useState("");
-  const [visitPurpose, setVisitPurpose] = useState<VisitPurpose>(null);
+  // Tag picker state. A SET — the office files one customer under several labels.
+  const [tags, setTags] = useState<readonly string[]>([]);
 
   // More details row
   const [email, setEmail] = useState("");
@@ -137,10 +119,8 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
     setPhone("");
     setIsBiz(false);
     setBizName("");
-    setSource("");
+    setTags([]);
     setOpenRow(null);
-    setJobDesc("");
-    setVisitPurpose(null);
     setEmail("");
     setNotes("");
     setAddress("");
@@ -156,12 +136,6 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   function handleClose() {
     reset();
     close();
-  }
-
-  // Button label
-  function submitLabel(): string {
-    if (visitPurpose === "book") return "Create job";
-    return "Add customer";
   }
 
   /**
@@ -191,7 +165,9 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
       name: name.trim(),
       phone: phone.trim() || undefined,
       email: email.trim() || undefined,
-      source: source || undefined,
+      // Omitted when empty so the create input carries no key rather than an empty array —
+      // the column default already writes the empty set.
+      tags: tags.length > 0 ? [...tags] : undefined,
       companyId: companyId ?? undefined,
       // Prototype default: contacts linked to a company carry role "Contact".
       role: companyId != null ? "Contact" : undefined,
@@ -201,112 +177,31 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   }
 
   /**
-   * Create the booked visit for a just-created customer — the submit button's
-   * "Create job" path. ONE shape: an unpriced job (kind "estimate") with an
-   * unplaced visit — a REAL job, never a client-store-only evisit (those were
-   * gone on refresh and invisible to the schedule window / crew-load / conflict
-   * checks). Returns false when the job persist failed: the error is surfaced
-   * and the modal must stay open (no silent failures on interactive paths).
-   */
-  async function createBookedWork(data: CreatedCustomer): Promise<boolean> {
-    if (visitPurpose !== "book") return true;
-    // addJob returns { job, persisted }; the lead (data.id) is already
-    // persisted by createMutation, so addJob fires v1.jobs.create immediately.
-    const { job: created, persisted } = addJob({
-      leadId: data.id,
-      kind: "estimate",
-      svc: "",
-      origin: "manual",
-      title: jobDesc.trim() || data.name,
-      // The single top-level Service address IS the job site (one-off ICP:
-      // customer address == job site). Mirrors new-job-modal's addr fallback.
-      addr: address.trim() || "",
-      phone: data.phone ?? "",
-      status: "unscheduled",
-      archived: false,
-      lines: [],
-      addons: [],
-      photos: [],
-      notes: notes.trim(),
-      acts: [],
-      visits: [],
-    });
-    // Await the job persist BEFORE closing — a v1.jobs.create failure only
-    // rolls back the store with a dev log, so closing here would swallow it.
-    // Mirrors new-job-modal's awaited jobPersisted.
-    try {
-      await persisted;
-    } catch (err) {
-      setError(userMessage(err, "The customer was saved, but the job wasn't — check your connection and try again."));
-      return false;
-    }
-    // Unplaced, at the unpriced default length — dragged onto the Schedule later.
-    // addVisit only persists once the job is DB-origin, so it runs after the reconcile.
-    addVisit(created.id, ESTIMATE_VISIT_HOURS);
-    return true;
-  }
-
-  /**
-   * Shared create-success handler: dedup guard → booked work → refresh/close.
-   * A dedup hit (data.created === false) surfaces the existing record and MUST
-   * NOT create work — a job would attach to someone else's customer.
+   * Create-success handler: dedup guard → refresh → close.
    *
-   * toComposer ("✦ Build the price →") is a quoting intent, not a booking:
-   * the customer is created ALONE and the office lands in the composer — the
-   * job is born when the quote is ACCEPTED (CreateJobFromEstimateUseCase),
-   * exactly like every other composer quote. Nothing unpriced reaches the
-   * board if pricing is abandoned. This modal books no schedule (its jobs are
-   * created unscheduled with an unplaced visit), so skipping the job here can
-   * never drop a chosen time — booked work stays on the "Create job" submit.
-   * If a schedule picker is ever added, a picked time must go back through
-   * createBookedWork.
+   * A dedup hit (data.created === false) surfaces the existing record instead of closing
+   * silently, which would leave the user wondering why nothing appeared.
+   *
+   * This modal creates a CUSTOMER and nothing else. It used to also book a visit and offer
+   * "✦ Build the price →" from the same submit; both went with the Book-a-visit row. Work is
+   * created from the job and quote surfaces, which is where a schedule and a price live.
    */
-  async function handleCreated(data: CreatedCustomer, toComposer: boolean): Promise<void> {
+  async function handleCreated(data: CreatedCustomer): Promise<void> {
     if (!data.created) {
-      // Dedup hit — the phone matched an existing customer. Surface it instead of
-      // silently closing, which would leave the user wondering why nothing appeared.
       setDedupLeadId(data.id);
       return;
     }
-    if (toComposer) {
-      // Adopt the persisted lead into the store (no network re-write) so the
-      // composer's customer selector resolves it the moment the route lands.
-      adoptLead(toStoreLead(data));
-      utils.v1.customers.invalidate();
-      // Carry the typed job description into the composer's describe-the-job
-      // lane; captured before reset() for clarity (reset clears the field).
-      const desc = jobDesc.trim();
-      reset();
-      close();
-      router.push(
-        desc
-          ? `/composer?lead=${data.id}&desc=${encodeURIComponent(desc)}`
-          : `/composer?lead=${data.id}`,
-      );
-      return;
-    }
-    const ok = await createBookedWork(data);
-    if (!ok) {
-      // The customer row persisted even though the job didn't — refresh the
-      // list so it shows up; the error keeps the modal open for a retry.
-      utils.v1.customers.invalidate();
-      return;
-    }
-    // Always refresh the customers list. The old "look"-path skip existed to protect a
-    // store-local evisit from the refetch — evisits are long dead (bookings are REAL
-    // jobs), so the guard only left the list stale.
     utils.v1.customers.invalidate();
     reset();
     close();
   }
 
   /**
-   * Shared submit for "Add customer"/"Create job"/"Create estimate visit" and
-   * "✦ Build the price →". One create per click: inFlightRef rejects re-entry
-   * synchronously, and the submission id drops responses that land after the
-   * form was reset (see the ref comments above).
+   * The "Add customer" submit. One create per click: inFlightRef rejects re-entry synchronously,
+   * and the submission id drops responses that land after the form was reset (see the ref
+   * comments above).
    */
-  async function submitCreate(openBuilder: boolean): Promise<void> {
+  async function submitCreate(): Promise<void> {
     if (inFlightRef.current || createMutation.isPending) return;
     if (!name.trim()) { setError("Name is required."); return; }
     // Client-side mirror of the server's Phone.parse rule — catch a bad number
@@ -332,7 +227,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
       if (submission !== submitSeqRef.current) return; // form reset mid-flight
       const data = await createMutation.mutateAsync(buildCreateInput(resolved?.companyId));
       if (submission !== submitSeqRef.current) return; // stale response — drop it
-      await handleCreated(data, openBuilder);
+      await handleCreated(data);
     } catch (err) {
       if (submission === submitSeqRef.current) {
         setError(userMessage(err, "Couldn't save the customer — check your connection and try again."));
@@ -345,7 +240,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault();
-    void submitCreate(false);
+    void submitCreate();
   }
 
   function handleOpenExisting() {
@@ -354,15 +249,6 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
     reset();
     close();
     openModal(MODAL.LEAD, { leadId: id });
-  }
-
-  /**
-   * "✦ Build the price →" — create the CUSTOMER only, then hand off to the
-   * composer (?lead=, plus ?desc= when a job description was typed). The job
-   * is created when the quote is accepted, never before (see handleCreated).
-   */
-  function handleBuildPrice() {
-    void submitCreate(true);
   }
 
   function addCustomField() {
@@ -374,20 +260,13 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
     setShowAddField(false);
   }
 
-  function selectSource(s: string) {
-    setSource(s);
-    // Picking a source completes the row — collapse it back to its summary.
-    setOpenRow(null);
-  }
-
   // ---- collapsed row summaries (the value IS the state) ---------------------
   const typeSummary = isBiz
     ? bizName.trim()
       ? `Business · ${clip(bizName)}`
       : "Business"
     : "Person";
-  const bookSummary =
-    visitPurpose === null ? "No" : `Visit${jobDesc.trim() ? ` · ${clip(jobDesc)}` : ""}`;
+  const tagsSummary = tags.length > 0 ? clip(tags.join(", ")) : "Add";
   const moreParts = [
     email.trim() ? "email" : null,
     notes.trim() ? "notes" : null,
@@ -495,90 +374,18 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
           </DisclosureRow>
 
           <DisclosureRow
-            label="Lead source"
-            value={source || "Add"}
-            open={openRow === "source"}
-            onToggle={() => toggleRow("source")}
+            label="Tags"
+            value={tagsSummary}
+            open={openRow === "tags"}
+            onToggle={() => toggleRow("tags")}
           >
             {/* The same picker the existing-customer modal uses, so the list behaves identically
-                wherever a source is chosen — including adding and removing while standing in it. */}
-            <SourcePicker
-              value={source}
-              onPick={(label: string) => (label ? selectSource(label) : setSource(""))}
-            />
-          </DisclosureRow>
+                wherever tags are applied — including adding and removing while standing in it.
 
-          <DisclosureRow
-            label="Book a visit"
-            value={bookSummary}
-            open={openRow === "book"}
-            onToggle={() => toggleRow("book")}
-          >
-            {/* Job description */}
-            <Field label="Job">
-              <input
-                type="text"
-                placeholder="water heater making noise"
-                value={jobDesc}
-                onChange={(e) => setJobDesc(e.target.value)}
-              />
-            </Field>
-
-            {/* ONE yes/no, no Job/Estimate fork — the booking is an unpriced job either
-                way (kind derives from the price, and nothing in this modal commits one;
-                pricing from here is "✦ Build the price →", the composer's quote). */}
-            <div className="chips" style={{ marginBottom: "0" }}>
-              <button
-                type="button"
-                className={`chip${visitPurpose === null ? " sel" : ""}`}
-                onClick={() => setVisitPurpose(null)}
-                aria-pressed={visitPurpose === null}
-              >
-                No
-              </button>
-              <button
-                type="button"
-                className={`chip${visitPurpose === "book" ? " sel" : ""}`}
-                onClick={() => setVisitPurpose("book")}
-                aria-pressed={visitPurpose === "book"}
-              >
-                Yes — book a visit
-              </button>
-            </div>
-
-            {/* Conditional book panel — the job uses the single top-level
-                Service address, so there is no second address field here.
-
-                A caption over a button, not a form field: the button names itself
-                ("Build the price"), so htmlFor would name it twice and say nothing
-                about the hint beneath. The caption names a group instead. */}
-            {visitPurpose === "book" && (
-              <FieldGroup
-                label="Price"
-                style={{ margin: "var(--space-4) 0 0" }}
-                hint={
-                  <span
-                    className="muted"
-                    style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
-                  >
-                    (optional)
-                  </span>
-                }
-              >
-                <button
-                  type="button"
-                  className="btn"
-                  style={{ width: "100%", justifyContent: "center" }}
-                  onClick={handleBuildPrice}
-                  disabled={busy || Boolean(dedupLeadId)}
-                >
-                  {busy ? "Creating…" : "✦ Build the price →"}
-                </button>
-                <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
-                  Same builder your crew uses — or price later.
-                </div>
-              </FieldGroup>
-            )}
+                The row deliberately stays OPEN after a pick. Its single-select ancestor collapsed
+                on choose, which was right when there was one answer and is wrong now: the second
+                tag is the common case, and re-opening the row for it is a step for nothing. */}
+            <TagPicker value={tags} onChange={setTags} />
           </DisclosureRow>
 
           <DisclosureRow
@@ -705,7 +512,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
             style={{ flex: 1, width: "auto" }}
             disabled={busy || Boolean(dedupLeadId)}
           >
-            {busy ? "Saving…" : submitLabel()}
+            {busy ? "Saving…" : "Add customer"}
           </button>
         </div>
       </form>

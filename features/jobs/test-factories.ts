@@ -46,6 +46,7 @@ export function mkLead(overrides: Partial<Lead> = {}): Lead {
     name: "Pat Rivera",
     phone: "555-0100",
     source: "web",
+    tags: [],
     stage: "won",
     age: 0,
     job: "",

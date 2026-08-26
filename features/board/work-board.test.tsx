@@ -105,7 +105,7 @@ const labelsIn = (region: HTMLElement): string[] =>
 /** A quote card carrying a prepared reminder — exactly what useOkQueue hands the board. */
 const okLead: Lead = {
   id: "11111111-1111-4111-8111-111111111111", name: "Maria Ortiz", phone: "555-0100",
-  source: "web", stage: "Quote Sent", age: 3, job: "Water heater leaking", last: "",
+  source: "web", tags: [], stage: "Quote Sent", age: 3, job: "Water heater leaking", last: "",
 };
 const ok: OkItem = {
   key: "okq-e1", kind: "quote-viewed", lead: okLead,

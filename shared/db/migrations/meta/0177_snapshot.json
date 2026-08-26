@@ -1,6 +1,6 @@
 {
-  "id": "d1ffeaa6-c380-4fe5-bee5-2330117278d4",
-  "prevId": "2d2d5bb7-7edb-4ed7-b037-ec1099cf8087",
+  "id": "2d2d5bb7-7edb-4ed7-b037-ec1099cf8087",
+  "prevId": "8ba8ad0c-e3ef-47cf-bb8b-3f156e02acaf",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -428,6 +428,13 @@
           "primaryKey": false,
           "notNull": false
         },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
+        },
         "stage": {
           "name": "stage",
           "type": "text",
@@ -516,13 +523,6 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
-        },
-        "tags": {
-          "name": "tags",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
         }
       },
       "indexes": {
@@ -4202,24 +4202,6 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
-        },
-        "attachment_path": {
-          "name": "attachment_path",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attachment_type": {
-          "name": "attachment_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "attachment_name": {
-          "name": "attachment_name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
         }
       },
       "indexes": {
@@ -4295,23 +4277,9 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "lead_notes_org_attachment_uq": {
-          "name": "lead_notes_org_attachment_uq",
-          "nullsNotDistinct": false,
-          "columns": [
-            "org_id",
-            "attachment_path"
-          ]
-        }
-      },
+      "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {
-        "lead_notes_attachment_shape_check": {
-          "name": "lead_notes_attachment_shape_check",
-          "value": "(\"lead_notes\".\"attachment_path\" is null) = (\"lead_notes\".\"attachment_type\" is null)\n          and (\"lead_notes\".\"attachment_path\" is null) = (\"lead_notes\".\"attachment_name\" is null)"
-        }
-      },
+      "checkConstraints": {},
       "isRLSEnabled": false
     },
     "public.tasks": {

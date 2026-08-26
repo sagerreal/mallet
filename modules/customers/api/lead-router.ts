@@ -12,6 +12,7 @@ import { LEAD_VIEWS, LEAD_SCOPES, LEAD_GROUPS, type LeadGroup } from "../infra/l
 import { DrizzleEstimateRepository } from "@mallet/quoting";
 import { DrizzleJobRepository } from "@mallet/jobs";
 import { EnsureCustomerUseCase } from "../app/ensure-customer";
+import { MAX_TAGS, MAX_TAG_LENGTH } from "../domain/customer-tags";
 import { ListLeadsUseCase } from "../app/list-leads";
 import { Lead, LEAD_STAGES, type LeadStage } from "../domain/lead";
 import { DrizzleLeadNoteRepository } from "../infra/drizzle-lead-note-repository";
@@ -41,6 +42,8 @@ const leadDTO = z.object({
   phone: z.string().nullable(),
   email: z.string().nullable(),
   source: z.string().nullable(),
+  /** The office's own labels. Always present, empty when untagged — never null. */
+  tags: z.array(z.string()),
   stage: stageEnum,
   /**
    * Where this customer's WORK has got to — derived, never stored, and supplied on the LIST read
@@ -86,6 +89,7 @@ const createInput = z.object({
   phone: z.string().max(20).optional(),
   email: z.string().email().max(320).optional(),
   source: z.string().max(255).optional(),
+  tags: z.array(z.string().min(1).max(MAX_TAG_LENGTH)).max(MAX_TAGS).optional(),
   companyId: z.string().uuid().nullable().optional(),
   role: z.string().max(255).nullable().optional(),
   notes: z.string().max(2000).optional(),
@@ -176,6 +180,7 @@ const toLeadDTO = (
     phone: p.phone,
     email: p.email,
     source: p.source,
+    tags: [...p.tags],
     stage: p.stage,
     group,
     value: { cents: p.value, currency: "USD" as const },
@@ -198,6 +203,9 @@ const updateInput = z.object({
   phone: z.string().max(20).nullable().optional(),
   email: z.string().email().max(320).nullable().optional(),
   source: z.string().max(255).nullable().optional(),
+  // Not nullable: absent means "leave the tags alone", and CLEARING is an empty array. A null
+  // would be a third spelling of the same thing with no column to store it in.
+  tags: z.array(z.string().min(1).max(MAX_TAG_LENGTH)).max(MAX_TAGS).optional(),
   stage: stageEnum.optional(),
   valueCents: z.number().int().min(0).max(100_000_00).optional(),
   unread: z.boolean().optional(),
@@ -231,6 +239,7 @@ export const createLeadRouter = () =>
           input.phone !== undefined ||
           input.email !== undefined ||
           input.source !== undefined ||
+          input.tags !== undefined ||
           input.valueCents !== undefined ||
           input.companyId !== undefined ||
           input.role !== undefined ||
@@ -265,6 +274,7 @@ export const createLeadRouter = () =>
               phone,
               email: input.email,
               source: input.source,
+              tags: input.tags,
               value: input.valueCents !== undefined ? money(input.valueCents) : undefined,
               companyId: input.companyId !== undefined
                 ? input.companyId !== null
@@ -364,6 +374,7 @@ export const createLeadRouter = () =>
           phone,
           email: input.email ?? null,
           source: input.source ?? null,
+          tags: input.tags,
           companyId: input.companyId ? asCompanyId(input.companyId) : null,
           role: input.role ?? null,
           notes: input.notes?.trim() || null,

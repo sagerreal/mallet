@@ -55,6 +55,7 @@ const toStoreLead = (c: { id: string; name: string; phone: string | null; card: 
   name: c.name,
   phone: c.phone ?? "",
   source: "",
+  tags: [],
   stage: "",
   age: 0,
   job: "",

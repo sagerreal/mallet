@@ -61,3 +61,32 @@ describe("column defs", () => {
     }
   });
 });
+
+/**
+ * WITH NO PICKER, DEFAULT_COLS IS THE WHOLE UI. customers-view renders it verbatim, so a
+ * definition missing from this list ships nothing — which is exactly what happened to the old
+ * `source` column. These two tests are what makes "add a Tags column" mean anything.
+ */
+describe("the Tags column is actually reachable", () => {
+  it("is in DEFAULT_COLS", () => {
+    expect(DEFAULT_COLS).toContain("tags");
+  });
+
+  it("has a definition, so it renders a header and a width", () => {
+    expect(ALL_COL_DEFS.tags).toBeDefined();
+    expect(ALL_COL_DEFS.tags?.l).toBe("Tags");
+  });
+
+  it("the retired source column is gone entirely — not left unreachable", () => {
+    expect(ALL_COL_DEFS.source).toBeUndefined();
+    expect(DEFAULT_COLS).not.toContain("source");
+  });
+
+  it("every default column still has a definition", () => {
+    for (const col of DEFAULT_COLS) expect(ALL_COL_DEFS[col]).toBeDefined();
+  });
+
+  it("the five default columns still fill the table exactly", () => {
+    expect(sum(colWidths([...DEFAULT_COLS]))).toBeCloseTo(100, 2);
+  });
+});
