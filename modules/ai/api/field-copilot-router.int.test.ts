@@ -306,6 +306,7 @@ suite("v1.fieldCopilot.run — tech-gated agent endpoint (live RLS)", () => {
           ok: true as const,
           value: { dataBase64: FAKE_B64, mediaType: "image/jpeg", bytes: 100 },
         }),
+        createViewUrl: async () => { throw new Error("unused"); },
       };
 
       const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech", llm, fakeGateway));
@@ -352,6 +353,7 @@ suite("v1.fieldCopilot.run — tech-gated agent endpoint (live RLS)", () => {
         const fakeGateway: PhotoStorageGateway = {
           createUploadUrl: async () => { throw new Error("unused"); },
           download: async () => { throw new Error("should not be called"); },
+          createViewUrl: async () => { throw new Error("should not be called"); },
         };
         const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech", llm, fakeGateway));
 

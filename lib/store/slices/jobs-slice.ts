@@ -78,7 +78,7 @@
  */
 
 import type { StateCreator } from "zustand";
-import type { Job, Visit, Addon, VerifyAns, JobLine } from "../types";
+import type { Job, Visit, Addon, VerifyAns, JobLine, JobFile } from "../types";
 import { isVisitPlaced } from "../visit-placement";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { invalidateLists } from "@/lib/trpc/list-cache";
@@ -525,6 +525,16 @@ export interface JobsSlice {
    */
   appendJobNote: (jobId: string, text: string) => Promise<{ ok: boolean; error?: string }>;
   /**
+   * Put a just-uploaded attachment on the job in the store.
+   *
+   * NOT an optimistic write — `uploadJobFile` has already recorded the row server-side and hands
+   * back exactly what it wrote. This exists because the refresh that used to follow an upload was
+   * a no-op on both surfaces: the office invalidated `jobs.get`, which is only enabled when the
+   * job is MISSING from the store, so an attachment stayed invisible until an unrelated list
+   * refetch; the field has no office read to invalidate at all.
+   */
+  attachJobFile: (jobId: string, file: JobFile) => void;
+  /**
    * Book the return trip from the field. SERVER-FIRST, deliberately: the row's id and position are
    * minted server-side, and an optimistic visit carrying a client-invented id would collide with
    * the reconcile the mutation's own DTO performs a moment later.
@@ -691,12 +701,15 @@ function withRecentVisitStatus(prior: Job, incoming: Job): Job {
   return held ? { ...incoming, visits } : incoming;
 }
 
-/** True when a record carries no execution AT ALL — no lines, no add-ons, no photos, no answers. */
+/** True when a record carries no execution AT ALL — no lines, no add-ons, no photos, no files,
+ *  no answers. Files joined the list when attachments shipped: they live in the same table as
+ *  photos and are wiped by the same header-only response. */
 function carriesNoExecution(j: Job): boolean {
   return (
     (j.lines?.length ?? 0) === 0 &&
     (j.addons?.length ?? 0) === 0 &&
     (j.photos?.length ?? 0) === 0 &&
+    (j.files?.length ?? 0) === 0 &&
     Object.keys(j.verify?.ans ?? {}).length === 0
   );
 }
@@ -729,6 +742,7 @@ function withExecution(prior: Job, incoming: Job): Job {
     lines: prior.lines,
     addons: prior.addons,
     photos: prior.photos,
+    files: prior.files,
     verify: prior.verify,
   };
 }
@@ -1579,6 +1593,13 @@ export const createJobsSlice: StateCreator<JobsSlice, [], [], JobsSlice> = (set,
   // v1.field.setVisitNotes + reconcile from the returned jobDTO; rollback +
   // { ok: false, error } on refusal so the Scope row shows the server's words.
   // ---------------------------------------------------------------------------
+  attachJobFile: (jobId, file) =>
+    set((s) => ({
+      jobs: patchJob(s.jobs, jobId, (j) =>
+        (j.files ?? []).some((f) => f.id === file.id) ? j : { ...j, files: [...(j.files ?? []), file] },
+      ),
+    })),
+
   appendJobNote: (jobId, text) => {
     const trimmed = text.trim();
     if (!trimmed) return Promise.resolve({ ok: true });

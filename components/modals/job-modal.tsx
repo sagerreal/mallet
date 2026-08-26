@@ -56,6 +56,7 @@ import { DurField } from "./dur-field";
 import { PhoneCell } from "./lead-modal/lead-header";
 import { EmailBody } from "./lead-modal/more-details";
 import { JobFilesBody } from "./job-files";
+import { NoteComposer } from "@/components/shared/note-composer";
 import { SheetRow } from "./sheet-row";
 import { EditableSheetTitle } from "./editable-sheet-title";
 import { Trail } from "./trail";
@@ -587,6 +588,8 @@ export function JobModalContent() {
   const router = useRouter();
 
   const jobs = useAppStore((s) => s.jobs);
+  const appendJobNote = useAppStore((s) => s.appendJobNote);
+  const attachJobFile = useAppStore((s) => s.attachJobFile);
   const leads = useAppStore((s) => s.leads);
   const techs = useAppStore((s) => s.techs);
   const invoices = useAppStore((s) => s.invoices);
@@ -646,6 +649,7 @@ export function JobModalContent() {
   const lead: Lead | undefined = leads.find((l) => l.id === job?.leadId);
   // Call/Text with no number open this row rather than doing nothing — same as the customer sheet.
   const [phoneOpen, setPhoneOpen] = useState(false);
+  const [notesOpen, setNotesOpen] = useState(false);
 
   if (!job) {
     if (missing && jobQ.isError) {
@@ -734,6 +738,9 @@ export function JobModalContent() {
   }
 
   const status = JST[job.status] ?? JST.scheduled!;
+  // Same gate the field uses: the server refuses a note once the job is done, so say so here
+  // rather than letting the office type into a field that will be rejected.
+  const jobIsDone = job.status === "done";
   const noteCount = jobNoteEntries(job).length;
   const fileCount = (job.files ?? []).length;
   // The collapsed row says what is actually in there. "3 · 1 file" beats a bare count, because a
@@ -1004,18 +1011,31 @@ export function JobModalContent() {
             put them a scroll apart. Named "Job" because Customer notes sits below: two rows both
             called "Notes" left nobody able to tell which record they were reading.
 
-            Rendered whenever there is EITHER a note or a file. It used to be gated on notes alone,
-            so a job carrying only an attachment showed nothing at all. */}
-        {(noteCount > 0 || fileCount > 0) && (
-          <SheetRow label="Job notes" value={notesRowValue} expandable>
-            <NoteFeed job={job} />
-            <JobFilesBody
-              jobId={job.id}
-              files={job.files ?? []}
-              onUploaded={() => void utils.v1.jobs.get.invalidate()}
-            />
-          </SheetRow>
-        )}
+            ALWAYS RENDERED, with an "Add" hint when empty — like Phone, Email and Service address
+            above it. It used to be gated on having content, which meant the only control that can
+            attach a file to a job was invisible on every job that had none: you had to get a note
+            onto the job from the field first, just to make the row appear. */}
+        <SheetRow
+          label="Job notes"
+          value={notesRowValue || "Add"}
+          valueIsHint={!notesRowValue}
+          expandable
+          open={notesOpen}
+          onOpenChange={setNotesOpen}
+        >
+          <NoteFeed job={job} />
+          <NoteComposer
+            placeholder="what happened, what's needed…"
+            autoFocus={notesOpen}
+            disabled={jobIsDone ? "This job is complete — its notes are closed." : false}
+            onSubmit={async (text) => (await appendJobNote(job.id, text)).ok}
+          />
+          <JobFilesBody
+            jobId={job.id}
+            files={job.files ?? []}
+            onUploaded={(file) => attachJobFile(job.id, file)}
+          />
+        </SheetRow>
 
         {/* Customer notes — the customer record's own trail, READ-ONLY, and only when the
             customer has one. No composer on purpose: one record, one edit path, and that

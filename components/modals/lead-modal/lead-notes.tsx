@@ -7,9 +7,9 @@
 
 "use client";
 
-import { useState, useEffect, useRef } from "react";
 import type { Lead } from "@/lib/store/types";
 import { useAppStore } from "@/lib/store/app-store";
+import { NoteComposer } from "@/components/shared/note-composer";
 import { NoteRow, gatherNotes } from "./note-row";
 
 /** Trailing text for the collapsed Notes row: latest note, newest first. */
@@ -23,23 +23,7 @@ export function latestNoteSnippet(lead: Lead): string | null {
 
 export function NotesBody({ lead, autoFocus }: { lead: Lead; autoFocus?: boolean }) {
   const addLeadNote = useAppStore((s) => s.addLeadNote);
-  const [noteText, setNoteText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  // One tap + type: expanding the row focuses the composer, so logging a gate code
-  // costs a single tap over the old always-visible composer.
-  useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
-
   const entries = gatherNotes(lead);
-
-  function submitNote() {
-    const t = noteText.trim();
-    if (!t) return;
-    addLeadNote(lead.id, { type: "note", when: "Just now", notes: t });
-    setNoteText("");
-  }
 
   return (
     <>
@@ -50,22 +34,17 @@ export function NotesBody({ lead, autoFocus }: { lead: Lead; autoFocus?: boolean
           ))}
         </div>
       )}
-      <div className="cfrow" style={{ marginTop: 0 }}>
-        <input
-          ref={inputRef}
-          type="text"
-          placeholder="gate code, what they want…"
-          value={noteText}
-          onChange={(e) => setNoteText(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submitNote();
-          }}
-          aria-label="Add a note"
-        />
-        <button className="btn" onClick={submitNote} disabled={!noteText.trim()}>
-          Add note
-        </button>
-      </div>
+      <NoteComposer
+        placeholder="gate code, what they want…"
+        autoFocus={autoFocus}
+        onSubmit={(text) => {
+          // Optimistic by design: the store returns the note synchronously (the home queue's
+          // Undo needs its id before the server answers), so this reads as success here and a
+          // genuine failure surfaces through the store's own rollback.
+          addLeadNote(lead.id, { type: "note", when: "Just now", notes: text });
+        }}
+      />
     </>
   );
+
 }

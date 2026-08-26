@@ -14,8 +14,11 @@ interface Store {
   techs: unknown[];
   updateJob: () => void;
   updateLead: () => void;
+  appendJobNote: (jobId: string, text: string) => Promise<{ ok: boolean }>;
+  attachJobFile: () => void;
 }
 let store: Store;
+const appendJobNoteMock = vi.fn(async () => ({ ok: true }));
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Store) => unknown) => sel(store),
@@ -57,6 +60,7 @@ const seed = (jobPatch: Record<string, unknown> = {}) => {
     }],
     leads: [{ id: "lead-1", name: "Cole Hayes", stage: "Quoted", phone: "+14155550123" }],
     invoices: [], techs: [], updateJob: vi.fn(), updateLead: vi.fn(),
+    appendJobNote: appendJobNoteMock, attachJobFile: vi.fn(),
   };
 };
 
@@ -96,8 +100,38 @@ describe("job sheet — notes and files in one row", () => {
     expect(screen.queryByRole("button", { name: /^Files/ })).toBeNull();
   });
 
-  it("stays hidden when there is neither a note nor a file", () => {
+  /**
+   * IT USED TO STAY HIDDEN, and that was the bug. The only control that attaches a file to a job
+   * lives inside this row, so gating the row on already having content meant a job with nothing
+   * on it could never receive its first note or its first permit — you had to get a note onto it
+   * from the field just to make the row appear. It now behaves like Phone, Email and Service
+   * address above it: always present, "Add" when empty.
+   */
+  it("the office can write a job note — the feed used to be read-only here", async () => {
+    const { userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
     seed({ files: [], notes: "" });
-    expect(openSheet()).toBeNull();
+    render(<JobModalContent />);
+    await user.click(screen.getByRole("button", { name: /^Job notes/ }));
+    await user.type(screen.getByLabelText("Add a note"), "Gate code 4482");
+    await user.click(screen.getByRole("button", { name: "Add note" }));
+    expect(appendJobNoteMock).toHaveBeenCalledWith("job-1", "Gate code 4482");
+  });
+
+  it("refuses a note on a finished job, with the reason the server would give", async () => {
+    const { userEvent } = await import("@testing-library/user-event");
+    const user = userEvent.setup();
+    seed({ status: "done" });
+    render(<JobModalContent />);
+    await user.click(screen.getByRole("button", { name: /^Job notes/ }));
+    expect(screen.queryByLabelText("Add a note")).toBeNull();
+    expect(screen.getByText(/complete — its notes are closed/)).toBeTruthy();
+  });
+
+  it("is offered on an empty job, so the first note and the first file have a way in", () => {
+    seed({ files: [], notes: "" });
+    const r = openSheet();
+    expect(r).not.toBeNull();
+    expect(r!.textContent).toMatch(/Add/);
   });
 });

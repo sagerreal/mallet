@@ -105,6 +105,17 @@ export const addPhotoInput = z.object({
 });
 export const photoUploadUrlDTO = z.object({ signedUrl: z.string(), token: z.string(), storagePath: z.string() });
 
+// Open one stored attachment. Shared by both surfaces so the contract cannot drift.
+//
+// The caller names the ROW, never the storage path: the server looks the row up inside the
+// tenant tx and reads the path off it. A client that guessed another org's key would still be
+// asking for a row it cannot see, and gets NOT_FOUND.
+export const fileViewUrlInput = z.object({
+  jobId: z.string().uuid(),
+  id: z.string().uuid(),
+});
+export const fileViewUrlDTO = z.object({ url: z.string() });
+
 // Input for writing one verify answer. Shared by BOTH surfaces — the office
 // job-router and the tech field-router — so the contract can't drift between them.
 export const setVerifyAnswerInput = z.object({
