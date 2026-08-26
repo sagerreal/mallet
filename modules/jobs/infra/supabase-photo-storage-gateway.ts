@@ -8,6 +8,7 @@ import type {
   SignedUpload,
   DownloadContext,
   DownloadResult,
+  SignedView,
 } from "../domain/photo-storage-gateway";
 
 // The private bucket for job photos. Org-prefixed key layout <org_id>/<job_id>/<uuid>.<ext>.
@@ -33,6 +34,30 @@ const EXT_TO_MEDIA_TYPE: Readonly<Record<string, PhotoMediaType>> = {
   webp: "image/webp",
 };
 
+/**
+ * What a signed VIEW url may be minted for — the upload allowlist, not the AI's image set.
+ * download() is deliberately images-only because the model cannot read a pdf; a browser can,
+ * and a permit that uploads but never opens is the bug this path exists to fix. Kept in step
+ * with photoUploadUrlInput's ext enum: nothing can be viewed that could not be uploaded.
+ */
+const VIEWABLE_EXTS: ReadonlySet<string> = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "heic",
+  "pdf",
+  "csv",
+  "txt",
+]);
+
+/**
+ * How long a view link lives. Long enough to open the row and read the document; short enough
+ * that a copied URL is not a permanent public handle on a customer's permit. The client asks
+ * again on the next click, so expiry is invisible in normal use.
+ */
+export const VIEW_URL_TTL_SECONDS = 300;
+
 // The minimal slice of the Supabase client this adapter needs — kept narrow so the unit test can
 // substitute a fake without depending on @supabase/supabase-js types.
 interface StorageClient {
@@ -44,6 +69,13 @@ interface StorageClient {
       }>;
       download(path: string): Promise<{
         data: Blob | null;
+        error: { message: string } | null;
+      }>;
+      createSignedUrl(
+        path: string,
+        expiresIn: number,
+      ): Promise<{
+        data: { signedUrl: string } | null;
         error: { message: string } | null;
       }>;
     };
@@ -141,6 +173,57 @@ export class SupabasePhotoStorageGateway implements PhotoStorageGateway {
       logger.error(
         { err: e instanceof Error ? e.message : String(e), orgId: ctx.orgId, jobId: ctx.jobId },
         "supabase-storage.download threw",
+      );
+      return err(externalService("supabase-storage", "the storage service is temporarily unavailable", true));
+    }
+  }
+
+  async createViewUrl(
+    storagePath: string,
+    ctx: DownloadContext,
+  ): Promise<Result<SignedView, ExternalServiceError>> {
+    // Same defensive prefix check as download(). The path comes from an RLS-scoped row, but this
+    // is the call that produces a working link, so it re-derives what it may hand over. `..` is
+    // rejected explicitly: startsWith alone would pass `<org>/<job>/../<other>/secret.pdf`.
+    const expectedPrefix = `${ctx.orgId}/${ctx.jobId}/`;
+    if (!storagePath.startsWith(expectedPrefix) || storagePath.includes("..")) {
+      logger.error(
+        { storagePath, orgId: ctx.orgId, jobId: ctx.jobId },
+        "supabase-storage.createViewUrl: path outside expected org/job prefix",
+      );
+      return err(externalService("supabase-storage", "storage path is outside the expected folder", false));
+    }
+
+    const filename = storagePath.slice(expectedPrefix.length);
+    if (!SAFE_SEGMENT.test(filename)) {
+      return err(externalService("supabase-storage", "invalid attachment path segment", false));
+    }
+    const dotIdx = filename.lastIndexOf(".");
+    const ext = dotIdx >= 0 ? filename.slice(dotIdx + 1).toLowerCase() : "";
+    if (!VIEWABLE_EXTS.has(ext)) {
+      return err(externalService("supabase-storage", `unsupported attachment type: ${ext || "unknown"}`, false));
+    }
+
+    try {
+      const { data, error } = await this.withTimeout(
+        this.getClient()
+          .storage.from(JOB_PHOTOS_BUCKET)
+          .createSignedUrl(storagePath, VIEW_URL_TTL_SECONDS),
+      );
+      if (error || !data) {
+        // Provider detail server-side only; the client gets a generic message so bucket names
+        // and storage config never reach a UI error.
+        logger.error(
+          { err: error?.message ?? "no signed url returned", orgId: ctx.orgId, jobId: ctx.jobId },
+          "supabase-storage.createSignedUrl failed",
+        );
+        return err(externalService("supabase-storage", "the storage service is temporarily unavailable", true));
+      }
+      return ok({ url: data.signedUrl, expiresInSeconds: VIEW_URL_TTL_SECONDS });
+    } catch (e: unknown) {
+      logger.error(
+        { err: e instanceof Error ? e.message : String(e), orgId: ctx.orgId, jobId: ctx.jobId },
+        "supabase-storage.createSignedUrl threw",
       );
       return err(externalService("supabase-storage", "the storage service is temporarily unavailable", true));
     }

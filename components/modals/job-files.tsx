@@ -14,7 +14,8 @@
 
 import { useRef, useState } from "react";
 import type { JobFile } from "@/lib/store/types";
-import { uploadJobFile, UnsupportedFileError, FileTooLargeError } from "@/lib/store/upload-job-file";
+import { uploadJobFile, UnsupportedFileError, FileTooLargeError, type UploadSurface } from "@/lib/store/upload-job-file";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 
 const note = { fontSize: "var(--type-sm)", color: "var(--ink-2)" } as const;
 
@@ -30,15 +31,45 @@ export function JobFilesBody({
   files,
   onUploaded,
   readOnly,
+  surface = "office",
 }: {
   jobId: string;
   files: readonly JobFile[];
-  onUploaded: () => void;
+  onUploaded: (file: JobFile) => void;
   readOnly?: boolean;
+  /** Which router to upload and view through — the field twin also gates on assignment. */
+  surface?: UploadSurface;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [opening, setOpening] = useState<string | null>(null);
+
+  /**
+   * OPEN THE ATTACHMENT. The bucket is private, so the name has to be exchanged for a
+   * short-lived signed URL at click time — there is no durable link to render up front, and
+   * minting one for every row on open would hand out URLs nobody asked for.
+   *
+   * The window is opened BEFORE the await and pointed afterwards: a popup blocker only trusts a
+   * window created inside the click, and a tab opened after a network round trip is blocked.
+   */
+  async function openFile(id: string) {
+    if (opening) return;
+    setError(null);
+    setOpening(id);
+    const tab = window.open("", "_blank", "noopener,noreferrer");
+    try {
+      const api = surface === "field" ? trpcVanilla.v1.field : trpcVanilla.v1.jobs;
+      const { url } = await api.fileViewUrl.mutate({ jobId, id });
+      if (tab) tab.location.href = url;
+      else window.location.href = url;
+    } catch {
+      tab?.close();
+      setError("That file wouldn't open — try again.");
+    } finally {
+      setOpening(null);
+    }
+  }
 
   async function pick(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -48,8 +79,7 @@ export function JobFilesBody({
     setError(null);
     setBusy(true);
     try {
-      await uploadJobFile(jobId, file);
-      onUploaded();
+      onUploaded(await uploadJobFile(jobId, file, surface));
     } catch (err: unknown) {
       // Say which rule the file broke — "couldn't upload" leaves someone retrying a file that
       // will never be accepted.
@@ -68,9 +98,15 @@ export function JobFilesBody({
       {files.map((f) => (
         <div key={f.id} style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
           <span className="pill" style={{ fontSize: "var(--type-xs)", flex: "none" }}>{badge(f)}</span>
-          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {f.name}
-          </span>
+          <button
+            type="button"
+            className="linklike"
+            style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textAlign: "left" }}
+            onClick={() => void openFile(f.id)}
+            aria-busy={opening === f.id ? true : undefined}
+          >
+            {opening === f.id ? "Opening…" : f.name}
+          </button>
           {f.caption && <span style={note}>{f.caption}</span>}
         </div>
       ))}

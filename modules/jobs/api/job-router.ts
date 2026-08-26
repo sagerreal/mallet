@@ -35,7 +35,7 @@ import { ListCallbackCandidatesUseCase } from "../app/list-callback-candidates";
 import { ConfirmCallbackUseCase } from "../app/confirm-callback";
 import { DismissCallbackUseCase } from "../app/dismiss-callback";
 import { CallbackAutopsyUseCase } from "../app/callback-autopsy";
-import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO , addPhotoInput } from "./job-dto";
+import { statusEnum, jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, callbackCandidateDTO, callbackReasonEnum, autopsyClusterDTO , addPhotoInput, fileViewUrlInput, fileViewUrlDTO } from "./job-dto";
 import {
   AddJobLineUseCase,
   UpdateJobLineUseCase,
@@ -789,6 +789,31 @@ export const createJobRouter = () =>
         });
         if (!result.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "could not create upload url" });
         return result.value;
+      }),
+
+    // Open one attachment. The row is resolved inside the tenant tx and its stored path is what
+    // gets signed — the client never supplies a storage key, so it cannot ask for another org's
+    // object. An id that is not on this job (or not in this org) is NOT_FOUND, not a URL.
+    fileViewUrl: ownerOrOffice
+      .input(fileViewUrlInput)
+      .output(fileViewUrlDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "photo storage is not configured" });
+        }
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const job = await repo.findById(jobId);
+        if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        const { photos } = await repo.listExecution(jobId);
+        const photo = photos.find((p) => p.props.id === input.id);
+        if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "attachment not found" });
+        const result = await ctx.deps.photoStorageGateway.createViewUrl(photo.props.storagePath, {
+          orgId: ctx.principal.orgId,
+          jobId,
+        });
+        if (!result.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "could not open the attachment" });
+        return { url: result.value.url };
       }),
 
     addPhoto: ownerOrOffice

@@ -35,7 +35,7 @@ import type { JobBillSummary } from "../domain/return-trip";
 import { QuotingChangeOrderRecorder } from "../infra/quoting-change-order-recorder";
 import type { Job } from "../domain/job";
 import type { JobId, VisitId } from "@mallet/shared/types";
-import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO } from "./job-dto";
+import { jobDTO, jobSummaryDTO, toJobDTO, toJobDTOWithExecution, toJobSummaryDTO, setVerifyAnswerInput, photoUploadUrlInput, addPhotoInput, photoUploadUrlDTO, fileViewUrlInput, fileViewUrlDTO } from "./job-dto";
 import { redactMoneyForTech, FIELD_SURFACE_REDACTION } from "./money-redaction";
 import { byAgenda, byVisitOn } from "./my-day-order";
 import { withinDayPagerBound, DAY_PAGER_BOUND_DAYS } from "./day-window";
@@ -838,6 +838,40 @@ export const createFieldRouter = () =>
         });
         if (!result.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "could not create upload url" });
         return result.value;
+      }),
+
+    // Open one attachment from the field surface. Same gates as the upload twin above: a tech may
+    // only open files on a job they are on, and a closed job is the office's. The row is resolved
+    // inside the tenant tx and ITS stored path is what gets signed — the client never names a
+    // storage key, so a forged one cannot be turned into a URL.
+    //
+    // Deliberately NOT terminal-gated for reading. Upload is blocked on a closed job because it
+    // changes the record; opening the permit on a job finished last week is exactly what a tech
+    // standing in front of an inspector needs.
+    fileViewUrl: anyRole
+      .input(fileViewUrlInput)
+      .output(fileViewUrlDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "photo storage is not configured" });
+        }
+        const repo = new DrizzleJobRepository(ctx.tx, ctx.principal.orgId);
+        const jobId = asJobId(input.jobId);
+        const techJob = await assertOnJobIfTech(repo, jobId, ctx.principal);
+        // Confirm the job exists for non-tech callers (assertOnJobIfTech already loads it for techs).
+        if (!techJob) {
+          const job = await repo.findById(jobId);
+          if (!job) throw new TRPCError({ code: "NOT_FOUND", message: "job not found" });
+        }
+        const { photos } = await repo.listExecution(jobId);
+        const photo = photos.find((p) => p.props.id === input.id);
+        if (!photo) throw new TRPCError({ code: "NOT_FOUND", message: "attachment not found" });
+        const result = await ctx.deps.photoStorageGateway.createViewUrl(photo.props.storagePath, {
+          orgId: ctx.principal.orgId,
+          jobId,
+        });
+        if (!result.ok) throw new TRPCError({ code: "BAD_GATEWAY", message: "could not open the attachment" });
+        return { url: result.value.url };
       }),
 
     // Attach a photo row to a job from the field surface. Delegates to the SAME AddJobPhotoUseCase

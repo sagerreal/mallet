@@ -21,6 +21,15 @@ export interface LeadNote {
   from?: string;
   t?: string;
   notes?: string;
+  /**
+   * The ONE file or photo this note carries — a photo of a panel label, a signed permit.
+   *
+   * One, not a list: a note is a sentence about a thing, and a second attachment is a second
+   * note. `path` is the storage key inside the private job-photos bucket, never a URL — the
+   * bucket hands out nothing durable, so a link is minted at click time from the STORED path.
+   * Absent when the note is only words, which is still the common case.
+   */
+  att?: { path: string; type: string; name: string };
 }
 
 export interface Visit {

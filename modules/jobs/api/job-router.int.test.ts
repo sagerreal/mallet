@@ -323,4 +323,85 @@ suite("jobs tRPC router (full stack, live RLS)", () => {
     await expect(callerTech.v1.jobs.update({ jobId: randomUUID(), title: "x" })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(callerTech.v1.jobs.archive({ jobId: randomUUID() })).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
+
+  // ── v1.jobs.fileViewUrl — opening an attachment ──────────────────────────────
+  //
+  // The security property under test is that the CALLER NEVER NAMES THE OBJECT. The row is
+  // resolved inside the tenant tx and its stored path is what gets signed, so a guessed id
+  // belonging to another org (or another job) can only ever produce NOT_FOUND.
+  describe("fileViewUrl", () => {
+    // Echoes the path back so a test can prove WHICH object was signed.
+    const echoGateway = {
+      createUploadUrl: async () => { throw new Error("unused"); },
+      download: async () => { throw new Error("unused"); },
+      createViewUrl: async (storagePath: string) => ({
+        ok: true as const,
+        value: { url: `https://fake/view?p=${encodeURIComponent(storagePath)}`, expiresInSeconds: 300 },
+      }),
+    };
+    const ctxWithGateway = (orgId: string, role: Role): Context => {
+      const base = ctxFor(orgId, role);
+      return { ...base, deps: { ...base.deps, photoStorageGateway: echoGateway as never } };
+    };
+
+    it("signs the STORED path for a job in this org", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(orgAId, "owner"));
+      const lead = await caller.v1.customers.create({ name: "View Cust" });
+      const job = await caller.v1.jobs.create({ leadId: lead.id, title: "Permit job" });
+      const photoId = randomUUID();
+      const storagePath = `${orgAId}/${job.id}/${photoId}.pdf`;
+      await caller.v1.jobs.addPhoto({ jobId: job.id, id: photoId, storagePath, fileName: "permit.pdf" });
+
+      const { url } = await caller.v1.jobs.fileViewUrl({ jobId: job.id, id: photoId });
+      expect(url).toBe(`https://fake/view?p=${encodeURIComponent(storagePath)}`);
+    });
+
+    it("org B cannot open org A's attachment (NOT_FOUND via RLS)", async () => {
+      const callerA = appRouter.createCaller(ctxWithGateway(orgAId, "owner"));
+      const lead = await callerA.v1.customers.create({ name: "Boundary Cust" });
+      const job = await callerA.v1.jobs.create({ leadId: lead.id, title: "Boundary permit" });
+      const photoId = randomUUID();
+      await callerA.v1.jobs.addPhoto({
+        jobId: job.id,
+        id: photoId,
+        storagePath: `${orgAId}/${job.id}/${photoId}.pdf`,
+      });
+
+      const callerB = appRouter.createCaller(ctxWithGateway(orgBId, "owner"));
+      await expect(
+        callerB.v1.jobs.fileViewUrl({ jobId: job.id, id: photoId }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("an attachment id from ANOTHER job in the same org is NOT_FOUND", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(orgAId, "owner"));
+      const lead = await caller.v1.customers.create({ name: "Two Job Cust" });
+      const jobOne = await caller.v1.jobs.create({ leadId: lead.id, title: "One" });
+      const jobTwo = await caller.v1.jobs.create({ leadId: lead.id, title: "Two" });
+      const photoId = randomUUID();
+      await caller.v1.jobs.addPhoto({
+        jobId: jobOne.id,
+        id: photoId,
+        storagePath: `${orgAId}/${jobOne.id}/${photoId}.pdf`,
+      });
+
+      await expect(
+        caller.v1.jobs.fileViewUrl({ jobId: jobTwo.id, id: photoId }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("PRECONDITION_FAILED when the gateway is unbound", async () => {
+      const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+      await expect(
+        caller.v1.jobs.fileViewUrl({ jobId: randomUUID(), id: randomUUID() }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
+    });
+
+    it("a tech is forbidden from the office view-url endpoint", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(orgAId, "tech"));
+      await expect(
+        caller.v1.jobs.fileViewUrl({ jobId: randomUUID(), id: randomUUID() }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+  });
 });

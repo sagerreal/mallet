@@ -24,6 +24,9 @@ export const toDomain = (row: LeadNoteRow): LeadNote => {
     durationLabel: row.durationLabel,
     via: row.via,
     overnight: row.overnight,
+    attachmentPath: row.attachmentPath,
+    attachmentType: row.attachmentType,
+    attachmentName: row.attachmentName,
     createdAt: row.createdAt,
   });
   if (!result.ok) {

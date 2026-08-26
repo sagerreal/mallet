@@ -60,11 +60,24 @@ const extOf = (name: string): string => {
 /**
  * Upload one document and record it against the job.
  *
- * @returns the server-assigned attachment id.
+ * @returns the recorded attachment, ready to append to the job in the store — the row is
+ *          already persisted, so the caller does not need a refetch to see it.
  * @throws UnsupportedFileError / FileTooLargeError before any network call, so a rejected file
  *         costs nothing; anything else on a genuine upload or record failure.
  */
-export async function uploadJobFile(jobId: string, file: File): Promise<string> {
+/**
+ * Which router the upload goes through. The two procedures are twins: `v1.jobs.*` is
+ * ownerOrOffice, `v1.field.*` is anyRole and additionally refuses a tech who is not on the job
+ * and a job that is already finished. Same bucket, same path, same row — the difference is only
+ * who is allowed to ask.
+ */
+export type UploadSurface = "office" | "field";
+
+export async function uploadJobFile(
+  jobId: string,
+  file: File,
+  surface: UploadSurface = "office",
+): Promise<{ id: string; storagePath: string; name: string; mimeType: string; caption: null }> {
   const ext = extOf(file.name);
   const mime = ALLOWED[ext];
   // Checked by EXTENSION, not by file.type: browsers report an empty or wrong type for plenty of
@@ -73,7 +86,8 @@ export async function uploadJobFile(jobId: string, file: File): Promise<string> 
   if (file.size > MAX_FILE_BYTES) throw new FileTooLargeError();
 
   const objectId = crypto.randomUUID();
-  const { storagePath, token } = await trpcVanilla.v1.jobs.photoUploadUrl.mutate({
+  const api = surface === "field" ? trpcVanilla.v1.field : trpcVanilla.v1.jobs;
+  const { storagePath, token } = await api.photoUploadUrl.mutate({
     jobId,
     objectId,
     ext: ext as "pdf" | "csv" | "txt" | "jpg" | "jpeg" | "png" | "webp" | "heic",
@@ -85,7 +99,7 @@ export async function uploadJobFile(jobId: string, file: File): Promise<string> 
     .uploadToSignedUrl(storagePath, token, file, { contentType: mime });
   if (error) throw new Error(`file upload failed: ${error.message}`);
 
-  await trpcVanilla.v1.jobs.addPhoto.mutate({
+  await api.addPhoto.mutate({
     jobId,
     id: objectId,
     storagePath,
@@ -95,5 +109,5 @@ export async function uploadJobFile(jobId: string, file: File): Promise<string> 
     verifyPass: false,
   });
 
-  return objectId;
+  return { id: objectId, storagePath, name: file.name.slice(0, 255), mimeType: mime, caption: null };
 }

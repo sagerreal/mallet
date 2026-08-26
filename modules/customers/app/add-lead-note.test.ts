@@ -82,6 +82,48 @@ describe("AddLeadNoteUseCase", () => {
     expect(note.ok).toBe(false);
   });
 
+  // The trail is a customer's record, not a chat: a photo of a panel label IS the note, and the
+  // use-case must not require a sentence beside it. The domain enforces the rule; this asserts
+  // the attachment actually reaches it rather than being dropped in the carry.
+  it("carries an attachment through to the note", async () => {
+    const notes = notesRepo();
+    const r = await new AddLeadNoteUseCase(notes, leadsRepo()).exec(
+      input({
+        body: "",
+        attachment: { path: `${ORG}/leads/${LEAD}/aa.jpg`, type: "image/jpeg", name: "panel-label.jpg" },
+      }),
+    );
+    expect(r.ok).toBe(true);
+    expect(r.ok && r.value.attachment).toEqual({
+      path: `${ORG}/leads/${LEAD}/aa.jpg`,
+      type: "image/jpeg",
+      name: "panel-label.jpg",
+    });
+  });
+
+  // Three explicit nulls, never three absent keys — the columns are read as a set at rest.
+  it("writes no attachment when none was given", async () => {
+    const r = await new AddLeadNoteUseCase(notesRepo(), leadsRepo()).exec(input());
+    expect(r.ok && r.value.props.attachmentPath).toBeNull();
+    expect(r.ok && r.value.attachment).toBeNull();
+  });
+
+  // A path under another customer's folder is a cross-tenant reach dressed as a filename.
+  it("refuses a path outside this customer's own folder", async () => {
+    const notes = notesRepo();
+    const r = await new AddLeadNoteUseCase(notes, leadsRepo()).exec(
+      input({
+        attachment: {
+          path: `${ORG}/leads/99999999-9999-4999-8999-999999999999/aa.jpg`,
+          type: "image/jpeg",
+          name: "aa.jpg",
+        },
+      }),
+    );
+    expect(r.ok).toBe(false);
+    expect(notes.add).not.toHaveBeenCalled();
+  });
+
   it("refuses a body past the column's ceiling instead of letting the database truncate it", async () => {
     const r = await new AddLeadNoteUseCase(notesRepo(), leadsRepo()).exec(input({ body: "x".repeat(2001) }));
     expect(r.ok).toBe(false);

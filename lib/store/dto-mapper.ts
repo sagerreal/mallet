@@ -89,6 +89,11 @@ export type LeadNoteDTO = RouterOutputs["v1"]["customers"]["listNotes"]["items"]
  * A persisted activity entry → the store's LeadNote shape, so the note feed renders a server row
  * and a just-typed optimistic one identically. `when` becomes a display string here (the feed
  * shows it verbatim); the ISO stamp is what the server ordered by, and is not needed again.
+ *
+ * The attachment collapses three nullable columns into one optional object, and only when ALL
+ * THREE are present. The row's CHECK already guarantees they move together, but a mapper that
+ * trusted the path alone would mint an `att` with an empty name the moment that guarantee
+ * changed, and the feed would render a nameless button nobody can identify.
  */
 export function dtoLeadNoteToStore(dto: LeadNoteDTO): LeadNote {
   return {
@@ -102,6 +107,9 @@ export function dtoLeadNoteToStore(dto: LeadNoteDTO): LeadNote {
     ...(dto.durationLabel ? { dur: dto.durationLabel } : {}),
     ...(dto.via ? { via: dto.via } : {}),
     ...(dto.overnight ? { overnight: true } : {}),
+    ...(dto.attachmentPath && dto.attachmentType && dto.attachmentName
+      ? { att: { path: dto.attachmentPath, type: dto.attachmentType, name: dto.attachmentName } }
+      : {}),
   };
 }
 

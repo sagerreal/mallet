@@ -1141,6 +1141,12 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
         ok: false as const,
         error: { kind: "external_service" as const, service: "fake-storage", message: "unused in this suite", retryable: false },
       }),
+      // Echoes the path back so a test can assert WHICH object was signed — the whole point of
+      // resolving the row server-side is that the client cannot choose this.
+      createViewUrl: async (storagePath) => ({
+        ok: true as const,
+        value: { url: `https://fake/view?p=${encodeURIComponent(storagePath)}`, expiresInSeconds: 300 },
+      }),
     };
     const ctxWithGateway = (userId: string, role: Role): Context => {
       const base = ctxFor(userId, orgId, role);
@@ -1228,6 +1234,59 @@ suite("v1.field — tech assignee guard (live RLS)", () => {
           storagePath: `${orgId}/${doneJobId}/${photoId}.jpg`,
         }),
       ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    });
+
+    it("fileViewUrl: signs the STORED path for the assigned tech — the client never names the object", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(photoTechId, "tech"));
+      const photoId = crypto.randomUUID();
+      const storagePath = `${orgId}/${photoJobId}/${photoId}.pdf`;
+      await caller.v1.field.addPhoto({ jobId: photoJobId, id: photoId, storagePath, fileName: "permit.pdf" });
+
+      const { url } = await caller.v1.field.fileViewUrl({ jobId: photoJobId, id: photoId });
+      // The fake echoes back whatever path it was asked to sign, so this asserts the server
+      // resolved the row rather than trusting anything the caller could have supplied.
+      expect(url).toBe(`https://fake/view?p=${encodeURIComponent(storagePath)}`);
+    });
+
+    it("fileViewUrl: an id that is not on this job is NOT_FOUND, not a url", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(photoTechId, "tech"));
+      await expect(
+        caller.v1.field.fileViewUrl({ jobId: photoJobId, id: crypto.randomUUID() }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("fileViewUrl: a tech off the job cannot open its attachments", async () => {
+      const owner = appRouter.createCaller(ctxWithGateway(photoTechId, "tech"));
+      const photoId = crypto.randomUUID();
+      await owner.v1.field.addPhoto({
+        jobId: photoJobId,
+        id: photoId,
+        storagePath: `${orgId}/${photoJobId}/${photoId}.pdf`,
+      });
+      const stranger = appRouter.createCaller(ctxWithGateway(techAId, "tech"));
+      await expect(
+        stranger.v1.field.fileViewUrl({ jobId: photoJobId, id: photoId }),
+      ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    });
+
+    it("fileViewUrl: a CLOSED job's attachments still open — reading is not gated like writing", async () => {
+      const caller = appRouter.createCaller(ctxWithGateway(photoTechId, "tech"));
+      // Seed the row directly: addPhoto is (correctly) refused on a terminal job.
+      const photoId = crypto.randomUUID();
+      const storagePath = `${orgId}/${doneJobId}/${photoId}.pdf`;
+      await admin`
+        insert into job_photos (id, org_id, job_id, storage_path, mime_type, file_name)
+        values (${photoId}, ${orgId}, ${doneJobId}, ${storagePath}, 'application/pdf', 'permit.pdf')`;
+
+      const { url } = await caller.v1.field.fileViewUrl({ jobId: doneJobId, id: photoId });
+      expect(url).toContain(encodeURIComponent(storagePath));
+    });
+
+    it("fileViewUrl: PRECONDITION_FAILED when the gateway is unbound", async () => {
+      const caller = appRouter.createCaller(ctxFor(photoTechId, orgId, "tech"));
+      await expect(
+        caller.v1.field.fileViewUrl({ jobId: photoJobId, id: crypto.randomUUID() }),
+      ).rejects.toMatchObject({ code: "PRECONDITION_FAILED" });
     });
   });
 

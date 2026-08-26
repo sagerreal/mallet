@@ -56,6 +56,7 @@ import { VisitsSec } from "./visits-sec";
 import { WorkOrderSec } from "./work-order-sec";
 import { ChecklistSec } from "./checklist-sec";
 import { NoteFeed } from "./note-feed";
+import { JobFilesBody } from "../job-files";
 import { DoneBlock, ScopeHandoffBlock } from "./done-block";
 import { footActions } from "./tech-job-foot";
 import { QuoteTab } from "./quote-tab";
@@ -128,6 +129,7 @@ export function TechJobModalContent() {
   const addFollowUpVisit = useAppStore((s) => s.addFollowUpVisit);
   const updateJob = useAppStore((s) => s.updateJob);
   const appendJobNote = useAppStore((s) => s.appendJobNote);
+  const attachJobFile = useAppStore((s) => s.attachJobFile);
   const chargeCardOnFile = useAppStore((s) => s.chargeCardOnFile);
   // Money in the tech view is gated by this permission toggle (a scalar — safe
   // to select directly; never derive an array in a selector).
@@ -643,6 +645,27 @@ export function TechJobModalContent() {
           this section to "No notes yet." and nothing else. v1.field.appendJobNote is anyRole and
           assignment-gated; the server still refuses a note once the job is complete. */}
       <NoteFeed job={job} canCompose={!done} appendNote={appendJobNote} />
+
+      {/* 9. Attachments. The person holding the permit is standing at the job — attaching was
+          office-only, so the photo of the panel label or the signed change order had to wait for
+          someone back at a desk. v1.field.photoUploadUrl/addPhoto are the anyRole twins of the
+          office procedures, assignment-gated and refused once the job is finished. */}
+      {!done && (
+        <div className="fsec">
+          <div className="fsec-h">
+            <span>Files</span>
+            <span style={{ textTransform: "none", letterSpacing: 0, fontWeight: 600 }}>
+              {(job.files ?? []).length || ""}
+            </span>
+          </div>
+          <JobFilesBody
+            jobId={job.id}
+            files={job.files ?? []}
+            surface="field"
+            onUploaded={(file) => attachJobFile(job.id, file)}
+          />
+        </div>
+      )}
 
       {/* THE primary — docked where the thumb is, whatever the sheet's height. */}
       <div className="sheet-foot">
