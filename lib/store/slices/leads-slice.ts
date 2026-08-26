@@ -417,6 +417,12 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
   // The id is client-authored and a real UUID: the home queue's 30s Undo needs it synchronously,
   // and the row must carry the same one. (It was `String(Date.now())` — not a UUID, and two notes
   // added inside the same millisecond collided.)
+  //
+  // A note may carry ONE attachment, already uploaded by the caller — the bytes are in the bucket
+  // before this runs, so `att` is a reference, not a payload, and the rollback below only has to
+  // undo a row. `last` still falls back to the lead's existing line when the note is wordless: a
+  // photo of a panel label has no sentence to preview, and blanking the collapsed row to show
+  // that would lose the last thing anyone actually wrote.
   // ---------------------------------------------------------------------------
   addLeadNote: (id, note) => {
     const fullNote: LeadNote = { ...note, id: crypto.randomUUID() };
@@ -425,7 +431,7 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
     set((s) => ({
       leads: s.leads.map((l) =>
         l.id === id
-          ? { ...l, acts: [...(l.acts ?? []), fullNote], last: note.t ?? note.notes ?? l.last }
+          ? { ...l, acts: [...(l.acts ?? []), fullNote], last: note.t || note.notes || l.last }
           : l
       ),
     }));
@@ -445,6 +451,9 @@ export const createLeadsSlice: StateCreator<LeadsSlice, [], [], LeadsSlice> = (s
         durationLabel: note.dur ?? null,
         via: note.via ?? null,
         overnight: note.overnight ?? false,
+        // Sent only when the note actually carries one: the column trio is all-or-none, and an
+        // `attachment: null` on a wordless note would be refused by the server's own shape check.
+        ...(note.att ? { attachment: note.att } : {}),
       })
       .catch((err: unknown) => {
         // Rollback: a note that silently failed to save is the bug this replaces.

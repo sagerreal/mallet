@@ -32,6 +32,12 @@ export class DrizzleLeadNoteRepository implements LeadNoteRepository {
         durationLabel: p.durationLabel,
         via: p.via,
         overnight: p.overnight,
+        // The attachment key, its mime and its display name. `?? null` because the props are
+        // optional and drizzle would omit an undefined key — leaving the column to its default
+        // rather than writing the null the check constraint reads as "no attachment".
+        attachmentPath: p.attachmentPath ?? null,
+        attachmentType: p.attachmentType ?? null,
+        attachmentName: p.attachmentName ?? null,
         createdAt: p.createdAt,
       })
       .returning();

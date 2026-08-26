@@ -18,6 +18,13 @@ export interface AddLeadNoteInput {
   readonly durationLabel: string | null;
   readonly via: string | null;
   readonly overnight: boolean;
+  /**
+   * The ONE file this note carries, or nothing. A whole object rather than three loose fields so
+   * a caller cannot supply a path with no name — the shape the database checks is the shape the
+   * input can express. The domain re-validates the path against orgId/leadId; this layer only
+   * carries it.
+   */
+  readonly attachment?: { readonly path: string; readonly type: string; readonly name: string } | null;
   readonly now: Date;
 }
 
@@ -45,6 +52,11 @@ export class AddLeadNoteUseCase {
       durationLabel: input.durationLabel,
       via: input.via,
       overnight: input.overnight,
+      // Null, not undefined, when there is no attachment: the three columns are nullable and the
+      // check constraint reads them as a set, so "no attachment" is three explicit nulls.
+      attachmentPath: input.attachment?.path ?? null,
+      attachmentType: input.attachment?.type ?? null,
+      attachmentName: input.attachment?.name ?? null,
       createdAt: input.now,
     });
     if (!note.ok) return err(note.error);

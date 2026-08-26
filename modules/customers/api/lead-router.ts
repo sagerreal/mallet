@@ -18,7 +18,16 @@ import { DrizzleLeadNoteRepository } from "../infra/drizzle-lead-note-repository
 import { AddLeadNoteUseCase } from "../app/add-lead-note";
 import { ListLeadNotesUseCase } from "../app/list-lead-notes";
 import { RemoveLeadNoteUseCase } from "../app/remove-lead-note";
-import { LEAD_NOTE_KINDS, LEAD_NOTE_MAX, type LeadNote } from "../domain/lead-note";
+import { LeadAttachmentStorage } from "../infra/lead-attachment-storage";
+import {
+  leadNoteDTO,
+  toLeadNoteDTO,
+  addNoteInput,
+  noteUploadUrlInput,
+  noteUploadUrlDTO,
+  noteViewUrlInput,
+  noteViewUrlDTO,
+} from "./lead-note-dto";
 import { createPipelineRouter } from "./pipeline-router";
 
 // DTOs — the wire contract, deliberately separate from the domain. Money is flattened to a
@@ -71,39 +80,6 @@ const leadDTO = z.object({
 // create extends the base DTO with a `created` flag so callers can distinguish a genuine
 // new insert from a dedupe hit (ON CONFLICT DO NOTHING returning the existing row).
 const createLeadDTO = leadDTO.extend({ created: z.boolean() });
-
-// One entry in the customer activity trail. Shapes 1:1 onto the store's LeadNote so the existing
-// note feed renders a server row and an optimistic one identically.
-const leadNoteDTO = z.object({
-  id: z.string().uuid(),
-  leadId: z.string().uuid(),
-  kind: z.enum(LEAD_NOTE_KINDS),
-  body: z.string(),
-  author: z.string().nullable(),
-  direction: z.string().nullable(),
-  outcome: z.string().nullable(),
-  durationLabel: z.string().nullable(),
-  via: z.string().nullable(),
-  overnight: z.boolean(),
-  createdAt: z.string(),
-});
-
-const toLeadNoteDTO = (note: LeadNote) => {
-  const p = note.props;
-  return {
-    id: p.id,
-    leadId: p.leadId as string,
-    kind: p.kind,
-    body: p.body,
-    author: p.author,
-    direction: p.direction,
-    outcome: p.outcome,
-    durationLabel: p.durationLabel,
-    via: p.via,
-    overnight: p.overnight,
-    createdAt: p.createdAt.toISOString(),
-  };
-};
 
 const createInput = z.object({
   name: z.string().min(1).max(255),
@@ -573,22 +549,7 @@ export const createLeadRouter = () =>
       }),
 
     addNote: ownerOrOffice
-      .input(
-        z.object({
-          // Client-authored so the store can hand the id out synchronously — the home queue's
-          // 30s Undo deletes exactly the note a Send appended.
-          id: z.string().uuid(),
-          leadId: z.string().uuid(),
-          kind: z.enum(LEAD_NOTE_KINDS),
-          body: z.string().max(LEAD_NOTE_MAX),
-          author: z.string().max(120).nullable().optional(),
-          direction: z.string().max(20).nullable().optional(),
-          outcome: z.string().max(120).nullable().optional(),
-          durationLabel: z.string().max(20).nullable().optional(),
-          via: z.string().max(60).nullable().optional(),
-          overnight: z.boolean().optional(),
-        }),
-      )
+      .input(addNoteInput)
       .output(leadNoteDTO)
       .mutation(async ({ ctx, input }) => {
         const useCase = new AddLeadNoteUseCase(
@@ -607,9 +568,96 @@ export const createLeadRouter = () =>
           durationLabel: input.durationLabel ?? null,
           via: input.via ?? null,
           overnight: input.overnight ?? false,
+          // The domain checks the path against THIS caller's org and lead. A forged one that
+          // named another tenant's folder is refused there, not written and refused later.
+          attachment: input.attachment ?? null,
           now: new Date(),
         });
         return toLeadNoteDTO(orThrow(result));
+      }),
+
+    /**
+     * Mint a signed, direct-to-storage upload URL for a customer note's attachment.
+     *
+     * The lead is loaded first: a caller who cannot see the customer cannot mint a key inside
+     * their folder, and RLS makes that a NOT_FOUND rather than a leak of whether the id exists.
+     *
+     * Self-disables like every other storage endpoint — with the Storage env absent the gateway
+     * is null and this answers PRECONDITION_FAILED, so the composer can say the attach button is
+     * unavailable instead of appearing to work and losing the file.
+     */
+    noteUploadUrl: ownerOrOffice
+      .input(noteUploadUrlInput)
+      .output(noteUploadUrlDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "file storage is not configured" });
+        }
+        const leadId = asLeadId(input.leadId);
+        const lead = await new DrizzleLeadRepository(ctx.tx, ctx.principal.orgId).findById(leadId);
+        if (!lead) throw new TRPCError({ code: "NOT_FOUND", message: "customer not found" });
+
+        const storage = new LeadAttachmentStorage(ctx.deps.photoStorageGateway);
+        const result = await storage.createUploadUrl({
+          orgId: ctx.principal.orgId,
+          leadId,
+          objectId: input.objectId,
+          ext: input.ext,
+        });
+        if (!result.ok) {
+          // The gateway already logged the provider detail; its message is written for a user.
+          logger.warn(
+            { leadId: input.leadId, orgId: ctx.principal.orgId },
+            "leadNote.upload_url_failed",
+          );
+          throw new TRPCError({ code: "BAD_GATEWAY", message: result.error.message });
+        }
+        return result.value;
+      }),
+
+    /**
+     * Open one note's attachment.
+     *
+     * The caller names the NOTE, never the storage key: the row is resolved inside the tenant
+     * tx and ITS stored path is what gets signed. So a forged path cannot be turned into a URL,
+     * and a note id belonging to another org — or to a different customer in this one — is a
+     * row this query cannot see and answers NOT_FOUND.
+     *
+     * The link is short-lived (5 minutes) rather than the bucket being public: a URL copied out
+     * of the address bar must not still open a customer's permit a year later.
+     */
+    noteViewUrl: ownerOrOffice
+      .input(noteViewUrlInput)
+      .output(noteViewUrlDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({ code: "PRECONDITION_FAILED", message: "file storage is not configured" });
+        }
+        const leadId = asLeadId(input.leadId);
+        // Scoped by (org, lead) through the org-bound repository, then narrowed to the id. The
+        // trail is one customer's and is short, so this is the same "list then find" the job
+        // surface's fileViewUrl uses rather than a second read path to keep in step with it.
+        const notes = await new ListLeadNotesUseCase(
+          new DrizzleLeadNoteRepository(ctx.tx, ctx.principal.orgId),
+        ).exec(leadId);
+        const attachment = notes.find((n) => n.props.id === input.id)?.attachment ?? null;
+        if (!attachment) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "attachment not found" });
+        }
+
+        const storage = new LeadAttachmentStorage(ctx.deps.photoStorageGateway);
+        const result = await storage.createViewUrl(attachment.path, {
+          orgId: ctx.principal.orgId,
+          leadId,
+        });
+        if (!result.ok) {
+          logger.warn(
+            { leadId: input.leadId, noteId: input.id, orgId: ctx.principal.orgId },
+            "leadNote.view_url_failed",
+          );
+          throw new TRPCError({ code: "BAD_GATEWAY", message: result.error.message });
+        }
+        return { url: result.value.url };
       }),
 
     removeNote: ownerOrOffice
