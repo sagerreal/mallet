@@ -1,6 +1,6 @@
 {
   "id": "d1ffeaa6-c380-4fe5-bee5-2330117278d4",
-  "prevId": "8ba8ad0c-e3ef-47cf-bb8b-3f156e02acaf",
+  "prevId": "2d2d5bb7-7edb-4ed7-b037-ec1099cf8087",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -516,6 +516,13 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "tags": {
+          "name": "tags",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::text[]"
         }
       },
       "indexes": {
