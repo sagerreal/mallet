@@ -1318,7 +1318,10 @@
   /* Full-row-height 44px hit column for the task checkbox — an 18px circle 4px from
      a tappable row is a state-changing mis-tap for a gloved thumb. */
   .sheet-chkzone{display:flex;align-items:center;justify-content:flex-start;width:44px;min-height:44px;flex-shrink:0;border:none;background:none;padding:0;cursor:pointer}
-  .sheet-acc .cfrow input,.sheet-acc .cfrow .btn{min-height:44px}
+  /* .tjf too: a section's open body is a BARE div (it has to be, so margins collapse through it),
+     so the 44px glove floor stopped at the chapter boundary once the note composer moved inside
+     one — the one control most likely to be used in a truck. */
+  .sheet-acc .cfrow input,.sheet-acc .cfrow .btn,.tjf .cfrow input,.tjf .cfrow .btn{min-height:44px}
   /* ---------- the record trail ----------
      The customer > quote > job > invoice chain, as ONE line inside .sheet-meta. It adds no rows and
      ~3px of line height: the strip is already there under every sheet title, holding the status pill.
@@ -2712,12 +2715,21 @@
      border-bottom a few pixels above the next section's border-top — two hairlines pretending to
      be one divider. Section boundaries stay --line (stronger); row separators stay --line-2. */
   .fsec .sheet-rows{margin-top:0;border-top:none}
+  /* …and the mirror image: the first chapter INSIDE a .sheet-rows list must not draw its own
+     rule under the list's, which stacked two hairlines a few pixels apart. */
+  .sheet-rows > .fsec:first-child{border-top:none;margin-top:0}
   .fsec .sheet-rows > .sheet-row:last-of-type{border-bottom:none}
   .tjf-h{cursor:pointer;user-select:none}
   .tjf-t{display:inline-flex;align-items:center;gap:var(--space-2)}
   /* The trailing cluster: count, its qualifier, the caret. A figure, not a label — so the
      section head's uppercase tracking is turned back off for it. */
-  .tjf-v{display:inline-flex;align-items:center;gap:var(--space-2);font-weight:600;letter-spacing:normal;text-transform:none}
+  /* The chapter head's VALUE. It inherited .fsec-h's 11px uppercase-label colour, which was fine
+     while these values were short counts and wrong the moment they carried a sentence — a crew
+     list or an address read as fine print. It also had none of `.sheet-row .val`'s truncation,
+     so a long address wrapped and grew the 52px head. Both restored here. */
+  .tjf-v{display:inline-flex;align-items:center;gap:var(--space-2);font-weight:600;letter-spacing:normal;text-transform:none;
+    font-size:var(--type-sm);color:var(--ink-2);min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+  .tjf-v.add{color:var(--ink-3)}
   .tjf .tjcaret{display:inline-block;transition:transform .15s ease;font-size:var(--type-xs);color:var(--ink-3)}
   .tjf.open .tjcaret{transform:rotate(90deg)}
   .tjf-h:hover{color:var(--ink-2)}
