@@ -1934,6 +1934,20 @@
   .cfrow{display:flex;gap:var(--space-3);margin-top:var(--space-3);align-items:center}
   .cfrow select,.cfrow input{flex:1;min-width:0;border:1.5px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2) var(--space-3);font-family:inherit;font-size:var(--type-base)}
   .cfrow input.ro{background:var(--line-2);color:var(--ink-2)}
+  /* THE ATTACH AFFORDANCE LIVES IN THE ROW. A square, quiet icon button sized to the field beside
+     it, so a note's secondary action does not become a row of its own — which is how the customer
+     sheet ended up with an orphaned pill under the composer and the new-customer form ended on a
+     ragged stack of two mismatched buttons. `flex:none` keeps it square while the input flexes. */
+  .attachbtn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:40px;min-height:40px;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);cursor:pointer}
+  .attachbtn:hover{color:var(--ink);border-color:var(--line-strong)}
+  .attachbtn.on{color:var(--ink);border-color:var(--line-strong)}
+  .attachbtn[aria-disabled="true"]{opacity:.55;cursor:default}
+  .sheet-acc .cfrow .attachbtn{min-height:44px;width:44px}
+  /* What is attached: information, with a way to drop it. Not a second button cluster. */
+  .attachchip{display:flex;align-items:center;gap:var(--space-2);margin-top:var(--space-2);font-size:var(--type-sm);color:var(--ink-2);min-width:0}
+  .attachchip-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+  .attachchip-x{flex:none;border:0;background:none;color:var(--ink-3);font-weight:800;cursor:pointer;padding:0 var(--space-1);font-family:inherit}
+  .attachchip-x:hover{color:var(--ink)}
   .cfrow .btn{flex:0 0 auto}
   .hookurl{display:flex;gap:var(--space-3);align-items:center;background:#11131c;color:#C7D2FE;padding:var(--space-3) var(--space-3);border-radius:var(--radius-sm);font-size:var(--type-sm);font-family:ui-monospace,Menlo,monospace}
   .hookurl code{flex:1;white-space:nowrap;overflow-x:auto}

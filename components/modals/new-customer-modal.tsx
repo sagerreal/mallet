@@ -27,10 +27,10 @@ import { api, type RouterOutputs } from "@/lib/trpc/client";
 import { AddressInput } from "@/components/ui/address-input";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { TagPicker } from "@/features/customers/tag-picker";
-import { Field } from "@/components/ui/input";
+import { Field, FieldGroup } from "@/components/ui/input";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
-import { StagedAttachControl, useStagedAttachment, attachErrorMessage } from "@/components/shared/staged-attachment";
+import { StagedAttachButton, StagedAttachStatus, useStagedAttachment, attachErrorMessage } from "@/components/shared/staged-attachment";
 import { uploadLeadNoteFile } from "@/lib/store/upload-lead-note-file";
 
 /** The staged (below-the-essentials) rows — one open at a time. */
@@ -442,18 +442,24 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
                 onChange={(e) => setEmail(e.target.value)}
               />
             </Field>
-            <Field label="Notes" style={{ marginBottom: "var(--space-2)" }}>
+            {/* The paperclip sits IN the Notes row. As a text button below it, it read as an
+                orphaned pill directly above "+ Add a custom field" — two mismatched buttons
+                stacked where the form should have ended.
+
+                The file is only STAGED here: its upload URL is scoped to a lead id that does not
+                exist until this form is submitted, so the bytes go up in handleCreated and the
+                note pointing at them is written there too. */}
+            <FieldGroup label="Notes" groupClassName="cfrow" style={{ marginBottom: "var(--space-3)" }}>
               <input
                 type="text"
                 placeholder="gate code, best time to call…"
+                aria-label="Notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
-            </Field>
-            {/* The file is only STAGED here. Its upload URL is scoped to a lead id that does not
-                exist until this form is submitted, so the bytes go up in handleCreated and the
-                note that points at them is written there too. */}
-            <StagedAttachControl staged={staged} busy={busy} />
+              <StagedAttachButton staged={staged} busy={busy} />
+            </FieldGroup>
+            <StagedAttachStatus staged={staged} />
 
             {customFields.map((f, i) => (
               <div className="cfrow" key={i}>

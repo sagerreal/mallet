@@ -25,14 +25,37 @@
 
 import { useState, useEffect, useRef } from "react";
 
+/** A paperclip, at the row's own text size. */
+export function PaperclipIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+    </svg>
+  );
+}
+
 /**
  * The attach affordance — a hidden file input driven by a visible button, the same grammar
- * job-files.tsx uses. Presentational only: it does not know what happens to the file, which is
- * what keeps the composer's one attach path in one place above.
+ * job-files.tsx uses. Presentational only: it does not know what happens to the file.
  *
- * EXPORTED so the creation modals can reuse it. They cannot use the composer itself — there is no
- * record to hang a note on until the form is submitted — but the control the office presses must
- * be the same one, or "Attach a file" means two different-looking things on two screens.
+ * AN ICON, AND IT BELONGS INSIDE THE INPUT'S ROW. This was a full-width-ish text button rendered
+ * BELOW the composer, so every surface that turned attachments on grew an orphaned pill under the
+ * field — and on the new-customer sheet it landed directly above "+ Add a custom field", making a
+ * ragged stack of two mismatched buttons where the form should have ended. A secondary action on
+ * the same note is a control in that note's row, not a row of its own.
+ *
+ * The filename is NOT in here: it is what made the button change width the moment a file was
+ * picked. It renders as a StagedFileChip below the row instead, where it is information.
  */
 export function AttachControl({
   accept,
@@ -42,20 +65,14 @@ export function AttachControl({
 }: {
   accept?: string;
   busy: boolean;
-  /** The staged file's name, once one is stored. */
+  /** The staged file's name, once one is stored — used only for the accessible label. */
   name: string | null;
   onPick: (e: React.ChangeEvent<HTMLInputElement>) => void | Promise<void>;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
+  const label = busy ? "Attaching a file…" : name ? `Replace the attached file, ${name}` : "Attach a file";
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "baseline",
-        gap: "var(--space-2)",
-        marginTop: "var(--space-2)",
-      }}
-    >
+    <>
       <input
         ref={fileRef}
         type="file"
@@ -67,7 +84,9 @@ export function AttachControl({
       />
       <button
         type="button"
-        className="btn sm"
+        className={`attachbtn${name ? " on" : ""}`}
+        aria-label={label}
+        title={label}
         aria-disabled={busy ? true : undefined}
         onClick={(e) => {
           if (busy) {
@@ -77,33 +96,36 @@ export function AttachControl({
           fileRef.current?.click();
         }}
       >
-        {busy ? "Attaching…" : name ? "Replace the file" : "Attach a file"}
+        <PaperclipIcon />
       </button>
-      {name && (
-        <span
-          style={{
-            fontSize: "var(--type-sm)",
-            color: "var(--ink-2)",
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {name}
-        </span>
+    </>
+  );
+}
+
+/**
+ * What is attached, once something is — a quiet line naming the file with a way to drop it.
+ *
+ * Information, not a control cluster: the name used to sit inside the attach button, which made
+ * the button's width jump on pick and left nowhere to un-attach without replacing.
+ */
+export function StagedFileChip({ name, onRemove }: { name: string; onRemove?: () => void }) {
+  return (
+    <div className="attachchip">
+      <PaperclipIcon size={14} />
+      <span className="attachchip-n">{name}</span>
+      {onRemove && (
+        <button type="button" className="attachchip-x" aria-label={`Remove ${name}`} onClick={onRemove}>
+          ✕
+        </button>
       )}
     </div>
   );
 }
 
 /**
- * The file staged for the next note: picked, uploaded by the caller, and held by NAME only —
- * where the bytes went is the caller's business, and the composer deliberately never learns it.
- *
- * Failures are reported outward rather than kept here, so the composer shows ONE error line: a
- * rejected file and a failed save are both "the thing you just tried didn't happen", and two
- * alerts stacked under a one-line composer is noise.
+ * The composer's own staging: it uploads on PICK (the record already exists here), so it holds a
+ * stored name rather than a File. Distinct from the creation modals' useStagedAttachment, which
+ * cannot upload until its record has been created.
  */
 function useStagedAttachment(
   onAttachFile: ((file: File) => Promise<void>) | undefined,
@@ -237,14 +259,16 @@ export function NoteComposer({
           }}
           aria-label={ariaLabel}
         />
+        {/* In the row, between the field and its action — see the note on AttachControl. */}
+        {onAttachFile && (
+          <AttachControl accept={attachAccept} busy={attaching} name={attachedName} onPick={attachment.pick} />
+        )}
         <button className="btn" onClick={() => void submit()} disabled={!canSubmit}>
           {saving ? "Saving…" : buttonLabel}
         </button>
       </div>
 
-      {onAttachFile && (
-        <AttachControl accept={attachAccept} busy={attaching} name={attachedName} onPick={attachment.pick} />
-      )}
+      {attachedName && <StagedFileChip name={attachedName} onRemove={attachment.clear} />}
 
       {error && (
         <p role="alert" style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
