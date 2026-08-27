@@ -29,8 +29,12 @@ import { useState, useEffect, useRef } from "react";
  * The attach affordance — a hidden file input driven by a visible button, the same grammar
  * job-files.tsx uses. Presentational only: it does not know what happens to the file, which is
  * what keeps the composer's one attach path in one place above.
+ *
+ * EXPORTED so the creation modals can reuse it. They cannot use the composer itself — there is no
+ * record to hang a note on until the form is submitted — but the control the office presses must
+ * be the same one, or "Attach a file" means two different-looking things on two screens.
  */
-function AttachControl({
+export function AttachControl({
   accept,
   busy,
   name,

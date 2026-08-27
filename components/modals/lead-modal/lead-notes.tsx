@@ -11,12 +11,12 @@ import { useRef } from "react";
 import type { Lead } from "@/lib/store/types";
 import { useAppStore } from "@/lib/store/app-store";
 import { NoteComposer } from "@/components/shared/note-composer";
+import { attachErrorMessage } from "@/components/shared/staged-attachment";
 import {
   uploadLeadNoteFile,
   NOTE_ATTACH_ACCEPT,
   type UploadedNoteAttachment,
 } from "@/lib/store/upload-lead-note-file";
-import { UnsupportedFileError, FileTooLargeError } from "@/lib/store/upload-job-file";
 import { NoteRow, gatherNotes } from "./note-row";
 
 /**
@@ -32,13 +32,6 @@ export function latestNoteSnippet(lead: Lead): string | null {
   const body = (latest?.text ?? "").replace(/\s+/g, " ").trim();
   const text = body || latest?.attachment?.name || "";
   return text.length > 34 ? `${text.slice(0, 33)}…` : text || null;
-}
-
-/** Turn an upload failure into a line that names the rule the file broke. */
-function attachErrorMessage(err: unknown): string {
-  if (err instanceof UnsupportedFileError) return `Can't attach a .${err.ext} file.`;
-  if (err instanceof FileTooLargeError) return "That file is over 10 MB.";
-  return "That didn't upload — try again.";
 }
 
 export function NotesBody({ lead, autoFocus }: { lead: Lead; autoFocus?: boolean }) {

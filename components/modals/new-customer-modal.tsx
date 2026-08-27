@@ -30,6 +30,8 @@ import { TagPicker } from "@/features/customers/tag-picker";
 import { Field } from "@/components/ui/input";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
+import { StagedAttachControl, useStagedAttachment, attachErrorMessage } from "@/components/shared/staged-attachment";
+import { uploadLeadNoteFile } from "@/lib/store/upload-lead-note-file";
 
 /** The staged (below-the-essentials) rows — one open at a time. */
 type RowKey = "type" | "tags" | "more";
@@ -49,6 +51,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   const activeModal = useActiveModal();
   const companies = useAppStore((s) => s.companies);
   const addCompany = useAppStore((s) => s.addCompany);
+  const addLeadNote = useAppStore((s) => s.addLeadNote);
 
   const utils = api.useUtils();
   const createMutation = api.v1.customers.create.useMutation();
@@ -101,6 +104,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
   // More details row
   const [email, setEmail] = useState("");
   const [notes, setNotes] = useState("");
+  const staged = useStagedAttachment();
   const [address, setAddress] = useState("");
   const [customFields, setCustomFields] = useState<{ label: string; value: string }[]>([]);
   const [cfLabel, setCfLabel] = useState("");
@@ -123,6 +127,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
     setOpenRow(null);
     setEmail("");
     setNotes("");
+    staged.clear();
     setAddress("");
     setCustomFields([]);
     setCfLabel("");
@@ -171,7 +176,10 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
       companyId: companyId ?? undefined,
       // Prototype default: contacts linked to a company carry role "Contact".
       role: companyId != null ? "Contact" : undefined,
-      notes: notes.trim() || undefined,
+      // WITH A FILE, THE SENTENCE GOES ON THE NOTE, not here. A note carries one attachment
+      // (#574) and the point of that is that a photo and the words explaining it stay one entry;
+      // writing the text to `leads.notes` as well would show it twice in the customer's trail.
+      notes: staged.file ? undefined : notes.trim() || undefined,
       address: address.trim() || undefined,
     };
   }
@@ -188,12 +196,44 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
    */
   async function handleCreated(data: CreatedCustomer): Promise<void> {
     if (!data.created) {
+      // A dedup hit is someone else's record — do NOT hang this file or note on it.
       setDedupLeadId(data.id);
+      return;
+    }
+    if (staged.file && !(await attachStagedNote(data.id))) {
+      // The customer IS saved; only the attachment failed. Refresh the list so they appear, and
+      // keep the modal open with the reason — closing here would lose the file silently and leave
+      // the office believing it went with them.
+      utils.v1.customers.invalidate();
       return;
     }
     utils.v1.customers.invalidate();
     reset();
     close();
+  }
+
+  /**
+   * Upload the staged file against the now-real lead id and write the note that points at it.
+   * Returns false when it failed, with the reason already on screen.
+   */
+  async function attachStagedNote(leadId: string): Promise<boolean> {
+    const file = staged.file;
+    if (!file) return true;
+    try {
+      const att = await uploadLeadNoteFile(leadId, file);
+      addLeadNote(leadId, {
+        type: "note",
+        when: "Just now",
+        // Absent rather than "" when the note is only a file, so the collapsed row keeps showing
+        // the last sentence anybody actually wrote.
+        ...(notes.trim() ? { notes: notes.trim() } : {}),
+        att,
+      });
+      return true;
+    } catch (err: unknown) {
+      staged.setError(attachErrorMessage(err));
+      return false;
+    }
   }
 
   /**
@@ -338,7 +378,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
             (front-desk RuleRow pattern): label · current value, one editor open
             at a time, everything in-flow. The three fields above are the whole
             90% intake; these rows are the "one level down". */}
-        <div style={{ borderTop: "1px solid var(--line-2)", margin: "var(--space-2) 0 var(--space-5)" }}>
+        <div className="fdd-group" style={{ margin: "var(--space-4) 0 var(--space-5)" }}>
           <DisclosureRow
             label="Customer type"
             value={typeSummary}
@@ -402,7 +442,7 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
                 onChange={(e) => setEmail(e.target.value)}
               />
             </Field>
-            <Field label="Notes">
+            <Field label="Notes" style={{ marginBottom: "var(--space-2)" }}>
               <input
                 type="text"
                 placeholder="gate code, best time to call…"
@@ -410,6 +450,10 @@ export function NewCustomerModal({ open, instant }: { open: boolean; instant?: b
                 onChange={(e) => setNotes(e.target.value)}
               />
             </Field>
+            {/* The file is only STAGED here. Its upload URL is scoped to a lead id that does not
+                exist until this form is submitted, so the bytes go up in handleCreated and the
+                note that points at them is written there too. */}
+            <StagedAttachControl staged={staged} busy={busy} />
 
             {customFields.map((f, i) => (
               <div className="cfrow" key={i}>
