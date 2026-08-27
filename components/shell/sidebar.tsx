@@ -56,13 +56,6 @@ const MoneyIcon = () => (
 );
 
 
-/** The Ask mark — the same four-point spark the mobile Ask tab and the Counter already use. */
-const ArtieIcon = () => (
-  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />
-  </svg>
-);
-
 const SettingsIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="3" />
@@ -189,7 +182,6 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
   const officeActive = OFFICE_AREA.some((r) => pathname.startsWith(r));
   const jobsActive = pathname.startsWith("/jobs");
   const moneyActive = pathname.startsWith("/money");
-  const artieActive = pathname.startsWith("/artie");
 
   // Account display
   const userObj = me.data;
@@ -339,11 +331,11 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
               count={moneyCount > 0 ? moneyCount : undefined}
               active={moneyActive}
             />
-            {/* The AI employee's own board — a top-level surface like Jobs and Money, not a bottom
-                tab: the mobile tab bar's create button is dead-center of an odd-count bar
-                (mobile-tabs.test.tsx enforces this), so a 5th tab would push it off-center.
-                Reached on mobile through the More overflow instead, exactly like Settings. */}
-            <NavItem href="/artie" icon={<ArtieIcon />} label="Artie" active={artieActive} />
+            {/* ARTIE'S BOARD IS HIDDEN FROM THE NAV, not deleted. /artie still renders and a saved
+                link still opens it — this removes the standing invitation to go there, because the
+                counter bar at the bottom of every page IS Artie, and a second front door implied
+                two different assistants. Put the NavItem back (and the /artie entry in
+                more-links.tsx) to show it again; nothing else has to change. */}
 
             <div className="navsep" />
 
