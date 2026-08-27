@@ -250,6 +250,21 @@ export default async function PublicQuotePage({
           <div style={{ fontSize: "var(--type-sm)", opacity: 0.85 }}>
             Prepared for <b>{customerFirstName}</b> by {orgName} &middot; {p.num}
           </div>
+          {presentationCover.body.trim() && (
+            /* The shop's own cover line — the composer's cover editor writes it, so it renders
+               here exactly as the preview showed it. */
+            <p
+              style={{
+                fontSize: "var(--type-sm)",
+                lineHeight: 1.6,
+                opacity: 0.85,
+                margin: "var(--space-3) 0 0",
+                whiteSpace: "pre-wrap",
+              }}
+            >
+              {presentationCover.body}
+            </p>
+          )}
         </div>
       )}
       {presentationBody.map((page) => (

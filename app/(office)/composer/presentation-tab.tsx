@@ -1,39 +1,68 @@
 "use client";
 
 /**
- * Presentation tab — the designed pages that wrap this quote into a proposal, rendered
- * full-page like the mock: template pills, per-quote page chips, then the pages themselves
- * with quiet in-flow editing.
+ * Presentation tab — WYSIWYG. The tab renders the proposal document the customer will open
+ * (composer-v4 mock, 1:1): a slim control bar (template pills + per-quote page chips), then the
+ * document itself — dark cover page, company bar, the shop's pages, the estimate in its place in
+ * the flow, and the thank-you — each with quiet in-place editing.
  *
  * Content is SHARED (editing a page writes through to the org template via settings);
  * activation is PER-QUOTE (the chips toggle this quote's copy only). A quote with no
  * presentation — or every page off — sends as the plain quote, which stays the default.
+ *
+ * The estimate section renders from the SAME state and the SAME totals math as the customer
+ * page (computeQuoteTotals), so what the office sees here is what the customer gets.
  */
 
 import { useId, useState } from "react";
 import { api } from "@/lib/trpc/client";
 import { Field } from "@/components/ui/input";
-import type { ComposerPresentation, ComposerState } from "./composer-state";
-import { patchPresentationPage, togglePresentationPage } from "./composer-state";
+import type { ComposerLine, ComposerPresentation, ComposerState } from "./composer-state";
+import { gbbTierTotal, patchPresentationPage, realLines, togglePresentationPage } from "./composer-state";
 import type { PresentationPageKey } from "./presentation-state";
+import { computeQuoteTotals } from "@/app/(public)/q/[token]/quote-totals";
 
 const PAGE_TITLE_MAX = 120;
 const PAGE_BODY_MAX = 8_000;
+
+/** $17,982 for whole dollars, $4,495.50 otherwise — the document's money voice. */
+function docMoney(cents: number): string {
+  const dollars = cents / 100;
+  const whole = Number.isInteger(dollars);
+  return `$${Math.abs(dollars).toLocaleString("en-US", {
+    minimumFractionDigits: whole ? 0 : 2,
+    maximumFractionDigits: 2,
+  })}`;
+}
+
+const kickerStyle: React.CSSProperties = {
+  fontFamily: "var(--font-mono)",
+  fontSize: "var(--type-xs)",
+  letterSpacing: ".16em",
+  textTransform: "uppercase",
+};
 
 export function PresentationTab({
   state,
   onUpdate,
   leadName,
   leadJob,
+  onGoToEstimate,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   leadName: string | null;
   /** The customer's job description — the first choice for the quote title, same as the payload. */
   leadJob: string | null;
+  /** Switch to the Estimate tab — the embedded estimate section is edited there. */
+  onGoToEstimate: () => void;
 }) {
   const uid = useId();
   const templatesQuery = api.v1.settings.presentationTemplates.list.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+  // The company bar on the document — the same identity block every customer document prints.
+  const identityQuery = api.v1.settings.businessIdentity.useQuery(undefined, {
     refetchOnWindowFocus: false,
   });
   const createMutation = api.v1.settings.presentationTemplates.create.useMutation();
@@ -119,6 +148,17 @@ export function PresentationTab({
   // and never reaches the customer.
   const quoteTitle = leadJob?.trim() || state.lines.find((l) => l.d.trim())?.d?.trim() || "Quote";
 
+  const editorProps = {
+    editTitle,
+    editBody,
+    editError,
+    saving: updateMutation.isPending,
+    onTitle: setEditTitle,
+    onBody: setEditBody,
+    onSave: () => void saveEditor(),
+    onCancel: () => setEditKey(null),
+  };
+
   return (
     <div>
       {/* ---- controls: template pills + per-quote page chips ---- */}
@@ -153,6 +193,31 @@ export function PresentationTab({
           >
             ＋ New
           </button>
+          {p && (
+            <>
+              <span aria-hidden style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
+              <span style={{ fontWeight: 700 }}>Pages</span>
+              {p.pages.map((page) => (
+                <button
+                  type="button"
+                  key={page.key}
+                  className={page.on ? "chip on" : "chip"}
+                  aria-pressed={page.on}
+                  title={
+                    page.key === "cover"
+                      ? "The cover always leads an active presentation"
+                      : page.on
+                        ? "On — the customer sees this page"
+                        : "Off — hidden from this quote"
+                  }
+                  disabled={page.key === "cover"}
+                  onClick={() => onUpdate({ presentation: togglePresentationPage(p, page.key) })}
+                >
+                  {page.key === "cover" ? "Cover" : page.title || page.key}
+                </button>
+              ))}
+            </>
+          )}
         </div>
         {newOpen && (
           <div
@@ -198,237 +263,699 @@ export function PresentationTab({
             without one the customer gets the plain quote.
           </p>
         )}
-
-        {p && (
-          <div
-            style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-3)", flexWrap: "wrap" }}
-          >
-            <span style={{ fontWeight: 700 }}>Pages</span>
-            {p.pages.map((page) => (
-              <button
-                type="button"
-                key={page.key}
-                className={page.on ? "chip on" : "chip"}
-                aria-pressed={page.on}
-                title={
-                  page.key === "cover"
-                    ? "The cover always leads an active presentation"
-                    : page.on
-                      ? "On — the customer sees this page"
-                      : "Off — hidden from this quote"
-                }
-                disabled={page.key === "cover"}
-                onClick={() => onUpdate({ presentation: togglePresentationPage(p, page.key) })}
-              >
-                {page.key === "cover" ? "Cover — always on" : page.title || page.key}
-              </button>
-            ))}
-          </div>
-        )}
         {p && (
           <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
-            Page toggles change THIS quote only. Page content is shared — editing it updates the
-            template for every future quote. Sent quotes keep the pages they were sent with.
+            This is what the customer opens — off pages don&apos;t render. Page toggles change THIS
+            quote only; page content is shared, so editing it updates the template for every future
+            quote. Sent quotes keep the pages they were sent with.
           </p>
         )}
       </div>
 
-      {/* ---- the pages, rendered ---- */}
+      {/* ---- the document ---- */}
       {p && (
-        <>
-          {/* Cover — derived content: the work, the customer, the shop. */}
-          <div
-            className="card"
-            style={{ background: "var(--accent)", color: "var(--pri-fg)", border: "none" }}
-          >
-            <div
-              style={{
-                fontSize: "var(--type-xs)",
-                letterSpacing: ".14em",
-                textTransform: "uppercase",
-                opacity: 0.7,
-              }}
-            >
-              Proposal{p.name ? ` · ${p.name}` : ""}
-            </div>
-            <div
-              style={{
-                fontFamily: "var(--font-display)",
-                fontSize: "var(--type-3xl)",
-                fontWeight: 800,
-                letterSpacing: "-.02em",
-                lineHeight: 1.1,
-                margin: "var(--space-3) 0",
-                maxWidth: "18ch",
-              }}
-            >
-              {quoteTitle}
-            </div>
-            <div style={{ fontSize: "var(--type-sm)", opacity: 0.8 }}>
-              {leadName ? `Prepared for ${leadName}` : "Pick a customer on the Estimate tab"}
-            </div>
-          </div>
-
+        <div
+          style={{
+            maxWidth: 860,
+            margin: "var(--space-5) auto 0",
+            background: "var(--card)",
+            border: "1px solid var(--line)",
+            borderRadius: "var(--radius-lg)",
+            overflow: "hidden",
+            boxShadow: "var(--shadow)",
+          }}
+        >
+          <CoverSection
+            page={p.pages.find((page) => page.key === "cover") ?? null}
+            quoteTitle={quoteTitle}
+            leadName={leadName}
+            canEdit={p.templateId !== null}
+            editing={editKey === "cover"}
+            onEdit={() => openEditor(p, "cover")}
+            uid={uid}
+            {...editorProps}
+          />
+          <CompanyBar identity={identityQuery.data ?? null} validDays={state.validDays} />
           {p.pages
-            .filter((page) => page.key !== "cover" && page.key !== "thanks")
+            .filter((page) => page.on && page.key !== "cover" && page.key !== "thanks")
             .map((page) => (
-              <PageCard
+              <PageSection
                 key={page.key}
                 page={page}
                 canEdit={p.templateId !== null}
                 editing={editKey === page.key}
-                editTitle={editTitle}
-                editBody={editBody}
-                editError={editError}
-                saving={updateMutation.isPending}
-                uid={uid}
                 onEdit={() => openEditor(p, page.key)}
-                onTitle={setEditTitle}
-                onBody={setEditBody}
-                onSave={() => void saveEditor()}
-                onCancel={() => setEditKey(null)}
+                uid={uid}
+                {...editorProps}
               />
             ))}
-
-          {/* The estimate's place in the flow — built on the other tab, embedded here. */}
-          <div className="card" style={{ borderStyle: "dashed" }}>
-            <p className="muted" style={{ margin: 0, fontSize: "var(--type-sm)" }}>
-              Your estimate appears here — build it on the Estimate tab.
-            </p>
-          </div>
-
+          <EstimateSection state={state} quoteTitle={quoteTitle} onGoToEstimate={onGoToEstimate} />
           {p.pages
-            .filter((page) => page.key === "thanks")
+            .filter((page) => page.on && page.key === "thanks")
             .map((page) => (
-              <PageCard
+              <ThanksSection
                 key={page.key}
                 page={page}
                 canEdit={p.templateId !== null}
                 editing={editKey === page.key}
-                editTitle={editTitle}
-                editBody={editBody}
-                editError={editError}
-                saving={updateMutation.isPending}
-                uid={uid}
                 onEdit={() => openEditor(p, page.key)}
-                onTitle={setEditTitle}
-                onBody={setEditBody}
-                onSave={() => void saveEditor()}
-                onCancel={() => setEditKey(null)}
+                uid={uid}
+                {...editorProps}
               />
             ))}
+        </div>
+      )}
 
-          {p.templateId === null && (
-            <p className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-3)" }}>
-              From a sent quote — these pages are the frozen copy it was sent with. Pick a template
-              above to edit shared pages.
-            </p>
-          )}
-        </>
+      {p && p.templateId === null && (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-3)", textAlign: "center" }}>
+          From a sent quote — these pages are the frozen copy it was sent with. Pick a template
+          above to edit shared pages.
+        </p>
       )}
     </div>
   );
 }
 
-function PageCard({
-  page,
-  canEdit,
-  editing,
-  editTitle,
-  editBody,
-  editError,
-  saving,
-  uid,
-  onEdit,
-  onTitle,
-  onBody,
-  onSave,
-  onCancel,
-}: {
-  page: { key: PresentationPageKey; on: boolean; title: string; body: string };
-  canEdit: boolean;
-  editing: boolean;
+// ---- shared section pieces -----------------------------------------------------
+
+interface SectionEditorProps {
   editTitle: string;
   editBody: string;
   editError: string | null;
   saving: boolean;
-  uid: string;
-  onEdit: () => void;
   onTitle: (v: string) => void;
   onBody: (v: string) => void;
   onSave: () => void;
   onCancel: () => void;
+}
+
+/** The quiet in-place edit affordance every editable section carries, top-right. */
+function EditChip({
+  label,
+  editing,
+  controls,
+  onClick,
+}: {
+  label: string;
+  editing: boolean;
+  controls: string;
+  onClick: () => void;
 }) {
-  if (!page.on) return null;
-  const editorId = `${uid}-edit-${page.key}`;
   return (
-    <div className="card" style={{ opacity: page.body.trim() || editing ? 1 : 0.75 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)" }}>
-        <span
-          style={{
-            fontSize: "var(--type-xs)",
-            letterSpacing: ".12em",
-            textTransform: "uppercase",
-            color: "var(--ink-3)",
-            fontWeight: 700,
-          }}
-        >
-          {page.title || page.key}
-        </span>
-        {canEdit && (
-          <button
-            type="button"
-            className="linklike"
-            style={{ marginLeft: "auto", fontSize: "var(--type-sm)" }}
-            aria-expanded={editing}
-            aria-controls={editorId}
-            onClick={editing ? onCancel : onEdit}
-          >
-            {editing ? "Close" : "Edit ›"}
-          </button>
+    <button
+      type="button"
+      aria-expanded={editing}
+      aria-controls={controls}
+      onClick={onClick}
+      style={{
+        ...kickerStyle,
+        letterSpacing: ".09em",
+        position: "absolute",
+        top: "var(--space-3)",
+        right: "var(--space-3)",
+        color: "var(--ink-2)",
+        border: "1px solid var(--line)",
+        background: "var(--card)",
+        borderRadius: "var(--radius-pill)",
+        padding: "var(--space-1) var(--space-3)",
+        cursor: "pointer",
+      }}
+    >
+      {editing ? "CLOSE" : label}
+    </button>
+  );
+}
+
+/** Title/body editor rendered IN the section, on a card surface so it reads on dark pages too. */
+function SectionEditor({
+  id,
+  titleLabel,
+  titleHint,
+  editor,
+}: {
+  id: string;
+  titleLabel: string;
+  titleHint?: string;
+  editor: SectionEditorProps;
+}) {
+  return (
+    <div
+      id={id}
+      style={{
+        marginTop: "var(--space-4)",
+        background: "var(--card)",
+        color: "var(--ink)",
+        border: "1px solid var(--line)",
+        borderRadius: "var(--radius-md)",
+        padding: "var(--space-4)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "var(--space-2)",
+        textAlign: "left",
+      }}
+    >
+      <Field label={titleLabel} hint={titleHint}>
+        <input
+          type="text"
+          value={editor.editTitle}
+          maxLength={PAGE_TITLE_MAX}
+          onChange={(e) => editor.onTitle(e.target.value)}
+        />
+      </Field>
+      <Field label="Page body" hint="What the customer reads on this page.">
+        <textarea
+          value={editor.editBody}
+          maxLength={PAGE_BODY_MAX}
+          rows={Math.min(12, Math.max(4, editor.editBody.split("\n").length + 1))}
+          onChange={(e) => editor.onBody(e.target.value)}
+        />
+      </Field>
+      {editor.editError && (
+        <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: 0 }}>{editor.editError}</p>
+      )}
+      <div style={{ display: "flex", gap: "var(--space-2)" }}>
+        <button type="button" className="btn primary sm" disabled={editor.saving} onClick={editor.onSave}>
+          Save to template
+        </button>
+        <button type="button" className="btn ghost sm" onClick={editor.onCancel}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+type PresentationPage = { key: PresentationPageKey; on: boolean; title: string; body: string };
+
+// ---- cover ---------------------------------------------------------------------
+
+function CoverSection({
+  page,
+  quoteTitle,
+  leadName,
+  canEdit,
+  editing,
+  onEdit,
+  uid,
+  ...editor
+}: {
+  page: PresentationPage | null;
+  quoteTitle: string;
+  leadName: string | null;
+  canEdit: boolean;
+  editing: boolean;
+  onEdit: () => void;
+  uid: string;
+} & SectionEditorProps) {
+  const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const editorId = `${uid}-edit-cover`;
+  return (
+    <section
+      aria-label="Cover page"
+      style={{
+        position: "relative",
+        background: "var(--accent)",
+        color: "var(--pri-fg)",
+        padding: "var(--space-10) var(--space-8) var(--space-8)",
+      }}
+    >
+      {canEdit && (
+        <EditChip label="EDIT COVER ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
+      )}
+      <div style={{ ...kickerStyle, letterSpacing: ".2em", opacity: 0.75 }}>
+        {page?.title.trim() || "Proposal"}
+      </div>
+      <h2
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "var(--type-4xl)",
+          fontWeight: 800,
+          lineHeight: 1.05,
+          letterSpacing: "-.03em",
+          margin: "var(--space-4) 0 var(--space-4)",
+          maxWidth: "16ch",
+        }}
+      >
+        {quoteTitle}
+      </h2>
+      <div style={{ fontSize: "var(--type-md)", opacity: 0.8 }}>
+        {leadName ? (
+          <>
+            Prepared for <b style={{ opacity: 1 }}>{leadName}</b> &middot; {today}
+          </>
+        ) : (
+          "Pick a customer on the Estimate tab"
         )}
       </div>
-
-      {!editing && page.body.trim() && (
-        <p style={{ whiteSpace: "pre-wrap", margin: "var(--space-3) 0 0", maxWidth: "62ch" }}>{page.body}</p>
-      )}
-      {!editing && !page.body.trim() && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
-          Empty — hidden from the customer until it says something.
+      {page?.body.trim() && (
+        <p
+          style={{
+            fontSize: "var(--type-base)",
+            lineHeight: 1.6,
+            opacity: 0.8,
+            margin: "var(--space-4) 0 0",
+            maxWidth: "60ch",
+            whiteSpace: "pre-wrap",
+          }}
+        >
+          {page.body}
         </p>
       )}
-
       {editing && (
-        <div id={editorId} style={{ marginTop: "var(--space-3)", display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-          <Field label="Page title">
-            <input
-              type="text"
-              value={editTitle}
-              maxLength={PAGE_TITLE_MAX}
-              onChange={(e) => onTitle(e.target.value)}
-            />
-          </Field>
-          <Field label="Page body" hint="What the customer reads on this page.">
-            <textarea
-              value={editBody}
-              maxLength={PAGE_BODY_MAX}
-              rows={Math.min(12, Math.max(4, editBody.split("\n").length + 1))}
-              onChange={(e) => onBody(e.target.value)}
-            />
-          </Field>
-          {editError && (
-            <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: 0 }}>{editError}</p>
-          )}
-          <div style={{ display: "flex", gap: "var(--space-2)" }}>
-            <button type="button" className="btn primary sm" disabled={saving} onClick={onSave}>
-              Save to template
-            </button>
-            <button type="button" className="btn ghost sm" onClick={onCancel}>
-              Cancel
-            </button>
-          </div>
-        </div>
+        <SectionEditor
+          id={editorId}
+          titleLabel="Cover heading"
+          titleHint="The small line above the title — e.g. Proposal."
+          editor={editor}
+        />
       )}
+    </section>
+  );
+}
+
+// ---- company bar ---------------------------------------------------------------
+
+function CompanyBar({
+  identity,
+  validDays,
+}: {
+  identity: { name: string; address: string | null; phone: string | null } | null;
+  validDays: number;
+}) {
+  const name = identity?.name ?? "";
+  const initials = name
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase();
+  const contact = [identity?.address, identity?.phone].filter(Boolean).join(" · ");
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "var(--space-4)",
+        flexWrap: "wrap",
+        background: "var(--accent-2)",
+        color: "var(--pri-fg)",
+        padding: "var(--space-3) var(--space-8)",
+        fontSize: "var(--type-sm)",
+      }}
+    >
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontWeight: 800, fontSize: "var(--type-base)" }}>
+        {initials && (
+          <span
+            aria-hidden
+            style={{
+              width: "var(--space-6)",
+              height: "var(--space-6)",
+              borderRadius: "var(--radius-xs)",
+              background: "var(--pri-fg)",
+              color: "var(--accent)",
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: "var(--type-xs)",
+            }}
+          >
+            {initials}
+          </span>
+        )}
+        {name}
+      </span>
+      {contact && <span style={{ opacity: 0.75 }}>{contact}</span>}
+      <span style={{ ...kickerStyle, marginLeft: "auto", opacity: 0.75 }}>Valid {validDays} days</span>
     </div>
+  );
+}
+
+// ---- shop pages (about us / reviews) -------------------------------------------
+
+function PageSection({
+  page,
+  canEdit,
+  editing,
+  onEdit,
+  uid,
+  ...editor
+}: {
+  page: PresentationPage;
+  canEdit: boolean;
+  editing: boolean;
+  onEdit: () => void;
+  uid: string;
+} & SectionEditorProps) {
+  const editorId = `${uid}-edit-${page.key}`;
+  return (
+    <section
+      aria-label={page.title || page.key}
+      style={{
+        position: "relative",
+        padding: "var(--space-8)",
+        borderTop: "1px solid var(--line)",
+        opacity: page.body.trim() || editing ? 1 : 0.75,
+      }}
+    >
+      {canEdit && (
+        <EditChip label="EDIT ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
+      )}
+      <div style={{ ...kickerStyle, color: "var(--ink-3)", marginBottom: "var(--space-3)" }}>
+        {page.title.trim() || page.key}
+      </div>
+      {page.body.trim() ? (
+        <p
+          style={{
+            whiteSpace: "pre-wrap",
+            fontSize: "var(--type-md)",
+            lineHeight: 1.6,
+            color: "var(--ink-2)",
+            margin: 0,
+            maxWidth: "64ch",
+          }}
+        >
+          {page.body}
+        </p>
+      ) : (
+        !editing && (
+          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+            Empty — hidden from the customer until it says something.
+          </p>
+        )
+      )}
+      {editing && <SectionEditor id={editorId} titleLabel="Page title" editor={editor} />}
+    </section>
+  );
+}
+
+// ---- the estimate, embedded ----------------------------------------------------
+
+function EstimateSection({
+  state,
+  quoteTitle,
+  onGoToEstimate,
+}: {
+  state: ComposerState;
+  quoteTitle: string;
+  onGoToEstimate: () => void;
+}) {
+  const gbb = state.format === "gbb" && state.gbb ? state.gbb : null;
+  const lines = gbb ? [] : realLines(state.lines);
+  const workLines = lines.filter((l) => !l.opt);
+  const optLines = lines.filter((l) => l.opt);
+  const showLineAmounts = state.priceDisplay !== "total";
+
+  // The customer's opening numbers — fixed lines only, add-ons off, through the SAME cents
+  // pipeline the public page and the server run (subtotal → discount → tax → total → deposit).
+  const toCents = (l: ComposerLine) => Math.round(l.q * Math.round(l.r * 100));
+  const totals = computeQuoteTotals({
+    fixedSubtotalCents: workLines.reduce((s, l) => s + toCents(l), 0),
+    fixedTaxableCents: workLines.reduce((s, l) => s + (l.notax ? 0 : toCents(l)), 0),
+    selectedOptionalLines: [],
+    discBps: Math.round((state.pricing.disc ?? 0) * 100),
+    taxBps: Math.round((state.pricing.tax ?? 0) * 100),
+    depBps: Math.round((state.pricing.dep ?? 0) * 100),
+  });
+
+  return (
+    <section
+      aria-label="Your estimate"
+      style={{ position: "relative", padding: "var(--space-8)", borderTop: "1px solid var(--line)" }}
+    >
+      <button
+        type="button"
+        onClick={onGoToEstimate}
+        style={{
+          ...kickerStyle,
+          letterSpacing: ".09em",
+          position: "absolute",
+          top: "var(--space-3)",
+          right: "var(--space-3)",
+          color: "var(--ink-2)",
+          border: "1px solid var(--line)",
+          background: "var(--card)",
+          borderRadius: "var(--radius-pill)",
+          padding: "var(--space-1) var(--space-3)",
+          cursor: "pointer",
+        }}
+      >
+        FROM THE ESTIMATE TAB — EDIT THERE ›
+      </button>
+      <div style={{ ...kickerStyle, color: "var(--ink-3)", marginBottom: "var(--space-3)" }}>Your estimate</div>
+      <h3
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "var(--type-xl)",
+          fontWeight: 800,
+          letterSpacing: "-.02em",
+          margin: "0 0 var(--space-3)",
+        }}
+      >
+        {quoteTitle}
+      </h3>
+
+      {gbb ? (
+        <>
+          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0 0 var(--space-3)" }}>
+            Good, Better &amp; Best — the customer picks one of these options.
+          </p>
+          {gbb.opts.map((tier) => (
+            <div
+              key={tier.k}
+              style={{
+                display: "flex",
+                alignItems: "baseline",
+                gap: "var(--space-3)",
+                padding: "var(--space-2) 0",
+                borderTop: "1px solid var(--line-2)",
+                fontSize: "var(--type-base)",
+              }}
+            >
+              <b>{tier.name}</b>
+              {tier.k === gbb.rec && (
+                <span style={{ ...kickerStyle, fontSize: "var(--type-xs)", color: "var(--green-700)" }}>
+                  Recommended
+                </span>
+              )}
+              <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
+                {tier.title}
+              </span>
+              <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700 }}>
+                {docMoney(Math.round(gbbTierTotal(tier) * 100))}
+              </span>
+            </div>
+          ))}
+        </>
+      ) : workLines.length === 0 ? (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+          Your estimate appears here — build it on the Estimate tab.
+        </p>
+      ) : (
+        <>
+          <div style={{ ...kickerStyle, fontSize: "var(--type-xs)", color: "var(--ink-3)", margin: "var(--space-4) 0 var(--space-1)" }}>
+            The work
+          </div>
+          {workLines.map((line, i) => (
+            <div key={i} style={{ padding: "var(--space-2) 0", borderTop: "1px solid var(--line-2)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "var(--space-3)", fontSize: "var(--type-base)" }}>
+                <span>{line.d}</span>
+                <span
+                  style={{
+                    marginLeft: "auto",
+                    fontFamily: "var(--font-mono)",
+                    fontSize: "var(--type-sm)",
+                    color: showLineAmounts ? "var(--ink)" : "var(--ink-3)",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {showLineAmounts ? docMoney(toCents(line)) : line.q !== 1 ? `× ${line.q}` : ""}
+                </span>
+              </div>
+              {line.scope?.trim() && (
+                <p
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    fontSize: "var(--type-sm)",
+                    lineHeight: 1.55,
+                    color: "var(--ink-2)",
+                    margin: "var(--space-1) 0 0",
+                    maxWidth: "64ch",
+                  }}
+                >
+                  {line.scope}
+                </p>
+              )}
+            </div>
+          ))}
+
+          {optLines.length > 0 && (
+            <>
+              <div style={{ ...kickerStyle, fontSize: "var(--type-xs)", color: "var(--ink-3)", margin: "var(--space-4) 0 var(--space-1)" }}>
+                Upgrade options — the customer can add these
+              </div>
+              {optLines.map((line, i) => (
+                <div
+                  key={i}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "var(--space-3)",
+                    border: "1px solid var(--line)",
+                    borderRadius: "var(--radius-md)",
+                    background: "var(--paper)",
+                    padding: "var(--space-3) var(--space-4)",
+                    marginTop: "var(--space-2)",
+                    fontSize: "var(--type-base)",
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{line.d}</span>
+                  <span style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", fontWeight: 700, color: "var(--green-700)" }}>
+                    +{docMoney(toCents(line))}
+                  </span>
+                </div>
+              ))}
+            </>
+          )}
+
+          <div
+            style={{
+              background: "var(--paper)",
+              border: "1px solid var(--line)",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--space-4) var(--space-5)",
+              marginTop: "var(--space-5)",
+              fontSize: "var(--type-base)",
+            }}
+          >
+            <TotalRow label="Subtotal" cents={totals.subtotalCents} muted />
+            {totals.discountCents > 0 && (
+              <TotalRow label={`Discount (${state.pricing.disc}%)`} cents={-totals.discountCents} muted />
+            )}
+            {totals.taxCents > 0 && <TotalRow label={`Tax (${state.pricing.tax}%)`} cents={totals.taxCents} muted />}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                fontWeight: 800,
+                fontSize: "var(--type-md)",
+                borderTop: "1px solid var(--line)",
+                marginTop: "var(--space-2)",
+                paddingTop: "var(--space-2)",
+              }}
+            >
+              <span>Total</span>
+              <span style={{ fontFamily: "var(--font-mono)" }}>{docMoney(totals.totalCents)}</span>
+            </div>
+            {totals.depositCents > 0 && (
+              <div style={{ fontSize: "var(--type-xs)", color: "var(--ink-3)", textAlign: "right", marginTop: "var(--space-1)" }}>
+                {state.pricing.dep}% deposit due on signing — {docMoney(totals.depositCents)}
+              </div>
+            )}
+          </div>
+
+          {/* What the customer's accept button will say — a preview, not a control. */}
+          <div
+            aria-hidden
+            style={{
+              marginTop: "var(--space-4)",
+              background: "var(--accent)",
+              color: "var(--pri-fg)",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--space-4)",
+              textAlign: "center",
+              fontWeight: 800,
+              fontSize: "var(--type-md)",
+            }}
+          >
+            Accept &amp; sign — {docMoney(totals.totalCents)}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+function TotalRow({ label, cents, muted }: { label: string; cents: number; muted?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        padding: "var(--space-1) 0",
+        color: muted ? "var(--ink-2)" : "var(--ink)",
+        fontSize: "var(--type-sm)",
+      }}
+    >
+      <span>{label}</span>
+      <span style={{ fontFamily: "var(--font-mono)", color: cents < 0 ? "var(--green-700)" : undefined }}>
+        {cents < 0 ? `−${docMoney(-cents)}` : docMoney(cents)}
+      </span>
+    </div>
+  );
+}
+
+// ---- thank you -----------------------------------------------------------------
+
+function ThanksSection({
+  page,
+  canEdit,
+  editing,
+  onEdit,
+  uid,
+  ...editor
+}: {
+  page: PresentationPage;
+  canEdit: boolean;
+  editing: boolean;
+  onEdit: () => void;
+  uid: string;
+} & SectionEditorProps) {
+  const editorId = `${uid}-edit-thanks`;
+  return (
+    <section
+      aria-label={page.title || "Thank you"}
+      style={{
+        position: "relative",
+        background: "var(--accent)",
+        color: "var(--pri-fg)",
+        textAlign: "center",
+        padding: "var(--space-10) var(--space-8)",
+      }}
+    >
+      {canEdit && (
+        <EditChip label="EDIT ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
+      )}
+      <h3
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "var(--type-2xl)",
+          fontWeight: 800,
+          margin: "0 0 var(--space-3)",
+        }}
+      >
+        {page.title.trim() || "Thank you"}
+      </h3>
+      {page.body.trim() ? (
+        <p
+          style={{
+            whiteSpace: "pre-wrap",
+            fontSize: "var(--type-base)",
+            lineHeight: 1.6,
+            opacity: 0.8,
+            margin: "0 auto",
+            maxWidth: "52ch",
+          }}
+        >
+          {page.body}
+        </p>
+      ) : (
+        !editing && (
+          <p style={{ fontSize: "var(--type-sm)", opacity: 0.7, margin: 0 }}>
+            Empty — hidden from the customer until it says something.
+          </p>
+        )
+      )}
+      {editing && <SectionEditor id={editorId} titleLabel="Page title" editor={editor} />}
+    </section>
   );
 }
