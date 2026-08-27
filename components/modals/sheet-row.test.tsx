@@ -113,3 +113,30 @@ describe("SheetRow — the registers", () => {
     expect(container.querySelector(".fsec.tjf.open")).toBeTruthy();
   });
 });
+
+/**
+ * The section head's empty state. `valueIsHint` was accepted by the component and read only by the
+ * row branch, so a chapter whose value is the word "Add" rendered exactly like one carrying a real
+ * number — and the office sheet, which passes the prop on all five of its chapters, had no way to
+ * show at a glance which were still empty.
+ */
+describe("SheetRow variant=section — the empty state is visible", () => {
+  it("marks a hint value so it reads quieter than a real one", () => {
+    const { container } = render(
+      <SheetRow variant="section" label="Notes" value="Add" valueIsHint expandable>
+        <p>body</p>
+      </SheetRow>,
+    );
+    expect(container.querySelector(".tjf-v.add")).toBeTruthy();
+  });
+
+  it("leaves a real value unmarked", () => {
+    const { container } = render(
+      <SheetRow variant="section" label="Notes" value="3 · 1 file" expandable>
+        <p>body</p>
+      </SheetRow>,
+    );
+    expect(container.querySelector(".tjf-v")).toBeTruthy();
+    expect(container.querySelector(".tjf-v.add")).toBeNull();
+  });
+});

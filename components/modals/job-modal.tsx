@@ -15,21 +15,11 @@
  * office set (line items + Total) and at most ONE anchored money pointer —
  * never cost / margin / profit / P&L.
  *
- * Two note rows, deliberately apart. "Job notes" is this job's own feed (office
- * note, field notes, found work, completion). "Customer notes" is the CUSTOMER
- * record's trail, read-only — the gate code lives on the customer, and until it
- * was mirrored here it was reachable only from the customer sheet ("I had notes
- * on Cole, why aren't they here on the job?"). Editing stays on the customer
- * record; the name link in the header is the way there.
- *
- * Deferred (surfaces not built yet):
- *   - the tech quote builder ("Build the price" / Edit) — a Field-area surface (tq)
- *   - the signed-agreement viewer (openSignedDoc)
- *   - smartPanel's ⏱ estimate line + split suggestion (need estJobHours →
- *     pricebook/DUR_RULES the store doesn't seed)
- *   - (checklists: the template picker + in-flow create form now live in
- *     ./job-checklist-block.tsx; the attach persists via v1.jobs.update)
- *   - the invoice modal (opened from the money pointer — Money-area task)
+ * NOTES ARE ONE CHAPTER. The job's own feed and the customer record's trail used to be two
+ * sibling rows, and the second one appeared only when the customer happened to have notes — so
+ * the same sheet had a row on one job and simply not on the next. They now sit as two labelled
+ * halves of one "Notes" chapter: "This job", which is writable, and "On the customer", which is
+ * read-only because the customer record is the one place to edit it.
  */
 
 "use client";
@@ -67,7 +57,7 @@ import { JobChecklistBlock } from "./job-checklist-block";
 import { skillHintFor } from "./skill-hint";
 import { meetsRequirement, missingCerts } from "@mallet/shared/dispatch/skill-gate";
 import { dayLoad } from "@/features/jobs/jobs-helpers";
-import { Field } from "@/components/ui/input";
+import { Field, FieldGroup } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { ModalLoading } from "./modal-loading";
 import { MoneyPointer } from "./money-pointer";
@@ -144,8 +134,17 @@ interface VisitRowProps {
  * PICKABLE, just visibly flagged — the shop decides, the app does not block. No requirement means
  * plain roster order.
  */
+/**
+ * "Unassigned" is the FIRST option, always. Taking a technician off a visit while keeping its day
+ * and time is an ordinary dispatch move — somebody calls in sick and the slot is held while the
+ * office finds cover — and the picker inside the visit editor could not express it: it was fed
+ * bare technician options, so once a visit had a crew there was no way to give it back. The row
+ * that used to carry an empty option was deleted with the "Assigned to" chapter, which is what
+ * turned a working path into a dead end.
+ */
 function crewOptions(techs: Tech[], req: readonly string[] | null): { value: string; label: string }[] {
-  if (req == null || req.length === 0) return techs.map((t) => ({ value: t.id, label: t.name }));
+  const none = { value: "", label: "Unassigned" };
+  if (req == null || req.length === 0) return [none, ...techs.map((t) => ({ value: t.id, label: t.name }))];
   const qualified: Tech[] = [];
   const unqualified: Tech[] = [];
   for (const t of techs) {
@@ -153,6 +152,7 @@ function crewOptions(techs: Tech[], req: readonly string[] | null): { value: str
     else unqualified.push(t);
   }
   return [
+    none,
     ...qualified.map((t) => ({ value: t.id, label: t.name })),
     ...unqualified.map((t) => ({
       value: t.id,
@@ -181,6 +181,21 @@ function VisitRow({ job, visit, techs, conflict, loadOf, onUpdate, onRemove, onG
           Not placed
         </span>
         <DurField dur={visit.dur} onChange={(dur) => onUpdate({ dur })} />
+        {/* CREW, ON AN UNPLACED VISIT TOO. Only the placed branch below carried a picker, so the
+            one visit that most often has nobody on it — the one still waiting for a slot — was the
+            one you could not put anybody on. It did not show while "Assigned to" existed as a row
+            of its own, because that row listed EVERY visit; deleting the row is what exposed it.
+            Assigning here does not place the visit: it still needs a day and a time, which is what
+            the sentence beside this says and what the board link is for. */}
+        <Field label="Crew" style={{ margin: "0", minWidth: 150 }}>
+          <SelectMenu
+            value={visit.techId ?? ""}
+            onChange={(v) => onUpdate({ techId: v || null })}
+            options={crewOptions(techs, job.requiredCerts ?? null)}
+            aria-label="Crew"
+            compact
+          />
+        </Field>
         <span
           className="muted"
           style={{ fontSize: "var(--type-sm)", flex: 1, minWidth: 140, alignSelf: "center" }}
@@ -647,8 +662,10 @@ export function JobModalContent() {
   }, [custNotesQ.data, custLeadId, adoptLeadNotes]);
 
   const lead: Lead | undefined = leads.find((l) => l.id === job?.leadId);
-  // Call/Text with no number open this row rather than doing nothing — same as the customer sheet.
-  const [phoneOpen, setPhoneOpen] = useState(false);
+  // The chapters, both shut on arrival. Call/Text with no number on file open Contact rather than
+  // doing nothing — the Phone field is typed IN PLACE inside it, so unlike before there is no
+  // second row underneath to open. Same shape, and the same reasoning, as the customer sheet.
+  const [contactOpen, setContactOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
 
   if (!job) {
@@ -755,6 +772,11 @@ export function JobModalContent() {
   // "3" to a plumber standing at a gate who needs "Gate code 4482". Reused from the customer
   // sheet, which is where that reasoning was written down.
   const custNoteSnippet = lead ? latestNoteSnippet(lead) : null;
+  // The closed Notes line. The job's own count leads because it is what this sheet is about; the
+  // customer's latest sentence stands in when the job has nothing yet, because a plumber at a gate
+  // needs "Gate code 4482" whichever record it happens to be filed under — a bare "Add" over a
+  // customer with three notes on file would be a lie about what is inside.
+  const notesSummary = notesRowValue || custNoteSnippet || "Add";
   const hasLines = (job.lines ?? []).length > 0;
   // The row says there is SCOPE inside it, not just a number. "$730" reads as the whole story and
   // gives no reason to open the row — so the line items, and the "+ More work" that raises a
@@ -765,15 +787,12 @@ export function JobModalContent() {
     : job.sourceEstimateId
       ? "from quote"
       : "Add";
-  const scheduleValue =
-    visits.length > 0
-      ? `${visits.length} visit${visits.length === 1 ? "" : "s"}`
-      : "Add";
 
-  // WHO IS ON THIS JOB. Assignment lives on the visit — a job can have several, each with its own
-  // crew — but it was reachable only by expanding Schedule and then a visit, so the one question a
-  // dispatcher asks most ("who's got this?") could not be answered from this screen at all, let
-  // alone changed. Named crew, deduped, in visit order.
+  // WHO IS ON THIS JOB, on the CLOSED Schedule row. Assignment lives on the visit — a job can have
+  // several, each with its own crew — and it had been lifted into a row of its own so a dispatcher
+  // could answer "who's got this?" without opening anything. That row duplicated the Crew picker
+  // the visit editor already carries, so the row is gone and the answer moved into this summary:
+  // one chapter, and the collapsed line still says it.
   const assignedNames = [
     ...new Set(
       visits
@@ -781,8 +800,29 @@ export function JobModalContent() {
         .filter((n): n is string => Boolean(n)),
     ),
   ];
-  const assignedValue =
-    visits.length === 0 ? "No visit yet" : assignedNames.length ? assignedNames.join(", ") : "Unassigned";
+  // A visit with nobody on it is named, even when a sibling visit HAS a crew: "2 visits · Rosa
+  // Boyd" over one crewed and one bare visit reads as a fully staffed job, and the unstaffed half
+  // is the half somebody has to act on.
+  const someUnassigned = visits.some((v) => !v.techId);
+  const crewSummary = assignedNames.length
+    ? someUnassigned
+      ? `${assignedNames.join(", ")}, Unassigned`
+      : assignedNames.join(", ")
+    : "Unassigned";
+  const scheduleSummary =
+    visits.length === 0
+      ? "Add"
+      : `${visits.length} visit${visits.length === 1 ? "" : "s"} · ${crewSummary}`;
+
+  // The closed Contact line carries the thing the row exists for — the number. Email and then the
+  // address stand in when there is none, so the chapter only reads "Add" when it is genuinely bare.
+  const contactSummary = phone.trim()
+    ? fmtPhone(phone)
+    : lead?.email?.trim()
+      ? lead.email
+      : job.addr?.trim()
+        ? job.addr
+        : "Add";
 
   return (
     <>
@@ -813,10 +853,10 @@ export function JobModalContent() {
       </div>
 
       {/* Quiet peer actions. They disable only with NO linked customer — there is nobody to call.
-          With a customer but NO NUMBER they open the Phone row below rather than stacking a sheet
-          whose whole job is one field: the row is a few inches down, and that sheet is titled with
-          the customer's name, so it reads as having started something else. Same behaviour as the
-          customer sheet. */}
+          With a customer but NO NUMBER they open the CONTACT chapter below, where the Phone field
+          is typed in place, rather than stacking a sheet whose whole job is one field: the chapter
+          is a few inches down, and that sheet is titled with the customer's name, so it reads as
+          having started something else. Same behaviour as the customer sheet. */}
       <div className="sheet-secrow">
         <button
           className="sheet-sec"
@@ -825,7 +865,7 @@ export function JobModalContent() {
           onClick={() => {
             if (!lead) return;
             if (phone.trim()) pushModal(MODAL.CALL, { leadId: lead.id });
-            else setPhoneOpen(true);
+            else setContactOpen(true);
           }}
         >
           Call
@@ -837,7 +877,7 @@ export function JobModalContent() {
           onClick={() => {
             if (!lead) return;
             if (phone.trim()) pushModal(MODAL.THREAD, { leadId: lead.id });
-            else setPhoneOpen(true);
+            else setContactOpen(true);
           }}
         >
           Text
@@ -845,82 +885,74 @@ export function JobModalContent() {
       </div>
 
       <div className="sheet-rows">
-        {/* Customer phone — only when there's no linked lead to carry one. */}
-        {!lead && (
-          <SheetRow
-            label="Customer phone"
-            value={job.phone?.trim() ? fmtPhone(job.phone) : "Add"}
-            valueIsHint={!job.phone?.trim()}
-            expandable
-          >
-            <Field label="Customer phone" style={{ margin: "0" }}>
+        {/* ONE REGISTER FOR ALL FIVE. Every row on this sheet is a chapter — a named group with a
+            summary and a block inside — so they all read at the same level. A mix of chapter heads
+            and quiet config rows put two type registers in one column and the emphasis landed on
+            whichever happened to be uppercase, which is emphasis without meaning. The customer
+            sheet is uniform for the same reason.
+
+            CONTACT — how to reach the customer and where the work is. Four sibling rows before
+            this, each with its own chevron, which is most of what made this sheet a wall: they are
+            REFERENCE — the facts you check, not the job you came to work — so they collapse to one
+            line carrying the number, and the sheet opens on the job itself.
+
+            NO SECOND LAYER OF CHEVRONS. Opening a chapter IS the request to see what is inside it;
+            a chevron on each field asks the same question twice, and it cost two opens to reach a
+            keyboard. Every field in here is laid out flat, exactly as the customer sheet does it.
+
+            Phone and Email write to the CUSTOMER, not the job — a phone number is a fact about the
+            person, and a per-job copy would drift the moment they changed it. The address is the
+            job's own: one customer can have work at two places. */}
+        <SheetRow
+          variant="section"
+          label="Contact"
+          value={contactSummary}
+          valueIsHint={contactSummary === "Add"}
+          expandable
+          open={contactOpen}
+          onOpenChange={setContactOpen}
+        >
+          <div className="sheet-inline">
+            {/* No linked customer — the number lives on the job, because there is nowhere else
+                for it to live. */}
+            {!lead && (
+              <Field label="Customer phone" style={{ margin: "0" }}>
+                <input
+                  type="tel"
+                  defaultValue={job.phone || ""}
+                  placeholder="so you can call/text from the job"
+                  onBlur={(e) => updateJob(job.id, { phone: e.target.value.trim() })}
+                />
+              </Field>
+            )}
+
+            {lead && (
+              <>
+                <PhoneCell
+                  label="Phone"
+                  value={lead.phone ?? ""}
+                  onCommit={(v: string) => updateLead(lead.id, { phone: v })}
+                />
+                <EmailBody lead={lead} />
+              </>
+            )}
+
+            <Field label="Service address" style={{ margin: "0" }}>
               <input
-                type="tel"
-                defaultValue={job.phone || ""}
-                placeholder="so you can call/text from the job"
-                onBlur={(e) => updateJob(job.id, { phone: e.target.value.trim() })}
+                type="text"
+                defaultValue={job.addr || ""}
+                placeholder={lead?.address || "add the address"}
+                onBlur={(e) => updateJob(job.id, { addr: e.target.value.trim() })}
               />
             </Field>
-          </SheetRow>
-        )}
-
-        {/* No Type row. The kind DERIVES from whether a price is committed — the New job
-            foot decides it at create, and Build the price's save flips an unpriced job to
-            booked work. A manual toggle here was the same fork the create form dropped. */}
-
-        {/* PHONE AND EMAIL LIVE HERE, not only on the customer record.
-            The sheet carried Call and Text but never the NUMBER, so the one fact you need to do
-            either was invisible — and with no number on file there was no way to add one without
-            leaving the job for the customer sheet and coming back. A work order should carry the
-            contact facts needed to work it: who, how to reach them, where. Email and lead source
-            stay on the customer record; nobody emails from a work order.
-
-            Editing writes to the CUSTOMER, not the job: a phone number is a fact about the person,
-            and a copy stored per-job would drift the moment they changed it. */}
-        {lead && (
-          <>
-            <SheetRow
-              label="Phone"
-              value={phone.trim() ? fmtPhone(phone) : "Add"}
-              valueIsHint={!phone.trim()}
-              expandable
-              open={phoneOpen}
-              onOpenChange={setPhoneOpen}
-            >
-              <PhoneCell value={lead.phone ?? ""} onCommit={(v: string) => updateLead(lead.id, { phone: v })} />
-            </SheetRow>
-
-            <SheetRow
-              label="Email"
-              value={lead.email?.trim() ? lead.email : "Add"}
-              valueIsHint={!lead.email?.trim()}
-              expandable
-            >
-              <EmailBody lead={lead} />
-            </SheetRow>
-          </>
-        )}
-
-        <SheetRow
-          label="Service address"
-          value={job.addr?.trim() ? job.addr : "Add"}
-          valueIsHint={!job.addr?.trim()}
-          expandable
-        >
-          <Field label="Service address" style={{ margin: "0" }}>
-            <input
-              type="text"
-              defaultValue={job.addr || ""}
-              placeholder={lead?.address || "add the address"}
-              onBlur={(e) => updateJob(job.id, { addr: e.target.value.trim() })}
-            />
-          </Field>
+          </div>
         </SheetRow>
 
         {/* Price — PRICE + Total only, never cost/margin/profit (LOCKED rule).
             Hidden only for UNPRICED estimates: one signed at the door has real lines to show. */}
         {!isUnpricedEstimateJob(job) && (
           <SheetRow
+            variant="section"
             label="Price"
             value={priceValue}
             valueIsHint={priceValue === "Add"}
@@ -944,39 +976,15 @@ export function JobModalContent() {
           </SheetRow>
         )}
 
-        {/* Assigned to — the crew picker, lifted out of the visit editor.
-            One row per visit, because that is where assignment actually lives: a two-visit job can
-            genuinely have two different technicians, and collapsing that to a single picker would
-            silently reassign work nobody asked to move. */}
-        {visits.length > 0 && (
-          <SheetRow
-            label="Assigned to"
-            value={assignedValue}
-            valueIsHint={assignedNames.length === 0}
-            expandable
-          >
-            {visits.map((v, i) => (
-              <Field
-                key={v.id}
-                label={visits.length === 1 ? "Crew" : `Visit ${i + 1}${v.date ? ` · ${v.date}` : ""}`}
-                style={{ margin: "0 0 var(--space-2)" }}
-              >
-                <SelectMenu
-                  value={v.techId ?? ""}
-                  onChange={(val) => updateVisit(job.id, v.id, { techId: val || null })}
-                  options={[{ value: "", label: "Unassigned" }, ...crewOptions(techs, job.requiredCerts ?? null)]}
-                  aria-label={visits.length === 1 ? "Assigned crew" : `Crew for visit ${i + 1}`}
-                  compact
-                />
-              </Field>
-            ))}
-          </SheetRow>
-        )}
-
-        {/* Schedule — the visit editor kept intact inside the accordion. */}
+        {/* SCHEDULE — when the work happens and who is on it, one chapter. The visit editor is
+            kept whole inside: unlike Contact's fields it is not a field but a block, one per
+            visit, already carrying Day / Crew / Start / Length together. That is exactly why the
+            separate "Assigned to" row is gone — it set the same visit.techId this does, so a job
+            had two places to reassign a visit and no rule about which won. */}
         <SheetRow
+          variant="section"
           label="Schedule"
-          value={scheduleValue}
+          value={scheduleSummary}
           valueIsHint={visits.length === 0}
           expandable
         >
@@ -1006,53 +1014,60 @@ export function JobModalContent() {
           </button>
         </SheetRow>
 
-        {/* JOB NOTES AND FILES, ONE ROW. A file and the sentence explaining it belong together —
-            a photo or a permit with no note beside it is a mystery six weeks later, and two rows
-            put them a scroll apart. Named "Job" because Customer notes sits below: two rows both
-            called "Notes" left nobody able to tell which record they were reading.
+        {/* NOTES — everything written about this job, and the customer's own trail beneath it.
+            Two sibling rows before this, both about notes, one of them appearing only sometimes:
+            the customer's history would show up under a row called "Customer notes" on one job and
+            simply not exist on the next, which reads as a bug rather than as an empty record.
 
-            ALWAYS RENDERED, with an "Add" hint when empty — like Phone, Email and Service address
-            above it. It used to be gated on having content, which meant the only control that can
-            attach a file to a job was invisible on every job that had none: you had to get a note
-            onto the job from the field first, just to make the row appear. */}
+            THE FILE AND THE SENTENCE EXPLAINING IT STAY TOGETHER. A photo or a permit with no note
+            beside it is a mystery six weeks later.
+
+            ALWAYS RENDERED, with an "Add" hint when empty. It used to be gated on having content,
+            which meant the only control that can attach a file to a job was invisible on every job
+            that had none — you had to get a note on from the field first, just to see the row.
+
+            The customer's notes are READ-ONLY here on purpose: one record, one edit path, and that
+            path is the customer link in the header above. */}
         <SheetRow
-          label="Job notes"
-          value={notesRowValue || "Add"}
-          valueIsHint={!notesRowValue}
+          variant="section"
+          label="Notes"
+          value={notesSummary}
+          valueIsHint={notesSummary === "Add"}
           expandable
           open={notesOpen}
           onOpenChange={setNotesOpen}
         >
-          <NoteFeed job={job} />
-          <NoteComposer
-            placeholder="what happened, what's needed…"
-            autoFocus={notesOpen}
-            disabled={jobIsDone ? "This job is complete — its notes are closed." : false}
-            onSubmit={async (text) => (await appendJobNote(job.id, text)).ok}
-          />
-          <JobFilesBody
-            jobId={job.id}
-            files={job.files ?? []}
-            onUploaded={(file) => attachJobFile(job.id, file)}
-          />
-        </SheetRow>
+          <div className="sheet-inline">
+            <FieldGroup label="This job">
+              <NoteFeed job={job} />
+              <NoteComposer
+                placeholder="what happened, what's needed…"
+                autoFocus={notesOpen}
+                disabled={jobIsDone ? "This job is complete — its notes are closed." : false}
+                onSubmit={async (text) => (await appendJobNote(job.id, text)).ok}
+              />
+              <JobFilesBody
+                jobId={job.id}
+                files={job.files ?? []}
+                onUploaded={(file) => attachJobFile(job.id, file)}
+              />
+            </FieldGroup>
 
-        {/* Customer notes — the customer record's own trail, READ-ONLY, and only when the
-            customer has one. No composer on purpose: one record, one edit path, and that
-            path is the customer link in the header above (the same read-only-provenance
-            shape as the invoice modal's "From job" row). */}
-        {lead && custNoteSnippet && (
-          <SheetRow label="Customer notes" value={custNoteSnippet} expandable>
-            <div className="nfeed">
-              {gatherNotes(lead).map((entry) => (
-                <NoteRow key={entry.key} entry={entry} />
-              ))}
-            </div>
-          </SheetRow>
-        )}
+            {lead && custNoteSnippet && (
+              <FieldGroup label="On the customer">
+                <div className="nfeed">
+                  {gatherNotes(lead).map((entry) => (
+                    <NoteRow key={entry.key} entry={entry} />
+                  ))}
+                </div>
+              </FieldGroup>
+            )}
+          </div>
+        </SheetRow>
 
         {/* Checklist — the template picker + create form kept intact inside. */}
         <SheetRow
+          variant="section"
           label="Checklist"
           value={job.checklist?.name?.trim() ? job.checklist.name : "Add"}
           valueIsHint={!job.checklist?.name?.trim()}

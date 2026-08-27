@@ -98,7 +98,11 @@ export function SheetRow({
           onClick={onClick}
         >
           <span className="tjf-t">{label}</span>
-          <span className="tjf-v">
+          {/* `add` is the empty-state register, exactly as the row branch below uses it. The
+              section head used to ignore valueIsHint, so a chapter whose value is the word "Add"
+              rendered identically to one carrying a real number — the prop was accepted and
+              silently dropped, which is worse than not taking it. */}
+          <span className={valueIsHint ? "tjf-v add" : "tjf-v"}>
             {value}
             {after}
             <span className="tjcaret" aria-hidden="true">
