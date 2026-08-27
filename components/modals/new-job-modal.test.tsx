@@ -10,6 +10,7 @@ const updateLead = vi.fn();
 const addJob = vi.fn();
 const addVisit = vi.fn();
 const updateJob = vi.fn();
+const attachJobFile = vi.fn();
 // Saved checklists feeding the picker — set per test, reset in beforeEach.
 let storeChecklists: unknown[] = [];
 // Live leads feeding the customer picker — set per test, reset in beforeEach.
@@ -44,6 +45,12 @@ vi.mock("@/lib/trpc/vanilla", () => ({
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: routerPush, replace: vi.fn() }) }));
 
+const uploadJobFile = vi.fn();
+vi.mock("@/lib/store/upload-job-file", async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  uploadJobFile: (...a: unknown[]) => uploadJobFile(...a),
+}));
+
 vi.mock("@/lib/store/app-store", () => ({
   useActiveModal: () => ({ id: "new-job", params: activeParams }),
   useCloseModal: () => closeMock,
@@ -51,7 +58,7 @@ vi.mock("@/lib/store/app-store", () => ({
   usePushModal: () => pushModalMock,
   useLeads: () => storeLeads,
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ addLead, updateLead, addJob, addVisit, updateJob, adoptLead, leads: storeLeads, checklists: storeChecklists }),
+    selector({ addLead, updateLead, addJob, addVisit, updateJob, attachJobFile, adoptLead, leads: storeLeads, checklists: storeChecklists }),
 }));
 
 // ---- the two exits ---------------------------------------------------------
@@ -1177,5 +1184,97 @@ describe("NewJobModalContent — opened from a customer", () => {
     render(<NewJobModalContent />);
 
     expect((screen.getByPlaceholderText("search or add") as HTMLInputElement).value).toBe("");
+  });
+});
+
+/**
+ * A JOB NOTE MAY CARRY A FILE — the permit, the spec sheet — but the upload URL is scoped to a job
+ * id that does not exist until this form is submitted. So the file is staged and uploaded once the
+ * job is persisted, which also means a staged file rules out the optimistic priced hand-off for
+ * exactly the reason a checklist does.
+ */
+describe("attaching a file to the job notes", () => {
+  const fakeFile = (name: string) => new File(["x"], name, { type: "application/pdf" });
+
+  const pickFile = (file: File) => {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    fireEvent.change(input);
+  };
+
+  const openNotes = () => fireEvent.click(screen.getByText("Job notes"));
+
+  beforeEach(() => {
+    // Every shared spy, not just the new ones: closeMock and addJob accumulate across this file,
+    // so a leaked call from an earlier test reads as this test's own behaviour.
+    addLead.mockReset();
+    updateLead.mockReset();
+    addJob.mockReset();
+    addVisit.mockReset();
+    updateJob.mockReset();
+    attachJobFile.mockReset();
+    uploadJobFile.mockReset();
+    closeMock = vi.fn();
+    storeLeads = [];
+    storeChecklists = [];
+    activeParams = {};
+  });
+
+  it("uploads against the created job id and hangs the file on it", async () => {
+    addLead.mockReturnValue({ lead: { id: "lead-50" }, persisted: Promise.resolve({ id: "lead-50" }) });
+    addJob.mockReturnValue({
+      job: { id: "job-50", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-50", origin: "db", visits: [] }),
+    });
+    uploadJobFile.mockResolvedValue({ id: "f1", storagePath: "p", name: "permit.pdf", mimeType: "application/pdf", caption: null });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "water heater" } });
+    openNotes();
+    pickFile(fakeFile("permit.pdf"));
+    createPlain();
+
+    await waitFor(() => expect(uploadJobFile).toHaveBeenCalledWith("job-50", expect.any(File)));
+    await waitFor(() => expect(attachJobFile).toHaveBeenCalledWith("job-50", expect.objectContaining({ name: "permit.pdf" })));
+  });
+
+  /**
+   * The job IS saved by the time the upload runs, so a swallowed failure closes the modal on an
+   * office that believes its permit went with the job.
+   */
+  it("keeps the modal open with the reason when the job saved but the file did not", async () => {
+    addLead.mockReturnValue({ lead: { id: "lead-51" }, persisted: Promise.resolve({ id: "lead-51" }) });
+    addJob.mockReturnValue({
+      job: { id: "job-51", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-51", origin: "db", visits: [] }),
+    });
+    uploadJobFile.mockRejectedValue(new Error("network died"));
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "water heater" } });
+    openNotes();
+    pickFile(fakeFile("permit.pdf"));
+    createPlain();
+
+    expect(await screen.findByText("The job was saved, but the file wasn't — try again.")).toBeTruthy();
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(attachJobFile).not.toHaveBeenCalled();
+  });
+
+  /** No file staged: nothing about the existing paths changes. */
+  it("uploads nothing when no file was picked", async () => {
+    addLead.mockReturnValue({ lead: { id: "lead-52" }, persisted: Promise.resolve({ id: "lead-52" }) });
+    addJob.mockReturnValue({
+      job: { id: "job-52", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-52", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "water heater" } });
+    createPlain();
+
+    await waitFor(() => expect(addJob).toHaveBeenCalledOnce());
+    expect(uploadJobFile).not.toHaveBeenCalled();
+    expect(attachJobFile).not.toHaveBeenCalled();
   });
 });

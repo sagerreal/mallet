@@ -21,6 +21,7 @@ import { NewCustomerModal } from "./new-customer-modal";
 // ---- store mock ---------------------------------------------------------------
 
 const addCompany = vi.fn();
+const addLeadNote = vi.fn();
 const addSource = vi.fn();
 const removeSource = vi.fn();
 const updateLead = vi.fn();
@@ -30,6 +31,7 @@ const adoptLead = vi.fn();
 // Mutable store state. Reset in beforeEach.
 const storeState = {
   addCompany,
+  addLeadNote,
   addSource,
   removeSource,
   updateLead,
@@ -58,6 +60,12 @@ vi.mock("@/lib/store/app-store", () => ({
 
 const invalidate = vi.fn();
 const mutateAsyncMock = vi.fn();
+
+const uploadLeadNoteFile = vi.fn();
+vi.mock("@/lib/store/upload-lead-note-file", async (orig) => ({
+  ...(await orig<Record<string, unknown>>()),
+  uploadLeadNoteFile: (...a: unknown[]) => uploadLeadNoteFile(...a),
+}));
 
 vi.mock("@/lib/trpc/client", () => ({
   api: {
@@ -364,5 +372,116 @@ describe("NewCustomerModal — no booking", () => {
     render(<NewCustomerModal open />);
     expect(screen.getByRole("button", { name: "Add customer" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Create job" })).toBeNull();
+  });
+});
+
+/**
+ * A NOTE MAY CARRY ONE FILE — but nothing can be uploaded until the customer exists, because the
+ * signed URL is scoped to a lead id. So the file is staged, and the upload plus the note that
+ * points at it happen after the create resolves.
+ */
+describe("attaching a file to the note", () => {
+  const fakeFile = (name: string) => new File(["x"], name, { type: "application/pdf" });
+
+  const pickFile = (file: File) => {
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    Object.defineProperty(input, "files", { value: [file], configurable: true });
+    fireEvent.change(input);
+  };
+
+  const openMoreDetails = () => fireEvent.click(screen.getByRole("button", { name: /More details/ }));
+
+  it("uploads against the SERVER lead id and writes a note carrying the file", async () => {
+    resolveCreateWith(createdDto({ id: "srv-lead-9" }));
+    uploadLeadNoteFile.mockResolvedValue({ path: "org/leads/srv-lead-9/x.pdf", type: "application/pdf", name: "permit.pdf" });
+
+    render(<NewCustomerModal open />);
+    fillName("Gary Waters");
+    openMoreDetails();
+    fireEvent.change(screen.getByPlaceholderText("gate code, best time to call…"), {
+      target: { value: "permit attached" },
+    });
+    pickFile(fakeFile("permit.pdf"));
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() => expect(uploadLeadNoteFile).toHaveBeenCalledWith("srv-lead-9", expect.any(File)));
+    await waitFor(() => expect(addLeadNote).toHaveBeenCalled());
+    const [leadId, note] = addLeadNote.mock.calls[0] as [string, { notes?: string; att?: unknown }];
+    expect(leadId).toBe("srv-lead-9");
+    // The sentence rides the NOTE, with the file — one entry, not a scalar plus an orphan file.
+    expect(note.notes).toBe("permit attached");
+    expect(note.att).toMatchObject({ name: "permit.pdf" });
+  });
+
+  /** With a file, the text must NOT also go to leads.notes, or the trail shows it twice. */
+  it("keeps the sentence off the create payload when it rides a note", async () => {
+    resolveCreateWith(createdDto());
+    uploadLeadNoteFile.mockResolvedValue({ path: "p", type: "application/pdf", name: "permit.pdf" });
+
+    render(<NewCustomerModal open />);
+    fillName("Gary Waters");
+    openMoreDetails();
+    fireEvent.change(screen.getByPlaceholderText("gate code, best time to call…"), {
+      target: { value: "permit attached" },
+    });
+    pickFile(fakeFile("permit.pdf"));
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledOnce());
+    expect(mutateAsyncMock.mock.calls[0]![0].notes).toBeUndefined();
+  });
+
+  /** Without a file, nothing changes: the sentence goes to leads.notes exactly as before. */
+  it("still writes the sentence to the customer when there is no file", async () => {
+    resolveCreateWith(createdDto());
+    render(<NewCustomerModal open />);
+    fillName("Gary Waters");
+    openMoreDetails();
+    fireEvent.change(screen.getByPlaceholderText("gate code, best time to call…"), {
+      target: { value: "gate code 4482" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() => expect(mutateAsyncMock).toHaveBeenCalledOnce());
+    expect(mutateAsyncMock.mock.calls[0]![0].notes).toBe("gate code 4482");
+    expect(addLeadNote).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE ONE THAT MATTERS. The customer IS saved by the time the upload runs. Closing the modal on
+   * a failed upload would lose the file with no trace and leave the office believing it went with
+   * them, so it stays open with the reason.
+   */
+  it("keeps the modal open, with the reason, when the customer saved but the file did not", async () => {
+    resolveCreateWith(createdDto());
+    uploadLeadNoteFile.mockRejectedValue(new Error("network died"));
+
+    render(<NewCustomerModal open />);
+    fillName("Gary Waters");
+    openMoreDetails();
+    pickFile(fakeFile("permit.pdf"));
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    expect(await screen.findByText("That didn't upload — try again.")).toBeTruthy();
+    expect(closeMock).not.toHaveBeenCalled();
+    expect(addLeadNote).not.toHaveBeenCalled();
+    // The list still refreshes: the customer exists and must appear.
+    expect(invalidate).toHaveBeenCalled();
+  });
+
+  /** A dedup hit is someone else's record — the file must not be hung on it. */
+  it("does not attach anything on a dedup hit", async () => {
+    resolveCreateWith(createdDto({ created: false, id: "existing-9" }));
+    render(<NewCustomerModal open />);
+    fillName("Gary Waters");
+    openMoreDetails();
+    pickFile(fakeFile("permit.pdf"));
+    fireEvent.click(screen.getByRole("button", { name: "Add customer" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/customer with that phone already exists/i)).toBeTruthy(),
+    );
+    expect(uploadLeadNoteFile).not.toHaveBeenCalled();
+    expect(addLeadNote).not.toHaveBeenCalled();
   });
 });

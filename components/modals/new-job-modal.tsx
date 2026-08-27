@@ -37,6 +37,8 @@ import { AddressInput } from "@/components/ui/address-input";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { api } from "@/lib/trpc/client";
+import { StagedAttachControl, useStagedAttachment, attachErrorMessage } from "@/components/shared/staged-attachment";
+import { uploadJobFile } from "@/lib/store/upload-job-file";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
@@ -86,6 +88,7 @@ export function NewJobModalContent() {
   const addLead = useAppStore((s) => s.addLead);
   const updateLead = useAppStore((s) => s.updateLead);
   const updateJob = useAppStore((s) => s.updateJob);
+  const attachJobFile = useAppStore((s) => s.attachJobFile);
   const adoptLead = useAppStore((s) => s.adoptLead);
   const checklists = useAppStore((s) => s.checklists);
 
@@ -116,6 +119,7 @@ export function NewJobModalContent() {
   );
   const [addr, setAddr] = useState(() => openedForLead?.address ?? "");
   const [notes, setNotes] = useState("");
+  const staged = useStagedAttachment();
 
   // Visits (unplaced hours rows) — default one row at the unpriced length; the priced
   // exit retunes a still-untouched default at submit (see resolvedVisits).
@@ -419,7 +423,9 @@ export function NewJobModalContent() {
       return persistedJob;
     });
 
-    if (priced && !checklistSnapshot()) {
+    // A staged file needs the job to be DB-origin before it can be uploaded and attached, so it
+    // rules out the optimistic hand-off for exactly the reason a checklist does.
+    if (priced && !checklistSnapshot() && !staged.file) {
       // The optimistic hand-off (see the function comment): the builder opens on the
       // client-authored id now. A refused create rolls back in the slice (dev-logged there)
       // and the builder renders its not-loaded notice — swallow here only to keep the
@@ -456,7 +462,28 @@ export function NewJobModalContent() {
       }
     }
     chkRetryJobRef.current = null;
+    if (!(await attachStagedFile(created.id))) return { ok: false, createdJob: null };
     return { ok: true, createdJob: created };
+  }
+
+  /**
+   * Upload the staged file against the now-real job id and hang it on the job.
+   *
+   * Returns false with the reason on screen when it failed. The job IS saved by this point, so a
+   * swallowed failure would close the modal on an office that believes its permit went with the
+   * job — the same reasoning as the checklist attach above.
+   */
+  async function attachStagedFile(jobId: string): Promise<boolean> {
+    const file = staged.file;
+    if (!file) return true;
+    try {
+      attachJobFile(jobId, await uploadJobFile(jobId, file));
+      return true;
+    } catch (err: unknown) {
+      staged.setError(attachErrorMessage(err));
+      setError("The job was saved, but the file wasn't — try again.");
+      return false;
+    }
   }
 
   /** Validate + create. The create is async (awaits the persisted lead, then the
@@ -790,7 +817,7 @@ export function NewJobModalContent() {
             open={openRow === "notes"}
             onToggle={() => toggleRow("notes")}
           >
-            <Field label="Job notes" style={{ marginBottom: "0" }}>
+            <Field label="Job notes" style={{ marginBottom: "var(--space-2)" }}>
               <input
                 type="text"
                 placeholder="gate code, what to bring…"
@@ -798,6 +825,9 @@ export function NewJobModalContent() {
                 onChange={(e) => setNotes(e.target.value)}
               />
             </Field>
+            {/* Only STAGED here: the upload URL is scoped to a job id that does not exist until
+                this form is submitted, so the bytes go up once the job is persisted. */}
+            <StagedAttachControl staged={staged} busy={saving} />
           </DisclosureRow>
         </div>
 

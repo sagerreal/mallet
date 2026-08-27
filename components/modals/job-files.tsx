@@ -93,8 +93,6 @@ export function JobFilesBody({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-2)" }}>
-      {files.length === 0 && <p style={{ ...note, margin: 0 }}>Attach a permit, a spec sheet, a receipt.</p>}
-
       {files.map((f) => (
         <div key={f.id} style={{ display: "flex", alignItems: "baseline", gap: "var(--space-2)" }}>
           <span className="pill" style={{ fontSize: "var(--type-xs)", flex: "none" }}>{badge(f)}</span>

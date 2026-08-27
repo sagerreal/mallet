@@ -803,13 +803,25 @@
   @media (max-width:760px){.fdcols{grid-template-columns:1fr}}
   .fdrail h3{font-size:var(--type-xs);font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);margin:0 0 var(--space-2xs)}
   .fdd{border-bottom:1px solid var(--line-2)}
+  /* The boundary between a form's essential fields and its staged rows. A single hairline
+     read as one more field separator; this says "different register below here". */
+  .fdd-group{border-top:1px solid var(--line);padding-top:var(--space-2)}
   .fdd:last-child{border-bottom:none}
   .fdd-head{display:block;width:100%;text-align:left;background:none;border:none;padding:var(--space-2) var(--space-2xs);font-family:inherit;cursor:pointer}
   .fdd-head:hover{background:color-mix(in srgb,var(--ink) 3%,transparent)}
   .fdd-l{display:block;font-size:var(--type-xs);font-weight:700;color:var(--ink-3)}
   .fdd-v{display:block;font-size:var(--type-base);font-weight:600;color:var(--ink);margin-top:var(--space-2xs)}
   .fdd-v .mono{font-family:var(--font-mono);font-size:var(--type-sm)}
-  .fdd-body{padding:var(--space-2) var(--space-2xs) var(--space-4)}
+  /* AN OPEN ROW'S CONTENTS MUST LOOK LIKE THEY BELONG TO IT. The body carried padding only, so
+     an expanded row's fields sat at exactly the indentation of the form's own top-level fields —
+     on the new-customer sheet, "Email" and "Notes" under More details were indistinguishable from
+     "Name" and "Phone" above, and nothing said which row owned them. The rule plus the inset is
+     the containment; the tint ties the head and body into one block. */
+  .fdd-body{padding:var(--space-2) var(--space-3) var(--space-4);margin-left:var(--space-2xs);border-left:2px solid var(--line)}
+  .fdd.open{background:color-mix(in srgb,var(--ink) 2%,transparent)}
+  /* The head is the one thing that stays flush, so the label still lines up with the fields
+     above when the row is shut. */
+  .fdd.open .fdd-head{background:none}
 
   /* ===== Write-failure announcement + load-failed state ======================
      Both are the "no silent failures" rule made visible. Anchored in flow, not
