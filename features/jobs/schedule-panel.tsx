@@ -25,7 +25,7 @@ import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { MODAL } from "@/lib/store/modal-ids";
 import type { Job, Lead, Visit } from "@/lib/store/types";
 import { isVisitPlaced } from "@/lib/store/visit-placement";
-import { timeLabelShort, hmLabel, colLabel } from "@/lib/time";
+import { timeLabelShort, hmLabel, colLabel, mondayOf, weekRangeLabel } from "@/lib/time";
 import { svcMeta } from "./job-status-meta";
 import {
   custName,
@@ -115,7 +115,10 @@ export function SchedulePanel() {
   const today = todayISO();
   const [schedView, setSchedView] = useState<SchedView>("day");
   const [schedDay, setSchedDay] = useState(today);
-  const [weekStart, setWeekStart] = useState(today);
+  // Snapped to MONDAY, not to today. It used to seed with `today`, so the week ran Thu→Wed if you
+  // opened the board on a Thursday and a visit fell in a different "week" depending on when you
+  // looked — the crew's week and the dispatcher's week have to be the same seven days.
+  const [weekStart, setWeekStart] = useState(() => mondayOf(today));
   // A job visit held for placement on the board (estimate visits are jobs too).
   const [placing, setPlacing] = useState<Held | null>(null);
   const [drag, setDrag] = useState<Held | null>(null);
@@ -447,6 +450,9 @@ export function SchedulePanel() {
   }, [trayJobs]);
   const trayCards: TrayCard[] = trayJobs.map((j) => ({ kind: "job" as const, j }));
   const day = schedView === "day";
+  // Compared against the SNAPPED week — `weekStart === today` was only ever true on a Monday
+  // once the seed stopped being today, which would have stranded "jump to today" on screen.
+  const thisWeek = weekStart === mondayOf(today);
 
   const toggle = (
     <div style={{ display: "inline-flex", border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
@@ -493,12 +499,16 @@ export function SchedulePanel() {
       <button className="btn sm ghost" onClick={() => setWeekStart((w) => addDaysLocal(w, -7))}>
         ‹ Prev
       </button>
-      <b style={{ fontSize: "var(--type-base)" }}>{weekStart === today ? "This week" : `Week of ${colLabel(weekStart)}`}</b>
+      {/* data-dynamic: real calendar dates, so the visual net would diff this every Monday —
+          masked like the Day nav's date and the other clock-derived text. */}
+      <b data-dynamic style={{ fontSize: "var(--type-base)" }}>
+        {thisWeek ? `This week · ${weekRangeLabel(weekStart)}` : weekRangeLabel(weekStart)}
+      </b>
       <button className="btn sm ghost" onClick={() => setWeekStart((w) => addDaysLocal(w, 7))}>
         Next ›
       </button>
-      {weekStart !== today && (
-        <span className="linklike" onClick={() => setWeekStart(today)}>
+      {!thisWeek && (
+        <span className="linklike" onClick={() => setWeekStart(mondayOf(today))}>
           jump to today
         </span>
       )}
