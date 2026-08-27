@@ -3,6 +3,8 @@
  * Reusable overlay shell using prototype CSS: .overlay.open / .modal / .x
  * Backdrop click and Escape both close the modal.
  *
+ * A BACKDROP CLICK MUST START ON THE BACKDROP — see use-backdrop-close.ts for why.
+ *
  * This is the single dialog contract — all 22 modal bodies render inside it, so
  * the accessibility behaviour lives here once rather than 22 times:
  *   - role="dialog" + aria-modal so assistive tech announces it as a dialog
@@ -13,6 +15,7 @@
 "use client";
 
 import { useEffect, useRef, type ReactNode } from "react";
+import { useBackdropClose } from "./use-backdrop-close";
 
 /** Elements that can hold keyboard focus inside the panel. */
 const FOCUSABLE =
@@ -38,6 +41,7 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, children, wide, maxWidth, label, instant }: ModalProps) {
+  const backdrop = useBackdropClose(onClose);
   const panelRef = useRef<HTMLDivElement>(null);
   const restoreRef = useRef<HTMLElement | null>(null);
 
@@ -122,9 +126,7 @@ export function Modal({ open, onClose, children, wide, maxWidth, label, instant 
   return (
     <div
       className={`overlay open${instant ? " swap" : ""}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...backdrop}
     >
       <div
         ref={panelRef}

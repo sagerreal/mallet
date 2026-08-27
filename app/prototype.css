@@ -1365,6 +1365,10 @@
   .sheet-trail-pick .pk-more{display:block;padding:var(--space-2) var(--space-3);border-top:1px solid var(--line-2);
     font-size:var(--type-sm);color:var(--ink-2)}
   .sheet-rows{margin-top:var(--space-4);border-top:1px solid var(--line-2)}
+  /* Free-text fields typed in place inside a sheet section (Contact: phone, email) rather
+     than each hidden behind its own chevron. Stacked, with the gap the rows had. */
+  .sheet-inline{display:flex;flex-direction:column;gap:var(--space-3);padding:var(--space-3) 0}
+  .sheet-inline .field{margin:0}
   .sheet-row{display:flex;align-items:center;gap:var(--space-3);width:100%;min-height:52px;border:none;border-bottom:1px solid var(--line-2);background:none;padding:0;font-family:inherit;font-size:var(--type-md);color:var(--ink);text-align:left;cursor:pointer}
   .sheet-row .lab{font-weight:600;flex-shrink:0}
   .sheet-row .val{flex:1;text-align:right;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}

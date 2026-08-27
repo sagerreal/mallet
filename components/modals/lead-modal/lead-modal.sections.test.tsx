@@ -97,23 +97,40 @@ describe("the customer sheet's chapters", () => {
     expect(screen.getByRole("button", { name: /^Tasks/ })).toBeTruthy();
   });
 
-  it("opens Contact so the sheet does not start as four shut doors", () => {
+  /**
+   * EVERY CHAPTER STARTS SHUT. Contact used to open on the theory that it is why the sheet gets
+   * opened, but it landed the reader on a wall of fields instead of the summary the collapsed rows
+   * already carry — and the summary is what answers "can I reach this person" in one line.
+   */
+  it("starts with every chapter closed, summaries doing the talking", () => {
+    seed({ phone: "5105550123" });
     render(<LeadModal open />);
-    expect(section(/^Contact/).getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("button", { name: /^Phone/ })).toBeTruthy();
+    expect(section(/^Contact/).getAttribute("aria-expanded")).toBe("false");
+    expect(section(/^Contact/).textContent).toContain("5105550123");
   });
 
-  // THE TRAP. "Add phone" opens the Phone row, which is now inside a section.
-  it("'Add phone' opens the Phone row even when Contact has been closed", () => {
+  /**
+   * PHONE AND EMAIL ARE TYPED IN PLACE. They were rows with their own chevron inside Contact, so
+   * reaching the number cost two opens. A free-text field has nothing to reveal, so there is no
+   * "Phone" button any more — there is a Phone input.
+   */
+  it("puts a phone INPUT inside Contact, not another row to open", () => {
     render(<LeadModal open />);
-    fireEvent.click(section(/^Contact/));                   // collapse it
+    fireEvent.click(section(/^Contact/));
     expect(screen.queryByRole("button", { name: /^Phone/ })).toBeNull();
+    expect(screen.getByLabelText("Phone")).toBeTruthy();
+    expect(screen.getByLabelText("Email")).toBeTruthy();
+  });
+
+  // THE TRAP. "Add phone" has to reach the field, and the field is inside a shut chapter.
+  it("'Add phone' opens Contact and reveals the phone field", () => {
+    render(<LeadModal open />);
+    expect(screen.queryByLabelText("Phone")).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Add phone" }));
 
     expect(section(/^Contact/).getAttribute("aria-expanded")).toBe("true");
-    const phone = screen.getByRole("button", { name: /^Phone/ });
-    expect(phone.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Phone")).toBeTruthy();
   });
 
   /**
@@ -145,15 +162,15 @@ describe("the customer sheet's chapters", () => {
   /**
    * Call and Text with no number used to stack a second sheet whose whole job was one field —
    * and it was titled with the CUSTOMER'S NAME, so a customer called "New customer" produced a
-   * sheet headed "New customer" over the sheet you were already reading. They now open the Phone
-   * row six inches below, which is what the primary action already did.
+   * sheet headed "New customer" over the sheet you were already reading. They now open the phone
+   * field six inches below, which is what the primary action already did.
    */
-  it("Call with no number opens the Phone row instead of another sheet", () => {
+  it("Call with no number opens the phone field instead of another sheet", () => {
     seed({ phone: "", email: "marta@example.com" });
     render(<LeadModal open />);
     fireEvent.click(screen.getByRole("button", { name: "Call" }));
     expect(section(/^Contact/).getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("button", { name: /^Phone/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Phone")).toBeTruthy();
     expect(pushModal).not.toHaveBeenCalled();
   });
 
@@ -161,7 +178,7 @@ describe("the customer sheet's chapters", () => {
     seed({ phone: "", email: "marta@example.com" });
     render(<LeadModal open />);
     fireEvent.click(screen.getByRole("button", { name: /^Text/ }));
-    expect(screen.getByRole("button", { name: /^Phone/ }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByLabelText("Phone")).toBeTruthy();
     expect(pushModal).not.toHaveBeenCalled();
   });
 

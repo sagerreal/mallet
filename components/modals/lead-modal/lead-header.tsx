@@ -60,13 +60,28 @@ export function LeadSheetHeader({ lead }: { lead: Lead }) {
 }
 
 import { STAGE_PILL_CLS } from "@/lib/prototype-sample";
+import { Field } from "@/components/ui/input";
 import { Trail } from "../trail";
 function stagePillCls(stage: string): string {
   return STAGE_PILL_CLS[stage] ?? "ink";
 }
 
-/** Inline phone editor — commit on blur/Enter, adopt outside changes when unfocused. */
-export function PhoneCell({ value, onCommit }: { value: string; onCommit: (phone: string) => void }) {
+/**
+ * Inline phone editor — commit on blur/Enter, adopt outside changes when unfocused.
+ *
+ * `label` renders it as a proper labelled Field. Without it the input carries an aria-label
+ * instead, which is what the three call sites that supply their own heading need — a visible
+ * label AND an aria-label would leave the visible one unread, because aria-label wins.
+ */
+export function PhoneCell({
+  value,
+  onCommit,
+  label,
+}: {
+  value: string;
+  onCommit: (phone: string) => void;
+  label?: string;
+}) {
   const [draft, setDraft] = useState(value);
   const committed = useRef(value);
 
@@ -85,7 +100,7 @@ export function PhoneCell({ value, onCommit }: { value: string; onCommit: (phone
     onCommit(next);
   };
 
-  return (
+  const input = (
     <input
       className="lead-phone"
       type="tel"
@@ -106,8 +121,10 @@ export function PhoneCell({ value, onCommit }: { value: string; onCommit: (phone
           e.currentTarget.blur();
         }
       }}
-      aria-label="Customer phone"
+      aria-label={label ? undefined : "Customer phone"}
       style={{ width: "100%", minHeight: 44, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "0 var(--space-3)", fontSize: "var(--type-md)" }}
     />
   );
+
+  return label ? <Field label={label}>{input}</Field> : input;
 }
