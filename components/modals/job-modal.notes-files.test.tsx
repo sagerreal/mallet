@@ -10,7 +10,7 @@
  * "On the customer". What used to be a second "Customer notes" row is inside it.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, within, fireEvent } from "@testing-library/react";
 
 interface Store {
   jobs: unknown[];
@@ -207,5 +207,41 @@ describe("job sheet — notes, files and the customer's notes in one chapter", (
     const head = openSheet();
     expect(head!.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByLabelText("Add a note")).toBeNull();
+  });
+});
+
+/**
+ * ONE ATTACH CONTROL, AND IT IS IN THE ROW.
+ *
+ * This sheet was the last one still drawing JobFilesBody's own wide "Attach a file" button under
+ * [input][Add note] — the ragged shape the customer sheet and both creation modals were fixed out
+ * of. The paperclip moved into the composer row and `listOnly` stops the second control appearing.
+ */
+describe("the attach control", () => {
+  it("offers a paperclip inside the composer row, not a button under it", () => {
+    fireEvent.click(openSheet()!);
+
+    const clip = screen.getByRole("button", { name: /^Attach a file$|^Replace the attached file/ });
+
+    // It is the ICON control, not the wide text button — the label is the same either way, so the
+    // class and the absent text are what actually tell them apart.
+    expect(clip.className).toContain("attachbtn");
+    expect(clip.textContent?.trim()).toBe("");
+
+    // And it sits in the composer's row, beside the field rather than under it.
+    const row = clip.closest(".cfrow");
+    expect(row).not.toBeNull();
+    expect(row?.querySelector("input[type='text']")).not.toBeNull();
+  });
+
+  it("still offers Add note beside it", () => {
+    fireEvent.click(openSheet()!);
+    expect(screen.getByRole("button", { name: "Add note" })).toBeTruthy();
+  });
+
+  it("draws exactly ONE attach affordance", () => {
+    fireEvent.click(openSheet()!);
+    const pickers = document.querySelectorAll('input[type="file"]');
+    expect(pickers.length).toBe(1);
   });
 });
