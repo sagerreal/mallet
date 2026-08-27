@@ -28,9 +28,8 @@ export const OFFICE_LINKS: readonly MoreLink[] = [
   { href: "/jobs", label: "Jobs" },
   { href: "/dashboard?tab=pricebook", label: "Pricebook" },
   { href: "/money", label: "Money" },
-  // The AI employee's board — a top-level page like Settings, not a bottom tab, so a phone
-  // reaches it here rather than through #mobiletabs.
-  { href: "/artie", label: "Artie" },
+  // Artie's board is deliberately absent — see the note in sidebar.tsx. /artie still renders; it
+  // just is not advertised, because the counter bar at the foot of every page IS Artie.
   { href: "/settings", label: "Settings" },
 ];
 
