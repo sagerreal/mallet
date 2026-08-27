@@ -43,7 +43,10 @@ export interface TagPickerProps {
 const sameTag = (a: string, b: string) => a.toLowerCase() === b.toLowerCase();
 
 export function TagPicker({ value, onChange }: TagPickerProps) {
-  const storeSources = useAppStore((s) => s.sources);
+  // Defaulted: the picker is no longer behind a chevron, so it mounts whenever Contact is open.
+  // A store without this slice yet would throw inside mergeSources and take the whole
+  // customer sheet down with it, rather than losing one row.
+  const storeSources = useAppStore((s) => s.sources) ?? [];
   const addSource = useAppStore((s) => s.addSource);
   const removeSource = useAppStore((s) => s.removeSource);
   const [message, setMessage] = useState<string | null>(null);

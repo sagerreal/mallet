@@ -87,14 +87,16 @@ describe("the customer sheet's chapters", () => {
     expect(section(/^Work/).getAttribute("aria-expanded")).toBeTruthy();
   });
 
-  it("hides a chapter's rows while it is closed — that is the point of closing it", () => {
+  it("hides a chapter's contents while it is closed — that is the point of closing it", () => {
     render(<LeadModal open />);
     const work = section(/^Work/);
     // Work starts closed for a customer with nothing in it.
     expect(work.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.queryByRole("button", { name: /^Tasks/ })).toBeNull();
+    expect(screen.queryByText("Tasks")).toBeNull();
     fireEvent.click(work);
-    expect(screen.getByRole("button", { name: /^Tasks/ })).toBeTruthy();
+    // Its fields are laid out flat inside — a group label, not another row to open.
+    expect(screen.getByText("Tasks")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /^Tasks/ })).toBeNull();
   });
 
   /**
@@ -114,12 +116,22 @@ describe("the customer sheet's chapters", () => {
    * reaching the number cost two opens. A free-text field has nothing to reveal, so there is no
    * "Phone" button any more — there is a Phone input.
    */
-  it("puts a phone INPUT inside Contact, not another row to open", () => {
+  /**
+   * NO SECOND LAYER OF CHEVRONS. Every field in Contact was its own expandable row, so opening the
+   * chapter revealed four more things to open. Opening a chapter IS the request to see inside it.
+   */
+  it("lays every Contact field out flat — no field is a row to open", () => {
     render(<LeadModal open />);
     fireEvent.click(section(/^Contact/));
-    expect(screen.queryByRole("button", { name: /^Phone/ })).toBeNull();
+
     expect(screen.getByLabelText("Phone")).toBeTruthy();
     expect(screen.getByLabelText("Email")).toBeTruthy();
+    expect(screen.getByLabelText("Service address")).toBeTruthy();
+    expect(screen.getByText("Tags")).toBeTruthy();
+
+    for (const field of [/^Phone/, /^Email/, /^Tags/, /^Service address/]) {
+      expect(screen.queryByRole("button", { name: field })).toBeNull();
+    }
   });
 
   // THE TRAP. "Add phone" has to reach the field, and the field is inside a shut chapter.
@@ -145,10 +157,17 @@ describe("the customer sheet's chapters", () => {
     expect(section(/^Contact/).textContent).not.toMatch(/of 4/);
   });
 
-  it("says Add phone when there is no way to call them", () => {
+  /**
+   * "Add", the same word every other chapter head uses. It used to say "Add phone" — the only
+   * head on the sheet that named a field — and "Add phone · email on file" when there was an
+   * email, the only one that wrote a sentence.
+   */
+  it("says just Add when there is no way to reach them", () => {
     seed({ phone: "", email: "" });
     render(<LeadModal open />);
-    expect(section(/^Contact/).textContent).toMatch(/Add phone/);
+    const head = section(/^Contact/).textContent ?? "";
+    expect(head).toMatch(/Add/);
+    expect(head).not.toMatch(/Add phone/);
   });
 
   // Lead source is not contact information. Scoring it made a customer nobody can reach look
@@ -156,7 +175,15 @@ describe("the customer sheet's chapters", () => {
   it("does not count lead source as a way to reach someone", () => {
     seed({ phone: "", email: "", source: "Added manually" });
     render(<LeadModal open />);
-    expect(section(/^Contact/).textContent).toMatch(/Add phone/);
+    expect(section(/^Contact/).textContent).not.toMatch(/Added manually/);
+    expect(section(/^Contact/).textContent).toMatch(/Add/);
+  });
+
+  /** With an email but no phone, the head shows the email rather than a sentence about it. */
+  it("shows the email in the head when that is the only way to reach them", () => {
+    seed({ phone: "", email: "marta@example.com" });
+    render(<LeadModal open />);
+    expect(section(/^Contact/).textContent).toContain("marta@example.com");
   });
 
   /**

@@ -42,6 +42,7 @@ import type { Estimate, Lead } from "@/lib/store/types";
 import { estTotal } from "@/lib/estimates";
 import { fmtPhone } from "@/lib/format";
 import { AddressInput } from "@/components/ui/address-input";
+import { Field, FieldGroup } from "@/components/ui/input";
 import { TagPicker } from "@/features/customers/tag-picker";
 import { ModalLoading } from "../modal-loading";
 
@@ -126,7 +127,6 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   const tasks = useAppStore((s) => s.tasks);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const [notesOpen, setNotesOpen] = useState(false);
   // The chapters, all shut on open. Contact used to start expanded on the theory that it is why
   // the sheet gets opened, but it made the sheet land mid-scroll on a wall of fields instead of
   // the four-line summary the collapsed rows already carry. The primary "Add phone" still opens
@@ -347,51 +347,31 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         open={contactOpen}
         onOpenChange={setContactOpen}
       >
-      <div className="sheet-rows">
-        {/* PHONE AND EMAIL ARE TYPED WHERE THEY ARE. They were rows with their own chevron, so
-            Contact opened onto two more things to open, and putting in a phone number cost two
-            clicks before the keyboard. A free-text field has nothing to reveal — the field IS the
-            row. Tags below keeps its chevron because it reveals a CHOOSER, not a box.
+      {/* NO SECOND LAYER OF CHEVRONS. Every field in here was its own expandable row, so opening
+          Contact revealed four more things to open and putting in a phone number cost two clicks
+          before the keyboard. The chapters are all collapsed on arrival now, so opening one IS the
+          request to see what is inside — a chevron on each field asks the same question twice.
 
-            Phone has ONE home in every state; it used to live here when empty and in the header
-            when filled, which left nowhere obvious to edit it. Email sits beside it rather than
-            inside Details for the same reason: it is a way to reach the customer. */}
-        <div className="sheet-inline">
-          <PhoneCell
-            label="Phone"
-            value={lead.phone ?? ""}
-            onCommit={(phone) => updateLead(lead.id, { phone })}
-          />
-          <EmailBody lead={lead} />
-        </div>
-
-        {/* Tags have ONE home and this is it for an existing customer. The single-select "Lead
-            source" this replaced was a line of TEXT in the header that rendered nothing at all when
-            empty — so a customer typed in a hurry had no way back, even though the API always
-            accepted the change.
-
-            onChange sends the FULL set, which is how a tag is removed: `updateLead` posts what the
-            customer should end up with, not a delta. */}
-        <SheetRow
-          label="Tags"
-          value={tagList.length > 0 ? tagList.join(", ") : "Add"}
-          valueIsHint={tagList.length === 0}
-          expandable
-        >
+          Phone has ONE home in every state; it used to live here when empty and in the header when
+          filled, which left nowhere obvious to edit it. Email sits beside it rather than inside
+          Details for the same reason: it is a way to reach the customer. Tags have ONE home and
+          this is it — the single-select "Lead source" they replaced was a line of text in the
+          header that rendered nothing when empty, so a customer typed in a hurry had no way back.
+          Tags' onChange sends the FULL set, which is how a tag is removed. */}
+      <div className="sheet-inline">
+        <PhoneCell
+          label="Phone"
+          value={lead.phone ?? ""}
+          onCommit={(phone) => updateLead(lead.id, { phone })}
+        />
+        <EmailBody lead={lead} />
+        <FieldGroup label="Tags">
           <TagPicker
             value={tagList}
             onChange={(tags) => updateLead(lead.id, { tags: [...tags] })}
           />
-        </SheetRow>
-
-        <SheetRow
-          label="Service address"
-          value={lead.address?.trim() ? lead.address : "Add"}
-          valueIsHint={!lead.address?.trim()}
-          expandable
-        >
-          <AddressBody lead={lead} />
-        </SheetRow>
+        </FieldGroup>
+        <AddressBody lead={lead} />
       </div>
       </SheetRow>
 
@@ -404,37 +384,19 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         open={workOpen}
         onOpenChange={setWorkOpen}
       >
-      <div className="sheet-rows">
-        <SheetRow
-          label="Notes"
-          value={latestNoteSnippet(lead) ?? "Add"}
-          valueIsHint={!latestNoteSnippet(lead)}
-          expandable
-          open={notesOpen}
-          onOpenChange={setNotesOpen}
-        >
-          <NotesBody lead={lead} autoFocus={notesOpen} />
-        </SheetRow>
-
-        <SheetRow
-          label="Tasks"
-          value={openTaskLabel(openTasks) ?? "Add"}
-          valueIsHint={openTasks === 0}
-          expandable
-        >
+      {/* Flat, for the same reason Contact is — see the note there. */}
+      <div className="sheet-inline">
+        <FieldGroup label="Notes">
+          <NotesBody lead={lead} />
+        </FieldGroup>
+        <FieldGroup label="Tasks">
           <TasksBody lead={lead} />
-        </SheetRow>
-
-        {/* Only when the shop HAS a pipeline. The value names the stage, or offers placement. */}
+        </FieldGroup>
+        {/* Only when the shop HAS a pipeline. */}
         {pipelineStages.length > 0 && (
-          <SheetRow
-            label="Pipeline stage"
-            value={pipelineStages.find((s) => s.id === lead.pipelineStageId)?.name ?? "Add"}
-            valueIsHint={!pipelineStages.some((s) => s.id === lead.pipelineStageId)}
-            expandable
-          >
+          <FieldGroup label="Pipeline stage">
             <PipelineStagePicker leadId={lead.id} value={lead.pipelineStageId} />
-          </SheetRow>
+          </FieldGroup>
         )}
       </div>
       </SheetRow>
@@ -484,8 +446,10 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
 const contactSummary = (lead: Lead): string => {
   const has = (v: unknown): boolean => Boolean(v && String(v).trim());
   if (has(lead.phone)) return String(lead.phone);
-  if (has(lead.email)) return "Add phone · email on file";
-  return "Add phone";
+  if (has(lead.email)) return String(lead.email);
+  // "Add", like every other chapter head. This was the only head on the sheet that named a field
+  // ("Add phone") and the only one that wrote a sentence ("Add phone · email on file").
+  return "Add";
 };
 
 const workSummary = (noteSnippet: string | null, openTasks: number): string => {
@@ -496,19 +460,28 @@ const workSummary = (noteSnippet: string | null, openTasks: number): string => {
   return parts.length > 0 ? parts.join(" · ") : "Add";
 };
 
-/** The Service-address accordion body — the full-width AddressInput with its
- *  in-flow suggestion list, committing on select/blur. */
+/**
+ * The Service-address field — the full-width AddressInput with its in-flow suggestion list,
+ * committing on select/blur.
+ *
+ * It carries its OWN label. It used to be labelled by the SheetRow that wrapped it; with that
+ * chevron gone the input would otherwise be nameless, which is both an a11y regression and a form
+ * with an unexplained box in it. `Field` clones its single child with a generated id and
+ * AddressInput forwards `id` to the inner input, so htmlFor actually reaches it.
+ */
 function AddressBody({ lead }: { lead: Lead }) {
   const updateLead = useAppStore((s) => s.updateLead);
   const [addrVal, setAddrVal] = useState(lead.address ?? "");
   return (
-    <AddressInput
-      value={addrVal}
-      onChange={setAddrVal}
-      onSelect={(v) => updateLead(lead.id, { address: v })}
-      onBlur={() => updateLead(lead.id, { address: addrVal })}
-      placeholder="123 Main St, Oakland CA 94601"
-      inputStyle={{ width: "100%", minHeight: 44, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "0 var(--space-3)", fontSize: "var(--type-md)" }}
-    />
+    <Field label="Service address">
+      <AddressInput
+        value={addrVal}
+        onChange={setAddrVal}
+        onSelect={(v) => updateLead(lead.id, { address: v })}
+        onBlur={() => updateLead(lead.id, { address: addrVal })}
+        placeholder="123 Main St, Oakland CA 94601"
+        inputStyle={{ width: "100%", minHeight: 44, border: "1.5px solid var(--line)", borderRadius: "var(--radius-sm)", padding: "0 var(--space-3)", fontSize: "var(--type-md)" }}
+      />
+    </Field>
   );
 }
