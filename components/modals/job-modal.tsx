@@ -45,7 +45,8 @@ import { todayISO } from "@/lib/clock";
 import { DurField } from "./dur-field";
 import { PhoneCell } from "./lead-modal/lead-header";
 import { EmailBody } from "./lead-modal/more-details";
-import { JobFilesBody } from "./job-files";
+import { JobFilesBody, JOB_ATTACH_ACCEPT } from "./job-files";
+import { uploadJobFile } from "@/lib/store/upload-job-file";
 import { NoteComposer } from "@/components/shared/note-composer";
 import { SheetRow } from "./sheet-row";
 import { EditableSheetTitle } from "./editable-sheet-title";
@@ -1040,15 +1041,28 @@ export function JobModalContent() {
           <div className="sheet-inline">
             <FieldGroup label="This job">
               <NoteFeed job={job} />
+              {/* The paperclip goes IN the row, as on every other note surface. This sheet was
+                  the one left behind: it kept JobFilesBody's own wide "Attach a file" button
+                  sitting orphaned under [input][Add note] — the exact ragged shape the customer
+                  sheet and both creation modals were fixed out of.
+
+                  A file picked here is a JOB FILE, uploaded on pick and listed below, which is
+                  what this sheet's attach always did. `listOnly` then stops JobFilesBody drawing
+                  a second attach control for the same job. */}
               <NoteComposer
                 placeholder="what happened, what's needed…"
                 autoFocus={notesOpen}
                 disabled={jobIsDone ? "This job is complete — its notes are closed." : false}
+                attachAccept={JOB_ATTACH_ACCEPT}
+                onAttachFile={async (file) => {
+                  attachJobFile(job.id, await uploadJobFile(job.id, file));
+                }}
                 onSubmit={async (text) => (await appendJobNote(job.id, text)).ok}
               />
               <JobFilesBody
                 jobId={job.id}
                 files={job.files ?? []}
+                listOnly
                 onUploaded={(file) => attachJobFile(job.id, file)}
               />
             </FieldGroup>

@@ -19,6 +19,9 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 
 const note = { fontSize: "var(--type-sm)", color: "var(--ink-2)" } as const;
 
+/** What v1.jobs.photoUploadUrl admits. Shared so a caller placing its own picker cannot drift. */
+export const JOB_ATTACH_ACCEPT = ".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.heic";
+
 /** A PDF and a spreadsheet read differently at a glance; the extension is the cheapest signal. */
 const badge = (f: JobFile): string => {
   const dot = f.name.lastIndexOf(".");
@@ -31,12 +34,22 @@ export function JobFilesBody({
   files,
   onUploaded,
   readOnly,
+  listOnly,
   surface = "office",
 }: {
   jobId: string;
   files: readonly JobFile[];
   onUploaded: (file: JobFile) => void;
   readOnly?: boolean;
+  /**
+   * Render the LIST only — no attach control.
+   *
+   * For surfaces where attaching lives somewhere better: the office job sheet puts a paperclip
+   * inside the note composer's row, so this component's own wide button would be a second attach
+   * affordance sitting orphaned under it. The field sheet's Files section has no such row and
+   * keeps the button, which is why this is opt-in rather than the default.
+   */
+  listOnly?: boolean;
   /** Which router to upload and view through — the field twin also gates on assignment. */
   surface?: UploadSurface;
 }) {
@@ -109,12 +122,12 @@ export function JobFilesBody({
         </div>
       ))}
 
-      {!readOnly && (
+      {!readOnly && !listOnly && (
         <>
           <input
             ref={inputRef}
             type="file"
-            accept=".pdf,.csv,.txt,.jpg,.jpeg,.png,.webp,.heic"
+            accept={JOB_ATTACH_ACCEPT}
             style={{ display: "none" }}
             onChange={pick}
             tabIndex={-1}
