@@ -126,11 +126,12 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   const tasks = useAppStore((s) => s.tasks);
   const updateLead = useAppStore((s) => s.updateLead);
 
-  const [phoneOpen, setPhoneOpen] = useState(false);
   const [notesOpen, setNotesOpen] = useState(false);
-  // The chapters. Contact opens because it is the reason the sheet is usually opened; the rest
-  // stay shut so an empty customer is four lines, not eight rows all saying "Add".
-  const [contactOpen, setContactOpen] = useState(true);
+  // The chapters, all shut on open. Contact used to start expanded on the theory that it is why
+  // the sheet gets opened, but it made the sheet land mid-scroll on a wall of fields instead of
+  // the four-line summary the collapsed rows already carry. The primary "Add phone" still opens
+  // it (askForPhone), so the one case that genuinely needs it still gets it.
+  const [contactOpen, setContactOpen] = useState(false);
   const [workOpen, setWorkOpen] = useState(false);
 
   /**
@@ -261,10 +262,9 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
   type Action = "call" | "quote" | "addphone";
   const primaryKind: Action = !hasPhone ? "addphone" : isNew ? "call" : "quote";
   // One way to ask for a number, used by the primary AND by Call/Text when there is none.
-  const askForPhone = () => {
-    setContactOpen(true);
-    setPhoneOpen(true);
-  };
+  // Contact is all it takes now: the Phone field is typed in place inside it, so there is no
+  // second row to open. It used to also set phoneOpen for the row that wrapped the input.
+  const askForPhone = () => setContactOpen(true);
 
   const primary =
     primaryKind === "addphone"
@@ -348,33 +348,22 @@ export function LeadModal({ open, instant }: { open: boolean; instant?: boolean 
         onOpenChange={setContactOpen}
       >
       <div className="sheet-rows">
-        {/* Phone has ONE home in every state — it used to live here when empty and
-            in the header when filled, which left nowhere obvious to edit it. */}
-        <SheetRow
-          label="Phone"
-          value={hasPhone ? fmtPhone(lead.phone ?? "") : "Add"}
-          valueIsHint={!hasPhone}
-          expandable
-          open={phoneOpen}
-          onOpenChange={setPhoneOpen}
-        >
+        {/* PHONE AND EMAIL ARE TYPED WHERE THEY ARE. They were rows with their own chevron, so
+            Contact opened onto two more things to open, and putting in a phone number cost two
+            clicks before the keyboard. A free-text field has nothing to reveal — the field IS the
+            row. Tags below keeps its chevron because it reveals a CHOOSER, not a box.
+
+            Phone has ONE home in every state; it used to live here when empty and in the header
+            when filled, which left nowhere obvious to edit it. Email sits beside it rather than
+            inside Details for the same reason: it is a way to reach the customer. */}
+        <div className="sheet-inline">
           <PhoneCell
+            label="Phone"
             value={lead.phone ?? ""}
             onCommit={(phone) => updateLead(lead.id, { phone })}
           />
-        </SheetRow>
-
-        {/* Email sits beside Phone, not inside Details: it is a way to reach the customer, and
-            burying it left the sheet showing an email as the summary of a drawer that also holds
-            the company and arbitrary custom fields. */}
-        <SheetRow
-          label="Email"
-          value={lead.email?.trim() ? lead.email : "Add"}
-          valueIsHint={!lead.email?.trim()}
-          expandable
-        >
           <EmailBody lead={lead} />
-        </SheetRow>
+        </div>
 
         {/* Tags have ONE home and this is it for an existing customer. The single-select "Lead
             source" this replaced was a line of TEXT in the header that rendered nothing at all when

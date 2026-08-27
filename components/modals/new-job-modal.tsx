@@ -30,6 +30,7 @@ import { useCloseModal, useOpenModal, useLeads, useAppStore, useActiveModal } fr
 import { MODAL } from "@/lib/store/modal-ids";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import type { ChecklistItem, Job, Lead } from "@/lib/store/types";
+import { ChecklistStepsEditor, newDraftStep, type DraftItem } from "@/features/jobs/checklist-steps-editor";
 import { Field, FieldGroup } from "@/components/ui/input";
 import { CustomerPicker } from "./new-job-customer-picker";
 import { AddressInput } from "@/components/ui/address-input";
@@ -41,8 +42,6 @@ import { phoneFieldError } from "@/lib/phone";
 import { userMessage } from "@/lib/trpc/error-map";
 import { withListBatch } from "@/lib/trpc/list-cache";
 
-// A custom-checklist line mentioning a photo becomes a photo step (shared heuristic).
-const CHK_PHOTO_RE = /photo|picture/i;
 
 // ---- constants --------------------------------------------------------------
 
@@ -129,8 +128,14 @@ export function NewJobModalContent() {
 
   // Checklist picker (lives in the checklist row).
   const [chkTpl, setChkTpl] = useState<string | null>(null);
-  const [chkItems, setChkItems] = useState<string[]>([]);
-  const [chkDraft, setChkDraft] = useState("");
+  // From-scratch checklists are NAMED, and their steps carry an explicit Check/Photo type.
+  // This used to be `string[]` with the name hardcoded to "Checklist" at snapshot time and the
+  // type guessed by /photo|picture/i, so every list a shop built here arrived unnamed and a
+  // "Photo of the panel" step became a photo only by luck of wording.
+  const [chkName, setChkName] = useState("");
+  const [chkItems, setChkItems] = useState<DraftItem[]>([]);
+  // "you built a list but did not name it" — checked at submit, shown in the checklist row.
+  const [chkErr, setChkErr] = useState<string | null>(null);
 
 
   // THE PICKER SEARCHES THE BOOK, NOT THE PAGE. The store holds one hydrated page (~50 rows), so
@@ -210,37 +215,34 @@ export function NewJobModalContent() {
   function pickChecklist(tpl: string) {
     const next = tpl === "" ? null : tpl;
     setChkTpl(next);
+    setChkErr(null);
     if (next !== "blank") {
-      // Picking a template (or none) completes the row — collapse to summary.
+      // Picking a template (or none) completes the row — collapse to summary. The from-scratch
+      // draft is dropped: it is not what the job carries any more, and leaving it would re-appear
+      // if "Build from scratch" were pressed again.
+      setChkName("");
       setChkItems([]);
       setOpenRow(null);
+      return;
     }
-    // "blank" keeps the row open: the from-scratch builder needs the space.
-  }
-
-  function addChkItem() {
-    const t = chkDraft.trim();
-    if (!t) return;
-    setChkItems((prev) => [...prev, t]);
-    setChkDraft("");
-  }
-
-  function removeChkItem(idx: number) {
-    setChkItems((prev) => prev.filter((_, i) => i !== idx));
+    // "blank" keeps the row open: the from-scratch builder needs the space. One empty step is
+    // seeded so the editor opens on a name AND somewhere to type, in that order.
+    if (chkItems.length === 0) setChkItems([newDraftStep()]);
   }
 
   /** The picked checklist as a job snapshot — null when none picked. */
   function checklistSnapshot(): { name: string; items: ChecklistItem[] } | null {
     if (chkTpl === "blank") {
-      // A typed-but-not-added item row must not be silently dropped — fold it in.
-      const texts = chkDraft.trim() ? [...chkItems, chkDraft.trim()] : chkItems;
-      if (texts.length === 0) return null;
+      // Blank steps are dropped, not saved as empty rows: `+ Add step` mints an empty one, so
+      // an abandoned last step is the normal end state of typing a list.
+      const steps = chkItems.filter((it) => it.text.trim().length > 0);
+      if (steps.length === 0) return null;
       return {
-        name: "Checklist",
-        items: texts.map((text, i) => ({
-          id: crypto.randomUUID(),
-          text,
-          type: CHK_PHOTO_RE.test(text) ? ("photo" as const) : ("check" as const),
+        name: chkName.trim(),
+        items: steps.map((it, i) => ({
+          id: it.id,
+          text: it.text.trim(),
+          type: it.type,
           required: true,
           position: i,
         })),
@@ -473,6 +475,15 @@ export function NewJobModalContent() {
       setPhoneError(badPhone);
       return { ok: false, job: null };
     }
+    // A from-scratch list with steps and no name: refuse, and say which field. Attaching it
+    // unnamed is how every custom list ended up called "Checklist"; dropping it silently would
+    // throw away typing the crew will look for on the job.
+    if (chkTpl === "blank" && !chkName.trim() && chkItems.some((it) => it.text.trim())) {
+      setChkErr("Name the checklist.");
+      setOpenRow("chk");
+      return { ok: false, job: null };
+    }
+    setChkErr(null);
     const { ok, createdJob } = await createJobRecord(job, priced);
     return { ok, job: createdJob };
   }
@@ -551,7 +562,7 @@ export function NewJobModalContent() {
   const chkCurName = !chkTpl
     ? "No checklist"
     : chkIsBlank
-      ? "Custom checklist"
+      ? (chkName.trim() || "New checklist")
       : (chkPicked?.name ?? "No checklist");
 
   const visitsTotalH = visits.reduce((s, v) => s + v.h, 0);
@@ -742,39 +753,29 @@ export function NewJobModalContent() {
               </button>
 
               {chkIsBlank && (
+                // THE SAME EDITOR the Checklists library and the job sheet use — name first, then
+                // ordered steps, each explicitly a Check or a Photo. This screen had its own
+                // builder: one text box and "Add item", no name, no way to say "this step is a
+                // photo". Two editors for one thing, and the worse one was on the screen where
+                // checklists actually get created.
                 <div className="njbuilder">
-                  {chkItems.map((t, i) => (
-                    <div className="njbi" key={i}>
-                      <span style={{ flex: 1 }}>{t}</span>
-                      <span
-                        className="linklike"
-                        style={{ color: "var(--ink-3)", fontWeight: 800 }}
-                        onClick={() => removeChkItem(i)}
-                      >
-                        ✕
-                      </span>
+                  <ChecklistStepsEditor
+                    name={chkName}
+                    onName={(n) => {
+                      setChkName(n);
+                      if (chkErr) setChkErr(null);
+                    }}
+                    items={chkItems}
+                    onItems={setChkItems}
+                  />
+                  {chkErr ? (
+                    <div
+                      role="alert"
+                      style={{ color: "var(--red-700)", fontSize: "var(--type-sm)" }}
+                    >
+                      {chkErr}
                     </div>
-                  ))}
-                  <div
-                    className="cfrow"
-                    style={{ marginTop: chkItems.length ? 8 : 0 }}
-                  >
-                    <input
-                      placeholder="e.g. Photo: dry under the sink"
-                      style={{ flex: 2 }}
-                      value={chkDraft}
-                      onChange={(e) => setChkDraft(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          addChkItem();
-                        }
-                      }}
-                    />
-                    <button type="button" className="btn sm primary" onClick={addChkItem}>
-                      Add item
-                    </button>
-                  </div>
+                  ) : null}
                 </div>
               )}
             </DisclosureRow>

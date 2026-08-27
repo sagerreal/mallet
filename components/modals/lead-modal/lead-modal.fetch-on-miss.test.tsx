@@ -154,14 +154,21 @@ describe("Lead sheet — grouped rows", () => {
     leadQuery = { data: undefined, isLoading: false, isError: false };
   });
 
-  it("puts Email at the top level, beside Phone, instead of inside Details", async () => {
-    // Email is a way to reach the customer, exactly like Phone — it had no business sitting one
-    // tap deeper in a drawer that also holds the company and arbitrary custom fields.
+  it("puts Email in Contact beside Phone, as a field — not one tap deeper in Details", async () => {
+    // Email is a way to reach the customer, exactly like Phone, so it belongs in Contact rather
+    // than a drawer that also holds the company and arbitrary custom fields. And it is a free-text
+    // box, so it is TYPED IN PLACE: opening Contact reaches the value, with no second row to open.
     render(<LeadModal open />);
 
-    expect(await screen.findByText("Email")).toBeTruthy();
-    // The collapsed row shows its value, which is the whole point of this sheet's grammar.
-    expect(screen.getByText("bob@example.com")).toBeTruthy();
+    const contact = await screen.findByRole("button", { name: /^Contact/ });
+    // Closed, the chapter still answers "can I reach this person" without opening anything —
+    // the number when there is one, which this fixture has.
+    expect(contact.getAttribute("aria-expanded")).toBe("false");
+    expect(contact.textContent).toContain("7818328282");
+
+    fireEvent.click(contact);
+    expect((screen.getByLabelText("Email") as HTMLInputElement).value).toBe("bob@example.com");
+    expect(screen.getByLabelText("Phone")).toBeTruthy();
   });
 
   it("groups the rows: Contact, Work, Details, Clean up", async () => {

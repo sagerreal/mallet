@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { NewJobModalContent } from "./new-job-modal";
 import { MODAL } from "@/lib/store/modal-ids";
 
@@ -587,7 +587,33 @@ describe("NewJobModalContent — checklist wiring", () => {
     expect(patch.checklist.items).toHaveLength(1);
   });
 
-  it("builds a custom checklist from scratch with required photo/check items", async () => {
+  /**
+   * FROM-SCRATCH LISTS ARE NAMED, and their steps say what they are.
+   *
+   * This screen used to have its own builder — one text box and "Add item" — which named every
+   * list it produced the literal string "Checklist" and decided a step was a photo by testing the
+   * TEXT against /photo|picture/i. "Photo of the repair" became a photo by luck of wording;
+   * "Snap the panel label" did not. It now uses the same ChecklistStepsEditor as the Checklists
+   * library and the job sheet, so a name is asked for and the type is chosen.
+   */
+  const buildFromScratch = (name: string, steps: { text: string; photo?: boolean }[]) => {
+    fireEvent.click(screen.getByText("No checklist"));
+    fireEvent.click(screen.getByText("Build from scratch"));
+    fireEvent.change(screen.getByLabelText("Checklist name"), { target: { value: name } });
+    steps.forEach((step, i) => {
+      // The builder seeds one empty step; every step after the first needs its own row.
+      if (i > 0) fireEvent.click(screen.getByText("+ Add step"));
+      fireEvent.change(screen.getByLabelText(`Step ${i + 1} description`), {
+        target: { value: step.text },
+      });
+      if (step.photo) {
+        const row = screen.getByLabelText(`Step ${i + 1} description`).closest(".clstep")!;
+        fireEvent.click(within(row as HTMLElement).getByText("Photo"));
+      }
+    });
+  };
+
+  it("builds a NAMED custom checklist, with the step type chosen rather than guessed", async () => {
     const persistedLead = { id: "lead-41", name: "Custom Customer" };
     addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
     addJob.mockReturnValue({
@@ -597,12 +623,9 @@ describe("NewJobModalContent — checklist wiring", () => {
 
     render(<NewJobModalContent />);
     fireEvent.change(titleInput(), { target: { value: "fix leak" } });
-    fireEvent.click(screen.getByText("No checklist"));
-    fireEvent.click(screen.getByText("Build from scratch"));
-    fireEvent.change(screen.getByPlaceholderText("e.g. Photo: dry under the sink"), {
-      target: { value: "Photo of the repair" },
-    });
-    fireEvent.click(screen.getByText("Add item"));
+    // Deliberately a step whose TEXT says nothing about photos — the old regex would have made
+    // this a plain check no matter what the user chose.
+    buildFromScratch("Water heater swap", [{ text: "Snap the panel label", photo: true }]);
     createPriced();
 
     await waitFor(() => expect(updateJob).toHaveBeenCalledOnce());
@@ -610,9 +633,64 @@ describe("NewJobModalContent — checklist wiring", () => {
       string,
       { checklist: { name: string; items: { text: string; type: string; required: boolean }[] } },
     ];
+    expect(patch.checklist.name).toBe("Water heater swap");
     expect(patch.checklist.items).toEqual([
-      expect.objectContaining({ text: "Photo of the repair", type: "photo", required: true }),
+      expect.objectContaining({ text: "Snap the panel label", type: "photo", required: true }),
     ]);
+  });
+
+  it("keeps the steps in the order they were typed", async () => {
+    const persistedLead = { id: "lead-42", name: "Ordered Customer" };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-42", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-42", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "fix leak" } });
+    buildFromScratch("Two steps", [{ text: "Shut the water off" }, { text: "Drain the tank" }]);
+    createPriced();
+
+    await waitFor(() => expect(updateJob).toHaveBeenCalledOnce());
+    const [, patch] = updateJob.mock.calls[0] as [string, { checklist: { items: { text: string; position: number }[] } }];
+    expect(patch.checklist.items.map((i) => i.text)).toEqual(["Shut the water off", "Drain the tank"]);
+    expect(patch.checklist.items.map((i) => i.position)).toEqual([0, 1]);
+  });
+
+  /** An abandoned empty step is the normal end state of typing a list — it must not be saved. */
+  it("drops blank steps instead of saving empty rows", async () => {
+    const persistedLead = { id: "lead-43", name: "Blank Customer" };
+    addLead.mockReturnValue({ lead: persistedLead, persisted: Promise.resolve(persistedLead) });
+    addJob.mockReturnValue({
+      job: { id: "job-43", origin: "manual", visits: [] },
+      persisted: Promise.resolve({ id: "job-43", origin: "db", visits: [] }),
+    });
+
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "fix leak" } });
+    buildFromScratch("One real step", [{ text: "Bleed the line" }]);
+    fireEvent.click(screen.getByText("+ Add step"));   // left empty
+    createPriced();
+
+    await waitFor(() => expect(updateJob).toHaveBeenCalledOnce());
+    const [, patch] = updateJob.mock.calls[0] as [string, { checklist: { items: unknown[] } }];
+    expect(patch.checklist.items).toHaveLength(1);
+  });
+
+  /**
+   * Attaching it unnamed is how every custom list came to be called "Checklist"; dropping it
+   * silently would throw away typing the crew will go looking for on the job. So it refuses and
+   * says which field.
+   */
+  it("refuses to create with steps typed but no checklist name", async () => {
+    render(<NewJobModalContent />);
+    fireEvent.change(titleInput(), { target: { value: "fix leak" } });
+    buildFromScratch("", [{ text: "Bleed the line" }]);
+    createPriced();
+
+    expect(await screen.findByText("Name the checklist.")).toBeTruthy();
+    expect(addJob).not.toHaveBeenCalled();
   });
 
   it("keeps the modal open with an error when the checklist attach fails, and a retry re-attaches to the SAME job", async () => {
