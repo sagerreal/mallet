@@ -37,7 +37,7 @@ import { AddressInput } from "@/components/ui/address-input";
 import { useDebouncedValue } from "@/lib/use-debounced-value";
 import { toStoreLead } from "@/features/customers/leads-hydrator";
 import { api } from "@/lib/trpc/client";
-import { StagedAttachControl, useStagedAttachment, attachErrorMessage } from "@/components/shared/staged-attachment";
+import { StagedAttachButton, StagedAttachStatus, useStagedAttachment, attachErrorMessage } from "@/components/shared/staged-attachment";
 import { uploadJobFile } from "@/lib/store/upload-job-file";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { phoneFieldError } from "@/lib/phone";
@@ -817,17 +817,20 @@ export function NewJobModalContent() {
             open={openRow === "notes"}
             onToggle={() => toggleRow("notes")}
           >
-            <Field label="Job notes" style={{ marginBottom: "var(--space-2)" }}>
+            {/* The paperclip sits IN the row — see the same note on the new-customer sheet.
+                Only STAGED here: the upload URL is scoped to a job id that does not exist until
+                this form is submitted, so the bytes go up once the job is persisted. */}
+            <FieldGroup label="Job notes" groupClassName="cfrow" style={{ marginBottom: "0" }}>
               <input
                 type="text"
                 placeholder="gate code, what to bring…"
+                aria-label="Job notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
               />
-            </Field>
-            {/* Only STAGED here: the upload URL is scoped to a job id that does not exist until
-                this form is submitted, so the bytes go up once the job is persisted. */}
-            <StagedAttachControl staged={staged} busy={saving} />
+              <StagedAttachButton staged={staged} busy={saving} />
+            </FieldGroup>
+            <StagedAttachStatus staged={staged} />
           </DisclosureRow>
         </div>
 

@@ -19,7 +19,7 @@
  */
 
 import { useCallback, useState } from "react";
-import { AttachControl } from "./note-composer";
+import { AttachControl, StagedFileChip } from "./note-composer";
 import { NOTE_ATTACH_ACCEPT } from "@/lib/store/upload-lead-note-file";
 import { MAX_FILE_BYTES, UnsupportedFileError, FileTooLargeError } from "@/lib/store/upload-job-file";
 
@@ -84,12 +84,12 @@ export function useStagedAttachment(): StagedAttachment {
 }
 
 /**
- * The pick button plus its refusal line.
+ * The pick button, for placing INSIDE the field's row (see AttachControl's note on why).
  *
  * `busy` is the FORM's in-flight state, not an upload's: the upload happens after submit, so the
  * only moment this control should refuse a press is while the create it belongs to is running.
  */
-export function StagedAttachControl({
+export function StagedAttachButton({
   staged,
   busy,
 }: {
@@ -97,13 +97,27 @@ export function StagedAttachControl({
   readonly busy?: boolean;
 }) {
   return (
+    <AttachControl
+      accept={NOTE_ATTACH_ACCEPT}
+      busy={Boolean(busy)}
+      name={staged.name}
+      onPick={staged.pick}
+    />
+  );
+}
+
+/**
+ * What is staged, and why a pick was refused — the two things that belong BELOW the row.
+ *
+ * Renders nothing at all when there is neither, so a form with no attachment is exactly the form
+ * it was before this existed. That is what stops the affordance from costing vertical space it has
+ * not earned.
+ */
+export function StagedAttachStatus({ staged }: { readonly staged: StagedAttachment }) {
+  if (!staged.name && !staged.error) return null;
+  return (
     <>
-      <AttachControl
-        accept={NOTE_ATTACH_ACCEPT}
-        busy={Boolean(busy)}
-        name={staged.name}
-        onPick={staged.pick}
-      />
+      {staged.name ? <StagedFileChip name={staged.name} onRemove={staged.clear} /> : null}
       {staged.error ? (
         <div
           role="alert"

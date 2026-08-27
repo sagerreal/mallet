@@ -9,7 +9,7 @@
  */
 import { describe, it, expect, vi } from "vitest";
 import { render, screen, fireEvent } from "@testing-library/react";
-import { useStagedAttachment, StagedAttachControl, attachErrorMessage } from "./staged-attachment";
+import { useStagedAttachment, StagedAttachButton, StagedAttachStatus, attachErrorMessage } from "./staged-attachment";
 import { UnsupportedFileError, FileTooLargeError, MAX_FILE_BYTES } from "@/lib/store/upload-job-file";
 
 /** A File of a given size without allocating the bytes — jsdom honours the size override. */
@@ -24,7 +24,12 @@ const seen: { file: File | null; name: string | null; error: string | null }[] =
 function Harness() {
   const staged = useStagedAttachment();
   seen.push({ file: staged.file, name: staged.name, error: staged.error });
-  return <StagedAttachControl staged={staged} />;
+  return (
+    <>
+      <StagedAttachButton staged={staged} />
+      <StagedAttachStatus staged={staged} />
+    </>
+  );
 }
 
 const last = () => seen[seen.length - 1]!;
@@ -36,13 +41,37 @@ const pick = (file: File) => {
 };
 
 describe("staging a file", () => {
-  it("keeps an allowed file and shows its name on the button", () => {
+  /**
+   * The NAME is a chip below the row, not text inside the button — putting it in the button made
+   * it change width the moment a file was picked, and left nowhere to un-attach without replacing.
+   * The button stays a fixed-size paperclip and says what it does through its accessible label.
+   */
+  it("keeps an allowed file, naming it in a chip and not in the button", () => {
     seen.length = 0;
     render(<Harness />);
     pick(fakeFile("permit.pdf"));
+
     expect(last().name).toBe("permit.pdf");
     expect(last().error).toBeNull();
-    expect(screen.getByRole("button", { name: "Replace the file" })).toBeTruthy();
+    expect(document.querySelector(".attachchip-n")?.textContent).toBe("permit.pdf");
+    expect(screen.getByRole("button", { name: /Replace the attached file, permit\.pdf/ })).toBeTruthy();
+  });
+
+  it("offers a way to drop the staged file without replacing it", () => {
+    seen.length = 0;
+    render(<Harness />);
+    pick(fakeFile("permit.pdf"));
+    fireEvent.click(screen.getByRole("button", { name: "Remove permit.pdf" }));
+    expect(last().file).toBeNull();
+    expect(document.querySelector(".attachchip")).toBeNull();
+  });
+
+  /** Nothing staged and nothing refused: the form is exactly the form it was before. */
+  it("renders no chip and no error line when there is nothing to say", () => {
+    seen.length = 0;
+    render(<Harness />);
+    expect(document.querySelector(".attachchip")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
   });
 
   it("refuses an extension the server would reject, naming it", () => {
@@ -102,10 +131,10 @@ describe("staging a file", () => {
   it("the control refuses presses while the form is in flight", () => {
     function Busy() {
       const staged = useStagedAttachment();
-      return <StagedAttachControl staged={staged} busy />;
+      return <StagedAttachButton staged={staged} busy />;
     }
     render(<Busy />);
-    expect(screen.getByRole("button", { name: "Attaching…" }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("button", { name: "Attaching a file…" }).getAttribute("aria-disabled")).toBe("true");
   });
 });
 
