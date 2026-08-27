@@ -279,3 +279,49 @@ describe("SchedulePanel — the tray '+' splits without destroying", () => {
     expect(storeState.addVisit).toHaveBeenCalledWith("j1", 0.75);
   });
 });
+
+/**
+ * The week nav has to answer "which week am I looking at". It used to say "Week of Thu" — a
+ * weekday, no date — over a week that began on whatever day you opened the board, so paging
+ * back three times told you nothing about where you had landed.
+ */
+describe("SchedulePanel — the week nav says which week", () => {
+  // The board only renders past the first-run early return once there is something to place —
+  // the store row AND the server tray view, same pairing as the two-step tests above.
+  beforeEach(() => {
+    storeState = store([{ id: "j1", title: "Water heater", svc: "repair", visits: [{ id: "v1", dur: 2 }] }]);
+    q = { isFetched: true, isError: false, data: { items: [trayDTO()] } };
+    vi.clearAllMocks();
+  });
+
+  const openWeek = () => {
+    render(<SchedulePanel />);
+    fireEvent.click(screen.getByRole("button", { name: "Week" }));
+  };
+
+  it("never shows the old weekday-only label", () => {
+    openWeek();
+    expect(screen.queryByText(/^Week of \w{3}$/)).toBeNull();
+  });
+
+  it("names both ends of the week as real dates", () => {
+    openWeek();
+    // Mirrors the Day nav's "Today · Aug 27": the marker, then the dates it stands for.
+    expect(screen.getByText(/This week · \w{3} \d+ – .+/)).toBeTruthy();
+  });
+
+  it("starts the week on Monday, whatever day it is opened", () => {
+    openWeek();
+    const heads = Array.from(document.querySelectorAll(".wk-head"));
+    expect(heads.length).toBe(7);
+    // toLocaleDateString's own short weekday for a known Monday — locale-proof.
+    const monday = new Date("2026-08-24T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
+    expect(heads[0]?.textContent).toContain(monday);
+  });
+
+  // The label renders real calendar dates, so the visual net would diff it every Monday.
+  it("masks the label from the visual net", () => {
+    openWeek();
+    expect(document.querySelector(".sched-nav [data-dynamic]")).toBeTruthy();
+  });
+});

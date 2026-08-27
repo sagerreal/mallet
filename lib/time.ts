@@ -35,6 +35,48 @@ export function colLabel(iso: string): string {
   return new Date(iso + "T12:00:00").toLocaleDateString(undefined, { weekday: "short" });
 }
 
+/** Local Y-M-D, never UTC — `toISOString()` would roll the date back east of UTC+12. */
+function isoLocal(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+/**
+ * The Monday that starts the calendar week containing `iso`.
+ *
+ * The dispatch board's week used to begin on whatever day you happened to open it, so "this week"
+ * ran Thu→Wed and the same visit fell in a different week depending on when you looked. A shop's
+ * week is a calendar week; snapping to Monday is what makes "next week" mean one thing to the
+ * dispatcher and the crew. Noon anchor for the same reason as daysBetweenISO — it survives DST.
+ */
+export function mondayOf(iso: string): string {
+  const d = new Date(iso + "T12:00:00");
+  // getDay() is 0 for SUNDAY, which ends this week rather than starting the next one — so it
+  // steps back six days. A bare `getDay() - 1` would send Sunday forward a day instead.
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return isoLocal(d);
+}
+
+/**
+ * A week's two ends: "Aug 17 – 23", or "Aug 31 – Sep 6" when it spans two months.
+ *
+ * Replaces a label that read "Week of Thu" — a weekday with no date, which told you nothing about
+ * WHICH week you had paged to. The month repeats only when it changes, because "Aug 17 – Aug 23"
+ * spends a word on something the reader already has.
+ *
+ * `locales` exists so tests can pin a format; callers pass nothing, which is what respects the
+ * dispatcher's own locale the way colLabel does.
+ */
+export function weekRangeLabel(startIso: string, locales?: Intl.LocalesArgument): string {
+  const start = new Date(startIso + "T12:00:00");
+  const end = new Date(startIso + "T12:00:00");
+  end.setDate(end.getDate() + 6);
+  const sameMonth = start.getMonth() === end.getMonth();
+  return `${start.toLocaleDateString(locales, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(
+    locales,
+    sameMonth ? { day: "numeric" } : { month: "short", day: "numeric" },
+  )}`;
+}
+
 /**
  * Signed calendar days between two ISO DATES — positive when `to` is later.
  *
