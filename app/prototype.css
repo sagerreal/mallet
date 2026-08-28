@@ -3703,3 +3703,17 @@
     /* The banner and the canceled note are bordered boxes once their fill is gone. */
     .invcard .deltabanner,.invcard .reqcard{border:1px solid #000}
   }
+
+  /* NOTHING ON A PURCHASE ORDER RENDERS BELOW THE BODY SIZE. Mallet's shared chrome is 11-13px —
+     .fsec-h and .stpill at --type-xs, .field label and .muted at --type-sm, .btn at --type-base —
+     against a 15px body. That is fine on a settings row and wrong on a document somebody retypes
+     off a supply-house invoice with a phone in one hand. Scoped to .po-scope (Money → Orders,
+     features/money/orders-panel.tsx, and the two record modals Task 8 adds) so the rest of the
+     app does not move; if the type scale is lifted globally this whole block goes away. Ported
+     verbatim from the approved design on mock/money-purchase-orders. */
+  .po-scope,.po-scope .muted,.po-scope .field label,.po-scope .fdd-l,.po-scope .fdd-v,
+  .po-scope .btn,.po-scope .stpill,.po-scope .lab,.po-scope p,.po-scope span,.po-scope b,
+  .po-scope .nfeed,.po-scope .nfeed *,.po-scope .linklike,.po-scope input,.po-scope select,
+  .po-scope .chip,.po-scope .list-tbl th,.po-scope .list-tbl td{font-size:var(--type-md)}
+  /* The chapter head keeps its uppercase label register but not its 11px. */
+  .po-scope .fsec-h,.po-scope .tjf-t,.po-scope .tjf-v,.po-scope .tjcaret{font-size:var(--type-md)}

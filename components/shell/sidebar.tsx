@@ -331,6 +331,17 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
               count={moneyCount > 0 ? moneyCount : undefined}
               active={moneyActive}
             />
+            {moneyActive && (
+              <div className="navsubs">
+                {/* Purchase orders are cash going OUT — everything else on Money is cash coming
+                    IN. Same ?tab= grammar as Jobs' Schedule/Timesheets pair, and the ONLY route
+                    to this tab on desktop: SectionTabs (components/shell/section-tabs.tsx) is
+                    mobile-only, so without this sub-nav /money?tab=orders had no link pointing
+                    at it at all here. */}
+                <NavSub href="/money" label="Getting paid" active={tab !== "orders"} />
+                <NavSub href="/money?tab=orders" label="Orders" active={tab === "orders"} />
+              </div>
+            )}
             {/* ARTIE'S BOARD IS HIDDEN FROM THE NAV, not deleted. /artie still renders and a saved
                 link still opens it — this removes the standing invitation to go there, because the
                 counter bar at the bottom of every page IS Artie, and a second front door implied
