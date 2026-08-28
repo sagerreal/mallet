@@ -3717,3 +3717,11 @@
   .po-scope .chip,.po-scope .list-tbl th,.po-scope .list-tbl td{font-size:var(--type-md)}
   /* The chapter head keeps its uppercase label register but not its 11px. */
   .po-scope .fsec-h,.po-scope .tjf-t,.po-scope .tjf-v,.po-scope .tjcaret{font-size:var(--type-md)}
+  /* Below 760px .list-tbl drops its <thead> and prints each cell's column caption from a
+     `td::before{content:attr(data-label)}` pseudo-element at --type-xs (11px, see the mobile
+     stacked-card block above) — getComputedStyle(node) does not see pseudo-elements, so the
+     ".po-scope .list-tbl td" rule above never touched this and "#"/"VENDOR"/"FOR JOB"/"STATUS"/
+     "TOTAL"/"ORDERED" rendered at 11px on a phone, the exact surface this file exists for. Real
+     specificity fix, not a !important: two classes + tbody+td+::before outranks the mobile
+     block's one class + tbody+td+::before. */
+  .po-scope .list-tbl tbody td::before{font-size:var(--type-md)}
