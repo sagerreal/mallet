@@ -17,6 +17,7 @@ export const numberSequences = pgTable(
   },
   (t) => [
     primaryKey({ columns: [t.orgId, t.kind] }),
-    check("number_sequences_kind_check", sql`${t.kind} in ('estimate', 'invoice', 'job')`),
+    // 'po' rides the same allocator as invoices — see DrizzlePurchaseOrderRepository.nextNumber.
+    check("number_sequences_kind_check", sql`${t.kind} in ('estimate', 'invoice', 'job', 'po')`),
   ],
 );
