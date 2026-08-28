@@ -50,7 +50,10 @@ const createInput = z.object({
   jobId: z.string().uuid().nullable(),
   expectedAt: dateOnly.nullable(),
   shipTo: shipToEnum,
-  orderedByUserId: z.string().uuid().nullable(),
+  // orderedByUserId is NOT here: it is stamped server-side from ctx.principal.userId (see
+  // `create` below), never accepted from the client — the same rule addNote's authorUserId
+  // follows. A field that named who ordered a $2,140 purchase would let any caller claim it was
+  // someone else. Read back via the DTO's orderedByUserId/orderedByName.
   freightCents: z.number().int().nonnegative().optional(),
   taxCents: z.number().int().nonnegative().optional(),
   lines: z.array(lineInput).optional(),
@@ -62,7 +65,9 @@ const updateInput = z.object({
   jobId: z.string().uuid().nullable().optional(),
   expectedAt: dateOnly.nullable().optional(),
   shipTo: shipToEnum.optional(),
-  orderedByUserId: z.string().uuid().nullable().optional(),
+  // orderedByUserId is likewise absent — stamped once at create and never re-targetable from the
+  // client. Omitting the key from the command below leaves it untouched (Update…Command treats
+  // `undefined` as "leave it").
   freightCents: z.number().int().nonnegative().optional(),
   taxCents: z.number().int().nonnegative().optional(),
   // Full replace of the line set. Absent leaves the existing lines untouched (see
@@ -202,7 +207,8 @@ export const createPurchaseOrderRouter = () =>
           jobId: input.jobId,
           expectedAt: toDate(input.expectedAt),
           shipTo: input.shipTo,
-          orderedByUserId: input.orderedByUserId,
+          // Stamped from the caller, never from input — see createInput's comment.
+          orderedByUserId: ctx.principal.userId,
           freightCents: input.freightCents,
           taxCents: input.taxCents,
           lines: input.lines,
@@ -223,7 +229,7 @@ export const createPurchaseOrderRouter = () =>
           // undefined means "leave it"; only convert when the field was actually sent.
           expectedAt: input.expectedAt === undefined ? undefined : toDate(input.expectedAt),
           shipTo: input.shipTo,
-          orderedByUserId: input.orderedByUserId,
+          // orderedByUserId is deliberately absent — undefined here leaves it untouched.
           freightCents: input.freightCents,
           taxCents: input.taxCents,
           lines: input.lines,
@@ -290,6 +296,11 @@ export const createPurchaseOrderRouter = () =>
       .output(z.object({ items: z.array(purchaseOrderNoteDTO) }))
       .query(async ({ ctx, input }) => {
         const repo = new DrizzlePurchaseOrderRepository(ctx.tx, ctx.principal.orgId);
+        // Same guard noteUploadUrl uses: findById filters deleted_at, so a soft-deleted order's
+        // note trail stops being servable the moment it's removed rather than staying reachable
+        // by id forever.
+        const po = await repo.findById(input.poId);
+        if (!po) throw new TRPCError({ code: "NOT_FOUND", message: "purchase order not found" });
         const notes = await repo.listNotes(input.poId);
         const nameById = await userNamesFor(
           ctx.tx,
@@ -356,6 +367,10 @@ export const createPurchaseOrderRouter = () =>
           throw new TRPCError({ code: "PRECONDITION_FAILED", message: "file storage is not configured" });
         }
         const repo = new DrizzlePurchaseOrderRepository(ctx.tx, ctx.principal.orgId);
+        // Same guard noteUploadUrl uses — a soft-deleted order must stop minting working links
+        // for its attachments, not just stop appearing in list().
+        const po = await repo.findById(input.poId);
+        if (!po) throw new TRPCError({ code: "NOT_FOUND", message: "purchase order not found" });
         const notes = await repo.listNotes(input.poId);
         const attachment = notes.find((n) => n.id === input.id);
         if (!attachment?.attachmentPath) {

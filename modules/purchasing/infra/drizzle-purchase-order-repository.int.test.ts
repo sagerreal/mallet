@@ -153,4 +153,53 @@ suite("DrizzlePurchaseOrderRepository against live Supabase RLS", () => {
     expect(outcome.deletedCount).toBe(1);
     expect(outcome.all.find((p) => p.props.id === outcome.id)).toBeUndefined();
   });
+
+  // Regression for the list() N+1 fix: one batched `inArray(poId, headerIds)` read of lines,
+  // grouped by poId in memory, replaced a per-header query. Pins that the grouping keeps each
+  // order's OWN lines — a wrong key or a flattened/shared array would show up here as one order
+  // borrowing another's lines, or a line landing under a description it doesn't own.
+  it("list() hydrates each order with ITS OWN lines, not another order's, across a multi-order page", async () => {
+    const org = asOrgId(orgId);
+    const outcome = await withTenant(org, async (tx) => {
+      const repo = new DrizzlePurchaseOrderRepository(tx, org);
+
+      const withLines = (vendor: string, descriptions: string[]) =>
+        PurchaseOrder.create(
+          baseOrder(org, {
+            vendor,
+            lines: descriptions.map((description, i) => ({
+              id: randomUUID(),
+              description,
+              qty: 1,
+              uom: "ea",
+              unitCostMillicents: 1_000_000,
+              position: i,
+            })),
+          }),
+        );
+
+      const a = withLines("List NPlus1 A", ["A-line-1", "A-line-2"]);
+      const b = withLines("List NPlus1 B", ["B-line-1"]);
+      const c = withLines("List NPlus1 C", []); // no lines at all — must not blow up the grouping
+      if (!isOk(a) || !isOk(b) || !isOk(c)) throw new Error("bad fixture");
+      await repo.save(a.value);
+      await repo.save(b.value);
+      await repo.save(c.value);
+
+      const all = await repo.list();
+      return {
+        aId: a.value.props.id,
+        bId: b.value.props.id,
+        cId: c.value.props.id,
+        byId: new Map(all.map((po) => [po.props.id, po])),
+      };
+    });
+
+    expect(outcome.byId.get(outcome.aId)?.props.lines.map((l) => l.description).sort()).toEqual([
+      "A-line-1",
+      "A-line-2",
+    ]);
+    expect(outcome.byId.get(outcome.bId)?.props.lines.map((l) => l.description)).toEqual(["B-line-1"]);
+    expect(outcome.byId.get(outcome.cId)?.props.lines).toEqual([]);
+  });
 });

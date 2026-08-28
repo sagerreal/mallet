@@ -32,12 +32,18 @@ export const purchaseOrderDTO = z.object({
   // Calendar dates (postgres `date` columns), not instants — "YYYY-MM-DD" via the SAME fromDate()
   // the repository uses to write them, so the wire format can never drift from what's stored. A
   // bare .toISOString() here would reintroduce the day-shift bug documented on the mapper's
-  // noon-anchor: it exists for exactly this reason.
+  // noon-anchor: a LOCAL noon converted to UTC only rolls onto a different calendar day once the
+  // server's zone passes UTC+12 (UTC+13/+14 — Kiribati, Tonga) — every zone from UTC−11 through
+  // UTC+11 leaves local noon within the same UTC day. So the hazard runs EASTERN, not western;
+  // fromDate()/toDate() sidestep it entirely rather than depend on which zone the server runs in.
   orderedAt: z.string().nullable(),
   expectedAt: z.string().nullable(),
   shipTo: z.enum(["counter_pickup", "job_site", "shop"]),
-  // Resolved from orderedByUserId the same way jobTitle is. The raw id is deliberately NOT on the
-  // wire here — nothing in this surface needs to re-target the field, only display who it was.
+  // Stamped server-side from ctx.principal on create — never a client input (see the router's
+  // create). Writable-and-unreadable is not a valid state for a field, so both the raw id and its
+  // resolved display name are on the wire; a client that needs to re-target it can't, by design.
+  orderedByUserId: z.string().uuid().nullable(),
+  // Resolved from orderedByUserId the same way jobTitle is.
   orderedByName: z.string().nullable(),
   freight: moneyDTO,
   tax: moneyDTO,
@@ -70,6 +76,7 @@ export const toPurchaseOrderDTO = (
     orderedAt: fromDate(p.orderedAt),
     expectedAt: fromDate(p.expectedAt),
     shipTo: p.shipTo,
+    orderedByUserId: p.orderedByUserId,
     orderedByName: extras.orderedByName,
     freight: money$(p.freightCents),
     tax: money$(p.taxCents),

@@ -1,10 +1,10 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { purchaseOrders, purchaseOrderLines, purchaseOrderNotes } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import type { PurchaseOrder, POLineProps } from "../domain/purchase-order";
 import type { PurchaseOrderRepository, PONoteRow } from "../domain/purchase-order-repository";
-import { toDomain, fromDate, type PORow } from "./purchase-order-mapper";
+import { toDomain, fromDate, type PORow, type POLineRow } from "./purchase-order-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx, so RLS already scopes every statement —
 // and every read/write ALSO filters `org_id = this.orgId` explicitly, the same belt-and-braces
@@ -31,13 +31,33 @@ export class DrizzlePurchaseOrderRepository implements PurchaseOrderRepository {
     return `PO-${rows[0]?.allocated ?? 1000}`;
   }
 
+  /**
+   * ONE query for the headers, ONE for every header's lines — never per-row. `hydrate()` (used by
+   * `findById`, where there is only ever one row) issues a second query per call, which is fine
+   * for a single order but would be N+1 across a page: a 200-order list would fire 201 queries.
+   * This groups all the page's lines by poId in memory instead, from a single
+   * `inArray(purchaseOrderLines.poId, headerIds)` read.
+   */
   async list(): Promise<readonly PurchaseOrder[]> {
     const headers = await this.tx
       .select()
       .from(purchaseOrders)
       .where(and(eq(purchaseOrders.orgId, this.orgId), isNull(purchaseOrders.deletedAt)))
       .orderBy(desc(purchaseOrders.createdAt), desc(purchaseOrders.id));
-    return Promise.all(headers.map((header) => this.hydrate(header)));
+    if (headers.length === 0) return [];
+
+    const headerIds = headers.map((h) => h.id);
+    const lineRows = await this.tx
+      .select()
+      .from(purchaseOrderLines)
+      .where(and(eq(purchaseOrderLines.orgId, this.orgId), inArray(purchaseOrderLines.poId, headerIds)));
+
+    const linesByPoId = new Map<string, POLineRow[]>();
+    for (const row of lineRows) {
+      linesByPoId.set(row.poId, [...(linesByPoId.get(row.poId) ?? []), row]);
+    }
+
+    return headers.map((header) => toDomain(header, linesByPoId.get(header.id) ?? []));
   }
 
   async findById(id: string): Promise<PurchaseOrder | null> {

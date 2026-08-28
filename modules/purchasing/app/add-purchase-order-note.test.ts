@@ -26,17 +26,18 @@ describe("AddPurchaseOrderNoteUseCase", () => {
 
   it("accepts an attachment with empty text — a photo of the receipt needs no caption", async () => {
     const id = await repo.seedDraft({ vendor: "Ferguson", lineCount: 1 });
+    const path = `${ORG}/purchase-orders/${id}/receipt.jpg`;
     const cmd: AddPurchaseOrderNoteCommand = {
       poId: id,
       body: "",
       authorUserId: null,
-      attachment: { path: "po-notes/receipt.jpg", name: "receipt.jpg", type: "image/jpeg" },
+      attachment: { path, name: "receipt.jpg", type: "image/jpeg" },
     };
     const r = await new AddPurchaseOrderNoteUseCase(repo, CLOCK, seqIds()).exec(ORG, cmd);
     expect(isOk(r)).toBe(true);
     if (isOk(r)) {
       expect(r.value.body).toBe("");
-      expect(r.value.attachmentPath).toBe("po-notes/receipt.jpg");
+      expect(r.value.attachmentPath).toBe(path);
     }
   });
 
@@ -70,5 +71,66 @@ describe("AddPurchaseOrderNoteUseCase", () => {
     const r = await new AddPurchaseOrderNoteUseCase(repo, CLOCK, seqIds()).exec(ORG, cmd);
     expect(isErr(r)).toBe(true);
     if (isErr(r)) expect(r.error.kind).toBe("not_found");
+  });
+
+  // ── attachment path / mime validation ────────────────────────────────────────
+
+  it("refuses an attachment whose path points OUTSIDE this order's own folder", async () => {
+    const id = await repo.seedDraft({ vendor: "Ferguson", lineCount: 1 });
+    const otherId = await repo.seedDraft({ vendor: "Winsupply", lineCount: 1 });
+    const cmd: AddPurchaseOrderNoteCommand = {
+      poId: id,
+      body: "Receipt",
+      authorUserId: null,
+      // A path minted for a DIFFERENT order — the exact shape a forged or copy-pasted key takes.
+      attachment: { path: `${ORG}/purchase-orders/${otherId}/receipt.jpg`, name: "receipt.jpg", type: "image/jpeg" },
+    };
+    const r = await new AddPurchaseOrderNoteUseCase(repo, CLOCK, seqIds()).exec(ORG, cmd);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) {
+      expect(r.error.kind).toBe("validation");
+      expect(r.error.message).toMatch(/own folder/i);
+    }
+  });
+
+  it("refuses an attachment path containing a `..` traversal segment", async () => {
+    const id = await repo.seedDraft({ vendor: "Ferguson", lineCount: 1 });
+    const cmd: AddPurchaseOrderNoteCommand = {
+      poId: id,
+      body: "Receipt",
+      authorUserId: null,
+      attachment: { path: `${ORG}/purchase-orders/${id}/../../secret.jpg`, name: "receipt.jpg", type: "image/jpeg" },
+    };
+    const r = await new AddPurchaseOrderNoteUseCase(repo, CLOCK, seqIds()).exec(ORG, cmd);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) expect(r.error.kind).toBe("validation");
+  });
+
+  it("refuses an attachment whose type is not a mime shape", async () => {
+    const id = await repo.seedDraft({ vendor: "Ferguson", lineCount: 1 });
+    const cmd: AddPurchaseOrderNoteCommand = {
+      poId: id,
+      body: "Receipt",
+      authorUserId: null,
+      attachment: { path: `${ORG}/purchase-orders/${id}/receipt.jpg`, name: "receipt.jpg", type: "<script>" },
+    };
+    const r = await new AddPurchaseOrderNoteUseCase(repo, CLOCK, seqIds()).exec(ORG, cmd);
+    expect(isErr(r)).toBe(true);
+    if (isErr(r)) {
+      expect(r.error.kind).toBe("validation");
+      expect(r.error.message).toMatch(/not a file type/i);
+    }
+  });
+
+  it("accepts an attachment correctly stored under this order's own folder", async () => {
+    const id = await repo.seedDraft({ vendor: "Ferguson", lineCount: 1 });
+    const cmd: AddPurchaseOrderNoteCommand = {
+      poId: id,
+      body: "Receipt",
+      authorUserId: null,
+      attachment: { path: `${ORG}/purchase-orders/${id}/receipt.jpg`, name: "receipt.jpg", type: "image/jpeg" },
+    };
+    const r = await new AddPurchaseOrderNoteUseCase(repo, CLOCK, seqIds()).exec(ORG, cmd);
+    expect(isOk(r)).toBe(true);
   });
 });

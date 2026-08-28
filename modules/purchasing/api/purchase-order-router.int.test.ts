@@ -2,7 +2,6 @@ import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
 import postgres from "postgres";
 import type { Sql } from "postgres";
 import { randomUUID } from "node:crypto";
-import { TRPCError } from "@trpc/server";
 import { asOrgId, asUserId, systemClock, ok, err, externalService } from "@mallet/shared/types";
 import { InMemoryEventBus, uuidGenerator } from "@mallet/shared/ports";
 import { closeDb } from "@mallet/shared/db/client";
@@ -74,7 +73,6 @@ const draftInput = (overrides: Record<string, unknown> = {}) => ({
   jobId: null,
   expectedAt: null,
   shipTo: "counter_pickup" as const,
-  orderedByUserId: null,
   ...overrides,
 });
 
@@ -133,19 +131,30 @@ suite("purchasing tRPC router (full stack, live RLS)", () => {
 
   // ── RBAC ─────────────────────────────────────────────────────────────────────
 
-  it("refuses a tech — purchasing is an office surface", async () => {
+  it("refuses a tech on all ten procedures — purchasing is an office surface end to end", async () => {
     const callerA = appRouter.createCaller(ctxFor(orgAId, "owner"));
     const created = await callerA.v1.purchasing.create(draftInput());
+    const note = await callerA.v1.purchasing.addNote({ poId: created.id, body: "seed note" });
 
     const tech = appRouter.createCaller(ctxFor(orgAId, "tech"));
     await expect(tech.v1.purchasing.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(tech.v1.purchasing.create(draftInput())).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      tech.v1.purchasing.update({ poId: created.id, vendor: "Nope" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(tech.v1.purchasing.place({ poId: created.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(tech.v1.purchasing.cancel({ poId: created.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(tech.v1.purchasing.remove({ poId: created.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
     await expect(
       tech.v1.purchasing.addNote({ poId: created.id, body: "nope" }),
     ).rejects.toMatchObject({ code: "FORBIDDEN" });
-    await tech.v1.purchasing.list().catch((e) => expect(e).toBeInstanceOf(TRPCError));
+    await expect(tech.v1.purchasing.listNotes({ poId: created.id })).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      tech.v1.purchasing.noteUploadUrl({ poId: created.id, objectId: randomUUID(), ext: "jpg" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    await expect(
+      tech.v1.purchasing.noteViewUrl({ poId: created.id, id: note.id }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
   // ── money on the wire ────────────────────────────────────────────────────────
@@ -233,7 +242,7 @@ suite("purchasing tRPC router (full stack, live RLS)", () => {
 
   // ── display joins: jobTitle / orderedByName ─────────────────────────────────
 
-  it("resolves jobTitle and orderedByName server-side, batched", async () => {
+  it("resolves jobTitle and orderedByName server-side, batched; orderedByUserId is stamped from the caller", async () => {
     const [lead] = await admin<{ id: string }[]>`
       insert into leads (org_id, name) values (${orgAId}, 'Jill Vance') returning id`;
     const [job] = await admin<{ id: string }[]>`
@@ -243,17 +252,46 @@ suite("purchasing tRPC router (full stack, live RLS)", () => {
       insert into users (id, org_id, auth_user_id, email, name)
       values (${userId}, ${orgAId}, ${randomUUID()}, 'mike@example.com', 'Mike Alvarez')`;
 
-    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
-    const created = await caller.v1.purchasing.create(
-      draftInput({ vendor: "Display Join Co", jobId: job!.id, orderedByUserId: userId }),
-    );
+    // orderedByUserId has no client input any more — it is stamped from ctx.principal.userId on
+    // create, so the way to make it Mike is to BE Mike.
+    const ctx = ctxFor(orgAId, "owner");
+    const principal = { ...ctx.principal!, userId: asUserId(userId) };
+    const caller = appRouter.createCaller({ ...ctx, principal });
+
+    const created = await caller.v1.purchasing.create(draftInput({ vendor: "Display Join Co", jobId: job!.id }));
+    expect(created.orderedByUserId).toBe(userId);
     expect(created.jobTitle).toBe("Repipe kitchen");
     expect(created.orderedByName).toBe("Mike Alvarez");
 
     const listed = await caller.v1.purchasing.list();
     const row = listed.items.find((po) => po.id === created.id);
+    expect(row?.orderedByUserId).toBe(userId);
     expect(row?.jobTitle).toBe("Repipe kitchen");
     expect(row?.orderedByName).toBe("Mike Alvarez");
+  });
+
+  it("orderedByUserId cannot be set from client input — a caller cannot claim someone else placed the order", async () => {
+    const otherUserId = randomUUID();
+    const ctx = ctxFor(orgAId, "owner");
+    const callerUserId = ctx.principal!.userId as string;
+    const caller = appRouter.createCaller(ctx);
+
+    const created = await caller.v1.purchasing.create(
+      draftInput({
+        vendor: "No Claiming Co",
+        // Not part of the input schema — silently dropped by zod, never reaches the use-case.
+        ...({ orderedByUserId: otherUserId } as Record<string, unknown>),
+      }),
+    );
+    expect(created.orderedByUserId).toBe(callerUserId);
+    expect(created.orderedByUserId).not.toBe(otherUserId);
+
+    const updated = await caller.v1.purchasing.update({
+      poId: created.id,
+      vendor: "Still No Claiming Co",
+      ...({ orderedByUserId: otherUserId } as Record<string, unknown>),
+    });
+    expect(updated.orderedByUserId).toBe(callerUserId);
   });
 
   // ── notes ────────────────────────────────────────────────────────────────────
@@ -347,6 +385,27 @@ suite("purchasing tRPC router (full stack, live RLS)", () => {
       callerB.v1.purchasing.noteViewUrl({ poId: created.id, id: note.id }),
     ).rejects.toMatchObject({ code: "NOT_FOUND" });
     // Not merely refused — never reached the storage layer at all.
+    expect(signedFor).toEqual([]);
+  });
+
+  it("a soft-deleted order's notes stop being servable — listNotes and noteViewUrl both answer NOT_FOUND", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    const created = await caller.v1.purchasing.create(draftInput({ vendor: "Removed Order Notes Co" }));
+    const note = await caller.v1.purchasing.addNote({
+      poId: created.id,
+      body: "Receipt",
+      attachment: { path: `${orgAId}/purchase-orders/${created.id}/${randomUUID()}.pdf`, type: "application/pdf", name: "r.pdf" },
+    });
+
+    const removed = await caller.v1.purchasing.remove({ poId: created.id });
+    expect(removed.removed).toBe(true);
+
+    signedFor.length = 0;
+    await expect(caller.v1.purchasing.listNotes({ poId: created.id })).rejects.toMatchObject({ code: "NOT_FOUND" });
+    await expect(
+      caller.v1.purchasing.noteViewUrl({ poId: created.id, id: note.id }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    // Never reached the storage layer once the order-existence guard refused it.
     expect(signedFor).toEqual([]);
   });
 });
