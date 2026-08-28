@@ -67,9 +67,9 @@ export class DrizzlePurchaseOrderRepository implements PurchaseOrderRepository {
     };
     await this.tx
       .insert(purchaseOrders)
-      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...columns })
+      .values({ id: p.id, orgId: this.orgId, createdAt: p.createdAt, ...columns })
       .onConflictDoUpdate({ target: purchaseOrders.id, set: columns });
-    await this.replaceLines(p.id, p.orgId, p.lines);
+    await this.replaceLines(p.id, p.lines);
   }
 
   async softDelete(id: string, now: Date): Promise<number> {
@@ -99,6 +99,7 @@ export class DrizzlePurchaseOrderRepository implements PurchaseOrderRepository {
       authorUserId: r.authorUserId,
       attachmentPath: r.attachmentPath,
       attachmentName: r.attachmentName,
+      attachmentType: r.attachmentType,
       createdAt: r.createdAt,
     }));
   }
@@ -112,6 +113,7 @@ export class DrizzlePurchaseOrderRepository implements PurchaseOrderRepository {
       authorUserId: note.authorUserId,
       attachmentPath: note.attachmentPath,
       attachmentName: note.attachmentName,
+      attachmentType: note.attachmentType,
       createdAt: note.createdAt,
     });
   }
@@ -132,15 +134,15 @@ export class DrizzlePurchaseOrderRepository implements PurchaseOrderRepository {
    * leave a line removed in memory still sitting on the row forever. This is what pins that: hard
    * delete every existing line for the order, then insert exactly the set the aggregate carries.
    */
-  private async replaceLines(poId: string, orgId: OrgId, lines: readonly POLineProps[]): Promise<void> {
+  private async replaceLines(poId: string, lines: readonly POLineProps[]): Promise<void> {
     await this.tx
       .delete(purchaseOrderLines)
-      .where(and(eq(purchaseOrderLines.orgId, orgId), eq(purchaseOrderLines.poId, poId)));
+      .where(and(eq(purchaseOrderLines.orgId, this.orgId), eq(purchaseOrderLines.poId, poId)));
     if (lines.length === 0) return;
     await this.tx.insert(purchaseOrderLines).values(
       lines.map((l) => ({
         id: l.id,
-        orgId,
+        orgId: this.orgId,
         poId,
         description: l.description,
         qty: String(l.qty),

@@ -6,6 +6,7 @@ export interface PONoteRow {
   readonly authorUserId: string | null;
   readonly attachmentPath: string | null;
   readonly attachmentName: string | null;
+  readonly attachmentType: string | null;
   readonly createdAt: Date;
 }
 

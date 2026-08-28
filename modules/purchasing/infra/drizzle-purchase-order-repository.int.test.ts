@@ -17,6 +17,10 @@ import { PurchaseOrder, type PurchaseOrderProps } from "../domain/purchase-order
 const hasDb = Boolean(process.env.APP_DATABASE_URL && process.env.DATABASE_URL);
 const suite = hasDb ? describe : describe.skip;
 
+/** Local-calendar Y-M-D of a Date, for comparing "same day" without a timestamp's TZ noise. */
+const ymd = (d: Date | null): string | null =>
+  d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : null;
+
 const baseOrder = (org: OrgId, overrides: Partial<PurchaseOrderProps> = {}): PurchaseOrderProps => ({
   id: randomUUID(),
   orgId: org,
@@ -109,6 +113,30 @@ suite("DrizzlePurchaseOrderRepository against live Supabase RLS", () => {
     });
     expect(back!.props.lines).toHaveLength(1);
     expect(back!.props.lines[0]!.description).toBe("second");
+  });
+
+  // `ordered_at`/`expected_at` are postgres `date` columns; the mapper's `fromDate` (write) and
+  // `toDate` (read) are a hand-rolled, deliberately-asymmetric pair (write: local Y-M-D of the
+  // Date; read: local noon of that Y-M-D) — exactly the shape that has bitten this repo before
+  // with `time` columns reading back as "HH:MM:SS". This pins the full round trip: the calendar
+  // date that goes in via `save()` is the calendar date that comes back via `findById()`,
+  // compared as Y-M-D (not as a timestamp, which would be sensitive to the noon anchor).
+  it("round-trips orderedAt/expectedAt as the SAME calendar date, not shifted by a timezone", async () => {
+    const org = asOrgId(orgId);
+    // Constructed from local calendar components (not an ISO/UTC string) so the test's own
+    // expectation isn't itself at the mercy of the runner's timezone.
+    const orderedAt = new Date(2026, 5, 15); // June 15, 2026
+    const expectedAt = new Date(2026, 6, 2); // July 2, 2026
+    const back = await withTenant(org, async (tx) => {
+      const repo = new DrizzlePurchaseOrderRepository(tx, org);
+      const r = PurchaseOrder.create(baseOrder(org, { orderedAt, expectedAt }));
+      if (!isOk(r)) throw new Error(r.error.message);
+      await repo.save(r.value);
+      return repo.findById(r.value.props.id);
+    });
+    expect(back).not.toBeNull();
+    expect(ymd(back!.props.orderedAt)).toBe(ymd(orderedAt));
+    expect(ymd(back!.props.expectedAt)).toBe(ymd(expectedAt));
   });
 
   it("omits soft-deleted orders from list", async () => {
