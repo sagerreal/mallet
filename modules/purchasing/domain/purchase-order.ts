@@ -1,4 +1,4 @@
-import { err, ok, type Result, type OrgId } from "@mallet/shared/types";
+import { err, ok, validation, type Result, type OrgId, type ValidationError } from "@mallet/shared/types";
 
 export type POStatus = "draft" | "ordered" | "cancelled";
 export type ShipTo = "counter_pickup" | "job_site" | "shop";
@@ -43,36 +43,45 @@ export const totalCents = (po: PurchaseOrder): number =>
 export class PurchaseOrder {
   private constructor(public readonly props: PurchaseOrderProps) {}
 
-  static create(props: PurchaseOrderProps): Result<PurchaseOrder, string> {
-    if (!props.vendor.trim()) return err("A purchase order needs a vendor.");
-    if (props.freightCents < 0) return err("Freight cannot be negative.");
-    if (props.taxCents < 0) return err("Tax cannot be negative.");
+  static create(props: PurchaseOrderProps): Result<PurchaseOrder, ValidationError> {
+    if (!props.vendor.trim()) return err(validation("A purchase order needs a vendor.", "vendor"));
+    if (props.freightCents < 0) return err(validation("Freight cannot be negative.", "freightCents"));
+    if (props.taxCents < 0) return err(validation("Tax cannot be negative.", "taxCents"));
     // A placed order must carry the number somebody reads to the branch; a draft must not,
     // or abandoned taps burn numbers out of a sequence that is meant to be gapless.
-    if (props.status === "draft" && props.num !== null) return err("A draft has no number until it is placed.");
-    if (props.status !== "draft" && !props.num) return err("A placed order must carry its number.");
+    if (props.status === "draft" && props.num !== null)
+      return err(validation("A draft has no number until it is placed.", "num"));
+    if (props.status !== "draft" && !props.num)
+      return err(validation("A placed order must carry its number.", "num"));
     for (const l of props.lines) {
-      if (!l.description.trim()) return err("Every line needs a description.");
-      if (l.qty <= 0) return err("A line quantity must be greater than zero.");
-      if (l.unitCostMillicents < 0) return err("A unit cost cannot be negative.");
+      if (!l.description.trim()) return err(validation("Every line needs a description.", "description"));
+      if (l.qty <= 0) return err(validation("A line quantity must be greater than zero.", "qty"));
+      if (l.unitCostMillicents < 0)
+        return err(validation("A unit cost cannot be negative.", "unitCostMillicents"));
     }
     return ok(new PurchaseOrder(props));
   }
 
-  private with(patch: Partial<PurchaseOrderProps>): Result<PurchaseOrder, string> {
+  private with(patch: Partial<PurchaseOrderProps>): Result<PurchaseOrder, ValidationError> {
     return PurchaseOrder.create({ ...this.props, ...patch });
   }
 
   /** Draft → ordered. Allocates nothing itself; the caller hands in the number. */
-  place(num: string, now: Date): Result<PurchaseOrder, string> {
-    if (this.props.status !== "draft") return err("This order has already been placed.");
-    if (this.props.lines.length === 0) return err("Add a line before placing the order.");
+  place(num: string, now: Date): Result<PurchaseOrder, ValidationError> {
+    if (this.props.status !== "draft")
+      return err(validation("This order has already been placed.", "status"));
+    if (this.props.lines.length === 0)
+      return err(validation("Add a line before placing the order.", "lines"));
     return this.with({ status: "ordered", num, orderedAt: now, updatedAt: now });
   }
 
-  cancel(): Result<PurchaseOrder, string> {
-    if (this.props.status === "cancelled") return err("This order is already cancelled.");
-    if (this.props.status === "draft") return err("Delete a draft rather than cancelling it — the vendor never heard of it.");
+  cancel(): Result<PurchaseOrder, ValidationError> {
+    if (this.props.status === "cancelled")
+      return err(validation("This order is already cancelled.", "status"));
+    if (this.props.status === "draft")
+      return err(
+        validation("Delete a draft rather than cancelling it — the vendor never heard of it.", "status"),
+      );
     return this.with({ status: "cancelled" });
   }
 

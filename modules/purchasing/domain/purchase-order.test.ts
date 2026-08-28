@@ -116,4 +116,13 @@ describe("place / cancel", () => {
     if (!isOk(r)) throw new Error("seed invalid");
     expect(r.value.jobCostCents()).toBe(0);
   });
+
+  // Pins the domain to purchase_orders_num_check: (status = 'draft') = (num is null). A draft
+  // has no number, and a cancelled order must still carry one — so a draft can never become
+  // cancelled; it must be deleted instead.
+  it("refuses to cancel a draft — delete it instead, the vendor never heard of it", () => {
+    const r = PurchaseOrder.create(base);
+    if (!isOk(r)) throw new Error("seed invalid");
+    expect(isErr(r.value.cancel())).toBe(true);
+  });
 });
