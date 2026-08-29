@@ -48,7 +48,10 @@ export function tierViewsFor(estimate: Estimate): PublicTierViews | null {
   const { recommendedTier, acceptedTier, tierNames } = estimate.props;
   if (recommendedTier === null || acceptedTier !== null) return null;
   const tiers = QUOTE_TIERS.map((tier) => {
-    const lines = estimate.linesForTier(tier);
+    // Components are the shop's own build-up and never reach the customer — their money is
+    // already inside the parent line. linesForTier is honestly "every line tagged with this
+    // tier", so the customer-facing filter belongs here.
+    const lines = estimate.linesForTier(tier).filter((l) => !l.props.parentLineId);
     return {
       tier,
       name: tierNames?.[tier] ?? DEFAULT_TIER_LABELS[tier],

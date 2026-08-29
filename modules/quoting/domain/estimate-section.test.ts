@@ -168,3 +168,105 @@ describe("Estimate — sections on the aggregate", () => {
     expect(r.value.linesInSection(null).map((l) => l.props.description)).toEqual(["Trip charge"]);
   });
 });
+
+// ---------------------------------------------------------------------------
+// A component's money is already inside its parent.
+// ---------------------------------------------------------------------------
+
+describe("Estimate — components never bill twice", () => {
+  const priced = (description: string, quantity: number, rateCents: number, over: Record<string, unknown> = {}) => {
+    const r = EstimateLine.create({
+      id: `l-${description}` as EstimateLineId,
+      description,
+      quantity,
+      rate: money(rateCents),
+      cost: money(0),
+      isOptional: false,
+      needsPhoto: false,
+      position: 0,
+      tier: null,
+      materialId: null,
+      ...over,
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+
+  const withLines = (lines: ReturnType<typeof priced>[], over: Partial<EstimateProps> = {}) => {
+    const r = Estimate.create({
+      id: "e-1" as EstimateId,
+      orgId: "o-1" as OrgId,
+      num: "Q-1",
+      leadId: "lead-1" as LeadId,
+      title: null,
+      status: "draft",
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      depPaid: money(0),
+      validDays: null,
+      sentAt: null,
+      acceptedAt: null,
+      declinedAt: null,
+      declineReason: null,
+      changeRequestedAt: null,
+      changeOrderForJobId: null,
+      jobId: null,
+      changeRequest: null,
+      publicToken: null,
+      recommendedTier: null,
+      acceptedTier: null,
+      tierNames: null,
+      termsSnapshot: null,
+      lines,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      ...over,
+    });
+    if (!r.ok) throw new Error(r.error.message);
+    return r.value;
+  };
+
+  const parentId = "l-Cedar fence" as EstimateLineId;
+
+  it("bills the parent once, not the parent plus its parts", () => {
+    // The defect this guards, seen on screen: a $1,158 fence quoted as $2,316.
+    const estimate = withLines([
+      priced("Cedar fence", 100, 1158),
+      priced("Line posts", 14, 2430, { parentLineId: parentId }),
+      priced("Pickets", 200, 415, { parentLineId: parentId }),
+    ]);
+    expect(estimate.subtotal()).toBe(115_800);
+    expect(estimate.total()).toBe(115_800);
+  });
+
+  it("keeps components out of the tax base too", () => {
+    const estimate = withLines(
+      [priced("Cedar fence", 100, 1158), priced("Line posts", 14, 2430, { parentLineId: parentId })],
+      { taxBps: 1000 },
+    );
+    expect(estimate.taxableBase()).toBe(115_800);
+    expect(estimate.taxAmount()).toBe(11_580);
+  });
+
+  it("keeps components off the job the accepted quote creates", () => {
+    // "Line posts, 4×4×8 cedar" is a part the shop buys, not work on a technician's list.
+    const estimate = withLines([
+      priced("Cedar fence", 100, 1158),
+      priced("Line posts", 14, 2430, { parentLineId: parentId }),
+    ]);
+    expect(estimate.soldLines().map((l) => l.props.description)).toEqual(["Cedar fence"]);
+  });
+
+  it("keeps a tier's total free of its components", () => {
+    const estimate = withLines(
+      [
+        priced("Cedar fence", 100, 1158, { tier: "good" }),
+        priced("Line posts", 14, 2430, { tier: "good", parentLineId: parentId }),
+      ],
+      { recommendedTier: "good", tierNames: { good: "Basic", better: "Standard", best: "Premium" } },
+    );
+    expect(estimate.totalsForTier("good").total).toBe(115_800);
+    expect(estimate.subtotal()).toBe(115_800);
+  });
+});

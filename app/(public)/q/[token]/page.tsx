@@ -169,8 +169,13 @@ export default async function PublicQuotePage({
   // add-ons are interactive: the QuoteLines client island renders them as toggles
   // and recomputes the totals + approve amount on every change. estimate.subtotal()
   // counts only non-optional lines, so it is the island's fixed base.
-  const fixedLines = p.lines.filter((l) => !l.props.isOptional);
-  const optLines = p.lines.filter((l) => l.props.isOptional);
+  // Components never reach the customer: a component is a part inside an assembly, and the
+  // parent line the customer reads already carries its money. Rendering them would show the
+  // shop's own build-up on the customer's quote AND read as extra charges beside a total that
+  // does not contain them. Same predicate the domain's totals use (Estimate.contributesMoney).
+  const quotedLines = p.lines.filter((l) => !l.props.parentLineId);
+  const fixedLines = quotedLines.filter((l) => !l.props.isOptional);
+  const optLines = quotedLines.filter((l) => l.props.isOptional);
   const fixedSubtotalCents = estimate.subtotal();
   // The SECOND base: what the rate is charged on. Non-taxable lines stay in the subtotal above.
   const fixedTaxableCents = estimate.taxableBase();

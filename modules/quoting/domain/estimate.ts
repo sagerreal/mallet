@@ -568,15 +568,35 @@ export class Estimate {
     return this.effectiveLines().filter((line) => !line.props.isOptional);
   }
 
+  /**
+   * The lines money derives from, and the scope handed to the job.
+   *
+   * Components are dropped here as well as inside the two sums: this is also what `soldLines`
+   * reads, and "Line posts, 4×4×8 cedar" is a part the shop buys, not work on a technician's
+   * list. The customer bought the fence.
+   */
   private effectiveLines(): readonly EstimateLine[] {
-    if (this.p.recommendedTier === null || this.p.acceptedTier !== null) return this.p.lines;
-    return this.linesForTier(this.p.recommendedTier);
+    const quoted = this.p.lines.filter(Estimate.contributesMoney);
+    if (this.p.recommendedTier === null || this.p.acceptedTier !== null) return quoted;
+    return quoted.filter((line) => line.props.tier === this.p.recommendedTier);
+  }
+
+  /**
+   * Does this line put money on the bill at all.
+   *
+   * A COMPONENT does not: its money is already inside its parent, whose rate IS the roll-up of
+   * the parts beneath it. Counting both bills the customer twice for the same fence — a $1,158
+   * assembly charged as $2,316. This sits beside `isOptional` because it answers the same kind
+   * of question, and every derivation below runs through one of the two sums that use it.
+   */
+  private static contributesMoney(line: EstimateLine): boolean {
+    return !line.props.parentLineId;
   }
 
   // Sum of non-optional line amounts. Optional add-ons are excluded until toggled at accept.
   private static subtotalOf(lines: readonly EstimateLine[]): Money {
     return lines
-      .filter((line) => !line.props.isOptional)
+      .filter((line) => !line.props.isOptional && Estimate.contributesMoney(line))
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 
@@ -590,7 +610,7 @@ export class Estimate {
    */
   private static taxableBaseOf(lines: readonly EstimateLine[]): Money {
     return lines
-      .filter((line) => !line.props.isOptional && line.props.taxable)
+      .filter((line) => !line.props.isOptional && line.props.taxable && Estimate.contributesMoney(line))
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 

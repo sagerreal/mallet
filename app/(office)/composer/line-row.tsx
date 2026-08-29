@@ -7,7 +7,7 @@
  * only about itself and, when it is a component, the parent whose quantity it counts off.
  */
 
-import { fmt$ } from "@/lib/format";
+import { fmt$, fmt$rate } from "@/lib/format";
 import { realSubItems, type ComposerLine } from "./composer-state";
 import { QuantityCell } from "./quantity-cell";
 import { resolveQuantity } from "./line-math";
@@ -28,7 +28,6 @@ export interface LineRowProps {
   provenanceFor?: (description: string) => "pricebook" | null;
   onUpdate: (patch: Partial<ComposerLine>) => void;
   onRemove: () => void;
-  onAddComponent: () => void;
   /** The depth toggles the table owns (scope prose, legacy sub-items). */
   hints?: React.ReactNode;
 }
@@ -45,7 +44,6 @@ export function LineRow({
   provenanceFor,
   onUpdate,
   onRemove,
-  onAddComponent,
   hints,
 }: LineRowProps) {
   const isComponent = Boolean(parent);
@@ -86,7 +84,7 @@ export function LineRow({
       <td>
         {pricedByParts ? (
           <span className="rolled" aria-label={`Price, line ${lineNo} — set by its components`}>
-            {fmt$(line.r ?? 0)}
+            {fmt$rate(line.r ?? 0)}
           </span>
         ) : (
           <input
@@ -103,7 +101,7 @@ export function LineRow({
         <td>
           {hasComponents ? (
             <span className="rolled" aria-label={`Your cost, line ${lineNo} — set by its components`}>
-              {line.c != null ? fmt$(line.c) : "—"}
+              {line.c != null ? fmt$rate(line.c) : "—"}
             </span>
           ) : (
             <input
@@ -132,13 +130,6 @@ export function LineRow({
       <td className="rowacts">
         {hasContent && !isComponent && (
           <>
-            <button
-              className="lineedit-tool"
-              title="Price this line from the parts and labour under it"
-              onClick={onAddComponent}
-            >
-              + Component
-            </button>{" "}
             <button
               className={`optchip${line.opt ? " on" : ""}`}
               title="Optional add-on — the customer can add or skip this on their quote page"

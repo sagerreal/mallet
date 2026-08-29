@@ -223,3 +223,25 @@ describe("calcQuote's float-dollar rounding gap against the canonical chain (PRE
     expect(displayed(float.taxed)).toBe(centsAsDollars(domain.taxAmount()));
   });
 });
+
+describe("calcQuote — components are already inside their parent", () => {
+  it("does not add a component's amount on top of the parent that contains it", () => {
+    // Mirrors Estimate.contributesMoney. The composer showed $2,316 for a $1,158 fence before
+    // this filter existed, which is the office reading a total the customer's document does not.
+    const lines: SampleEstimateLine[] = [
+      { d: "Cedar fence", q: 100, r: 11.58 },
+      { d: "Line posts", q: 14, r: 24.3, parentIndex: 0 },
+      { d: "Pickets", q: 200, r: 4.15, parentIndex: 0 },
+    ];
+    expect(calcQuote(lines).sub).toBeCloseTo(1158, 2);
+    expect(calcQuote(lines).total).toBeCloseTo(1158, 2);
+  });
+
+  it("keeps components out of the tax base", () => {
+    const lines: SampleEstimateLine[] = [
+      { d: "Cedar fence", q: 100, r: 11.58 },
+      { d: "Line posts", q: 14, r: 24.3, parentIndex: 0 },
+    ];
+    expect(calcQuote(lines, { tax: 10 }).taxed).toBeCloseTo(115.8, 2);
+  });
+});

@@ -57,6 +57,11 @@ describe("LineTable — building an assembly", () => {
     table([fence, posts]);
     expect(screen.getAllByTitle("Price this line from the parts and labour under it")).toHaveLength(1);
   });
+
+  it("counts the components it already has", () => {
+    table([fence, posts]);
+    expect(screen.getByText("↳ Add component (1)")).toBeTruthy();
+  });
 });
 
 describe("LineTable — a component's quantity is math", () => {

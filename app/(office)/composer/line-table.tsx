@@ -120,11 +120,16 @@ export function LineTable({
 
   const addLine = () => commit([...lines, { d: "", q: 1, r: 0 }]);
 
-  /** The depth toggles under a description — scope prose, and sub-items on quotes that have them. */
-  const hintsFor = (line: ComposerLine, i: number) => {
+  /**
+   * The affordances under a description — scope prose, components, and sub-items on the quotes
+   * that already carry them. They ride here rather than in the row-actions column because that
+   * column is a fixed width holding chips, and a fourth control pushed the ✕ off the row.
+   */
+  const hintsFor = (line: ComposerLine, i: number, isComponent: boolean) => {
     const hasContent = Boolean(line.d && line.d.trim());
     const subs = realSubItems(line.sub).length;
-    const hasDepth = Boolean(line.scope?.trim()) || subs > 0;
+    const components = componentIndexes(lines, i).length;
+    const hasDepth = Boolean(line.scope?.trim()) || subs > 0 || components > 0;
     if (!hasContent && !hasDepth) return null;
     return (
       <div className="linehints">
@@ -152,6 +157,17 @@ export function LineTable({
             ↳ Sub-items ({subs})
           </button>
         )}
+        {/* A component cannot have components of its own — the document stays one level deep. */}
+        {!isComponent && (
+          <button
+            type="button"
+            className="linehint"
+            title="Price this line from the parts and labour under it"
+            onClick={() => addComponentTo(i)}
+          >
+            {components > 0 ? `↳ Add component (${components})` : "↳ Add component"}
+          </button>
+        )}
       </div>
     );
   };
@@ -175,8 +191,7 @@ export function LineTable({
           provenanceFor={provenanceFor}
           onUpdate={(patch) => updateLine(i, patch)}
           onRemove={() => removeLine(i)}
-          onAddComponent={() => addComponentTo(i)}
-          hints={hintsFor(line, i)}
+          hints={hintsFor(line, i, Boolean(parent))}
         />
         {(hasContent || hasDepth) && scopeOpen.has(i) && (
           <tr className="linedetail">
@@ -220,9 +235,9 @@ export function LineTable({
           <col style={{ width: 96 }} />
           {showCost && <col style={{ width: 96 }} />}
           <col style={{ width: 104 }} />
-          {/* Actions hold Optional + Component + ✕ — sized to fit, so AMOUNT no
-              longer floats beside a wide dead zone. */}
-          <col style={{ width: 190 }} />
+          {/* Actions hold the chips + ✕ — sized to fit, so AMOUNT no longer floats
+              beside a wide dead zone. Adding a component lives under the description. */}
+          <col style={{ width: 148 }} />
         </colgroup>
         <thead>
           <tr>
