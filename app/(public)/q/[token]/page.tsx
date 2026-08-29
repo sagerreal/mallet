@@ -22,7 +22,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicQuote } from "@/modules/quoting/app/public-quote";
 import { LineRow } from "./LineRow";
-import { formatMoney } from "@/lib/format";
+import { fmt$ } from "@/lib/format";
 import { QuoteLines } from "./QuoteLines";
 import { tierViewsFor } from "./tier-view";
 import { groupBySection } from "./section-groups";
@@ -400,7 +400,9 @@ export default async function PublicQuotePage({
                     <span>{group.name}</span>
                     {/* No group subtotal under 'one price' — the whole point of that format is
                         that the customer reads a single number. */}
-                    {showLineAmounts && <b>{formatMoney(group.totalCents)}</b>}
+                    {/* fmt$ like the rows beneath it — a heading reading $240.00 beside a line
+                        reading $240 is two formatters arguing on the customer's document. */}
+                    {showLineAmounts && <b>{fmt$(group.totalCents / 100)}</b>}
                   </div>
                   {group.lines.map((line) => {
                     const lp = line.props;
