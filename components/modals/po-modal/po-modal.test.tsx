@@ -7,6 +7,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { PO_LABEL } from "@/features/money/po-defs";
 import type { PurchaseOrder } from "@/lib/store/types";
 
 const updatePurchaseOrder = vi.fn();
@@ -136,6 +137,47 @@ describe("POModal — Order chapter writes on blur", () => {
   });
 });
 
+describe("POModal — a cancelled order locks every field", () => {
+  // UpdatePurchaseOrderUseCase refuses ANY write to a cancelled order server-side. Leaving these
+  // controls enabled meant the user could type, watch it apply optimistically, then watch it
+  // roll back with a write-error toast a moment later — an edit-then-revert on a field that
+  // should simply have been dead, not a silent failure but not a clean one either.
+  beforeEach(() => {
+    currentPO = basePO({ status: "cancelled", num: "PO-1044", orderedAt: "2026-08-19" });
+  });
+
+  it("the vendor field is disabled", () => {
+    render(<POModal poId="po-1" />);
+    openChapter(0);
+    expect((screen.getByLabelText("Vendor") as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("the For job picker is disabled", () => {
+    render(<POModal poId="po-1" />);
+    openChapter(0);
+    expect((screen.getByLabelText(PO_LABEL.job) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("the Expected date is disabled", () => {
+    render(<POModal poId="po-1" />);
+    openChapter(0);
+    expect((screen.getByLabelText(PO_LABEL.expectedAt) as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it("the Ship to picker is disabled", () => {
+    render(<POModal poId="po-1" />);
+    openChapter(0);
+    expect((screen.getByLabelText(PO_LABEL.shipTo) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("Freight and Tax are disabled too — a cancelled order refuses every field", () => {
+    render(<POModal poId="po-1" />);
+    openChapter(1);
+    expect((screen.getByLabelText(PO_LABEL.freight) as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText(PO_LABEL.tax) as HTMLInputElement).disabled).toBe(true);
+  });
+});
+
 describe("POModal — Lines chapter", () => {
   it("a draft's lines are editable, with an Add-a-line control", () => {
     render(<POModal poId="po-1" />);
@@ -172,6 +214,18 @@ describe("POModal — Lines chapter", () => {
     openChapter(1);
     fireEvent.click(screen.getByLabelText(/^Remove/));
     expect(updatePurchaseOrder).toHaveBeenCalledWith("po-1", { lines: [], freight: 0, tax: 0 });
+  });
+
+  it("Freight and Tax stay editable once the order is PLACED — only the lines lock", () => {
+    // Neither is a promise already made to the vendor, and freight in particular is often
+    // quoted late — the real figures are usually only known once the vendor's invoice arrives,
+    // which is always AFTER placing. Locking them the way Lines locks would make the field
+    // unreachable in exactly the situation it exists for.
+    currentPO = basePO({ status: "ordered", num: "PO-1044", orderedAt: "2026-08-19" });
+    render(<POModal poId="po-1" />);
+    openChapter(1);
+    expect((screen.getByLabelText(PO_LABEL.freight) as HTMLInputElement).disabled).toBe(false);
+    expect((screen.getByLabelText(PO_LABEL.tax) as HTMLInputElement).disabled).toBe(false);
   });
 });
 

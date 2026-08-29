@@ -344,6 +344,7 @@ export function POModal({ poId }: POModalProps) {
               <input
                 type="text"
                 defaultValue={po.vendor}
+                disabled={isCancelled}
                 onBlur={(e) => {
                   const v = e.target.value.trim();
                   if (v && v !== po.vendor) updatePurchaseOrder(po.id, { vendor: v });
@@ -356,6 +357,7 @@ export function POModal({ poId }: POModalProps) {
                 onChange={(v) => updatePurchaseOrder(po.id, { jobId: v || null })}
                 options={[{ value: "", label: STOCK_ORDER_LABEL }, ...jobOptions]}
                 aria-label={PO_LABEL.job}
+                disabled={isCancelled}
               />
             </Field>
             {/* Stamped, never asked — see PO_LABEL.orderedBy below. Placing the order is the only
@@ -367,6 +369,7 @@ export function POModal({ poId }: POModalProps) {
               <input
                 type="date"
                 defaultValue={po.expectedAt ?? ""}
+                disabled={isCancelled}
                 onBlur={(e) => {
                   const v = e.target.value || null;
                   if (v !== po.expectedAt) updatePurchaseOrder(po.id, { expectedAt: v });
@@ -379,6 +382,7 @@ export function POModal({ poId }: POModalProps) {
                 onChange={(v) => updatePurchaseOrder(po.id, { shipTo: v as POShipTo })}
                 options={(Object.keys(SHIP_TO_LABEL) as POShipTo[]).map((k) => ({ value: k, label: SHIP_TO_LABEL[k] }))}
                 aria-label={PO_LABEL.shipTo}
+                disabled={isCancelled}
               />
             </Field>
             {/* Stamped, never asked. "Who put a $2,140 boiler on the shop account" is a real
@@ -413,11 +417,21 @@ export function POModal({ poId }: POModalProps) {
               </p>
             )}
             <div className="sheet-inline" style={{ marginTop: "var(--space-3)" }}>
+              {/*
+                Freight and tax stay editable after the order is placed — see
+                UpdatePurchaseOrderUseCase's own doc: neither is a promise already made to the
+                vendor, and freight in particular is often quoted LATE. The only time the real
+                figures are known is when the vendor's invoice arrives, which is always after
+                placing. Locking these (the way Lines correctly does) would make the field
+                unreachable in exactly the situation it exists for. Only a CANCELLED order
+                refuses every field — that's handled by the isCancelled disables on the Order
+                chapter's own controls, and update() itself refuses the write server-side too.
+              */}
               <Field label={PO_LABEL.freight} style={{ margin: 0 }}>
                 <DraftNumberInput
                   value={freight}
                   decimals={2}
-                  disabled={!isDraft}
+                  disabled={isCancelled}
                   aria-label={PO_LABEL.freight}
                   onCommit={(v) => {
                     dirtyRef.current = true;
@@ -431,7 +445,7 @@ export function POModal({ poId }: POModalProps) {
                 <DraftNumberInput
                   value={tax}
                   decimals={2}
-                  disabled={!isDraft}
+                  disabled={isCancelled}
                   aria-label={PO_LABEL.tax}
                   onCommit={(v) => {
                     dirtyRef.current = true;
