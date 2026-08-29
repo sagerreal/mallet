@@ -143,8 +143,12 @@ function PONoteAttachment({ poId, noteId, name }: { poId: string; noteId: string
       >
         {opening ? "Opening…" : name}
       </button>
+      {/* No inline font-size here — a bare <p> is already lifted to the 15px floor by
+          `.po-scope p` (app/prototype.css). An inline size would win over that rule regardless of
+          specificity, which is exactly the failure mode that forced select-menu.tsx's caret onto
+          a class instead of an inline style. */}
       {error && (
-        <p role="alert" style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}>
+        <p role="alert" style={{ color: "var(--red)", margin: "var(--space-1) 0 0" }}>
           {error}
         </p>
       )}

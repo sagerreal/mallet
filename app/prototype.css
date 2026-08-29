@@ -1948,6 +1948,10 @@
   .attachchip-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .attachchip-x{flex:none;border:0;background:none;color:var(--ink-3);font-weight:800;cursor:pointer;padding:0 var(--space-1);font-family:inherit}
   .attachchip-x:hover{color:var(--ink)}
+  /* note-composer.tsx's error line — a class so a scope like .po-scope can lift it past this
+     default; an inline font-size would outrank any external rule short of !important (the same
+     reason select-menu.tsx exposes its trigger caret as a class instead). */
+  .ncomposer-err{color:var(--red);font-size:var(--type-sm);margin:var(--space-2) 0 0}
   .cfrow .btn{flex:0 0 auto}
   .hookurl{display:flex;gap:var(--space-3);align-items:center;background:#11131c;color:#C7D2FE;padding:var(--space-3) var(--space-3);border-radius:var(--radius-sm);font-size:var(--type-sm);font-family:ui-monospace,Menlo,monospace}
   .hookurl code{flex:1;white-space:nowrap;overflow-x:auto}
@@ -3734,6 +3738,12 @@
      select-menu.tsx now exposes it as a class), and the create form's own error paragraph
      (already just a bare <p>, covered above, listed here only as a reminder it is covered). */
   .po-scope .select-trigger-caret{font-size:var(--type-md)}
+  /* Three more spots the .list-tbl/.nfeed/span/input selectors above do not reach: a plain <div>
+     inside a <td> does not inherit the td rule's font-size (.empty-att sets its own), the note
+     composer's error line lives on a class so it can be lifted here without moving the shared
+     default, and the staged-file chip's "✕" is a <button> — :where(button){font:inherit} makes it
+     inherit from .attachchip, so the ".po-scope span" rule above never touches it. */
+  .po-scope .empty-att,.po-scope .ncomposer-err,.po-scope .attachchip-x{font-size:var(--type-md)}
 
   /* THE PO LINE GRID READS AT THE BODY SIZE. The shared .lineedit input rule is --type-base
      (13px) against a 15px body, and a purchase order is money somebody retypes off a
