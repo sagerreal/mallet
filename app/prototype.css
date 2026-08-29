@@ -1524,6 +1524,105 @@
   .linehint{background:none;border:0;padding:0;font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
   .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
   .linehint[aria-expanded="true"]{color:var(--ink)}
+  /* ---------- the proposal document ----------
+     Paper sheets, a document toolbar, and in-place editing — the composer-v4 mock's
+     presentation, ported. The sheet is a SIMULATION of paper, so it carries its own type
+     scale rather than the app's: every size below is derived from --doc-size, which the
+     toolbar changes. They are named --type-doc-* because that is what they are — type
+     tokens, scoped to the document. */
+  .sheets{max-width:760px;margin:0 auto;
+    --doc-gutter:54px;
+    --type-doc:var(--doc-size,14px);
+    --type-doc-xs:calc(var(--type-doc) * .72);
+    --type-doc-sm:calc(var(--type-doc) * .85);
+    --type-doc-kick:calc(var(--type-doc) * .78);
+    --type-doc-body:var(--type-doc);
+    --type-doc-lead:calc(var(--type-doc) * 1.05);
+    --type-doc-big:calc(var(--type-doc) * 1.1);
+    --type-doc-h1:calc(var(--type-doc) * 2.3);
+    font-size:var(--type-doc);
+    font-family:var(--doc-font,var(--font-inter),system-ui,sans-serif);
+    color:var(--ink)}
+  /* One page. min-height is US Letter's proportion at this width, so a page break in the
+     editor is a page break on the customer's screen. */
+  .docsheet{position:relative;display:flex;flex-direction:column;min-height:960px;
+    background:var(--card);border:1px solid var(--line);border-radius:var(--radius-sm);
+    box-shadow:0 1px 2px rgb(32 33 30 / 10%),0 12px 32px rgb(32 33 30 / 10%);
+    overflow:hidden;margin-top:var(--space-5)}
+  .docsheet-foot{margin-top:auto;display:flex;justify-content:space-between;gap:var(--space-3);
+    padding:var(--space-2) var(--doc-gutter);border-top:1px solid var(--line-2);font-size:var(--type-doc-xs);color:var(--ink-3)}
+  .docsec{position:relative}
+  .docsec + .docsec{border-top:1px solid var(--line-2)}
+  .docsec-inner{padding:var(--space-6) var(--doc-gutter)}
+  /* The cover */
+  .doccover{position:relative;padding:var(--space-8) var(--doc-gutter) var(--space-6)}
+  .doccover .kick{font-size:var(--type-doc-kick);font-weight:700;letter-spacing:.08em;color:var(--ink-3);text-transform:uppercase}
+  .doccover h2{font-size:var(--type-doc-h1);line-height:1.12;font-weight:var(--doc-head-weight,800);
+    letter-spacing:-.015em;margin:var(--space-2) 0 var(--space-1);overflow-wrap:anywhere}
+  .doccover .sub{font-size:var(--type-doc-lead);font-style:var(--doc-sub-style,normal);color:var(--ink-2);margin:0 0 var(--space-4)}
+  .docmeta{display:flex;gap:var(--space-6);flex-wrap:wrap;border-top:1px solid var(--line-2);padding-top:var(--space-3)}
+  .docmeta .blk{min-width:160px}
+  .docmeta .k{font-size:var(--type-doc-xs);font-weight:700;letter-spacing:.06em;color:var(--ink-3);text-transform:uppercase;margin-bottom:var(--space-1)}
+  .docmeta .v{font-size:var(--type-doc-sm);line-height:1.55;color:var(--ink)}
+  /* A written page */
+  .dock{font-size:var(--type-doc-body);font-weight:var(--doc-head-weight,750);color:var(--doc-accent,var(--ink));margin-bottom:var(--space-2)}
+  .docbody{font-size:var(--type-doc-body);line-height:1.65;color:var(--ink-2);max-width:62ch;white-space:pre-line;margin:0}
+  .docempty{font-size:var(--type-doc-sm);color:var(--ink-3);margin:0}
+  /* The estimate, as the customer reads it */
+  .docline{display:flex;align-items:baseline;gap:var(--space-2);padding:var(--space-2) 0;border-top:1px solid var(--line-2);font-size:var(--type-doc-body)}
+  .docline .q{margin-left:auto;font-size:var(--type-doc-sm);font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .docscope{font-size:var(--type-doc-sm);line-height:1.6;color:var(--ink-3);white-space:pre-line;margin:var(--space-2xs) 0 var(--space-1);max-width:64ch}
+  .doctot{background:var(--paper);border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-3) var(--space-4);margin-top:var(--space-4)}
+  .doctot .r{display:flex;justify-content:space-between;gap:var(--space-3);font-size:var(--type-doc-sm);color:var(--ink-2);padding:var(--space-2xs) 0}
+  .doctot .r .v{font-weight:650;font-variant-numeric:tabular-nums}
+  .doctot .r.big{font-size:var(--type-doc-big);font-weight:800;color:var(--ink)}
+  .docaccept{border:1.5px solid var(--doc-accent,var(--ink));border-radius:var(--radius-sm);background:var(--paper);padding:var(--space-4);margin-top:var(--space-4)}
+  .docaccept .sigline{border-bottom:1.5px solid var(--ink-2);height:34px}
+  .docaccept .sigk{font-size:var(--type-doc-xs);letter-spacing:.05em;color:var(--ink-3);text-transform:uppercase;margin-top:var(--space-1)}
+  .docterms{margin-top:var(--space-5);border-top:1px solid var(--line-2);padding-top:var(--space-3)}
+  .docterms p{font-size:var(--type-doc-xs);line-height:1.6;color:var(--ink-3);white-space:pre-line;margin:var(--space-1) 0 0;max-width:70ch}
+  /* Photos: a real image, or the affordance to add one — never a fake picture. */
+  .docphotos{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:var(--space-3)}
+  .docphoto{position:relative;margin:0}
+  .docphoto.pair{grid-column:span 2}
+  .docphoto-pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-1)}
+  .docphoto-slot{position:relative;height:140px;border-radius:var(--radius-sm);background-size:cover;background-position:center;background-color:var(--paper)}
+  .docphoto-tag{position:absolute;left:6px;top:6px;background:rgb(32 35 31 / 78%);color:#fff;border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-1);font-size:var(--type-doc-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+  .docphoto-cap{margin-top:var(--space-1);font-size:var(--type-doc-sm);color:var(--ink-3);line-height:1.4}
+  /* ---------- the document toolbar ----------
+     Grouped with dividers the way a document editor does it, not a row of pills. */
+  .doctoolbar{display:flex;align-items:center;gap:var(--space-2xs);flex-wrap:wrap;background:var(--card);
+    border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-1) var(--space-2)}
+  .tb-group{display:flex;align-items:center;gap:var(--space-2xs)}
+  .tb-div{width:1px;align-self:stretch;margin:var(--space-2xs) var(--space-1);background:var(--line)}
+  .tb-btn{display:inline-flex;align-items:center;gap:var(--space-1);height:28px;padding:0 var(--space-2);border:0;
+    border-radius:var(--radius-sm);background:transparent;color:var(--ink);font-family:inherit;
+    font-size:var(--type-sm);font-weight:600;cursor:pointer}
+  .tb-btn:hover{background:var(--green-50)}
+  .tb-btn[aria-pressed="true"]{background:var(--green-50);box-shadow:inset 0 0 0 1px var(--line)}
+  .tb-select{height:28px;min-width:126px;border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--card);padding:0 var(--space-1);font-family:inherit;font-size:var(--type-sm);font-weight:600;color:var(--ink)}
+  .tb-size{display:inline-flex;align-items:center}
+  .tb-size button{width:24px;height:26px;border:0;background:transparent;border-radius:var(--radius-sm);
+    color:var(--ink-2);font-family:inherit;font-size:var(--type-base);font-weight:700;cursor:pointer}
+  .tb-size button:hover{background:var(--green-50)}
+  .tb-size input{width:38px;height:26px;border:1px solid var(--line);border-radius:var(--radius-sm);
+    text-align:center;font-family:inherit;font-size:var(--type-sm);background:var(--card);color:var(--ink)}
+  .tb-swatches{display:flex;align-items:center;gap:var(--space-1);padding-left:var(--space-2xs)}
+  /* 24px, not smaller: a colour chip is a target, and the a11y floor is 24×24. */
+  .tb-swatch{width:24px;height:24px;border-radius:var(--radius-sm);border:1px solid var(--line);cursor:pointer;padding:0}
+  .tb-swatch[aria-pressed="true"]{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ink)}
+  .tb-page{height:28px;padding:0 var(--space-2);border:0;border-radius:var(--radius-sm);background:transparent;
+    font-family:inherit;font-size:var(--type-sm);font-weight:600;color:var(--ink-3);cursor:pointer}
+  .tb-page:hover{background:var(--green-50);color:var(--ink)}
+  .tb-page[aria-pressed="true"]{color:var(--ink)}
+  .tb-page[aria-pressed="true"]::before{content:"✓ ";color:var(--green-700)}
+  .tb-page[disabled]{color:var(--ink-3);cursor:default}
+  .tb-page[disabled]:hover{background:transparent}
+  /* In-place editing: the page's own text becomes editable where it sits, Google-Docs style. */
+  .doc-edit{outline:none;border-radius:var(--radius-sm);box-shadow:0 0 0 1px var(--line)}
+  .doc-edit:focus{box-shadow:0 0 0 2px var(--green-600)}
+  .doc-editing .docsec{background:var(--card)}
   /* A statement, not a control: "✓ In pricebook" sits in the hint row and reads as the
      answer to the question the two buttons beside it would otherwise ask. */
   .linehint-note{font-size:var(--type-xs);font-weight:600;color:var(--ink-3);white-space:nowrap}

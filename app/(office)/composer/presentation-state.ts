@@ -154,13 +154,38 @@ export function presentationFromSnapshot(
   };
 }
 
-/** Toggle one page of the per-quote copy. The cover never toggles off — a presentation without
- *  its first page is just a plain quote, which "No presentation" already expresses. */
+/** What a page is called before the shop renames it. */
+const DEFAULT_PAGE_TITLES: Record<PresentationPageKey, string> = {
+  cover: "Cover",
+  letter: "A note from us",
+  about: "About us",
+  photos: "Photos",
+  process: "How the job goes",
+  reviews: "What customers say",
+  warranty: "Our warranty",
+  thanks: "Thank you",
+};
+
+/**
+ * Toggle one page of the per-quote copy.
+ *
+ * A page the template does not carry is CREATED, empty and on. The toolbar lists every kind a
+ * proposal can have, and a control that lists something it cannot produce is a control that
+ * lies — a shop whose template predates the Letter page would otherwise click Letter and watch
+ * nothing happen. The empty page then says it is empty, and editing it writes through to the
+ * template like any other.
+ *
+ * The cover never toggles off: a presentation without its first page is a plain quote, which
+ * "No presentation" already expresses.
+ */
 export function togglePresentationPage(
   p: ComposerPresentation,
   key: PresentationPageKey,
 ): ComposerPresentation {
   if (key === "cover") return p;
+  if (!p.pages.some((page) => page.key === key)) {
+    return { ...p, pages: [...p.pages, { key, on: true, title: DEFAULT_PAGE_TITLES[key], body: "" }] };
+  }
   return {
     ...p,
     pages: p.pages.map((page) => (page.key === key ? { ...page, on: !page.on } : page)),
