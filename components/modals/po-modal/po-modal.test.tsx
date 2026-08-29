@@ -209,11 +209,35 @@ describe("POModal — Lines chapter", () => {
     expect(patch.lines[0]!.qty).toBe(50);
   });
 
-  it("removing a line commits immediately", () => {
+  it("removing a line commits immediately — a DRAFT's blur carries lines (it may, since it's a draft)", () => {
     render(<POModal poId="po-1" />);
     openChapter(1);
     fireEvent.click(screen.getByLabelText(/^Remove/));
     expect(updatePurchaseOrder).toHaveBeenCalledWith("po-1", { lines: [], freight: 0, tax: 0 });
+  });
+
+  /**
+   * The bug this covers: freight/tax are ENABLED on a placed order (see the next test), but they
+   * live inside the same Lines chapter whose blur used to ALWAYS send `lines` too —
+   * UpdatePurchaseOrderUseCase refuses any `lines` once status !== "draft", so editing freight on
+   * an ordered PO got a CONFLICT and rolled back with a write error. A test that only asserts
+   * `disabled === false` (the one below) cannot catch this — it has to fire an edit through and
+   * inspect the actual payload.
+   */
+  it("editing freight on an ORDERED order writes freight only — no lines key, so it cannot conflict server-side", () => {
+    currentPO = basePO({ status: "ordered", num: "PO-1044", orderedAt: "2026-08-19", freight: 0, tax: 12 });
+    render(<POModal poId="po-1" />);
+    openChapter(1);
+    const freightInput = screen.getByLabelText(PO_LABEL.freight);
+    fireEvent.focus(freightInput);
+    fireEvent.change(freightInput, { target: { value: "45.50" } });
+    fireEvent.blur(freightInput);
+
+    expect(updatePurchaseOrder).toHaveBeenCalledTimes(1);
+    const [id, patch] = updatePurchaseOrder.mock.calls[0] as [string, Record<string, unknown>];
+    expect(id).toBe("po-1");
+    expect(patch).not.toHaveProperty("lines");
+    expect(patch).toEqual({ freight: 45.5, tax: 12 });
   });
 
   it("Freight and Tax stay editable once the order is PLACED — only the lines lock", () => {

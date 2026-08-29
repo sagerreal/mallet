@@ -257,7 +257,12 @@ export function POModal({ poId }: POModalProps) {
 
   const commitLines = (nextLines: PurchaseOrderLine[]): void => {
     dirtyRef.current = false;
-    updatePurchaseOrder(poId, { lines: nextLines, freight, tax });
+    // Lines are refused server-side once the order is no longer a draft (see
+    // UpdatePurchaseOrderUseCase) — sending them anyway on a placed order's freight/tax blur
+    // turned an otherwise-valid edit into a CONFLICT that rolled the whole patch back, freight and
+    // tax included. Only a draft's blur may carry `lines`; every other status sends header fields
+    // only.
+    updatePurchaseOrder(poId, isDraft ? { lines: nextLines, freight, tax } : { freight, tax });
   };
   const patchLine = (id: string, patch: Partial<PurchaseOrderLine>): void => {
     dirtyRef.current = true;
