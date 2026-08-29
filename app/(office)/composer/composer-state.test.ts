@@ -56,6 +56,13 @@ import {
   type TierKey,
 } from "./composer-state";
 import type { ReviseSeedLine } from "./composer-state";
+import {
+  modeOf,
+  designOf,
+  patchPresentationDesign,
+  patchPresentationMeta,
+  setPresentationMode,
+} from "./presentation-state";
 import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
 
 // ---------------------------------------------------------------------------
@@ -1373,5 +1380,78 @@ describe("tieredLinesForPayload — components across three tiers", () => {
     } as never);
     expect(out.map((l) => l.d)).toEqual(["Good fence", "Better fence", "Better posts"]);
     expect(out[2]?.parentIndex).toBe(1);
+  });
+});
+
+describe("the document — mode, design and sections", () => {
+  const base = {
+    templateId: "t1",
+    name: "Interior",
+    pages: [
+      { key: "cover" as const, on: true, title: "", body: "" },
+      { key: "about" as const, on: true, title: "About us", body: "Family-run." },
+    ],
+  };
+
+  it("defaults to Simple and to a plain look", () => {
+    // Most quotes are not a pitch, and a document that arrives already styled is a document
+    // the shop has to undo.
+    expect(modeOf(base)).toBe("simple");
+    expect(designOf(base)).toEqual({ font: "basic", size: 14, accent: "", bold: true, italic: false });
+  });
+
+  it("creates a page the template never had rather than doing nothing", () => {
+    // The toolbar lists every kind a proposal can have; a control that lists something it
+    // cannot produce is a control that lies.
+    const next = togglePresentationPage(base, "letter");
+    expect(next.pages.find((p) => p.key === "letter")).toMatchObject({ on: true, body: "" });
+    expect(base.pages).toHaveLength(2); // immutably
+  });
+
+  it("toggles a page it already has, both ways", () => {
+    const off = togglePresentationPage(base, "about");
+    expect(off.pages.find((p) => p.key === "about")?.on).toBe(false);
+    expect(togglePresentationPage(off, "about").pages.find((p) => p.key === "about")?.on).toBe(true);
+  });
+
+  it("never turns the cover off", () => {
+    expect(togglePresentationPage(base, "cover")).toBe(base);
+  });
+
+  it("keeps the whole design when only part of it is changed", () => {
+    const next = patchPresentationDesign(base, { accent: "#2E5E4E" });
+    expect(designOf(next)).toEqual({ font: "basic", size: 14, accent: "#2E5E4E", bold: true, italic: false });
+  });
+
+  it("freezes what is ON whatever the mode — mode decides what is SHOWN", () => {
+    // Filtering at snapshot time would delete a shop's story the moment they previewed as
+    // Simple, and would have stripped pages from every quote already in flight.
+    const simple = presentationSnapshotForPayload(setPresentationMode(base, "simple"));
+    const full = presentationSnapshotForPayload(setPresentationMode(base, "full"));
+    expect(simple?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(full?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(simple?.mode).toBe("simple");
+  });
+
+  it("carries the design and the cover meta onto the quote", () => {
+    const styled = patchPresentationMeta(patchPresentationDesign(base, { size: 16 }), {
+      estimator: "Dana Reyes",
+    });
+    const snapshot = presentationSnapshotForPayload(styled);
+    expect(snapshot?.design?.size).toBe(16);
+    expect(snapshot?.meta?.estimator).toBe("Dana Reyes");
+  });
+
+  it("restores the mode, design and meta from a sent quote", () => {
+    const restored = presentationFromSnapshot({
+      templateName: "Interior",
+      pages: [{ key: "cover", title: "", body: "" }],
+      mode: "full",
+      design: { size: 18, accent: "#34506B" },
+      meta: { estimator: "Dana Reyes" },
+    });
+    expect(modeOf(restored)).toBe("full");
+    expect(designOf(restored).size).toBe(18);
+    expect(restored?.meta?.estimator).toBe("Dana Reyes");
   });
 });

@@ -26,6 +26,7 @@ import { fmt$ } from "@/lib/format";
 import { QuoteLines } from "./QuoteLines";
 import { tierViewsFor } from "./tier-view";
 import { groupBySection } from "./section-groups";
+import { ProposalPhotos } from "./ProposalPhotos";
 import { payableDepositCents } from "@/modules/quoting/domain/deposit-payable";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
@@ -192,8 +193,18 @@ export default async function PublicQuotePage({
   // it yet); thanks renders after the terms so the document ends on the shop's voice.
   const presentation = p.presentationSnapshot ?? null;
   const presentationCover = presentation?.pages.find((page) => page.key === "cover") ?? null;
+  // A page renders when it has words OR pictures. Filtering on prose alone hid a photos page
+  // whose whole content is the photos — which is most of them.
   const presentationBody =
-    presentation?.pages.filter((page) => page.key !== "cover" && page.key !== "thanks" && page.body.trim().length > 0) ?? [];
+    presentation?.pages.filter(
+      (page) =>
+        page.key !== "cover" &&
+        page.key !== "thanks" &&
+        (page.body.trim().length > 0 || (page.photos?.length ?? 0) > 0),
+    ) ?? [];
+  // Short-lived links minted server-side — the visitor has no session, so there is no path by
+  // which the browser could sign these for itself. See signProposalPhotos.
+  const photoUrls = view.photoUrls ?? new Map<string, string>();
   const presentationThanks =
     presentation?.pages.find((page) => page.key === "thanks" && page.body.trim().length > 0) ?? null;
 
@@ -306,6 +317,7 @@ export default async function PublicQuotePage({
           <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--type-base)", lineHeight: 1.55, margin: 0 }}>
             {page.body}
           </p>
+          <ProposalPhotos photos={page.photos ?? []} urls={photoUrls} />
         </div>
       ))}
       {/* Quote card — max 520px, full-width on mobile */}

@@ -301,7 +301,28 @@ export default function ComposerPage() {
         // revision's own draft (assertScopeVisitJob runs on every v1.quoting.draft).
         jobId: dto.jobId ?? null,
         priceDisplay: dto.priceDisplay,
-        presentationSnapshot: dto.presentationSnapshot ?? null,
+        // The DTO writes an absent photo field as null; the composer writes it as absent.
+        // Normalized here, at the one boundary that sees both.
+        presentationSnapshot: dto.presentationSnapshot
+          ? {
+              ...dto.presentationSnapshot,
+              pages: dto.presentationSnapshot.pages.map((page) => ({
+                key: page.key,
+                title: page.title,
+                body: page.body,
+                ...(page.photos && page.photos.length > 0
+                  ? {
+                      photos: page.photos.map((photo) => ({
+                        id: photo.id,
+                        key: photo.key,
+                        ...(photo.beforeKey ? { beforeKey: photo.beforeKey } : {}),
+                        ...(photo.caption ? { caption: photo.caption } : {}),
+                      })),
+                    }
+                  : {}),
+              })),
+            }
+          : null,
         lines: dto.lines.map((l) => ({
           d: l.description,
           q: l.quantity,

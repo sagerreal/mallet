@@ -19,6 +19,11 @@ import { api } from "@/lib/trpc/client";
 import { Field } from "@/components/ui/input";
 import type { ComposerLine, ComposerPresentation, ComposerState } from "./composer-state";
 import { gbbTierTotal, patchPresentationPage, realLines, togglePresentationPage } from "./composer-state";
+import { patchPresentationDesign, setPagePhotos, setPresentationMode } from "./presentation-state";
+import type { ComposerPhoto, ComposerPresentationPage } from "./presentation-state";
+import { PhotoPage } from "./photo-page";
+import { DocToolbar } from "./doc-toolbar";
+import { coverSheetPages, estimateSheetPages, hasCoverSheet, sheetStyleFor } from "./doc-design";
 import type { PresentationPageKey } from "./presentation-state";
 import { computeQuoteTotals } from "@/app/(public)/q/[token]/quote-totals";
 
@@ -193,31 +198,6 @@ export function PresentationTab({
           >
             ＋ New
           </button>
-          {p && (
-            <>
-              <span aria-hidden style={{ width: 1, alignSelf: "stretch", background: "var(--line)" }} />
-              <span style={{ fontWeight: 700 }}>Pages</span>
-              {p.pages.map((page) => (
-                <button
-                  type="button"
-                  key={page.key}
-                  className={page.on ? "chip on" : "chip"}
-                  aria-pressed={page.on}
-                  title={
-                    page.key === "cover"
-                      ? "The cover always leads an active presentation"
-                      : page.on
-                        ? "On — the customer sees this page"
-                        : "Off — hidden from this quote"
-                  }
-                  disabled={page.key === "cover"}
-                  onClick={() => onUpdate({ presentation: togglePresentationPage(p, page.key) })}
-                >
-                  {page.key === "cover" ? "Cover" : page.title || page.key}
-                </button>
-              ))}
-            </>
-          )}
         </div>
         {newOpen && (
           <div
@@ -263,66 +243,103 @@ export function PresentationTab({
             without one the customer gets the plain quote.
           </p>
         )}
-        {p && (
-          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
-            This is what the customer opens — off pages don&apos;t render. Page toggles change THIS
-            quote only; page content is shared, so editing it updates the template for every future
-            quote. Sent quotes keep the pages they were sent with.
-          </p>
-        )}
       </div>
 
-      {/* ---- the document ---- */}
+      {/* ---- the document toolbar ---- */}
       {p && (
-        <div
-          style={{
-            maxWidth: 860,
-            margin: "var(--space-5) auto 0",
-            background: "var(--card)",
-            border: "1px solid var(--line)",
-            borderRadius: "var(--radius-lg)",
-            overflow: "hidden",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <CoverSection
-            page={p.pages.find((page) => page.key === "cover") ?? null}
-            quoteTitle={quoteTitle}
-            leadName={leadName}
-            canEdit={p.templateId !== null}
-            editing={editKey === "cover"}
-            onEdit={() => openEditor(p, "cover")}
-            uid={uid}
-            {...editorProps}
+        <div style={{ maxWidth: 760, margin: "var(--space-4) auto 0" }}>
+          <DocToolbar
+            presentation={p}
+            onMode={(mode) => onUpdate({ presentation: setPresentationMode(p, mode) })}
+            onDesign={(patch) => onUpdate({ presentation: patchPresentationDesign(p, patch) })}
+            onTogglePage={(key) => onUpdate({ presentation: togglePresentationPage(p, key) })}
           />
-          <CompanyBar identity={identityQuery.data ?? null} validDays={state.validDays} />
-          {p.pages
-            .filter((page) => page.on && page.key !== "cover" && page.key !== "thanks")
-            .map((page) => (
-              <PageSection
-                key={page.key}
-                page={page}
+        </div>
+      )}
+
+      {/* ---- the document, as paper ----
+          Simple is ONE sheet: the work, the price, the signature and the terms. Full puts the
+          cover and the shop's story on a sheet in front of it. Most quotes are not a pitch. */}
+      {p && (
+        <div className="sheets" style={sheetStyleFor(p)}>
+          {hasCoverSheet(p) && (
+            <article className="docsheet" aria-label="Cover page">
+              <CoverSection
+                page={p.pages.find((page) => page.key === "cover") ?? null}
+                quoteTitle={quoteTitle}
+                leadName={leadName}
                 canEdit={p.templateId !== null}
-                editing={editKey === page.key}
-                onEdit={() => openEditor(p, page.key)}
+                editing={editKey === "cover"}
+                onEdit={() => openEditor(p, "cover")}
                 uid={uid}
                 {...editorProps}
               />
-            ))}
-          <EstimateSection state={state} quoteTitle={quoteTitle} onGoToEstimate={onGoToEstimate} />
-          {p.pages
-            .filter((page) => page.on && page.key === "thanks")
-            .map((page) => (
-              <ThanksSection
-                key={page.key}
-                page={page}
-                canEdit={p.templateId !== null}
-                editing={editKey === page.key}
-                onEdit={() => openEditor(p, page.key)}
-                uid={uid}
-                {...editorProps}
-              />
-            ))}
+              <CompanyBar identity={identityQuery.data ?? null} validDays={state.validDays} />
+              {coverSheetPages(p).map((page) => (
+                <PageSection
+                  key={page.key}
+                  page={page}
+                  canEdit={p.templateId !== null}
+                  editing={editKey === page.key}
+                  onEdit={() => openEditor(p, page.key)}
+                  uid={uid}
+                  onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
+                  {...editorProps}
+                />
+              ))}
+              <footer className="docsheet-foot">
+                <span>{identityQuery.data?.name ?? ""}</span>
+                <span>Page 1</span>
+              </footer>
+            </article>
+          )}
+
+          <article className="docsheet" aria-label="The estimate">
+            {!hasCoverSheet(p) && (
+              <>
+                <CoverSection
+                  page={p.pages.find((page) => page.key === "cover") ?? null}
+                  quoteTitle={quoteTitle}
+                  leadName={leadName}
+                  canEdit={p.templateId !== null}
+                  editing={editKey === "cover"}
+                  onEdit={() => openEditor(p, "cover")}
+                  uid={uid}
+                  {...editorProps}
+                />
+                {estimateSheetPages(p).map((page) => (
+                  <PageSection
+                    key={page.key}
+                    page={page}
+                    canEdit={p.templateId !== null}
+                    editing={editKey === page.key}
+                    onEdit={() => openEditor(p, page.key)}
+                    uid={uid}
+                    onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
+                    {...editorProps}
+                  />
+                ))}
+              </>
+            )}
+            <EstimateSection state={state} quoteTitle={quoteTitle} onGoToEstimate={onGoToEstimate} />
+            {p.pages
+              .filter((page) => page.on && page.key === "thanks")
+              .map((page) => (
+                <ThanksSection
+                  key={page.key}
+                  page={page}
+                  canEdit={p.templateId !== null}
+                  editing={editKey === page.key}
+                  onEdit={() => openEditor(p, page.key)}
+                  uid={uid}
+                  {...editorProps}
+                />
+              ))}
+            <footer className="docsheet-foot">
+              <span>{identityQuery.data?.name ?? ""}</span>
+              <span>{hasCoverSheet(p) ? "Page 2" : "Page 1"}</span>
+            </footer>
+          </article>
         </div>
       )}
 
@@ -445,7 +462,9 @@ function SectionEditor({
   );
 }
 
-type PresentationPage = { key: PresentationPageKey; on: boolean; title: string; body: string };
+// The composer's own page shape — the one the sections render. Aliased rather than redeclared
+// so a field added to the model (photos, and whatever comes next) reaches these sections too.
+type PresentationPage = ComposerPresentationPage;
 
 // ---- cover ---------------------------------------------------------------------
 
@@ -598,6 +617,7 @@ function PageSection({
   editing,
   onEdit,
   uid,
+  onPhotos,
   ...editor
 }: {
   page: PresentationPage;
@@ -605,6 +625,8 @@ function PageSection({
   editing: boolean;
   onEdit: () => void;
   uid: string;
+  /** Only the photos page uses this. Absent elsewhere, so nothing else can grow images. */
+  onPhotos?: (next: ComposerPhoto[]) => void;
 } & SectionEditorProps) {
   const editorId = `${uid}-edit-${page.key}`;
   return (
@@ -614,7 +636,7 @@ function PageSection({
         position: "relative",
         padding: "var(--space-8)",
         borderTop: "1px solid var(--line)",
-        opacity: page.body.trim() || editing ? 1 : 0.75,
+        opacity: page.body.trim() || editing || (page.photos?.length ?? 0) > 0 ? 1 : 0.75,
       }}
     >
       {canEdit && (
@@ -637,11 +659,20 @@ function PageSection({
           {page.body}
         </p>
       ) : (
-        !editing && (
+        // A page with PICTURES is not empty. The photos page's whole content is its photos, so
+        // testing the prose alone told the office a page full of before-and-afters was blank.
+        !editing &&
+        (page.photos?.length ?? 0) === 0 && (
           <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
             Empty — hidden from the customer until it says something.
           </p>
         )
+      )}
+      {/* The photos page carries images, not prose — its body is the caption above them. */}
+      {page.key === "photos" && onPhotos && (
+        <div style={{ marginTop: page.body.trim() ? "var(--space-3)" : 0 }}>
+          <PhotoPage photos={page.photos ?? []} onChange={onPhotos} readOnly={!canEdit} />
+        </div>
       )}
       {editing && <SectionEditor id={editorId} titleLabel="Page title" editor={editor} />}
     </section>

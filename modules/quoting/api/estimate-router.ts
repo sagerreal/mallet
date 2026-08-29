@@ -8,6 +8,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { ESTIMATE_STATUSES, type Estimate, type EstimateStatus } from "../domain/estimate";
 import type { QuoteTier } from "../domain/estimate";
 import { MAX_SECTION_NAME_CHARS } from "../domain/estimate-section";
+import { ProposalPhotoStorage, PROPOSAL_PHOTO_EXTS } from "../infra/proposal-photo-storage";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DraftEstimateUseCase } from "../app/draft-estimate";
 import { SendEstimateUseCase } from "../app/send-estimate";
@@ -46,15 +47,51 @@ const tierNamesInput = z.object({
   best: z.string().trim().min(1).max(60),
 });
 
+/**
+ * One photo on a proposal page, or a before/after PAIR. Object keys in the private bucket,
+ * never URLs — see PresentationPhoto for why.
+ */
+const presentationPhotoDTO = z.object({
+  id: z.string().min(1).max(64),
+  key: z.string().min(1).max(500),
+  beforeKey: z.string().min(1).max(500).nullish(),
+  caption: z.string().max(200).nullish(),
+});
+
 // Frozen presentation pages — carries no money, safe on every surface by construction.
 const presentationPageDTO = z.object({
-  key: z.enum(["cover", "about", "reviews", "thanks"]),
+  // The enum mirrors PRESENTATION_PAGE_KEYS. Kept as a literal here so the transport schema
+  // stays a leaf, the same reason pricebook's measuredByKindDTO is written out.
+  key: z.enum(["cover", "letter", "about", "photos", "process", "reviews", "warranty", "thanks"]),
   title: z.string().max(120),
   body: z.string().max(8_000),
+  photos: z.array(presentationPhotoDTO).max(12).optional(),
 });
 const presentationSnapshotInput = z.object({
   templateName: z.string().trim().min(1).max(80),
-  pages: z.array(presentationPageDTO).min(1).max(4),
+  pages: z.array(presentationPageDTO).min(1).max(8),
+  /** Absent reads as 'simple' — the historical shape, and still the default. */
+  mode: z.enum(["simple", "full"]).optional(),
+  design: z
+    .object({
+      font: z.enum(["basic", "serif", "mono"]).optional(),
+      size: z.number().int().min(10).max(24).optional(),
+      // #rrggbb or "" only: this is rendered into a style attribute on a public page.
+      accent: z.string().regex(/^(#[0-9a-fA-F]{6})?$/).optional(),
+      bold: z.boolean().optional(),
+      italic: z.boolean().optional(),
+    })
+    .optional(),
+  meta: z
+    .object({
+      estimator: z.string().max(200).optional(),
+      estimatorRole: z.string().max(200).optional(),
+      contact: z.string().max(200).optional(),
+      estNumber: z.string().max(200).optional(),
+      validity: z.string().max(200).optional(),
+      date: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 const presentationSnapshotDTO = presentationSnapshotInput;
 
@@ -308,6 +345,28 @@ const sectionInput = z.object({
   name: z.string().trim().min(1).max(MAX_SECTION_NAME_CHARS),
 });
 
+/**
+ * A signed, direct-to-storage upload for a proposal photo, plus the key the snapshot records.
+ *
+ * The client mints the object id so it can show the photo the instant the PUT lands, without a
+ * round trip to learn what it was called.
+ */
+const proposalPhotoUploadInput = z.object({
+  objectId: z.string().uuid(),
+  ext: z.enum(PROPOSAL_PHOTO_EXTS),
+});
+const proposalPhotoUploadDTO = z.object({
+  signedUrl: z.string(),
+  token: z.string(),
+  storagePath: z.string(),
+});
+
+/** Short-lived links for keys the OFFICE is looking at. The customer's page mints its own. */
+const proposalPhotoUrlsInput = z.object({ keys: z.array(z.string().min(1).max(500)).max(24) });
+const proposalPhotoUrlsDTO = z.object({
+  urls: z.array(z.object({ key: z.string(), url: z.string() })),
+});
+
 const draftInput = z
   .object({
     leadId: z.string().uuid(),
@@ -529,8 +588,34 @@ const toEstimateDTO = (estimate: Estimate) => {
     tierNames: p.tierNames,
     termsSnapshot: p.termsSnapshot,
     priceDisplay: estimate.priceDisplay(),
+    // Rebuilt field by field rather than spread: the domain's readonly arrays and optional
+    // keys are not the DTO's, and a spread would let a shape change pass silently.
     presentationSnapshot: p.presentationSnapshot
-      ? { templateName: p.presentationSnapshot.templateName, pages: [...p.presentationSnapshot.pages] }
+      ? {
+          templateName: p.presentationSnapshot.templateName,
+          pages: p.presentationSnapshot.pages.map((page) => ({
+            key: page.key,
+            title: page.title,
+            body: page.body,
+            ...(page.photos && page.photos.length > 0
+              ? {
+                  photos: page.photos.map((photo) => ({
+                    id: photo.id,
+                    key: photo.key,
+                    beforeKey: photo.beforeKey ?? null,
+                    caption: photo.caption ?? null,
+                  })),
+                }
+              : {}),
+          })),
+          ...(p.presentationSnapshot.mode === undefined ? {} : { mode: p.presentationSnapshot.mode }),
+          ...(p.presentationSnapshot.design === undefined
+            ? {}
+            : { design: { ...p.presentationSnapshot.design } }),
+          ...(p.presentationSnapshot.meta === undefined
+            ? {}
+            : { meta: { ...p.presentationSnapshot.meta } }),
+        }
       : null,
     publicToken: p.publicToken ?? null,
     publicUrl: publicUrlFor(p.publicToken ?? null),
@@ -655,6 +740,49 @@ export const createEstimateRouter = () =>
   router({
     // The estimator's learned-rule surface (v1.quoting.rules.*).
     rules: createQuotingRulesRouter(),
+
+    /**
+     * Where a proposal photo goes. Org-wide, not per-quote: the same before-and-after gets
+     * used on the next three quotes the shop sends.
+     */
+    proposalPhotoUploadUrl: ownerOrOffice
+      .input(proposalPhotoUploadInput)
+      .output(proposalPhotoUploadDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "photo storage is not configured",
+          });
+        }
+        const storage = new ProposalPhotoStorage(ctx.deps.photoStorageGateway);
+        const result = await storage.createUploadUrl({
+          orgId: ctx.principal.orgId,
+          objectId: input.objectId,
+          ext: input.ext,
+        });
+        if (!result.ok) {
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "could not create upload url" });
+        }
+        return result.value;
+      }),
+
+    /**
+     * Links for photos the office is looking at while it builds the document.
+     *
+     * The keys come from the composer's own draft, which is why the client may name them here
+     * — but the gateway still re-derives what it may hand over, and the org comes from the
+     * principal, so a key naming another shop's folder signs nothing.
+     */
+    proposalPhotoUrls: ownerOrOffice
+      .input(proposalPhotoUrlsInput)
+      .output(proposalPhotoUrlsDTO)
+      .query(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway || input.keys.length === 0) return { urls: [] };
+        const storage = new ProposalPhotoStorage(ctx.deps.photoStorageGateway);
+        const signed = await storage.createViewUrls(input.keys, ctx.principal.orgId);
+        return { urls: [...signed].map(([key, url]) => ({ key, url })) };
+      }),
 
     draft: ownerOrOffice
       .input(draftInput)

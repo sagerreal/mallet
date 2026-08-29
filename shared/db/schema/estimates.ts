@@ -26,7 +26,30 @@ type TierNamesColumn = { good: string; better: string; best: string };
 // money and no internal fields; safe on every public surface by construction.
 type PresentationSnapshotColumn = {
   templateName: string;
-  pages: { key: "cover" | "about" | "reviews" | "thanks"; title: string; body: string }[];
+  pages: {
+    key: "cover" | "letter" | "about" | "photos" | "process" | "reviews" | "warranty" | "thanks";
+    title: string;
+    body: string;
+    /** Object keys in the private bucket, never URLs — see PresentationPhoto. */
+    photos?: { id: string; key: string; beforeKey?: string | null; caption?: string | null }[];
+  }[];
+  /** Absent reads as 'simple' — every snapshot written before the document had a mode. */
+  mode?: "simple" | "full";
+  design?: {
+    font?: "basic" | "serif" | "mono";
+    size?: number;
+    accent?: string;
+    bold?: boolean;
+    italic?: boolean;
+  };
+  meta?: {
+    estimator?: string;
+    estimatorRole?: string;
+    contact?: string;
+    estNumber?: string;
+    validity?: string;
+    date?: string;
+  };
 };
 
 // Internal estimating math behind one line (jsonb column shape): the substrate rows that roll up

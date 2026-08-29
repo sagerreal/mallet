@@ -290,11 +290,12 @@ export interface Estimate {
   termsSnapshot?: string;
   /** Customer sees one price instead of per-line amounts. Absent = 'lines', today's default. */
   priceDisplay?: "total";
-  /** The designed pages frozen onto this quote at draft time. Absent = plain quote. */
-  presentation?: {
-    templateName: string;
-    pages: { key: "cover" | "about" | "reviews" | "thanks"; title: string; body: string }[];
-  };
+  /**
+   * The designed proposal frozen onto this quote at draft time. Absent = plain quote.
+   * The shape is the DTO's — this is a read-only snapshot the office surfaces render, never
+   * something the store edits, so it carries no separate store vocabulary.
+   */
+  presentation?: PresentationSnapshotView;
   /**
    * The customer's signature, absent when nobody signed.
    *
@@ -431,6 +432,41 @@ export interface Service {
    * disagree with the rows. Money is DOLLARS here, like every store amount.
    */
   components?: ServiceComponent[];
+}
+
+/** A photo, or a before/after pair, on a frozen proposal page. Object keys, never URLs. */
+export interface PresentationPhotoView {
+  id: string;
+  key: string;
+  beforeKey?: string | null;
+  caption?: string | null;
+}
+
+/** The frozen proposal as the office surfaces read it — see the estimate's `presentation`. */
+export interface PresentationSnapshotView {
+  templateName: string;
+  pages: {
+    key: "cover" | "letter" | "about" | "photos" | "process" | "reviews" | "warranty" | "thanks";
+    title: string;
+    body: string;
+    photos?: PresentationPhotoView[];
+  }[];
+  mode?: "simple" | "full";
+  design?: {
+    font?: "basic" | "serif" | "mono";
+    size?: number;
+    accent?: string;
+    bold?: boolean;
+    italic?: boolean;
+  };
+  meta?: {
+    estimator?: string;
+    estimatorRole?: string;
+    contact?: string;
+    estNumber?: string;
+    validity?: string;
+    date?: string;
+  };
 }
 
 /** One part of a saved assembly. No quantity — only the expression it is counted by. */

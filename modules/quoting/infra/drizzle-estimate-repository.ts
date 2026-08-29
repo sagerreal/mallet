@@ -23,6 +23,39 @@ import { toDomain, type EstimateLineRow, type EstimateSectionRow } from "./estim
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
 // RLS appends org_id = current_org_id() to every statement — this class never filters by org
 // itself. orgId is used only to stamp written rows and to scope the number sequence.
+
+/**
+ * The domain's snapshot as the jsonb column holds it. Written out field by field, not spread:
+ * the domain's readonly arrays and optional keys are not the column's, and a spread would let
+ * a shape change through unnoticed — which for a jsonb column means a row that no longer reads.
+ */
+function toSnapshotColumn(
+  snapshot: Estimate["props"]["presentationSnapshot"],
+): typeof estimates.$inferInsert.presentationSnapshot {
+  if (!snapshot) return null;
+  return {
+    templateName: snapshot.templateName,
+    pages: snapshot.pages.map((page) => ({
+      key: page.key,
+      title: page.title,
+      body: page.body,
+      ...(page.photos && page.photos.length > 0
+        ? {
+            photos: page.photos.map((photo) => ({
+              id: photo.id,
+              key: photo.key,
+              ...(photo.beforeKey ? { beforeKey: photo.beforeKey } : {}),
+              ...(photo.caption ? { caption: photo.caption } : {}),
+            })),
+          }
+        : {}),
+    })),
+    ...(snapshot.mode === undefined ? {} : { mode: snapshot.mode }),
+    ...(snapshot.design === undefined ? {} : { design: { ...snapshot.design } }),
+    ...(snapshot.meta === undefined ? {} : { meta: { ...snapshot.meta } }),
+  };
+}
+
 export class DrizzleEstimateRepository implements EstimateRepository {
   constructor(
     private readonly tx: TenantTx,
@@ -83,7 +116,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         tierNames: p.tierNames,
         termsSnapshot: p.termsSnapshot,
         priceDisplay: p.priceDisplay ?? "lines",
-        presentationSnapshot: p.presentationSnapshot ? { templateName: p.presentationSnapshot.templateName, pages: [...p.presentationSnapshot.pages] } : null,
+        presentationSnapshot: toSnapshotColumn(p.presentationSnapshot),
         signerName: p.signerName ?? null,
         signatureSvg: p.signatureSvg ?? null,
         signerIp: p.signerIp ?? null,
@@ -127,7 +160,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           tierNames: p.tierNames,
           termsSnapshot: p.termsSnapshot,
           priceDisplay: p.priceDisplay ?? "lines",
-          presentationSnapshot: p.presentationSnapshot ? { templateName: p.presentationSnapshot.templateName, pages: [...p.presentationSnapshot.pages] } : null,
+          presentationSnapshot: toSnapshotColumn(p.presentationSnapshot),
           signerName: p.signerName ?? null,
           signatureSvg: p.signatureSvg ?? null,
           signerIp: p.signerIp ?? null,
