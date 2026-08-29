@@ -17,7 +17,16 @@ export const purchaseOrders = pgTable(
     jobId: uuid("job_id"),
     orderedAt: date("ordered_at"),
     expectedAt: date("expected_at"),
+    // DEPRECATED — kept only because the shared dev/prod DB is additive-only and this column
+    // cannot be dropped in the same migration that retires it (see migration 0187). Nothing in
+    // the app reads or writes this anymore; its NOT NULL default keeps every insert (which no
+    // longer names the column) satisfying the column and its CHECK constraint on its own.
+    // shipToAddress (below) is the real field now — Owen wanted an address someone types, not a
+    // 3-option picker.
     shipTo: text("ship_to").notNull().default("counter_pickup"),
+    // A free-text mailing/service address — replaces shipTo above. Nullable: an order with no
+    // address typed yet (or one whose vendor picks it up at the counter) is not an error.
+    shipToAddress: text("ship_to_address"),
     orderedByUserId: uuid("ordered_by_user_id"),
     freightCents: integer("freight_cents").notNull().default(0),
     // What the vendor CHARGED, never a rate we compute. org_settings.tax_bps is the SELL-side
