@@ -1946,6 +1946,12 @@
   .custline{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
   /* Scope prose under a line — the proposal's Includes/Excludes/Products. Pre-wrap keeps the
      shop's typed numbering and paragraph breaks exactly as written. */
+  /* A section heading on the customer's copy, with what the work under it comes to.
+     Reads as a band above its lines, not as another line. */
+  .custsection{display:flex;justify-content:space-between;align-items:baseline;gap:var(--space-3);
+    padding:var(--space-4) 0 var(--space-2);border-bottom:1px solid var(--line);
+    font-size:var(--type-sm);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+  .custsection b{font-size:var(--type-base);letter-spacing:0;text-transform:none;color:var(--ink);font-variant-numeric:tabular-nums}
   .custline-scope{display:block;white-space:pre-wrap;color:var(--ink-2);font-size:var(--type-sm);line-height:1.55;margin-top:var(--space-2);max-width:62ch}
   /* "No tax" marker on a document line. Quiet: it qualifies the line it sits in, it is not a
      status the customer has to act on — and it only renders when the document charges tax. */

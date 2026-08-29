@@ -22,8 +22,10 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getPublicQuote } from "@/modules/quoting/app/public-quote";
 import { LineRow } from "./LineRow";
+import { formatMoney } from "@/lib/format";
 import { QuoteLines } from "./QuoteLines";
 import { tierViewsFor } from "./tier-view";
+import { groupBySection } from "./section-groups";
 import { payableDepositCents } from "@/modules/quoting/domain/deposit-payable";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
@@ -175,6 +177,8 @@ export default async function PublicQuotePage({
   // does not contain them. Same predicate the domain's totals use (Estimate.contributesMoney).
   const quotedLines = p.lines.filter((l) => !l.props.parentLineId);
   const fixedLines = quotedLines.filter((l) => !l.props.isOptional);
+  // The customer's copy, grouped under the headings the shop wrote on the quote.
+  const { ungrouped: ungroupedLines, groups: sectionGroups } = groupBySection(estimate, fixedLines);
   const optLines = quotedLines.filter((l) => l.props.isOptional);
   const fixedSubtotalCents = estimate.subtotal();
   // The SECOND base: what the rate is charged on. Non-taxable lines stay in the subtotal above.
@@ -375,7 +379,7 @@ export default async function PublicQuotePage({
             <>
               {/* Fixed lines. On an accepted quote these ARE the accepted set: accept rewrites the
                   stored lines to the fixed ones plus the chosen add-ons. */}
-              {fixedLines.map((line) => {
+              {ungroupedLines.map((line) => {
                 const lp = line.props;
                 return (
                   <LineRow
@@ -390,6 +394,31 @@ export default async function PublicQuotePage({
                   />
                 );
               })}
+              {sectionGroups.map((group) => (
+                <div key={group.name}>
+                  <div className="custsection">
+                    <span>{group.name}</span>
+                    {/* No group subtotal under 'one price' — the whole point of that format is
+                        that the customer reads a single number. */}
+                    {showLineAmounts && <b>{formatMoney(group.totalCents)}</b>}
+                  </div>
+                  {group.lines.map((line) => {
+                    const lp = line.props;
+                    return (
+                      <LineRow
+                        key={lp.id}
+                        description={lp.description}
+                        quantity={lp.quantity}
+                        rateCents={lp.rate}
+                        taxable={lp.taxable}
+                        showTaxMark={p.taxBps > 0}
+                        scope={lp.scope}
+                        showAmount={showLineAmounts}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
 
               {/* Optional add-on toggles + live totals + actions — client island */}
               <QuoteLines
