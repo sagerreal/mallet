@@ -67,7 +67,7 @@ export interface PurchaseOrderUpdatePayload {
   vendor?: string;
   jobId?: string | null;
   expectedAt?: string | null;
-  shipTo?: PurchaseOrder["shipTo"];
+  shipToAddress?: string | null;
   freightCents?: number;
   taxCents?: number;
   lines?: POLineInput[];
@@ -99,8 +99,8 @@ export function buildPurchaseOrderUpdatePayload(
     payload.expectedAt = patch.expectedAt ?? null;
     persistable = true;
   }
-  if ("shipTo" in patch && patch.shipTo !== undefined) {
-    payload.shipTo = patch.shipTo;
+  if ("shipToAddress" in patch) {
+    payload.shipToAddress = patch.shipToAddress ?? null;
     persistable = true;
   }
   if ("freight" in patch && patch.freight != null) {

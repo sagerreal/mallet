@@ -36,7 +36,7 @@ const dto = (overrides: Record<string, unknown> = {}) => ({
   jobTitle: null,
   orderedAt: null,
   expectedAt: null,
-  shipTo: "job_site",
+  shipToAddress: "412 Elm St, Unit 4",
   orderedByUserId: "user-1",
   orderedByName: "Dana",
   freight: { cents: 1_250, currency: "USD" },

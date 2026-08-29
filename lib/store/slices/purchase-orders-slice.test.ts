@@ -59,7 +59,7 @@ function po(overrides: Partial<PurchaseOrder> = {}): PurchaseOrder {
     jobTitle: null,
     orderedAt: null,
     expectedAt: null,
-    shipTo: "job_site",
+    shipToAddress: "412 Elm St, Unit 4",
     orderedByUserId: "user-1",
     orderedByName: "Dana",
     freight: 12.5,
@@ -82,7 +82,7 @@ const dbDto = (overrides: Record<string, unknown> = {}) => ({
   jobTitle: null,
   orderedAt: null,
   expectedAt: null,
-  shipTo: "job_site",
+  shipToAddress: "412 Elm St, Unit 4",
   orderedByUserId: "user-1",
   orderedByName: "Dana",
   freight: { cents: 1_250, currency: "USD" },
@@ -145,9 +145,14 @@ describe("buildPurchaseOrderUpdatePayload", () => {
     expect(buildPurchaseOrderUpdatePayload("po-1", {})).toBeNull();
   });
 
-  it("maps vendor and shipTo straight through", () => {
-    const p = buildPurchaseOrderUpdatePayload("po-1", { vendor: "Home Depot", shipTo: "shop" });
-    expect(p).toEqual({ poId: "po-1", vendor: "Home Depot", shipTo: "shop" });
+  it("maps vendor and shipToAddress straight through", () => {
+    const p = buildPurchaseOrderUpdatePayload("po-1", { vendor: "Home Depot", shipToAddress: "1200 Industrial Pkwy" });
+    expect(p).toEqual({ poId: "po-1", vendor: "Home Depot", shipToAddress: "1200 Industrial Pkwy" });
+  });
+
+  it("maps shipToAddress cleared to null", () => {
+    const p = buildPurchaseOrderUpdatePayload("po-1", { shipToAddress: null });
+    expect(p).toEqual({ poId: "po-1", shipToAddress: null });
   });
 
   it("maps freight/tax dollars → cents", () => {

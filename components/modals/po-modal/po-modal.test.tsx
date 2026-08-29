@@ -27,7 +27,7 @@ const basePO = (over: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
   jobTitle: null,
   orderedAt: null,
   expectedAt: null,
-  shipTo: "counter_pickup",
+  shipToAddress: null,
   orderedByUserId: "user-1",
   orderedByName: "Dana",
   freight: 0,
@@ -164,10 +164,10 @@ describe("POModal — a cancelled order locks every field", () => {
     expect((screen.getByLabelText(PO_LABEL.expectedAt) as HTMLInputElement).disabled).toBe(true);
   });
 
-  it("the Ship to picker is disabled", () => {
+  it("the Ship to address field is disabled", () => {
     render(<POModal poId="po-1" />);
     openChapter(0);
-    expect((screen.getByLabelText(PO_LABEL.shipTo) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByLabelText(PO_LABEL.shipTo) as HTMLInputElement).disabled).toBe(true);
   });
 
   it("Freight and Tax are disabled too — a cancelled order refuses every field", () => {

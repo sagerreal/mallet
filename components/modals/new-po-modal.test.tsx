@@ -18,7 +18,8 @@ let storePurchaseOrders: Array<{ vendor: string }> = [];
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Record<string, unknown>) => unknown) =>
     sel({
-      jobs: [{ id: "job-1", title: "Henderson repipe" }],
+      jobs: [{ id: "job-1", title: "Henderson repipe", addr: "123 Main St, Springfield" }],
+      leads: [],
       purchaseOrders: storePurchaseOrders,
       adoptPurchaseOrder,
       appendPONote,
@@ -45,12 +46,19 @@ vi.mock("@/lib/store/dto-mapper", () => ({
   dtoPurchaseOrderToStore: (dto: unknown) => dto,
 }));
 
+const uploadPONoteFileMock = vi.fn();
+vi.mock("@/lib/store/upload-po-note-file", () => ({
+  uploadPONoteFile: (...a: unknown[]) => uploadPONoteFileMock(...a),
+  PO_NOTE_ATTACH_ACCEPT: ".jpg,.jpeg,.png,.webp,.heic,.pdf,.csv,.txt",
+}));
+
 import { NewPOModal } from "./new-po-modal";
 import { MODAL } from "@/lib/store/modal-ids";
 
 beforeEach(() => {
   vi.clearAllMocks();
   storePurchaseOrders = [];
+  uploadPONoteFileMock.mockReset();
 });
 
 describe("NewPOModal — the form itself", () => {
@@ -137,11 +145,64 @@ describe("NewPOModal — save as draft", () => {
     render(<NewPOModal />);
     fireEvent.change(screen.getByLabelText("Vendor"), { target: { value: "Ferguson" } });
     fireEvent.change(screen.getByLabelText("Item"), { target: { value: "3/4in PEX-A" } });
-    // Open the Notes disclosure and type a note.
+    // Open the Notes disclosure — it's the shared NoteComposer now, same control the record
+    // sheet renders. Typing + its own "Add note" STAGES the text locally (there is no record yet
+    // to append to); "Save as draft" is what actually flushes it.
     fireEvent.click(screen.getByRole("button", { name: /^Notes/ }));
-    fireEvent.change(screen.getByLabelText("Notes"), { target: { value: "gate code 4482" } });
+    fireEvent.change(screen.getByLabelText("Add a note"), { target: { value: "gate code 4482" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
     fireEvent.click(screen.getByRole("button", { name: "Save as draft" }));
     await waitFor(() => expect(appendPONote).toHaveBeenCalledWith("new-po-1", { body: "gate code 4482" }));
+  });
+
+  it("a file staged on create uploads AFTER the record exists, and rides the same note", async () => {
+    createMutate.mockResolvedValue({ id: "new-po-1" });
+    uploadPONoteFileMock.mockResolvedValue({ path: "org/purchase-orders/new-po-1/receipt.pdf", type: "application/pdf", name: "receipt.pdf" });
+    render(<NewPOModal />);
+    fireEvent.change(screen.getByLabelText("Vendor"), { target: { value: "Ferguson" } });
+    fireEvent.change(screen.getByLabelText("Item"), { target: { value: "3/4in PEX-A" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Notes/ }));
+    const file = new File(["x"], "receipt.pdf", { type: "application/pdf" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(fileInput, { target: { files: [file] } });
+    await waitFor(() => expect(screen.getByText("receipt.pdf")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Add note" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save as draft" }));
+
+    // Uploaded against the REAL id, not before it existed.
+    await waitFor(() => expect(uploadPONoteFileMock).toHaveBeenCalledWith("new-po-1", file));
+    await waitFor(() =>
+      expect(appendPONote).toHaveBeenCalledWith("new-po-1", {
+        body: "",
+        attachment: { path: "org/purchase-orders/new-po-1/receipt.pdf", type: "application/pdf", name: "receipt.pdf" },
+      }),
+    );
+  });
+});
+
+describe("NewPOModal — ship-to prefill", () => {
+  function pickJob() {
+    // "For job" is a SelectMenu (a button + listbox, not a native <select>) — open it, then
+    // commit the option via mousedown, same interaction select-menu.test.tsx itself uses.
+    fireEvent.click(screen.getByLabelText("For job"));
+    fireEvent.mouseDown(screen.getByRole("option", { name: "Henderson repipe" }));
+  }
+
+  it("defaults Ship to from the picked job's service address, while the field is still empty", () => {
+    render(<NewPOModal />);
+    fireEvent.click(screen.getByRole("button", { name: /^Ship to/ }));
+    // Picking the job fills Ship to from the job's own address (jobAddr) — the whole reason a
+    // dropdown was chosen originally was that free text never got this right on its own.
+    pickJob();
+    expect((screen.getByLabelText("Ship to") as HTMLInputElement).value).toBe("123 Main St, Springfield");
+  });
+
+  it("never overwrites an address someone already typed", () => {
+    render(<NewPOModal />);
+    fireEvent.click(screen.getByRole("button", { name: /^Ship to/ }));
+    fireEvent.change(screen.getByLabelText("Ship to"), { target: { value: "Will-call, counter B" } });
+    pickJob();
+    expect((screen.getByLabelText("Ship to") as HTMLInputElement).value).toBe("Will-call, counter B");
   });
 });
 
