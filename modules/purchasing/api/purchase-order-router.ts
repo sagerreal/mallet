@@ -40,7 +40,11 @@ const lineInput = z.object({
   description: z.string().min(1).max(500),
   qty: z.number().positive(),
   uom: z.string().min(1).max(20),
-  unitCostMillicents: z.number().int().nonnegative(),
+  // Ceiling matches the int4 column it lands in (purchase_order_lines.unit_cost_millicents) —
+  // without it a commercial RTU or boiler line over $21,474.83/unit fails as a raw Postgres
+  // "integer out of range" 500 instead of a readable validation error. The column itself stays
+  // int4; widening it is an additive migration and the owner's call, not this router's.
+  unitCostMillicents: z.number().int().nonnegative().max(2_147_483_647),
 });
 
 const createInput = z.object({

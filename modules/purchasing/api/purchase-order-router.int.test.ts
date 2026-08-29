@@ -181,6 +181,24 @@ suite("purchasing tRPC router (full stack, live RLS)", () => {
     expect(typeof row?.lines[0]?.unitCostMillicents).toBe("number");
   });
 
+  /**
+   * purchase_order_lines.unit_cost_millicents is an int4 column — without a matching zod ceiling,
+   * a commercial RTU or boiler line priced over $21,474.83/unit reached Postgres and failed as a
+   * raw "integer out of range" 500 instead of a message naming the actual problem. This proves the
+   * request never gets past validation at all: BAD_REQUEST, not a database error.
+   */
+  it("rejects a unit cost over the int4 ceiling as a validation error, not a database 500", async () => {
+    const caller = appRouter.createCaller(ctxFor(orgAId, "owner"));
+    await expect(
+      caller.v1.purchasing.create(
+        draftInput({
+          vendor: "Overflow Mechanical Co",
+          lines: [{ description: "Rooftop RTU", qty: 1, uom: "ea", unitCostMillicents: 2_147_483_648 }],
+        }),
+      ),
+    ).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  });
+
   // ── lifecycle ──────────────────────────────────────────────────────────────
 
   it("create → update lines → place → cancel, end to end", async () => {
