@@ -3,6 +3,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
 import { jobs, jobVisits } from "@mallet/shared/db/schema/jobs";
 import { jobLines, jobAddons } from "@mallet/shared/db/schema/job-execution";
+import { purchaseOrders, purchaseOrderLines } from "@mallet/shared/db/schema/purchase-orders";
 import { invoices } from "@mallet/shared/db/schema/invoices";
 import { leads } from "@mallet/shared/db/schema/leads";
 import { users } from "@mallet/shared/db/schema/users";
@@ -48,6 +49,16 @@ export interface JobLaborRow extends JobLabor {
    * costs nothing in parts. That is different from labour, where null means "unknown".
    */
   readonly materialsCents: number;
+
+  /**
+   * What the shop actually BOUGHT for this job via a purchase order — placed orders only, cents.
+   *
+   * Reported ALONGSIDE `materialsCents`, never summed into it: a PO buys the same physical part a
+   * job line was quoted for, so folding the two together reports roughly double the material cost
+   * and invents a loss that never happened. `materialsCents` answers "what we said it would cost";
+   * this answers "what we actually spent". Zero is a real answer — no placed order, no spend.
+   */
+  readonly purchasedCents: number;
 
   /**
    * What the customer was actually billed, EXCLUDING tax — null when nothing has been invoiced.
@@ -184,8 +195,9 @@ export class DrizzleLaborReader {
     // Materials and revenue are fetched for exactly the jobs that survived the rollup — two extra
     // round trips for the page rather than one per row.
     const jobIds = rolled.map((r) => r.job.jobId);
-    const [materials, revenue, scheduled] = await Promise.all([
+    const [materials, purchased, revenue, scheduled] = await Promise.all([
       this.materialsByJob(jobIds),
+      this.purchasedByJob(jobIds),
       this.revenueByJob(jobIds),
       this.scheduledHoursByJob(jobIds, from, to),
     ]);
@@ -199,6 +211,7 @@ export class DrizzleLaborReader {
       jobStatus: m.jobStatus,
       callbackOf: m.callbackOf,
       materialsCents: materials.get(job.jobId) ?? 0,
+      purchasedCents: purchased.get(job.jobId) ?? 0,
       revenueCents: revenue.get(job.jobId) ?? null,
       scheduledHours: scheduled.get(job.jobId) ?? 0,
     }));
@@ -241,6 +254,54 @@ export class DrizzleLaborReader {
       .groupBy(jobAddons.jobId);
     for (const r of addons) out.set(r.jobId, (out.get(r.jobId) ?? 0) + r.cents);
 
+    return out;
+  }
+
+  /**
+   * What was actually BOUGHT for these jobs, cents. Placed orders only — a draft is not money
+   * committed and a cancelled one never was. There is no receiving (DECISION 4), so the whole
+   * order counts from the day it is placed, not the day the material shows up.
+   *
+   * Reported ALONGSIDE `materialsByJob`, never summed into it — see `purchasedCents` on
+   * `JobLaborRow`.
+   *
+   * Grouped by `purchase_orders.id` (its primary key) so freight and tax — which live once per
+   * order — are added exactly once per order regardless of how many lines it has. Grouping by
+   * `job_id` instead, after the line join, would multiply freight and tax by the line count on any
+   * order with more than one line.
+   *
+   * `job_id` is nullable (a stock/truck-restock order has none); `inArray` never matches null, so
+   * a stock order is naturally excluded rather than landing on whichever job happens to be in
+   * `jobIds`.
+   */
+  private async purchasedByJob(jobIds: string[]): Promise<Map<string, number>> {
+    const perOrder = await this.tx
+      .select({
+        jobId: purchaseOrders.jobId,
+        cents: sql<number>`
+          coalesce(sum(round(${purchaseOrderLines.qty} * ${purchaseOrderLines.unitCostMillicents} / 1000)), 0)::int
+          + ${purchaseOrders.freightCents} + ${purchaseOrders.taxCents}
+        `,
+      })
+      .from(purchaseOrders)
+      .innerJoin(
+        purchaseOrderLines,
+        and(eq(purchaseOrderLines.poId, purchaseOrders.id), eq(purchaseOrderLines.orgId, purchaseOrders.orgId)),
+      )
+      .where(
+        and(
+          eq(purchaseOrders.orgId, this.orgId),
+          isNull(purchaseOrders.deletedAt),
+          eq(purchaseOrders.status, "ordered"),
+          inArray(purchaseOrders.jobId, jobIds),
+        ),
+      )
+      // po.id is the table's primary key, so freight_cents/tax_cents/job_id are functionally
+      // dependent on it — Postgres allows selecting them ungrouped.
+      .groupBy(purchaseOrders.id);
+
+    const out = new Map<string, number>();
+    for (const r of perOrder) if (r.jobId) out.set(r.jobId, (out.get(r.jobId) ?? 0) + r.cents);
     return out;
   }
 
