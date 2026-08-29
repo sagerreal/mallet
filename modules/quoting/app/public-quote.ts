@@ -1,9 +1,13 @@
 import { withTenant, type TenantTx } from "@mallet/shared/db/tx";
-import { asEstimateId, asLeadId, systemClock, type OrgId } from "@mallet/shared/types";
+import { asEstimateId, asLeadId, asOrgId, systemClock, type OrgId } from "@mallet/shared/types";
 import { uuidGenerator } from "@mallet/shared/ports";
 import { OutboxEventBus } from "@mallet/shared/outbox";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DrizzlePublicEstimateReader } from "../infra/drizzle-public-estimate-reader";
+import { ProposalPhotoStorage } from "../infra/proposal-photo-storage";
+import { photoKeysIn } from "../domain/presentation-snapshot";
+import { getSupabaseAdmin } from "@/lib/supabase/admin";
+import { SupabasePhotoStorageGateway } from "@mallet/jobs";
 import { AcceptEstimateUseCase } from "./accept-estimate";
 import type { AcceptLineInput } from "./accept-estimate";
 import { DeclineEstimateUseCase } from "./decline-estimate";
@@ -117,7 +121,37 @@ export type { PublicQuoteView };
 // The token is the ONLY input — no org_id or estimate_id is accepted from callers.
 export async function getPublicQuote(token: string): Promise<PublicQuoteView | null> {
   const reader = new DrizzlePublicEstimateReader();
-  return reader.findByToken(token);
+  const view = await reader.findByToken(token);
+  if (!view) return null;
+  return { ...view, photoUrls: await signProposalPhotos(view) };
+}
+
+/**
+ * Short-lived links for exactly the photos THIS quote references, and no others.
+ *
+ * Minted here, on the server, with the service-role client: the visitor holds an unguessable
+ * token and no session at all, and the bucket's own policy is `to authenticated`, so there is
+ * no path by which the browser could sign these for itself. That is the point — the images stay
+ * private, and the link the customer's page uses expires.
+ *
+ * A photo that will not sign is simply absent from the map. A proposal whose third image was
+ * deleted from storage should still show the customer their quote and the other two; failing
+ * the page over a missing decoration would be the wrong trade every time.
+ */
+async function signProposalPhotos(view: PublicQuoteView): Promise<Map<string, string>> {
+  const keys = photoKeysIn(view.estimate.props.presentationSnapshot ?? null);
+  if (keys.length === 0) return new Map();
+  // The gateway is built HERE rather than pulled from trpc/di: importing the DI module drags
+  // in the config validator at module load, which throws in any context without full DB env —
+  // it took a unit suite down the moment this file reached for it.
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    // Storage is not configured; the quote still renders, without its pictures.
+    return new Map();
+  }
+  const storage = new ProposalPhotoStorage(
+    new SupabasePhotoStorageGateway(() => getSupabaseAdmin() as never),
+  );
+  return storage.createViewUrls(keys, asOrgId(view.estimate.props.orgId));
 }
 
 // Accept an estimate via its public token, optionally committing the customer's selection of

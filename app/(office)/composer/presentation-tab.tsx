@@ -19,7 +19,9 @@ import { api } from "@/lib/trpc/client";
 import { Field } from "@/components/ui/input";
 import type { ComposerLine, ComposerPresentation, ComposerState } from "./composer-state";
 import { gbbTierTotal, patchPresentationPage, realLines, togglePresentationPage } from "./composer-state";
-import { patchPresentationDesign, setPresentationMode } from "./presentation-state";
+import { patchPresentationDesign, setPagePhotos, setPresentationMode } from "./presentation-state";
+import type { ComposerPhoto, ComposerPresentationPage } from "./presentation-state";
+import { PhotoPage } from "./photo-page";
 import { DocToolbar } from "./doc-toolbar";
 import { coverSheetPages, estimateSheetPages, hasCoverSheet, sheetStyleFor } from "./doc-design";
 import type { PresentationPageKey } from "./presentation-state";
@@ -281,6 +283,7 @@ export function PresentationTab({
                   editing={editKey === page.key}
                   onEdit={() => openEditor(p, page.key)}
                   uid={uid}
+                  onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
                   {...editorProps}
                 />
               ))}
@@ -312,6 +315,7 @@ export function PresentationTab({
                     editing={editKey === page.key}
                     onEdit={() => openEditor(p, page.key)}
                     uid={uid}
+                    onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
                     {...editorProps}
                   />
                 ))}
@@ -458,7 +462,9 @@ function SectionEditor({
   );
 }
 
-type PresentationPage = { key: PresentationPageKey; on: boolean; title: string; body: string };
+// The composer's own page shape — the one the sections render. Aliased rather than redeclared
+// so a field added to the model (photos, and whatever comes next) reaches these sections too.
+type PresentationPage = ComposerPresentationPage;
 
 // ---- cover ---------------------------------------------------------------------
 
@@ -611,6 +617,7 @@ function PageSection({
   editing,
   onEdit,
   uid,
+  onPhotos,
   ...editor
 }: {
   page: PresentationPage;
@@ -618,6 +625,8 @@ function PageSection({
   editing: boolean;
   onEdit: () => void;
   uid: string;
+  /** Only the photos page uses this. Absent elsewhere, so nothing else can grow images. */
+  onPhotos?: (next: ComposerPhoto[]) => void;
 } & SectionEditorProps) {
   const editorId = `${uid}-edit-${page.key}`;
   return (
@@ -627,7 +636,7 @@ function PageSection({
         position: "relative",
         padding: "var(--space-8)",
         borderTop: "1px solid var(--line)",
-        opacity: page.body.trim() || editing ? 1 : 0.75,
+        opacity: page.body.trim() || editing || (page.photos?.length ?? 0) > 0 ? 1 : 0.75,
       }}
     >
       {canEdit && (
@@ -650,11 +659,20 @@ function PageSection({
           {page.body}
         </p>
       ) : (
-        !editing && (
+        // A page with PICTURES is not empty. The photos page's whole content is its photos, so
+        // testing the prose alone told the office a page full of before-and-afters was blank.
+        !editing &&
+        (page.photos?.length ?? 0) === 0 && (
           <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
             Empty — hidden from the customer until it says something.
           </p>
         )
+      )}
+      {/* The photos page carries images, not prose — its body is the caption above them. */}
+      {page.key === "photos" && onPhotos && (
+        <div style={{ marginTop: page.body.trim() ? "var(--space-3)" : 0 }}>
+          <PhotoPage photos={page.photos ?? []} onChange={onPhotos} readOnly={!canEdit} />
+        </div>
       )}
       {editing && <SectionEditor id={editorId} titleLabel="Page title" editor={editor} />}
     </section>

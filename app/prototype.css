@@ -1587,6 +1587,10 @@
   .docphoto.pair{grid-column:span 2}
   .docphoto-pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-1)}
   .docphoto-slot{position:relative;height:140px;border-radius:var(--radius-sm);background-size:cover;background-position:center;background-color:var(--paper)}
+  .docphoto-slot.empty{display:flex;align-items:center;justify-content:center;border:1.5px dashed var(--line);
+    color:var(--ink-2);font-family:inherit;font-size:var(--type-doc-sm);font-weight:650;cursor:pointer;text-align:center;padding:var(--space-2);width:100%}
+  .docphoto-slot.empty:hover{border-color:var(--ink-3);color:var(--ink)}
+  .docphoto-slot.empty[disabled]{cursor:default;color:var(--ink-3)}
   .docphoto-tag{position:absolute;left:6px;top:6px;background:rgb(32 35 31 / 78%);color:#fff;border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-1);font-size:var(--type-doc-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
   .docphoto-cap{margin-top:var(--space-1);font-size:var(--type-doc-sm);color:var(--ink-3);line-height:1.4}
   /* ---------- the document toolbar ----------

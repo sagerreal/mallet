@@ -8,6 +8,7 @@ import type { TenantTx } from "@mallet/shared/db/tx";
 import { ESTIMATE_STATUSES, type Estimate, type EstimateStatus } from "../domain/estimate";
 import type { QuoteTier } from "../domain/estimate";
 import { MAX_SECTION_NAME_CHARS } from "../domain/estimate-section";
+import { ProposalPhotoStorage, PROPOSAL_PHOTO_EXTS } from "../infra/proposal-photo-storage";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DraftEstimateUseCase } from "../app/draft-estimate";
 import { SendEstimateUseCase } from "../app/send-estimate";
@@ -342,6 +343,28 @@ const lineInput = z.object({
 /** A heading to group lines under. Its position is its index in the payload. */
 const sectionInput = z.object({
   name: z.string().trim().min(1).max(MAX_SECTION_NAME_CHARS),
+});
+
+/**
+ * A signed, direct-to-storage upload for a proposal photo, plus the key the snapshot records.
+ *
+ * The client mints the object id so it can show the photo the instant the PUT lands, without a
+ * round trip to learn what it was called.
+ */
+const proposalPhotoUploadInput = z.object({
+  objectId: z.string().uuid(),
+  ext: z.enum(PROPOSAL_PHOTO_EXTS),
+});
+const proposalPhotoUploadDTO = z.object({
+  signedUrl: z.string(),
+  token: z.string(),
+  storagePath: z.string(),
+});
+
+/** Short-lived links for keys the OFFICE is looking at. The customer's page mints its own. */
+const proposalPhotoUrlsInput = z.object({ keys: z.array(z.string().min(1).max(500)).max(24) });
+const proposalPhotoUrlsDTO = z.object({
+  urls: z.array(z.object({ key: z.string(), url: z.string() })),
 });
 
 const draftInput = z
@@ -717,6 +740,49 @@ export const createEstimateRouter = () =>
   router({
     // The estimator's learned-rule surface (v1.quoting.rules.*).
     rules: createQuotingRulesRouter(),
+
+    /**
+     * Where a proposal photo goes. Org-wide, not per-quote: the same before-and-after gets
+     * used on the next three quotes the shop sends.
+     */
+    proposalPhotoUploadUrl: ownerOrOffice
+      .input(proposalPhotoUploadInput)
+      .output(proposalPhotoUploadDTO)
+      .mutation(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway) {
+          throw new TRPCError({
+            code: "PRECONDITION_FAILED",
+            message: "photo storage is not configured",
+          });
+        }
+        const storage = new ProposalPhotoStorage(ctx.deps.photoStorageGateway);
+        const result = await storage.createUploadUrl({
+          orgId: ctx.principal.orgId,
+          objectId: input.objectId,
+          ext: input.ext,
+        });
+        if (!result.ok) {
+          throw new TRPCError({ code: "BAD_GATEWAY", message: "could not create upload url" });
+        }
+        return result.value;
+      }),
+
+    /**
+     * Links for photos the office is looking at while it builds the document.
+     *
+     * The keys come from the composer's own draft, which is why the client may name them here
+     * — but the gateway still re-derives what it may hand over, and the org comes from the
+     * principal, so a key naming another shop's folder signs nothing.
+     */
+    proposalPhotoUrls: ownerOrOffice
+      .input(proposalPhotoUrlsInput)
+      .output(proposalPhotoUrlsDTO)
+      .query(async ({ ctx, input }) => {
+        if (!ctx.deps.photoStorageGateway || input.keys.length === 0) return { urls: [] };
+        const storage = new ProposalPhotoStorage(ctx.deps.photoStorageGateway);
+        const signed = await storage.createViewUrls(input.keys, ctx.principal.orgId);
+        return { urls: [...signed].map(([key, url]) => ({ key, url })) };
+      }),
 
     draft: ownerOrOffice
       .input(draftInput)

@@ -23,6 +23,11 @@ export interface PublicQuoteView {
    * Same seam the invoice page's Pay button reads (settings' getConnectTarget).
    */
   readonly chargesEnabled: boolean;
+  /**
+   * Short-lived links for the proposal's photos, keyed by storage key. Empty when the quote
+   * carries none. Minted by getPublicQuote, not here — the reader's job is the row.
+   */
+  readonly photoUrls?: ReadonlyMap<string, string>;
 }
 
 // Privileged reader for the public customer quote page. Uses ownerDb (BYPASSRLS) because the
