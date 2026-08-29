@@ -96,6 +96,12 @@ export interface ServiceProps {
    * derive from a scan; a shop that quotes fence by the foot has a unit and no measured kind.
    */
   readonly unit: string | null;
+  /**
+   * The quantity a saved ASSEMBLY was priced at — the run its unitPriceCents is true for.
+   * An assembly's parts are counted by expressions whose "+1" terms do not scale, so there is
+   * no single rate independent of the run; the run is kept with the rate. Null elsewhere.
+   */
+  readonly defaultQuantity: number | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -121,6 +127,10 @@ export class Service {
     if (unit.length > MAX_SERVICE_UNIT_CHARS) {
       return err(validation(`unit cannot exceed ${MAX_SERVICE_UNIT_CHARS} characters`, "unit"));
     }
+    if (props.defaultQuantity !== null && !(props.defaultQuantity > 0)) {
+      // Zero would divide the roll-up by nothing; negative is not a run.
+      return err(validation("the saved quantity must be greater than 0", "defaultQuantity"));
+    }
     return ok(new Service({ ...props, name, unit: unit === "" ? null : unit }));
   }
 
@@ -143,6 +153,7 @@ export class Service {
       position?: number;
       measuredBy?: ServicePricedBy | null;
       unit?: string | null;
+      defaultQuantity?: number | null;
     },
     now: Date,
   ): Result<Service, ValidationError> {
@@ -165,6 +176,8 @@ export class Service {
       position: fields.position !== undefined ? fields.position : this.p.position,
       measuredBy: fields.measuredBy !== undefined ? fields.measuredBy : this.p.measuredBy,
       unit: fields.unit !== undefined ? fields.unit : this.p.unit,
+      defaultQuantity:
+        fields.defaultQuantity !== undefined ? fields.defaultQuantity : this.p.defaultQuantity,
       updatedAt: now,
     });
   }

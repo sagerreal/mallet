@@ -331,8 +331,13 @@ export interface SavedComponent {
  * A saved assembly dropped onto the quote: the parent line, then its parts beneath it.
  *
  * A copy, not a translation — the stored fields and the line's fields are the same fields, so
- * what the office saved is exactly what lands. The driver defaults to 1 and the office types
- * the real run; every part recounts off it the moment they do.
+ * what the office saved is exactly what lands.
+ *
+ * It lands at the RUN it was saved at, not at 1. An assembly's parts are counted by expressions
+ * whose "+1" terms do not scale: one post every eight feet plus an end post is $3.51 a foot
+ * over 100 feet and $29.38 a foot over one. Dropping it in at 1 would show a line contradicting
+ * the very price the picker just offered. The office retypes the run for this job, and every
+ * part recounts the moment they do.
  */
 export function linesFromSavedAssembly(
   lines: readonly ComposerLine[],
@@ -341,6 +346,7 @@ export function linesFromSavedAssembly(
     readonly name: string;
     readonly unit?: string | null;
     readonly unitPrice: number;
+    readonly quantity?: number | null;
     readonly cost: number;
     readonly taxable: boolean;
     readonly components: readonly SavedComponent[];
@@ -349,7 +355,8 @@ export function linesFromSavedAssembly(
   const at = lines.length;
   const parent: ComposerLine = {
     d: saved.name,
-    q: 1,
+    // 1 only when the entry predates the saved run — an older row, not a wrong one.
+    q: saved.quantity && saved.quantity > 0 ? saved.quantity : 1,
     r: saved.unitPrice,
     ...(saved.cost > 0 ? { c: saved.cost } : {}),
     ...(saved.unit ? { unit: saved.unit } : {}),

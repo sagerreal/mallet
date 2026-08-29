@@ -423,6 +423,8 @@ export interface Service {
   measuredBy: string | null;
   /** What the price is per, in the trade's own words ("LF"). Display only. */
   unit?: string | null;
+  /** The run a saved assembly's price is true for. Absent on an ordinary service. */
+  defaultQuantity?: number | null;
   /**
    * The parts this entry is built from, when it is a saved ASSEMBLY. Absent or empty on an
    * ordinary service — having parts is what makes an entry an assembly, so nothing else can

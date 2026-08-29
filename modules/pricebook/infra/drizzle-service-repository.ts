@@ -12,7 +12,7 @@ import {
 } from "@mallet/shared/types";
 import type { Service, ServicePricedBy } from "../domain/service";
 import type { ServiceRepository } from "../domain/service-repository";
-import { laborHoursToColumn, rowToService } from "./service-mapper";
+import { laborHoursToColumn, quantityToColumn, rowToService } from "./service-mapper";
 
 // Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
 // app.current_org_id), so RLS appends `org_id = current_org_id()` to every statement.
@@ -41,6 +41,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
     position: number;
     measuredBy: ServicePricedBy | null;
     unit?: string | null;
+    defaultQuantity?: number | null;
   }): Promise<Service> {
     const rows = await this.tx
       .insert(pricebookItems)
@@ -62,6 +63,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
         position: input.position,
         measuredBy: input.measuredBy,
         unit: input.unit ?? null,
+        defaultQuantity: quantityToColumn(input.defaultQuantity ?? null),
       })
       .returning();
     const row = rows[0];
@@ -158,6 +160,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
         position: p.position,
         measuredBy: p.measuredBy,
         unit: p.unit,
+        defaultQuantity: quantityToColumn(p.defaultQuantity),
         updatedAt: p.updatedAt,
       })
       // Guard: explicit org_id + non-deleted check (defense in depth alongside RLS).

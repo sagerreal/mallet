@@ -42,6 +42,7 @@ export function serviceDtoToStore(dto: ServiceDTO): Service {
     position: dto.position,
     measuredBy: dto.measuredBy,
     ...(dto.unit ? { unit: dto.unit } : {}),
+    ...(dto.defaultQuantity === null ? {} : { defaultQuantity: dto.defaultQuantity }),
     // Only the exception is written: an ordinary service carries no `components` key at all,
     // so its store shape is byte-identical to what it was before assemblies existed.
     ...(dto.components.length > 0

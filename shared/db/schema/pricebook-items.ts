@@ -54,6 +54,19 @@ export const pricebookItems = pgTable(
      * answer different questions and a service can carry either, both, or neither.
      */
     unit: text("unit"),
+    /**
+     * The quantity a saved ASSEMBLY was priced at — the run its unit_price_cents is true for.
+     *
+     * Not decoration. An assembly's parts are counted by expressions like "qty/8+1", and the
+     * "+1" does not scale: one post every eight feet PLUS an end post is $3.51 a foot over 100
+     * feet and $29.38 a foot over one. There is no single rate independent of the run, so the
+     * run is stored with the rate, and applying the entry restores both. Without it the picker
+     * offers "$3.51 / LF" and the line it drops in says $29.38 — the same entry, contradicting
+     * itself on screen.
+     *
+     * Null on an ordinary service, which has no driver and needs none.
+     */
+    defaultQuantity: numeric("default_quantity", { precision: 12, scale: 2 }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

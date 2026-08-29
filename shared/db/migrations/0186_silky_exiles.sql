@@ -1,0 +1,1 @@
+ALTER TABLE "pricebook_items" ADD COLUMN "default_quantity" numeric(12, 2);

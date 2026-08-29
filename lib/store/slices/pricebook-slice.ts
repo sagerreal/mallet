@@ -47,6 +47,8 @@ export interface SaveAssemblyFields {
   name: string;
   unit?: string | null;
   unitPrice: number;
+  /** The run the rate is true for — an assembly's rate means nothing without it. */
+  quantity: number;
   cost?: number;
   taxable?: boolean;
   components: {
@@ -278,6 +280,7 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
         name: cmd.name,
         unit: cmd.unit,
         unitPriceCents: Math.round(cmd.unitPrice * 100),
+        quantity: cmd.quantity,
         costCents: Math.round((cmd.cost ?? 0) * 100),
         taxable: cmd.taxable,
         components: cmd.components.map((c) => ({

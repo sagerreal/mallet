@@ -23,6 +23,8 @@ export interface ServiceRepository {
     measuredBy: ServicePricedBy | null;
     /** What the price is per ("LF"). Optional so every existing caller is unchanged. */
     unit?: string | null;
+    /** The run a saved assembly's rate is true for. Optional for the same reason. */
+    defaultQuantity?: number | null;
   }): Promise<Service>;
 
   findById(id: ServiceId): Promise<Service | null>;

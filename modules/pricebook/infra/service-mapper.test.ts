@@ -18,6 +18,7 @@ const baseRow = (): ServiceRow => ({
   costCents: 45000,
   laborHours: "2.50",
   unit: null,
+  defaultQuantity: null,
   taxable: true,
   warrantyText: null,
   imageUrl: null,

@@ -293,6 +293,7 @@ describe("linesFromSavedAssembly", () => {
     name: "Cedar privacy fence",
     unit: "LF",
     unitPrice: 11.58,
+    quantity: 100,
     cost: 8.4,
     taxable: true,
     components: [
@@ -317,12 +318,18 @@ describe("linesFromSavedAssembly", () => {
     expect(linesFromSavedAssembly([], saved)[0]?.pricebookItemId).toBe("pb-1");
   });
 
-  it("starts at a driver of 1 and counts every part off it", () => {
-    // Not zero: a component resolving to 0 would read as free until someone typed the run.
+  it("lands at the run it was saved at, so its price still means what the picker said", () => {
+    // The defect this guards: at a driver of 1, "qty/8+1" gives $29.38 a foot for an entry the
+    // picker just offered at $3.51 a foot. The same entry, contradicting itself on screen.
     const next = linesFromSavedAssembly([], saved);
-    expect(next[0]?.q).toBe(1);
-    expect(next[1]?.q).toBe(2); // ceil(1/8 + 1) = 2
-    expect(next[2]?.q).toBe(2); // 1*2
+    expect(next[0]?.q).toBe(100);
+    expect(next[1]?.q).toBe(14); // ceil(100/8 + 1)
+    expect(next[2]?.q).toBe(200); // 100*2
+  });
+
+  it("falls back to 1 for an entry saved before the run was kept", () => {
+    // An older row, not a wrong one — it still applies, and the office types the run.
+    expect(linesFromSavedAssembly([], { ...saved, quantity: null })[0]?.q).toBe(1);
   });
 
   it("carries the exception, not the default, for tax", () => {

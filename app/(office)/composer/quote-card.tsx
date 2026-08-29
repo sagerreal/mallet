@@ -180,6 +180,7 @@ export function QuoteCard({
           name: svc.name,
           unit: svc.unit ?? null,
           unitPrice: svc.unitPrice,
+          quantity: svc.defaultQuantity ?? null,
           cost: svc.cost,
           taxable: svc.taxable,
           components: svc.components.map((c) => ({

@@ -38,6 +38,11 @@ export interface SaveAssemblyCommand {
   readonly unit?: string | null;
   /** The rolled-up rate, so the entry sells on its own without opening it. */
   readonly unitPriceCents: number;
+  /**
+   * The run that rate is true for. An assembly's parts are counted by expressions whose "+1"
+   * terms do not scale, so the rate and the run only mean anything together.
+   */
+  readonly quantity: number;
   readonly costCents?: number;
   readonly categoryId?: string | null;
   readonly taxable?: boolean;
@@ -58,6 +63,10 @@ export class SaveAssemblyUseCase {
   ) {}
 
   async exec(cmd: SaveAssemblyCommand): Promise<Result<SavedAssembly, AppError>> {
+    if (!(cmd.quantity > 0)) {
+      // The rate is a per-unit number derived by dividing by this. Zero would make it meaningless.
+      return err(validation("an assembly needs a quantity greater than 0", "quantity"));
+    }
     if (cmd.components.length === 0) {
       // An assembly with no parts is just a service, and the book already has a way to save one.
       return err(validation("an assembly needs at least one part", "components"));
@@ -95,6 +104,7 @@ export class SaveAssemblyUseCase {
       position: 0,
       measuredBy: null,
       unit: cmd.unit ?? null,
+      defaultQuantity: cmd.quantity,
     });
     return ok(created);
   }
@@ -117,6 +127,7 @@ export class SaveAssemblyUseCase {
         unitPriceCents: cmd.unitPriceCents,
         costCents: cmd.costCents ?? 0,
         unit: cmd.unit ?? null,
+        defaultQuantity: cmd.quantity,
         ...(cmd.categoryId === undefined ? {} : { categoryId: cmd.categoryId }),
         ...(cmd.taxable === undefined ? {} : { taxable: cmd.taxable }),
       },

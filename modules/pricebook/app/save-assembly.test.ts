@@ -35,6 +35,7 @@ const props = (over: Partial<ServiceProps> = {}): ServiceProps => ({
   position: 0,
   measuredBy: null,
   unit: "LF",
+  defaultQuantity: 100,
   createdAt: NOW,
   updatedAt: NOW,
   ...over,
@@ -59,6 +60,7 @@ class FakeServices implements ServiceRepository {
       taxable: input.taxable,
       categoryId: input.categoryId,
       unit: input.unit ?? null,
+      defaultQuantity: input.defaultQuantity ?? null,
     });
     this.store.set(made.props.id, made);
     return made;
@@ -113,6 +115,7 @@ const cmd = (over: Partial<SaveAssemblyCommand> = {}): SaveAssemblyCommand => ({
   name: "Cedar privacy fence",
   unit: "LF",
   unitPriceCents: 1158,
+  quantity: 100,
   components: [
     { description: "Line posts", unit: "ea", qtyExpr: "qty/8+1", roundUp: true, unitCostCents: 1800, unitPriceCents: 2430, markupBps: 3500 },
     { description: "Pickets", unit: "ea", qtyExpr: "qty*2", unitPriceCents: 415 },

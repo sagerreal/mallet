@@ -73,6 +73,11 @@ export const serviceDTO = z.object({
   /** What the price is per, in the trade's own words ("LF"). Display only. */
   unit: z.string().nullable(),
   /**
+   * The run a saved assembly's price is true for. Null on an ordinary service — see the
+   * column's own note for why an assembly's rate cannot be read without it.
+   */
+  defaultQuantity: z.number().positive().nullable(),
+  /**
    * The parts this entry is built from, when it is a saved ASSEMBLY. Empty on an ordinary
    * service — the presence of parts is what makes an entry an assembly, so there is no separate
    * flag that could disagree with the rows.
@@ -167,6 +172,7 @@ export const toServiceDTO = (
     position: p.position,
     measuredBy: p.measuredBy,
     unit: p.unit,
+    defaultQuantity: p.defaultQuantity,
     components: components.map(toItemComponentDTO),
   };
 };

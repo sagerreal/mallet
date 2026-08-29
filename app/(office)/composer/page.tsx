@@ -112,6 +112,9 @@ export default function ComposerPage() {
       name: parent.d.trim() || "Untitled assembly",
       unit: parent.unit ?? null,
       unitPrice: parent.r ?? 0,
+      // The run the rate is true for. Saved WITH the rate because an assembly's parts are
+      // counted by expressions whose "+1" terms do not scale — see defaultQuantity's own note.
+      quantity: parent.q > 0 ? parent.q : 1,
       cost: parent.c ?? 0,
       taxable: !parent.notax,
       components: components.map((c) => ({

@@ -58,6 +58,8 @@ const saveAssemblyInput = z.object({
   name: z.string().trim().min(1).max(500),
   unit: z.string().trim().min(1).max(20).nullish(),
   unitPriceCents: z.number().int().nonnegative(),
+  /** The run the rate is true for — see the column's note. */
+  quantity: z.number().positive().finite(),
   costCents: z.number().int().nonnegative().optional(),
   categoryId: z.string().uuid().nullish(),
   taxable: z.boolean().optional(),
@@ -344,6 +346,7 @@ export const createPricebookRouter = () =>
               name: input.name,
               unit: input.unit ?? null,
               unitPriceCents: input.unitPriceCents,
+              quantity: input.quantity,
               costCents: input.costCents ?? 0,
               categoryId: input.categoryId ?? null,
               taxable: input.taxable ?? true,
