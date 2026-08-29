@@ -22,6 +22,7 @@ import {
 import type { SignatureDraft, SignedSnapshot } from "./signature";
 import { createSignature } from "./signature";
 import { authorizationText } from "./authorization-text";
+import { evaluateQuantityExpression, MAX_QTY_EXPR_LENGTH } from "./quantity-expression";
 
 const MAX_CHANGE_REQUEST_LENGTH = 2_000;
 
@@ -171,6 +172,25 @@ export interface EstimateLineProps {
   /** Internal estimating math behind the price — see EstimateSubItem. Null when the line was
    *  priced directly. Optional for the same reason as scope. */
   readonly subItems?: readonly EstimateSubItem[] | null;
+  /** What the quantity is counted in — "LF", "hr", "bags". Display only: it never enters the
+   *  money math, it tells the customer what they are buying 100 of. */
+  readonly unit?: string | null;
+  /**
+   * The typed math behind `quantity`, when the estimator authored one ("qty/8+1"). `quantity`
+   * stays the resolved number every total and every downstream surface reads; this is only how
+   * it was authored. create() re-evaluates it, so the two can never disagree in the database.
+   */
+  readonly qtyExpr?: string | null;
+  /** Round the resolved quantity up to a whole unit — you cannot buy half a post. */
+  readonly roundUp?: boolean;
+  /** The line this one is a component of, for an assembly. Null on an ordinary line. */
+  readonly parentLineId?: EstimateLineId | null;
+  /** The named group this line sits under. Null when ungrouped. */
+  readonly sectionId?: string | null;
+  /** Does the customer see this line at all. Distinct from isOptional (visible AND choosable). */
+  readonly customerVisible?: boolean;
+  /** Markup over cost in basis points when the line is priced from its cost; null = hand-priced. */
+  readonly markupBps?: number | null;
 }
 
 /**
@@ -184,6 +204,11 @@ export interface EstimateLineProps {
  */
 export type EstimateLineCreateProps = Omit<EstimateLineProps, "taxable"> & {
   readonly taxable?: boolean;
+  /**
+   * The parent's quantity, supplied only so create() can check a child's expression against the
+   * quantity being stored. Never kept on the line — the parent is the one place it lives.
+   */
+  readonly driverQuantity?: number | null;
 };
 
 // Scope is a proposal page's worth of prose, not a paragraph cap — the PaintScout exemplar runs
@@ -192,6 +217,7 @@ const MAX_SCOPE_CHARS = 8000;
 const MAX_SUB_ITEMS = 20;
 const MAX_SUB_DESCRIPTION_CHARS = 500;
 const MAX_SUB_UNIT_CHARS = 20;
+const MAX_UNIT_CHARS = 20;
 
 // Jsonb round-trip validation for a line's sub-items — malformed rows fail loud, valid input is
 // normalized (trimmed, blank unit → null) and frozen. Absent/empty reads as null, one meaning.
@@ -254,6 +280,50 @@ export class EstimateLine {
     }
     const subItems = validateSubItems(props.subItems);
     if (!subItems.ok) return subItems;
+
+    const unitTrimmed = typeof props.unit === "string" ? props.unit.trim() : null;
+    if (unitTrimmed !== null && unitTrimmed.length > MAX_UNIT_CHARS) {
+      return err(validation(`unit is limited to ${MAX_UNIT_CHARS} characters`, "unit"));
+    }
+
+    const exprTrimmed = typeof props.qtyExpr === "string" ? props.qtyExpr.trim() : null;
+    const qtyExpr = exprTrimmed !== null && exprTrimmed.length > 0 ? exprTrimmed : null;
+    if (qtyExpr !== null) {
+      if (qtyExpr.length > MAX_QTY_EXPR_LENGTH) {
+        return err(validation(`quantity math is limited to ${MAX_QTY_EXPR_LENGTH} characters`, "qtyExpr"));
+      }
+      // Reconcile ONLY when the caller supplies the driver — which the write path does and
+      // read-back cannot. On write, the stored quantity must be what this expression produces:
+      // anything else means the client computed something the server would not, and the money
+      // would follow the wrong one. On read there is no parent row to evaluate against, so the
+      // stored quantity stands; re-deriving it there would make every saved component of an
+      // assembly unreadable the moment its expression referenced a driver we no longer have.
+      if (props.driverQuantity != null) {
+        const evaluated = evaluateQuantityExpression(qtyExpr, props.driverQuantity, unitTrimmed);
+        if (!evaluated.ok) return evaluated;
+        const resolved = props.roundUp ? Math.ceil(evaluated.value) : evaluated.value;
+        if (Math.abs(resolved - props.quantity) > 1e-9) {
+          return err(
+            validation(
+              `line quantity ${props.quantity} does not match its own math (${qtyExpr} = ${resolved})`,
+              "quantity",
+            ),
+          );
+        }
+      }
+    }
+
+    if (props.parentLineId != null && props.parentLineId === props.id) {
+      return err(validation("a line cannot be its own parent", "parentLineId"));
+    }
+
+    if (props.markupBps != null) {
+      if (props.markupBps < 0) return err(validation("markup cannot be negative", "markupBps"));
+      if (!Number.isInteger(props.markupBps)) {
+        return err(validation("markup is whole basis points", "markupBps"));
+      }
+    }
+
     return ok(
       new EstimateLine({
         ...props,
@@ -261,6 +331,13 @@ export class EstimateLine {
         taxable: props.taxable ?? true,
         scope: scopeTrimmed !== null && scopeTrimmed.length > 0 ? scopeTrimmed : null,
         subItems: subItems.value,
+        unit: unitTrimmed !== null && unitTrimmed.length > 0 ? unitTrimmed : null,
+        qtyExpr,
+        roundUp: props.roundUp ?? false,
+        parentLineId: props.parentLineId ?? null,
+        sectionId: props.sectionId ?? null,
+        customerVisible: props.customerVisible ?? true,
+        markupBps: props.markupBps ?? null,
       }),
     );
   }

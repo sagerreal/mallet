@@ -6,7 +6,7 @@ import type { SignedSnapshot } from "../domain/signature";
 export type EstimateRow = typeof estimates.$inferSelect;
 export type EstimateLineRow = typeof estimateLines.$inferSelect;
 
-const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
+export const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
   const result = EstimateLine.create({
     id: asEstimateLineId(row.id),
     description: row.description,
@@ -24,6 +24,16 @@ const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
     // Jsonb read-back: the shape is ours on the way in, and EstimateLine.create re-validates
     // every item field, so corrupt rows fail loud here rather than coercing.
     subItems: row.subItems,
+    unit: row.unit,
+    qtyExpr: row.qtyExpr,
+    roundUp: row.roundUp,
+    parentLineId: row.parentLineId ? asEstimateLineId(row.parentLineId) : null,
+    sectionId: row.sectionId,
+    customerVisible: row.customerVisible,
+    markupBps: row.markupBps,
+    // No driver here: the stored quantity IS the resolved one, and re-deriving it on read would
+    // need the parent row, which this mapper does not have. create() only re-checks a child's
+    // math when the caller supplies the driver, which the write path does.
   });
   if (!result.ok) throw new Error(`corrupt estimate_line ${row.id}: ${result.error.message}`);
   return result.value;
