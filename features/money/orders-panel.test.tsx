@@ -17,10 +17,12 @@ let mockQuery: { isFetched: boolean; isError: boolean; isRefetching: boolean; re
   isRefetching: false,
   refetch: vi.fn(),
 };
+const openModalMock = vi.fn();
 
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: { purchaseOrders: PurchaseOrder[] }) => unknown) =>
     sel({ purchaseOrders: mockPurchaseOrders }),
+  useOpenModal: () => openModalMock,
 }));
 vi.mock("@/lib/trpc/client", () => ({
   api: { v1: { purchasing: { list: { useQuery: () => mockQuery } } } },
@@ -48,6 +50,7 @@ const po = (over: Partial<PurchaseOrder> = {}): PurchaseOrder => ({
 });
 
 beforeEach(() => {
+  openModalMock.mockClear();
   mockPurchaseOrders = [
     po({ id: "po-1", num: "PO-1043", vendor: "Ferguson", status: "ordered", total: 952.7 }),
     po({
@@ -113,6 +116,18 @@ describe("OrdersPanel — populated", () => {
     expect(within(chips).getByRole("button", { name: /^All/ }).className.split(" ")).not.toContain("on");
   });
 
+  it("the header's + New purchase order button opens the create modal", () => {
+    render(<OrdersPanel />);
+    fireEvent.click(screen.getByRole("button", { name: "+ New purchase order" }));
+    expect(openModalMock).toHaveBeenCalledWith("new-po");
+  });
+
+  it("clicking a row opens that order's record sheet", () => {
+    render(<OrdersPanel />);
+    fireEvent.click(screen.getByText("Ferguson").closest("tr")!);
+    expect(openModalMock).toHaveBeenCalledWith("po", { poId: "po-1" });
+  });
+
   it("the footer totals PLACED orders in red and DRAFT orders plainly, over the whole book", () => {
     const { container } = render(<OrdersPanel />);
     // Placed = the one "ordered" PO ($952.70); In draft = the one "draft" PO ($2,140.00).
@@ -150,10 +165,12 @@ describe("OrdersPanel — the other three list states", () => {
     expect(screen.getByRole("button", { name: /Try again/ })).toBeTruthy();
   });
 
-  it("loaded and genuinely empty → the first-run invitation", () => {
+  it("loaded and genuinely empty → the first-run invitation, with a path into the create modal", () => {
     mockPurchaseOrders = [];
     render(<OrdersPanel />);
     expect(screen.getByText("No purchase orders yet")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "+ Draft an order" }));
+    expect(openModalMock).toHaveBeenCalledWith("new-po");
   });
 
   it("an errored load with rows already cached shows the rows, not the error screen", () => {

@@ -3640,6 +3640,9 @@
   .select-trigger{background:var(--card)}
   .select-trigger:disabled{background:var(--bg)}
   .select-trigger:active{background:var(--manila-2)}
+  /* The trigger's own "▾" — a class so a scope like .po-scope can lift it past the type floor;
+     an inline font-size would outrank any external rule short of !important. */
+  .select-trigger-caret{font-size:var(--type-sm);color:var(--ink-3)}
   .select-option{background:transparent}
   .select-option.active{background:var(--manila-2)}
   .select-option:active{background:color-mix(in srgb,var(--ink) 12%,var(--manila-2))}
@@ -3708,9 +3711,10 @@
      .fsec-h and .stpill at --type-xs, .field label and .muted at --type-sm, .btn at --type-base —
      against a 15px body. That is fine on a settings row and wrong on a document somebody retypes
      off a supply-house invoice with a phone in one hand. Scoped to .po-scope (Money → Orders,
-     features/money/orders-panel.tsx, and the two record modals Task 8 adds) so the rest of the
-     app does not move; if the type scale is lifted globally this whole block goes away. Ported
-     verbatim from the approved design on mock/money-purchase-orders. */
+     features/money/orders-panel.tsx, and the create + record PO modals) so the rest of the app
+     does not move; if the type scale is lifted globally this whole block goes away. Ported
+     verbatim from the approved design on mock/money-purchase-orders. This is a STANDING
+     requirement (Owen, raised more than once), not a preview affordance — it stays. */
   .po-scope,.po-scope .muted,.po-scope .field label,.po-scope .fdd-l,.po-scope .fdd-v,
   .po-scope .btn,.po-scope .stpill,.po-scope .lab,.po-scope p,.po-scope span,.po-scope b,
   .po-scope .nfeed,.po-scope .nfeed *,.po-scope .linklike,.po-scope input,.po-scope select,
@@ -3725,3 +3729,16 @@
      specificity fix, not a !important: two classes + tbody+td+::before outranks the mobile
      block's one class + tbody+td+::before. */
   .po-scope .list-tbl tbody td::before{font-size:var(--type-md)}
+  /* The two modals' own controls that the selectors above do not already reach: SelectMenu's
+     trigger caret (an inline font-size on the SPAN itself normally wins, which is exactly why
+     select-menu.tsx now exposes it as a class), and the create form's own error paragraph
+     (already just a bare <p>, covered above, listed here only as a reminder it is covered). */
+  .po-scope .select-trigger-caret{font-size:var(--type-md)}
+
+  /* THE PO LINE GRID READS AT THE BODY SIZE. The shared .lineedit input rule is --type-base
+     (13px) against a 15px body, and a purchase order is money somebody retypes off a
+     supply-house invoice, so it is the last place to shrink text. Scoped to .po-lines so the
+     estimate composer's own grid does not move. Ported verbatim from the approved design on
+     mock/money-purchase-orders (features/money/po-line-table.tsx renders this class). */
+  .po-lines tbody input,.po-lines tbody td,.po-lines thead th,.po-lines .lineedit-bar,
+  .po-lines .lineedit-bar *{font-size:var(--type-md)}

@@ -31,6 +31,9 @@ export const MODAL = {
   IMPORT_COMPANIES: "import-companies",
   ROOM_CARD: "room-card",
   SITE_TRACER: "site-tracer",
+  /** `{ poId }` — the purchase-order record sheet. */
+  PO: "po",
+  NEW_PO: "new-po",
 } as const;
 
 export type ModalId = (typeof MODAL)[keyof typeof MODAL];

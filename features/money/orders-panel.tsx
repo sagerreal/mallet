@@ -10,11 +10,11 @@
  * Ports the LIST portion of the approved mock (branch mock/money-purchase-orders,
  * app/(office)/money/po/page.tsx) against the real store: the `.list-tbl` of
  * # · Vendor · For job · Status · Total · Ordered, the draft/ordered/cancelled filter chips, and
- * the Placed/In draft footer totals. The mock's two modals (view + create) and its in-page
- * ViewToggle are deliberately NOT ported here — Task 8 builds the modals against
- * MODAL.PO/MODAL.NEW_PO, and the ViewToggle is replaced by SectionTabs, the app's real sub-nav
- * grammar. No row-open control or "+ New purchase order" button yet either: wiring either to a
- * modal that doesn't exist would be a dead control.
+ * the Placed/In draft footer totals. The mock's in-page ViewToggle is NOT ported — replaced by
+ * SectionTabs, the app's real sub-nav grammar. The two modals (view + create) are Task 8's
+ * components/modals/po-modal/po-modal.tsx and components/modals/new-po-modal.tsx; this file wires
+ * a "+ New purchase order" button and a row click to them (MODAL.NEW_PO / MODAL.PO) now that both
+ * exist — wiring either earlier would have pointed a control at a modal that didn't exist yet.
  *
  * Rows come straight from the store (OrdersHydrator → adoptPurchaseOrders) and arrive ordered
  * createdAt desc from the server — never re-sorted here, the same rule money-ledger.tsx follows
@@ -27,7 +27,8 @@
  */
 
 import { useState } from "react";
-import { useAppStore } from "@/lib/store/app-store";
+import { useAppStore, useOpenModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { isFirstLoad, shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
@@ -35,19 +36,9 @@ import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
 import { fmt$2 } from "@/lib/format";
+import { pressable } from "@/lib/a11y";
+import { PO_STATUS_META } from "./po-defs";
 import type { POStatus, PurchaseOrder } from "@/lib/store/types";
-
-/**
- * One vocabulary for the status word + its pill colors on this surface — mirrors the mock's
- * PO_STATUS_META (features/money/po-defs.ts on mock/money-purchase-orders). Task 8 cherry-picks
- * that file (types swapped to the store's) for the two modals; when it lands, fold this local
- * copy into an import from there instead of letting two definitions drift apart.
- */
-const PO_STATUS_META: Record<POStatus, { label: string; c: string; bg: string }> = {
-  draft: { label: "Draft", c: "var(--ink-3)", bg: "var(--paper)" },
-  ordered: { label: "Ordered", c: "var(--amber)", bg: "var(--amber-bg)" },
-  cancelled: { label: "Cancelled", c: "var(--ink-3)", bg: "var(--paper)" },
-};
 
 const STATUS_BANDS: readonly POStatus[] = ["draft", "ordered", "cancelled"];
 
@@ -55,10 +46,16 @@ const FIRST_RUN = {
   heading: "No purchase orders yet",
   subtext:
     "What the shop buys from a supplier — draft one, place it, and its cost lands on the job it's for.",
+  add: {
+    title: "Draft a purchase order",
+    description: "Vendor, lines, and what it's for — place it when it's ready.",
+    actionLabel: "+ Draft an order",
+  },
 } as const;
 
 export function OrdersPanel() {
   const purchaseOrders = useAppStore((s) => s.purchaseOrders);
+  const openModal = useOpenModal();
   const [band, setBand] = useState<POStatus | null>(null);
 
   // The SAME query key OrdersHydrator holds (v1.purchasing.list, no input) — this costs no
@@ -89,6 +86,11 @@ export function OrdersPanel() {
     <div className="po-scope">
       <div className="pagehead">
         <h1>Orders</h1>
+        <div className="pagehead-acts">
+          <button type="button" className="btn primary" onClick={() => openModal(MODAL.NEW_PO)}>
+            + New purchase order
+          </button>
+        </div>
       </div>
 
       {isFirstLoad(listState) ? (
@@ -96,7 +98,11 @@ export function OrdersPanel() {
       ) : shouldShowLoadFailed(listState) ? (
         <LoadFailed noun="purchase orders" onRetry={() => void listQ.refetch()} retrying={listQ.isRefetching} />
       ) : shouldShowFirstRun(listState) ? (
-        <FirstRunEmptyState heading={FIRST_RUN.heading} subtext={FIRST_RUN.subtext} paths={[]} />
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={FIRST_RUN.subtext}
+          paths={[{ ...FIRST_RUN.add, onAction: () => openModal(MODAL.NEW_PO), variant: "primary" }]}
+        />
       ) : (
         <>
           <OrderStatusChips purchaseOrders={purchaseOrders} band={band} onBand={setBand} />
@@ -115,7 +121,7 @@ export function OrdersPanel() {
               </thead>
               <tbody>
                 {rows.length > 0 ? (
-                  rows.map((po) => <OrderRow key={po.id} po={po} />)
+                  rows.map((po) => <OrderRow key={po.id} po={po} onOpen={() => openModal(MODAL.PO, { poId: po.id })} />)
                 ) : (
                   <tr>
                     <td colSpan={6}>
@@ -181,10 +187,10 @@ function OrderTotals({ placed, drafted }: { placed: number; drafted: number }) {
   );
 }
 
-function OrderRow({ po }: { po: PurchaseOrder }) {
+function OrderRow({ po, onOpen }: { po: PurchaseOrder; onOpen: () => void }) {
   const meta = PO_STATUS_META[po.status];
   return (
-    <tr>
+    <tr className="clickable" onClick={onOpen} {...pressable(onOpen)}>
       <td className="muted mono-num" data-label="#">
         {po.num ?? "—"}
       </td>
