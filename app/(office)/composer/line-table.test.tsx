@@ -17,6 +17,7 @@ import type { ComposerLine } from "./composer-state";
 const onLines = vi.fn();
 beforeEach(() => {
   onLines.mockClear();
+  onSections.mockClear();
   cleanup();
 });
 
@@ -32,10 +33,23 @@ const posts: ComposerLine = {
 };
 
 /** Renders fresh each time, so re-rendering with what the table handed back is one call. */
-const table = (lines: ComposerLine[], showCost = false) => {
+const onSections = vi.fn();
+
+const table = (lines: ComposerLine[], showCost = false, sections: string[] = []) => {
   cleanup();
-  return render(<LineTable lines={lines} showCost={showCost} onLines={onLines} />);
+  return render(
+    <LineTable
+      lines={lines}
+      sections={sections}
+      showCost={showCost}
+      onLines={onLines}
+      onSections={onSections}
+    />,
+  );
 };
+
+/** What the table handed back on the last section change. */
+const lastSections = () => onSections.mock.calls[onSections.mock.calls.length - 1]![0];
 
 /** The array the table handed back on the last call. */
 const lastLines = (): ComposerLine[] => onLines.mock.calls[onLines.mock.calls.length - 1]![0];
@@ -188,5 +202,79 @@ describe("LineTable — the rest of the row still works", () => {
     const detail = screen.getByLabelText(/scope/i);
     expect(within(document.body).getByText("¶ Add scope")).toBeTruthy();
     expect(detail).toBeTruthy();
+  });
+});
+
+describe("LineTable — sections", () => {
+  const grouped = () =>
+    table(
+      [
+        { d: "Trip charge", q: 1, r: 95 },
+        { d: "Repaint walls", q: 1, r: 1800, sectionIndex: 0 },
+        { d: "Reseal deck", q: 1, r: 900, sectionIndex: 1 },
+      ],
+      false,
+      ["Interior", "Exterior"],
+    );
+
+  it("renders ungrouped lines first, then each heading with the lines under it", () => {
+    grouped();
+    const rows = [...document.querySelectorAll("tbody tr")];
+    const described = rows
+      .map((r) => (r.querySelector("input") as HTMLInputElement | null)?.value)
+      .filter((v) => v !== undefined);
+    expect(described).toEqual(["Trip charge", "Interior", "Repaint walls", "Exterior", "Reseal deck"]);
+  });
+
+  it("shows what the lines under a heading add up to", () => {
+    grouped();
+    const totals = [...document.querySelectorAll(".sectionrow-total")].map((n) => n.textContent);
+    expect(totals).toEqual(["$1,800", "$900"]);
+  });
+
+  it("leaves an assembly's components out of a heading's total", () => {
+    // The parent's amount already contains them — the same rule the quote's own total follows.
+    table(
+      [
+        { d: "Cedar fence", q: 100, r: 11.58, sectionIndex: 0 },
+        { d: "Line posts", q: 14, r: 24.3, parentIndex: 0, sectionIndex: 0 },
+      ],
+      false,
+      ["Exterior"],
+    );
+    expect(document.querySelector(".sectionrow-total")?.textContent).toBe("$1,158");
+  });
+
+  it("adds a line already inside the heading it was added from", () => {
+    grouped();
+    fireEvent.click(screen.getByText("+ Add line to Exterior"));
+    expect(lastLines()[3]).toMatchObject({ sectionIndex: 1 });
+  });
+
+  it("renames a heading", () => {
+    grouped();
+    fireEvent.change(input("Section name, section 1"), { target: { value: "Inside" } });
+    expect(lastSections().sections).toEqual(["Inside", "Exterior"]);
+  });
+
+  it("keeps the work when a heading is removed, and re-points the headings after it", () => {
+    // Deleting a heading is not a request to delete the work under it, and there is no undo.
+    grouped();
+    fireEvent.click(screen.getByLabelText("Remove section 1"));
+    const next = lastSections();
+    expect(next.sections).toEqual(["Exterior"]);
+    expect(next.lines.map((l: ComposerLine) => l.d)).toEqual([
+      "Trip charge",
+      "Repaint walls",
+      "Reseal deck",
+    ]);
+    expect(next.lines[1]?.sectionIndex).toBeUndefined();
+    expect(next.lines[2]?.sectionIndex).toBe(0);
+  });
+
+  it("offers no headings at all when the caller does not handle them", () => {
+    cleanup();
+    render(<LineTable lines={[fence]} showCost={false} onLines={onLines} />);
+    expect(screen.queryByText("+ Section")).toBeNull();
   });
 });

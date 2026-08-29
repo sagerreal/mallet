@@ -551,7 +551,16 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       // Only the EXCEPTION is written, like notax: an ordinary line carries no key.
       ...(l.customerVisible ? {} : { hidden: true as const }),
       markupBps: l.markupBps ?? undefined,
+      sectionIndex: l.sectionId
+        ? (() => {
+            const at = dto.sections.findIndex((section) => section.id === l.sectionId);
+            return at >= 0 ? at : undefined;
+          })()
+        : undefined,
     })),
+    // Already in render order from the domain — the store keeps names only, since a line names
+    // its section by position the same way a component names its parent.
+    sections: dto.sections.map((section) => section.name),
     pricing: {
       disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)
       tax: dto.taxBps / 100,

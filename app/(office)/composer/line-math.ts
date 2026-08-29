@@ -174,3 +174,106 @@ export function addComponent(
     ...shifted.slice(at),
   ];
 }
+
+/**
+ * The lines to send, with every `parentIndex` re-pointed at the position its parent actually
+ * lands in.
+ *
+ * Two things reindex the array on the way to the wire — blank scaffolding rows are dropped, and
+ * a tiered quote concatenates three tier arrays into one — and an index that was correct before
+ * either is silently wrong after. It names a DIFFERENT line, so a component's money attaches to
+ * someone else's assembly, or to a line that is no longer there.
+ *
+ * A component whose parent did not survive the filter is dropped with it: a part with no
+ * assembly around it is not a line the customer should be charged for.
+ */
+export function reindexForPayload<T extends ComposerLine>(
+  lines: readonly T[],
+  keep: (line: T) => boolean,
+): T[] {
+  // A component is kept only if it survives on its own merits AND its parent did.
+  const survives = lines.map((line, i) => {
+    if (!keep(line)) return false;
+    if (line.parentIndex == null) return true;
+    const parent = lines[line.parentIndex];
+    return parent !== undefined && keep(parent) && parent.parentIndex == null;
+  });
+  const at = new Map<number, number>();
+  let next = 0;
+  survives.forEach((kept, i) => {
+    if (kept) at.set(i, next++);
+  });
+  return lines
+    .filter((_line, i) => survives[i])
+    .map((line) =>
+      line.parentIndex == null ? line : { ...line, parentIndex: at.get(line.parentIndex)! },
+    );
+}
+
+/** What the lines under one section add up to — components excluded, they are inside a parent. */
+export function sectionTotal(lines: readonly ComposerLine[], sectionIndex: number): number {
+  const cents = lines.reduce((sum, line) => {
+    if (line.sectionIndex !== sectionIndex || line.parentIndex != null) return sum;
+    return sum + toCents((line.q ?? 0) * (line.r ?? 0));
+  }, 0);
+  return fromCents(cents);
+}
+
+/**
+ * Remove a section, keeping every line and every remaining `sectionIndex` pointed where it was.
+ *
+ * The lines survive — they become ungrouped. Deleting a heading is not a request to delete the
+ * work under it, and there is no undo here.
+ */
+export function removeSectionAt(
+  sections: readonly string[],
+  lines: readonly ComposerLine[],
+  index: number,
+): { sections: string[]; lines: ComposerLine[] } {
+  return {
+    sections: sections.filter((_name, i) => i !== index),
+    lines: lines.map((line) => {
+      if (line.sectionIndex == null) return line;
+      if (line.sectionIndex === index) {
+        const { sectionIndex: _dropped, ...rest } = line;
+        return rest;
+      }
+      return line.sectionIndex > index
+        ? { ...line, sectionIndex: line.sectionIndex - 1 }
+        : line;
+    }),
+  };
+}
+
+/**
+ * Sections and lines as they should go on the wire: headings whose name was cleared are dropped,
+ * and the lines under them become ungrouped rather than pointing at a heading that is not sent.
+ *
+ * The server refuses a blank heading (min(1)), so without this an emptied name fails the whole
+ * draft — and the estimator would see "the server refused these details" for a name they simply
+ * cleared.
+ */
+export function sectionsForPayload(
+  sections: readonly string[],
+  lines: readonly ComposerLine[],
+): { sections: string[]; lines: ComposerLine[] } {
+  const at = new Map<number, number>();
+  const kept: string[] = [];
+  sections.forEach((name, i) => {
+    if (name.trim() === "") return;
+    at.set(i, kept.length);
+    kept.push(name.trim());
+  });
+  return {
+    sections: kept,
+    lines: lines.map((line) => {
+      if (line.sectionIndex == null) return line;
+      const moved = at.get(line.sectionIndex);
+      if (moved === undefined) {
+        const { sectionIndex: _dropped, ...rest } = line;
+        return rest;
+      }
+      return moved === line.sectionIndex ? line : { ...line, sectionIndex: moved };
+    }),
+  };
+}

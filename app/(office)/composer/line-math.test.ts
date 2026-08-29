@@ -15,6 +15,7 @@ import {
   withRollUps,
   removeLineAt,
   addComponent,
+  reindexForPayload,
 } from "./line-math";
 import type { ComposerLine } from "./composer-state";
 
@@ -197,5 +198,48 @@ describe("addComponent", () => {
     expect(next.map((l) => l.d)).toEqual(["Fence", "Posts", "Gate", "Hinges"]);
     expect(next[3]?.parentIndex).toBe(2);
     expect(next[next[3]!.parentIndex!]?.d).toBe("Gate");
+  });
+});
+
+describe("reindexForPayload", () => {
+  const real = (l: ComposerLine) => (l.d ?? "").trim() !== "";
+
+  it("re-points a parent reference past the rows that were dropped", () => {
+    // The corruption this guards: filtering blank scaffolding rows shifts every position, and
+    // parentIndex is a position — the component's money lands on a different line.
+    const lines = [
+      line({ d: "" }),
+      line({ d: "Cedar fence", q: 100 }),
+      line({ d: "Line posts", parentIndex: 1 }),
+    ];
+    const out = reindexForPayload(lines, real);
+    expect(out.map((l) => l.d)).toEqual(["Cedar fence", "Line posts"]);
+    expect(out[1]?.parentIndex).toBe(0);
+    expect(out[out[1]!.parentIndex!]?.d).toBe("Cedar fence");
+  });
+
+  it("drops a component whose parent did not survive", () => {
+    // A part with no assembly around it is not a line to charge for.
+    const out = reindexForPayload([line({ d: "" }), line({ d: "Line posts", parentIndex: 0 })], real);
+    expect(out).toEqual([]);
+  });
+
+  it("leaves an array with no components untouched", () => {
+    const lines = [line({ d: "A" }), line({ d: "B" })];
+    expect(reindexForPayload(lines, real)).toEqual(lines);
+  });
+
+  it("keeps every component with its own parent across several assemblies", () => {
+    const lines = [
+      line({ d: "Fence" }),
+      line({ d: "Posts", parentIndex: 0 }),
+      line({ d: "" }),
+      line({ d: "Gate" }),
+      line({ d: "Hinges", parentIndex: 3 }),
+    ];
+    const out = reindexForPayload(lines, real);
+    expect(out.map((l) => l.d)).toEqual(["Fence", "Posts", "Gate", "Hinges"]);
+    expect(out[out[1]!.parentIndex!]?.d).toBe("Fence");
+    expect(out[out[3]!.parentIndex!]?.d).toBe("Gate");
   });
 });

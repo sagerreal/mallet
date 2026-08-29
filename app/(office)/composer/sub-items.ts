@@ -70,6 +70,7 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
   parentIndex?: number;
   customerVisible?: boolean;
   markupBps?: number;
+  sectionIndex?: number;
 } {
   const sub = realSubItems(l.sub);
   return {
@@ -101,5 +102,6 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
     ...(l.parentIndex !== undefined ? { parentIndex: l.parentIndex } : {}),
     ...(l.hidden ? { customerVisible: false } : {}),
     ...(l.markupBps !== undefined ? { markupBps: l.markupBps } : {}),
+    ...(l.sectionIndex !== undefined ? { sectionIndex: l.sectionIndex } : {}),
   };
 }

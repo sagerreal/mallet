@@ -32,12 +32,22 @@ import { Fragment, useId, useState } from "react";
 import { realSubItems, withSubPatch, type ComposerLine } from "./composer-state";
 import { ScopeEditor, SubItemEditor } from "./line-depth";
 import { LineRow } from "./line-row";
-import { componentIndexes, removeLineAt, addComponent, withRollUps } from "./line-math";
+import {
+  componentIndexes,
+  removeLineAt,
+  addComponent,
+  withRollUps,
+  sectionTotal,
+  removeSectionAt,
+} from "./line-math";
+import { fmt$ } from "@/lib/format";
 
 export function LineTable({
   lines,
+  sections = [],
   showCost,
   onLines,
+  onSections,
   footerTools,
   materialize,
   provenanceFor,
@@ -45,6 +55,8 @@ export function LineTable({
   priceMode = "lines",
 }: {
   lines: ComposerLine[];
+  /** Headings the lines are grouped under, in render order. Empty = an ungrouped quote. */
+  sections?: string[];
   showCost: boolean;
   /**
    * The whole array after an edit, already rolled up. One callback rather than
@@ -52,6 +64,12 @@ export function LineTable({
    * each doing that arithmetic is how one of them gets it wrong.
    */
   onLines: (next: ComposerLine[]) => void;
+  /**
+   * Both arrays together, because removing a heading re-indexes every line that named one.
+   * Absent means this table does not offer sections — the GBB tiers, where a heading per tier
+   * would be three competing groupings of one quote.
+   */
+  onSections?: (next: { sections: string[]; lines: ComposerLine[] }) => void;
   /** Extra tools for the footer toolbar (uniform .lineedit-tool styling). */
   footerTools?: React.ReactNode;
   /** Brief post-draft window: rows animate in (CSS only, reduced-motion safe). */
@@ -118,7 +136,16 @@ export function LineTable({
     commit(addComponent(lines, parentIndex, { d: "", q: 1, r: 0, qtyExpr: "qty" }));
   };
 
-  const addLine = () => commit([...lines, { d: "", q: 1, r: 0 }]);
+  const addLine = (sectionIndex?: number) =>
+    commit([...lines, sectionIndex == null ? { d: "", q: 1, r: 0 } : { d: "", q: 1, r: 0, sectionIndex }]);
+
+  const addSection = () =>
+    onSections?.({ sections: [...sections, `Section ${sections.length + 1}`], lines });
+
+  const renameSection = (at: number, name: string) =>
+    onSections?.({ sections: sections.map((s, i) => (i === at ? name : s)), lines });
+
+  const removeSection = (at: number) => onSections?.(removeSectionAt(sections, lines, at));
 
   /**
    * The affordances under a description — scope prose, components, and sub-items on the quotes
@@ -237,7 +264,7 @@ export function LineTable({
           <col style={{ width: 104 }} />
           {/* Actions hold the chips + ✕ — sized to fit, so AMOUNT no longer floats
               beside a wide dead zone. Adding a component lives under the description. */}
-          <col style={{ width: 148 }} />
+          <col style={{ width: 168 }} />
         </colgroup>
         <thead>
           <tr>
@@ -251,15 +278,64 @@ export function LineTable({
           </tr>
         </thead>
         <tbody>
-          {lines.map((line, i) => (line.parentIndex == null ? renderRow(line, i) : null))}
+          {/* Ungrouped lines lead: on a quote with no sections that is every line, and on one
+              with sections they are the work that sits above the first heading. */}
+          {lines.map((line, i) =>
+            line.parentIndex == null && line.sectionIndex == null ? renderRow(line, i) : null,
+          )}
+          {sections.map((name, at) => (
+            <Fragment key={`section-${at}`}>
+              <tr className="sectionrow">
+                <td>
+                  <input
+                    value={name}
+                    aria-label={`Section name, section ${at + 1}`}
+                    onChange={(e) => renameSection(at, e.target.value)}
+                  />
+                </td>
+                <td colSpan={cols - 3} />
+                <td className="sectionrow-total">{fmt$(sectionTotal(lines, at))}</td>
+                <td className="rowacts">
+                  <button
+                    className="lineedit-tool"
+                    title="Remove this heading — the lines under it stay, ungrouped"
+                    aria-label={`Remove section ${at + 1}`}
+                    onClick={() => removeSection(at)}
+                  >
+                    ✕
+                  </button>
+                </td>
+              </tr>
+              {lines.map((line, i) =>
+                line.parentIndex == null && line.sectionIndex === at ? renderRow(line, i) : null,
+              )}
+              <tr>
+                <td colSpan={cols}>
+                  <button
+                    type="button"
+                    className="linehint"
+                    style={{ margin: "var(--space-1) 0 var(--space-1) var(--space-3)" }}
+                    onClick={() => addLine(at)}
+                  >
+                    + Add line to {name || `section ${at + 1}`}
+                  </button>
+                </td>
+              </tr>
+            </Fragment>
+          ))}
         </tbody>
         <tfoot>
           <tr>
             <td colSpan={cols}>
               <div className="lineedit-bar">
-                <button type="button" className="lineedit-tool primary" onClick={addLine}>
+                <button type="button" className="lineedit-tool primary" onClick={() => addLine()}>
                   + Add line
                 </button>
+                {onSections && (
+                  <button type="button" className="lineedit-tool" onClick={addSection}>
+                    + Section
+                  </button>
+                )}
                 {footerTools}
               </div>
             </td>

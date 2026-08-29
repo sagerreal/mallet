@@ -17,6 +17,7 @@ import {
   applyComposerPatch,
   applyMeasurementSeed,
   applyReviseSeed,
+  tieredLinesForPayload,
   buildQuoteMessageBody,
   deliveryGateReason,
   gapNoticeText,
@@ -924,6 +925,7 @@ const seedLine = (over: Partial<ReviseSeedLine> & { d: string }): ReviseSeedLine
   parentLineId: null,
   customerVisible: true,
   markupBps: null,
+  sectionId: null,
   ...over,
 });
 
@@ -940,6 +942,7 @@ describe("applyReviseSeed", () => {
     jobId: null,
     priceDisplay: "lines" as const,
     presentationSnapshot: null,
+    sections: [],
     lines: [
       seedLine({ d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null }),
       seedLine({ d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null }),
@@ -1158,6 +1161,7 @@ describe("price display", () => {
       jobId: null,
       priceDisplay: "total",
       presentationSnapshot: null,
+      sections: [],
       lines: [
         seedLine({
           d: "Painting",
@@ -1186,6 +1190,7 @@ describe("applyReviseSeed — assembly components survive a revision", () => {
     jobId: null,
     priceDisplay: "lines" as const,
     presentationSnapshot: null,
+    sections: [],
   };
 
   it("resolves the parent id to the index the parent actually lands at", () => {
@@ -1292,6 +1297,7 @@ describe("presentation — per-quote copy of a template's pages", () => {
   it("revise seed restores the presentation", () => {
     const seeded = applyReviseSeed(INITIAL_STATE, {
       leadId: "lead-1",
+      sections: [],
       title: "Basement",
       discBps: 0,
       taxBps: 0,
@@ -1326,5 +1332,46 @@ describe("presentation — the cover the office previews is the cover the custom
     });
     expect(snap?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
     expect(snap?.pages.every((p) => !("on" in p))).toBe(true);
+  });
+});
+
+describe("tieredLinesForPayload — components across three tiers", () => {
+  const tier = (k: TierKey, lines: ComposerLine[]) => ({ k, name: "", title: "", lines });
+
+  it("offsets each tier's parent references by the tiers before it", () => {
+    // Three arrays become one payload. A parentIndex taken before the concatenation names a
+    // line in ANOTHER tier — the customer would be quoted one tier's parts under another's price.
+    const out = tieredLinesForPayload({
+      rec: "good",
+      opts: [
+        tier("good", [{ d: "Good fence", q: 1, r: 1 }, { d: "Good posts", q: 1, r: 1, parentIndex: 0 }]),
+        tier("better", [{ d: "Better fence", q: 1, r: 1 }, { d: "Better posts", q: 1, r: 1, parentIndex: 0 }]),
+        tier("best", [{ d: "Best fence", q: 1, r: 1 }, { d: "Best posts", q: 1, r: 1, parentIndex: 0 }]),
+      ],
+    } as never);
+    expect(out.map((l) => l.d)).toEqual([
+      "Good fence", "Good posts", "Better fence", "Better posts", "Best fence", "Best posts",
+    ]);
+    expect(out[1]?.parentIndex).toBe(0);
+    expect(out[3]?.parentIndex).toBe(2);
+    expect(out[5]?.parentIndex).toBe(4);
+    for (const [i, l] of out.entries()) {
+      if (l.parentIndex == null) continue;
+      expect(out[l.parentIndex]?.tier).toBe(l.tier);
+      expect(l.parentIndex).toBeLessThan(i);
+    }
+  });
+
+  it("offsets correctly when an earlier tier drops a blank row", () => {
+    const out = tieredLinesForPayload({
+      rec: "good",
+      opts: [
+        tier("good", [{ d: "", q: 1, r: 0 }, { d: "Good fence", q: 1, r: 1 }]),
+        tier("better", [{ d: "Better fence", q: 1, r: 1 }, { d: "Better posts", q: 1, r: 1, parentIndex: 0 }]),
+        tier("best", []),
+      ],
+    } as never);
+    expect(out.map((l) => l.d)).toEqual(["Good fence", "Better fence", "Better posts"]);
+    expect(out[2]?.parentIndex).toBe(1);
   });
 });

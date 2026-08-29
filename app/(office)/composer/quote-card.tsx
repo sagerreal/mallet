@@ -347,7 +347,9 @@ export function QuoteCard({
             lines={state.lines}
             showCost={showCost}
             priceMode={state.priceDisplay}
+            sections={state.sections}
             onLines={(next) => onUpdate({ lines: next })}
+            onSections={(next) => onUpdate({ sections: next.sections, lines: next.lines })}
             materialize={materialize}
             taxed={(state.pricing.tax ?? 0) > 0}
             provenanceFor={(d) => lineProvenance(d, services)}

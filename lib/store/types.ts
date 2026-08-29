@@ -186,6 +186,8 @@ export interface EstimateLine {
   hidden?: boolean;
   /** Markup over cost in basis points when the line is priced from its cost. */
   markupBps?: number;
+  /** The section this line sits under, as an index into the estimate's `sections`. */
+  sectionIndex?: number;
 }
 
 /** One row of the estimating math behind a line — amounts in DOLLARS like the rest of the store. */
@@ -229,6 +231,11 @@ export interface Estimate {
   validDays?: number;
   fu: { on: boolean; stage: number };
   lines: EstimateLine[];
+  /**
+   * Headings the lines are grouped under, in render order. Empty on an ungrouped quote. A line
+   * names one by index (EstimateLine.sectionIndex) — the store holds no ids.
+   */
+  sections?: string[];
   pricing?: { disc: number; dep: number; tax: number };
   /** Customer opens, oldest → newest. The customer is never told these exist. */
   reads?: EstimateRead[];
