@@ -167,6 +167,25 @@ export interface EstimateLine {
   scope?: string;
   /** Internal sub-items that roll up into the line's rate ($). Never shown to the customer. */
   sub?: EstimateSubItem[];
+  /** What the quantity is counted in ("LF", "hr"). Display only — never in the money math. */
+  unit?: string;
+  /**
+   * How the quantity was authored, when it was typed as math ("qty/8+1"). `q` above stays the
+   * resolved number; this is only the authoring layer, and the server re-derives `q` from it.
+   */
+  qtyExpr?: string;
+  /** Round the resolved quantity up to a whole unit. Absent reads as false. */
+  roundUp?: boolean;
+  /**
+   * Index of the line this one is a component of, within the same line array.
+   * An index rather than an id because the server mints line ids — the client never holds one
+   * for a line it has not saved yet.
+   */
+  parentIndex?: number;
+  /** Hidden from the customer's copy. Stated as the exception, like `notax`. */
+  hidden?: boolean;
+  /** Markup over cost in basis points when the line is priced from its cost. */
+  markupBps?: number;
 }
 
 /** One row of the estimating math behind a line — amounts in DOLLARS like the rest of the store. */

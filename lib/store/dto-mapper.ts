@@ -520,7 +520,9 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     fu: dto.followUpOn !== undefined
       ? { on: dto.followUpOn, stage: dto.followUpStage }
       : priorFu,
-    lines: dto.lines.map((l) => ({
+    // The DTO names a component's parent by id; the store holds an INDEX, because the composer
+    // edits lines that have no server id yet. Resolve here, the one boundary that has both.
+    lines: dto.lines.map((l, _i, all) => ({
       d: l.description,
       q: l.quantity,
       r: l.rate.cents / 100,                                  // cents → dollars
@@ -537,6 +539,18 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
         unit: si.unit ?? undefined,
         amt: si.amountCents / 100,                            // cents → dollars
       })),
+      unit: l.unit ?? undefined,
+      qtyExpr: l.qtyExpr ?? undefined,
+      roundUp: l.roundUp || undefined,
+      parentIndex: l.parentLineId
+        ? (() => {
+            const at = all.findIndex((candidate) => candidate.id === l.parentLineId);
+            return at >= 0 ? at : undefined;
+          })()
+        : undefined,
+      // Only the EXCEPTION is written, like notax: an ordinary line carries no key.
+      ...(l.customerVisible ? {} : { hidden: true as const }),
+      markupBps: l.markupBps ?? undefined,
     })),
     pricing: {
       disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)

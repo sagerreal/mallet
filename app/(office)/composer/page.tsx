@@ -248,6 +248,13 @@ export default function ComposerPage() {
           tier: l.tier ?? null,
           scope: l.scope ?? null,
           subItems: l.subItems ?? null,
+          id: l.id,
+          unit: l.unit ?? null,
+          qtyExpr: l.qtyExpr ?? null,
+          roundUp: l.roundUp,
+          parentLineId: l.parentLineId ?? null,
+          customerVisible: l.customerVisible,
+          markupBps: l.markupBps ?? null,
         })),
       }),
     );

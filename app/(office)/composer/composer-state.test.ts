@@ -54,6 +54,7 @@ import {
   type MeasurementSeedLine,
   type TierKey,
 } from "./composer-state";
+import type { ReviseSeedLine } from "./composer-state";
 import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
 
 // ---------------------------------------------------------------------------
@@ -901,6 +902,31 @@ describe("unconfirmedRoomsNoticeText", () => {
   });
 });
 
+/**
+ * A revise-seed line carrying the DTO's own defaults, so a fixture states only what it is
+ * testing. Every field is required on the seed on purpose — a new DTO field must be wired
+ * through the revise path rather than silently dropped.
+ */
+const seedLine = (over: Partial<ReviseSeedLine> & { d: string }): ReviseSeedLine => ({
+  q: 1,
+  rCents: 0,
+  cCents: 0,
+  opt: false,
+  photo: false,
+  taxable: true,
+  tier: null,
+  scope: null,
+  subItems: null,
+  id: `line-${over.d}`,
+  unit: null,
+  qtyExpr: null,
+  roundUp: false,
+  parentLineId: null,
+  customerVisible: true,
+  markupBps: null,
+  ...over,
+});
+
 describe("applyReviseSeed", () => {
   const base = { ...INITIAL_STATE };
   const flatSeed = {
@@ -915,8 +941,8 @@ describe("applyReviseSeed", () => {
     priceDisplay: "lines" as const,
     presentationSnapshot: null,
     lines: [
-      { d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null },
-      { d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null },
+      seedLine({ d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null }),
+      seedLine({ d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null }),
     ],
   };
 
@@ -939,8 +965,8 @@ describe("applyReviseSeed", () => {
       recommendedTier: "best" as const,
       tierNames: { good: "Basic", better: "Standard", best: "Premium" },
       lines: [
-        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null },
-        { d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, taxable: true, tier: "best" as const, scope: null, subItems: null },
+        seedLine({ d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null }),
+        seedLine({ d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, taxable: true, tier: "best" as const, scope: null, subItems: null }),
       ],
     });
     expect(next.format).toBe("gbb");
@@ -965,7 +991,7 @@ describe("applyReviseSeed", () => {
       recommendedTier: "best" as const,
       tierNames: { good: "Basic", better: "Standard", best: "Premium" },
       lines: [
-        { d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null },
+        seedLine({ d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null }),
       ],
     });
     expect(tiered.jobId).toBe("job-9");
@@ -1071,6 +1097,48 @@ describe("lineToPayload — one wire mapping for page and slice", () => {
     expect(payload.scope).toBeUndefined();
     expect(payload.subItems).toBeUndefined();
   });
+
+  it("carries the assembly component fields, translating hidden into customerVisible", () => {
+    const payload = lineToPayload({
+      d: "Line posts",
+      q: 14,
+      r: 24.3,
+      unit: "ea",
+      qtyExpr: "qty/8+1",
+      roundUp: true,
+      parentIndex: 0,
+      hidden: true,
+      markupBps: 3500,
+    });
+    expect(payload.unit).toBe("ea");
+    expect(payload.qtyExpr).toBe("qty/8+1");
+    expect(payload.roundUp).toBe(true);
+    expect(payload.parentIndex).toBe(0);
+    // The store states the exception (hidden); the wire states the fact (customerVisible).
+    expect(payload.customerVisible).toBe(false);
+    expect(payload.markupBps).toBe(3500);
+  });
+
+  it("keeps an ordinary line's wire shape unchanged — no empty composition keys", () => {
+    const payload = lineToPayload({ d: "Labor", q: 1, r: 100 });
+    expect(Object.keys(payload)).toEqual([
+      "description",
+      "quantity",
+      "rateCents",
+      "costCents",
+      "isOptional",
+      "needsPhoto",
+      "taxable",
+      "tier",
+      "materialId",
+    ]);
+  });
+
+  it("sends parentIndex 0 — a falsy index still names a real parent", () => {
+    // The bug this guards: `l.parentIndex ? {...} : {}` would drop every component of the
+    // FIRST line, which is the most common assembly there is.
+    expect(lineToPayload({ d: "Post", q: 1, r: 1, parentIndex: 0 }).parentIndex).toBe(0);
+  });
 });
 
 describe("price display", () => {
@@ -1091,23 +1159,88 @@ describe("price display", () => {
       priceDisplay: "total",
       presentationSnapshot: null,
       lines: [
-        {
+        seedLine({
           d: "Painting",
-          q: 1,
           rCents: 2_145_000,
-          cCents: 0,
-          opt: false,
-          photo: false,
-          taxable: true,
-          tier: null,
           scope: "Includes:\n1. Walls",
           subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
-        },
+        }),
       ],
     });
     expect(seeded.priceDisplay).toBe("total");
     expect(seeded.lines[0]?.scope).toBe("Includes:\n1. Walls");
     expect(seeded.lines[0]?.sub).toEqual([{ d: "Walls", q: 2400, unit: "sq ft", amt: 9840 }]);
+  });
+});
+
+describe("applyReviseSeed — assembly components survive a revision", () => {
+  const base = { ...INITIAL_STATE };
+  const seed = {
+    leadId: "lead-1",
+    title: "Fence",
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    recommendedTier: null,
+    tierNames: null,
+    jobId: null,
+    priceDisplay: "lines" as const,
+    presentationSnapshot: null,
+  };
+
+  it("resolves the parent id to the index the parent actually lands at", () => {
+    const next = applyReviseSeed(base, {
+      ...seed,
+      lines: [
+        seedLine({ d: "Cedar fence", id: "parent", q: 100, unit: "LF" }),
+        seedLine({ d: "Line posts", id: "child", q: 14, parentLineId: "parent", qtyExpr: "qty/8+1", roundUp: true }),
+      ],
+    });
+    expect(next.lines[0]?.unit).toBe("LF");
+    expect(next.lines[1]?.parentIndex).toBe(0);
+    expect(next.lines[1]?.qtyExpr).toBe("qty/8+1");
+    expect(next.lines[1]?.roundUp).toBe(true);
+  });
+
+  it("re-indexes against the tier the line lands in, not the whole seed", () => {
+    // The defect this guards: an index taken across all three tiers points at the wrong line
+    // (or off the end) in every tier but the first.
+    const next = applyReviseSeed(base, {
+      ...seed,
+      recommendedTier: "best" as const,
+      tierNames: { good: "Basic", better: "Standard", best: "Premium" },
+      lines: [
+        seedLine({ d: "Good fence", id: "g-parent", tier: "good" }),
+        seedLine({ d: "Good posts", id: "g-child", parentLineId: "g-parent", tier: "good" }),
+        seedLine({ d: "Best fence", id: "b-parent", tier: "best" }),
+        seedLine({ d: "Best posts", id: "b-child", parentLineId: "b-parent", tier: "best" }),
+      ],
+    });
+    const good = next.gbb?.opts.find((o) => o.k === "good")?.lines ?? [];
+    const best = next.gbb?.opts.find((o) => o.k === "best")?.lines ?? [];
+    expect(good[1]?.parentIndex).toBe(0);
+    expect(best[1]?.parentIndex).toBe(0);
+  });
+
+  it("drops a parent reference whose parent did not come along", () => {
+    const next = applyReviseSeed(base, {
+      ...seed,
+      lines: [seedLine({ d: "Orphan post", id: "child", parentLineId: "gone" })],
+    });
+    expect(next.lines[0]?.parentIndex).toBeUndefined();
+  });
+
+  it("restores a hidden line as the exception and leaves a visible one unmarked", () => {
+    const next = applyReviseSeed(base, {
+      ...seed,
+      lines: [
+        seedLine({ d: "Shown", id: "a" }),
+        seedLine({ d: "Internal", id: "b", customerVisible: false, markupBps: 3500 }),
+      ],
+    });
+    expect(next.lines[0]?.hidden).toBeUndefined();
+    expect(next.lines[1]?.hidden).toBe(true);
+    expect(next.lines[1]?.markupBps).toBe(3500);
   });
 });
 
@@ -1172,7 +1305,7 @@ describe("presentation — per-quote copy of a template's pages", () => {
         pages: [{ key: "cover", title: "", body: "" }],
       },
       lines: [
-        { d: "Painting", q: 1, rCents: 100, cCents: 0, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null },
+        seedLine({ d: "Painting", q: 1, rCents: 100, cCents: 0, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null }),
       ],
     });
     expect(seeded.presentation?.templateId).toBeNull();

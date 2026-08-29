@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
+import type { OrgId, LeadId, EstimateLineId, Result, AppError, Clock } from "@mallet/shared/types";
 import { asEstimateId, asEstimateLineId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
@@ -29,6 +29,15 @@ export interface EstimateLineInput {
   readonly scope?: string | null;
   /** Internal estimating math behind the price. Never reaches a customer surface. */
   readonly subItems?: readonly EstimateSubItem[] | null;
+  /** What the quantity is counted in ("LF", "hr"). */
+  readonly unit?: string | null;
+  /** How the quantity was authored, when typed as math ("qty/8+1"). */
+  readonly qtyExpr?: string | null;
+  readonly roundUp?: boolean;
+  /** The parent this line is a component of, as an index into this same payload. */
+  readonly parentIndex?: number | null;
+  readonly customerVisible?: boolean;
+  readonly markupBps?: number | null;
 }
 
 export interface DraftEstimateCommand {
@@ -156,11 +165,31 @@ export class DraftEstimateUseCase {
     inputs: readonly EstimateLineInput[],
   ): Result<EstimateLine[], AppError> {
     const built: EstimateLine[] = [];
+    // Mint every id up front so a component can name its parent before that parent is built.
+    const ids = inputs.map(() => asEstimateLineId(this.ids.newId()));
     for (let i = 0; i < inputs.length; i += 1) {
       const input = inputs[i];
       if (!input) continue;
+      // A component's parent is an index into this payload; the server mints the ids, so
+      // resolve it here. Only one level: a component cannot itself carry components, which
+      // keeps the customer's document a list of priced lines rather than a tree.
+      let parentLineId: EstimateLineId | null = null;
+      let driverQuantity: number | null = null;
+      if (input.parentIndex != null) {
+        const parentInput = inputs[input.parentIndex];
+        if (input.parentIndex >= i || !parentInput) {
+          return err(validation("a component must follow the line it belongs to", "parentIndex"));
+        }
+        if (parentInput.parentIndex != null) {
+          return err(validation("a component cannot have components of its own", "parentIndex"));
+        }
+        const resolved = ids[input.parentIndex];
+        if (!resolved) return err(validation("unknown parent line", "parentIndex"));
+        parentLineId = resolved;
+        driverQuantity = parentInput.quantity;
+      }
       const line = EstimateLine.create({
-        id: asEstimateLineId(this.ids.newId()),
+        id: ids[i]!,
         description: input.description,
         quantity: input.quantity,
         rate: money(input.rateCents),
@@ -173,6 +202,15 @@ export class DraftEstimateUseCase {
         materialId: input.materialId ?? null,
         scope: input.scope ?? null,
         subItems: input.subItems ?? null,
+        unit: input.unit ?? null,
+        qtyExpr: input.qtyExpr ?? null,
+        roundUp: input.roundUp ?? false,
+        parentLineId,
+        // Supplying the driver is what makes create() re-run the math and reject a quantity the
+        // expression does not produce. Absent for a top-level line, which has no driver.
+        driverQuantity,
+        customerVisible: input.customerVisible ?? true,
+        markupBps: input.markupBps ?? null,
       });
       if (!isOk(line)) return line;
       built.push(line.value);

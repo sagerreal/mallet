@@ -389,3 +389,81 @@ describe("DraftEstimateUseCase — scope, sub-items, price display", () => {
     if (r.error.kind === "validation") expect(r.error.field).toBe("subItems");
   });
 });
+
+describe("DraftEstimateUseCase — assembly components", () => {
+  const cmd = (lines: EstimateLineInput[]) => ({
+    orgId: ORG,
+    leadId: LEAD,
+    title: null,
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    validDays: null,
+    lines,
+    priceDisplay: null,
+  });
+
+  const draftUseCase = () =>
+    new DraftEstimateUseCase(
+      new FakeEstimateRepository(),
+      new InMemoryEventBus(),
+      new FixedClock(new Date("2026-06-01T00:00:00Z")),
+      seqIds(),
+    );
+
+  it("resolves a component's parent index to the id the server minted", async () => {
+    const r = await draftUseCase().exec(
+      cmd([
+        oneLine({ description: "Cedar privacy fence", quantity: 100, unit: "LF" }),
+        oneLine({ description: "Line posts", quantity: 14, qtyExpr: "qty/8+1", roundUp: true, parentIndex: 0 }),
+      ]),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const [parent, child] = r.value.props.lines;
+    expect(child?.props.parentLineId).toBe(parent?.props.id);
+    expect(child?.props.qtyExpr).toBe("qty/8+1");
+    expect(child?.props.quantity).toBe(14);
+  });
+
+  it("rejects a quantity the component's own math does not produce", async () => {
+    // 100/8+1 rounded up is 14, not 99 — the server recomputes rather than trusting the client.
+    const r = await draftUseCase().exec(
+      cmd([
+        oneLine({ description: "Cedar privacy fence", quantity: 100 }),
+        oneLine({ description: "Line posts", quantity: 99, qtyExpr: "qty/8+1", roundUp: true, parentIndex: 0 }),
+      ]),
+    );
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("refuses a component that precedes its parent", async () => {
+    const r = await draftUseCase().exec(
+      cmd([oneLine({ quantity: 14, parentIndex: 1 }), oneLine({ quantity: 100 })]),
+    );
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("refuses a component of a component — the document stays one level deep", async () => {
+    const r = await draftUseCase().exec(
+      cmd([
+        oneLine({ quantity: 100 }),
+        oneLine({ quantity: 14, parentIndex: 0 }),
+        oneLine({ quantity: 2, parentIndex: 1 }),
+      ]),
+    );
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("carries the unit, visibility and markup a line was authored with", async () => {
+    const r = await draftUseCase().exec(
+      cmd([oneLine({ unit: "LF", customerVisible: false, markupBps: 3500 })]),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const line = r.value.props.lines[0]?.props;
+    expect(line?.unit).toBe("LF");
+    expect(line?.customerVisible).toBe(false);
+    expect(line?.markupBps).toBe(3500);
+  });
+});
