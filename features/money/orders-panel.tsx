@@ -2,39 +2,47 @@
 
 /**
  * features/money/orders-panel.tsx
- * Money → Orders — what the shop buys from a supplier. Cash going OUT, the mirror of the money
- * ledger's cash coming IN; the two live as separate SETS reached via SectionTabs (`/money` vs
+ * Money → Purchase orders — what the shop buys from a supplier. Cash going OUT, the mirror of the
+ * money ledger's cash coming IN; the two live as separate SETS reached via SectionTabs (`/money` vs
  * `/money?tab=orders`), never mixed into one ledger — see the Money branch of
  * components/shell/section-tabs.tsx.
  *
- * Ports the LIST portion of the approved mock (branch mock/money-purchase-orders,
- * app/(office)/money/po/page.tsx) against the real store: the `.list-tbl` of
- * # · Vendor · For job · Status · Total · Ordered, the draft/ordered/cancelled filter chips, and
- * the Placed/In draft footer totals. The mock's in-page ViewToggle is NOT ported — replaced by
- * SectionTabs, the app's real sub-nav grammar. The two modals (view + create) are Task 8's
- * components/modals/po-modal/po-modal.tsx and components/modals/new-po-modal.tsx; this file wires
- * a "+ New purchase order" button and a row click to them (MODAL.NEW_PO / MODAL.PO) now that both
- * exist — wiring either earlier would have pointed a control at a modal that didn't exist yet.
+ * MATCHES THE INVOICES LIST (money-ledger.tsx/money-toolbar.tsx), not the mock. Owen's review of
+ * the shipped feature: "look at the sizing of invoices … purchase order is just not the same and
+ * not done correctly" — measured header cells 11px vs 15px, body cells 13px vs 15px, chips 13px
+ * vs 15px, row height 81px vs 65px, and the toolbar was missing outright. This root no longer
+ * carries `.po-scope` (app/prototype.css) — that 15px floor stays on the two PO MODALS only
+ * (components/modals/new-po-modal.tsx, components/modals/po-modal/po-modal.tsx); this table, its
+ * chips and its toolbar now inherit the same `.list-tbl` chrome every other list uses.
  *
- * Rows come straight from the store (OrdersHydrator → adoptPurchaseOrders) and arrive ordered
- * createdAt desc from the server — never re-sorted here, the same rule money-ledger.tsx follows
- * for invoices.
+ * Search is CLIENT-SIDE over the store (the list is unpaginated today, same as the mock) —
+ * vendor, PO number, and job title. Rows come straight from the store (OrdersHydrator →
+ * adoptPurchaseOrders) and arrive ordered createdAt desc from the server — never re-sorted here,
+ * the same rule money-ledger.tsx follows for invoices.
  *
- * `.po-scope` (app/prototype.css): nothing on a purchase order surface renders below
- * var(--type-md) (15px) — a standing requirement from Owen, not a preference. The shared chrome
- * this list borrows (.muted, .stpill, .chip, .list-tbl th/td) is 11-13px by default; the scope
- * class lifts all of it here.
+ * NO ARCHIVED TOGGLE. Invoices' Active/Archived pair needs a server-side archived query; purchase
+ * orders' v1.purchasing.list has no such input (it only ever excludes soft-deleted rows), and
+ * wiring a toggle that always shows nothing (or that quietly does nothing) is the half-wired
+ * control the house rule forbids. Skipped here — flagged in the followups report — rather than
+ * built against an endpoint that doesn't exist yet.
+ *
+ * Per-row actions: a DRAFT gets "Order it" (places it directly, same v1.purchasing.place the
+ * record sheet's footer button calls); an ORDERED or CANCELLED row gets nothing — there is no
+ * home for a second control on either, and a house rule forbids inventing one that isn't wired.
  */
 
 import { useState } from "react";
 import { useAppStore, useOpenModal } from "@/lib/store/app-store";
 import { MODAL } from "@/lib/store/modal-ids";
 import { api } from "@/lib/trpc/client";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { HYDRATOR_STALE_MS } from "@/lib/store/hydrator-config";
 import { isFirstLoad, shouldShowFirstRun, shouldShowLoadFailed } from "@/lib/first-run";
 import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
 import { ListLoading } from "@/components/shared/list-loading";
 import { LoadFailed } from "@/components/shared/load-failed";
+import { dtoPurchaseOrderToStore } from "@/lib/store/dto-mapper";
+import { userMessage } from "@/lib/trpc/error-map";
 import { fmt$2 } from "@/lib/format";
 import { pressable } from "@/lib/a11y";
 import { PO_STATUS_META } from "./po-defs";
@@ -53,10 +61,42 @@ const FIRST_RUN = {
   },
 } as const;
 
+/** Vendor, PO number, or job title — case-insensitive substring, same fields Owen asked for. */
+function matchesSearch(po: PurchaseOrder, q: string): boolean {
+  const needle = q.trim().toLowerCase();
+  if (!needle) return true;
+  return (
+    po.vendor.toLowerCase().includes(needle) ||
+    (po.num ?? "").toLowerCase().includes(needle) ||
+    (po.jobTitle ?? "").toLowerCase().includes(needle)
+  );
+}
+
 export function OrdersPanel() {
   const purchaseOrders = useAppStore((s) => s.purchaseOrders);
+  const adoptPurchaseOrder = useAppStore((s) => s.adoptPurchaseOrder);
   const openModal = useOpenModal();
   const [band, setBand] = useState<POStatus | null>(null);
+  const [q, setQ] = useState("");
+
+  // Single-flight "Order it" from the list — a second click while one is in flight must not
+  // place twice. Mirrors money-ledger.tsx's armedCharge/charging split (a distinct busy flag per
+  // concern rather than one shared boolean gating unrelated rows).
+  const [placingId, setPlacingId] = useState<string | null>(null);
+  const [placeError, setPlaceError] = useState<string | null>(null);
+
+  function placeOrder(poId: string) {
+    if (placingId) return;
+    setPlaceError(null);
+    setPlacingId(poId);
+    trpcVanilla.v1.purchasing.place
+      .mutate({ poId })
+      .then((dto) => adoptPurchaseOrder(dtoPurchaseOrderToStore(dto)))
+      .catch((err: unknown) => {
+        setPlaceError(userMessage(err, "Couldn't place the order — check your connection and try again."));
+      })
+      .finally(() => setPlacingId(null));
+  }
 
   // The SAME query key OrdersHydrator holds (v1.purchasing.list, no input) — this costs no
   // second fetch, and exists only to tell the four list states apart (loading / failed /
@@ -68,13 +108,16 @@ export function OrdersPanel() {
   });
   const listState = { isFetched: listQ.isFetched, isError: listQ.isError, count: purchaseOrders.length };
 
-  // Filter only — purchaseOrders arrives createdAt desc from the server and stays that way
-  // through every hydrate/reconcile (mergeIncomingPO in purchase-orders-slice.ts preserves it).
-  const rows = band ? purchaseOrders.filter((po) => po.status === band) : purchaseOrders;
+  // Search, then the status chip — purchaseOrders arrives createdAt desc from the server and
+  // stays that way through every hydrate/reconcile (mergeIncomingPO in purchase-orders-slice.ts
+  // preserves it), so filtering never needs to re-sort.
+  const searched = purchaseOrders.filter((po) => matchesSearch(po, q));
+  const rows = band ? searched.filter((po) => po.status === band) : searched;
 
-  // Footer totals read the WHOLE book, not the filtered rows — same as the mock: with the Draft
-  // chip on, the shop still sees what's placed across every order, not just the ones on screen.
-  // Placed orders only — a draft is not money committed and a cancelled one never was.
+  // Footer totals read the WHOLE book, not the filtered rows — same as the mock: with a chip or a
+  // search term narrowing the view, the shop still sees what's placed across every order, not
+  // just the ones on screen. Placed orders only — a draft is not money committed and a cancelled
+  // one never was.
   const placed = purchaseOrders
     .filter((po) => po.status === "ordered")
     .reduce((sum, po) => sum + po.total, 0);
@@ -82,10 +125,27 @@ export function OrdersPanel() {
     .filter((po) => po.status === "draft")
     .reduce((sum, po) => sum + po.total, 0);
 
+  // Reachable only once the book itself is non-empty (shouldShowFirstRun already handled the
+  // whole-book-empty case above), so an empty `rows` here always means a filter narrowed it.
+  const emptyState = (
+    <>
+      Nothing matches —{" "}
+      <span
+        className="linklike"
+        onClick={() => {
+          setQ("");
+          setBand(null);
+        }}
+      >
+        clear the filters
+      </span>
+    </>
+  );
+
   return (
-    <div className="po-scope">
+    <>
       <div className="pagehead">
-        <h1>Orders</h1>
+        <h1>Purchase orders</h1>
         <div className="pagehead-acts">
           <button type="button" className="btn primary" onClick={() => openModal(MODAL.NEW_PO)}>
             + New purchase order
@@ -105,7 +165,36 @@ export function OrdersPanel() {
         />
       ) : (
         <>
+          <div className="toolbar">
+            <div className="toolbar-search">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <circle cx="11" cy="11" r="7" />
+                <line x1="16.5" y1="16.5" x2="22" y2="22" />
+              </svg>
+              <input
+                enterKeyHint="search"
+                type="text"
+                aria-label="Search purchase orders"
+                placeholder="Search vendor, PO #, job…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+            <span className="muted" style={{ marginLeft: "auto" }}>
+              {rows.length} of {purchaseOrders.length}
+            </span>
+          </div>
+
           <OrderStatusChips purchaseOrders={purchaseOrders} band={band} onBand={setBand} />
+
+          {placeError ? (
+            <p
+              role="alert"
+              style={{ color: "var(--red)", fontSize: "var(--type-sm)", fontWeight: 600, margin: "0 0 var(--space-2)" }}
+            >
+              {placeError}
+            </p>
+          ) : null}
 
           <div className="card" style={{ padding: "var(--space-2) var(--space-4)" }}>
             <table className="list-tbl cols-sized">
@@ -117,15 +206,24 @@ export function OrdersPanel() {
                   <th>Status</th>
                   <th style={{ textAlign: "right" }}>Total</th>
                   <th style={{ textAlign: "right" }}>Ordered</th>
+                  <th aria-hidden="true" />
                 </tr>
               </thead>
               <tbody>
                 {rows.length > 0 ? (
-                  rows.map((po) => <OrderRow key={po.id} po={po} onOpen={() => openModal(MODAL.PO, { poId: po.id })} />)
+                  rows.map((po) => (
+                    <OrderRow
+                      key={po.id}
+                      po={po}
+                      placing={placingId === po.id}
+                      onOpen={() => openModal(MODAL.PO, { poId: po.id })}
+                      onPlace={() => placeOrder(po.id)}
+                    />
+                  ))
                 ) : (
                   <tr>
-                    <td colSpan={6}>
-                      <div className="empty-att">Nothing matches this filter.</div>
+                    <td colSpan={7}>
+                      <div className="empty-att">{emptyState}</div>
                     </td>
                   </tr>
                 )}
@@ -135,7 +233,7 @@ export function OrdersPanel() {
           </div>
         </>
       )}
-    </div>
+    </>
   );
 }
 
@@ -187,7 +285,36 @@ function OrderTotals({ placed, drafted }: { placed: number; drafted: number }) {
   );
 }
 
-function OrderRow({ po, onOpen }: { po: PurchaseOrder; onOpen: () => void }) {
+/** A draft's only row action — "Order it" places it directly. Nothing for ordered/cancelled: no
+ *  verb has a home there, and a house rule forbids a control that isn't wired to one. */
+function OrderRowActions({ po, placing, onPlace }: { po: PurchaseOrder; placing: boolean; onPlace: () => void }) {
+  if (po.status !== "draft") return <span className="muted">—</span>;
+  return (
+    <button
+      type="button"
+      className="btn sm primary"
+      disabled={placing}
+      onClick={(e) => {
+        e.stopPropagation();
+        onPlace();
+      }}
+    >
+      {placing ? "Ordering…" : "Order it"}
+    </button>
+  );
+}
+
+function OrderRow({
+  po,
+  placing,
+  onOpen,
+  onPlace,
+}: {
+  po: PurchaseOrder;
+  placing: boolean;
+  onOpen: () => void;
+  onPlace: () => void;
+}) {
   const meta = PO_STATUS_META[po.status];
   return (
     <tr className="clickable" onClick={onOpen} {...pressable(onOpen)}>
@@ -213,6 +340,11 @@ function OrderRow({ po, onOpen }: { po: PurchaseOrder; onOpen: () => void }) {
       </td>
       <td className="muted" style={{ textAlign: "right" }} data-label="Ordered">
         {po.orderedAt ?? "—"}
+      </td>
+      <td className="cardacts" style={{ textAlign: "right" }}>
+        <span className="macts">
+          <OrderRowActions po={po} placing={placing} onPlace={onPlace} />
+        </span>
       </td>
     </tr>
   );
