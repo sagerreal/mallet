@@ -288,7 +288,9 @@ function OrderTotals({ placed, drafted }: { placed: number; drafted: number }) {
 /** A draft's only row action — "Order it" places it directly. Nothing for ordered/cancelled: no
  *  verb has a home there, and a house rule forbids a control that isn't wired to one. */
 function OrderRowActions({ po, placing, onPlace }: { po: PurchaseOrder; placing: boolean; onPlace: () => void }) {
-  if (po.status !== "draft") return <span className="muted">—</span>;
+  // Nothing at all, not a dash: the invoices list leaves its action cell EMPTY when a row has no
+  // next step, and a stray "—" reads as a value that failed to load rather than as "no action".
+  if (po.status !== "draft") return null;
   return (
     <button
       type="button"
