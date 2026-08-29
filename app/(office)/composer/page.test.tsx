@@ -71,6 +71,8 @@ vi.mock("@/lib/trpc/client", () => ({
       // The shop's default sales-tax rate — no rate on file in these tests, so nothing seeds.
       settings: {
         get: { useQuery: () => ({ data: undefined }) },
+        // The company bar on the presentation document — absent identity in these tests.
+        businessIdentity: { useQuery: () => ({ data: undefined }) },
         presentationTemplates: {
           list: { useQuery: () => ({ data: [], isPending: false, isError: false }) },
           create: { useMutation: () => ({ mutateAsync: vi.fn(), isPending: false }) },

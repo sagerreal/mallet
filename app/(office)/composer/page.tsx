@@ -894,6 +894,7 @@ export default function ComposerPage() {
           onUpdate={update}
           leadName={selectedLead?.name ?? null}
           leadJob={selectedLead?.job ?? null}
+          onGoToEstimate={() => switchTab("estimate")}
         />
       </div>
 
