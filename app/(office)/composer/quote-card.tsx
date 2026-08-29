@@ -30,6 +30,7 @@ import {
   type ProposalChip,
 } from "./composer-state";
 import { LineTable } from "./line-table";
+import { linesFromSavedAssembly, type SavedComponent } from "./line-math";
 import { lineProvenance } from "./line-provenance";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
 
@@ -54,6 +55,8 @@ export function QuoteCard({
   isDrafting,
   aiDraftError,
   services,
+  savedAssemblies,
+  onSaveAssembly,
   materials,
   run,
   onRunDone,
@@ -74,6 +77,13 @@ export function QuoteCard({
   aiDraftError: string | null;
   /** The real pricebook catalog — read direction for "From pricebook". */
   services: Service[];
+  /**
+   * The parts of every saved assembly in the book, keyed by entry — what the editor's
+   * in-pricebook state is compared against. Derived from `services` by the page, so the
+   * comparison has one source and the table does not have to know about the store.
+   */
+  savedAssemblies?: ReadonlyMap<string, readonly SavedComponent[]>;
+  onSaveAssembly?: (parentIndex: number, itemId: string | null) => void;
   /** Sellable materials/equipment — the picker offers them beside services. */
   materials: Material[];
   /** The staged run reveal — non-null while a draft is in flight/revealing. */
@@ -161,6 +171,31 @@ export function QuoteCard({
   // Appends a snapshot of the service — later edits to the pricebook entry
   // never retroactively change a quote already built from it.
   function addPbLine(svc: Service) {
+    // A saved ASSEMBLY brings its parts with it — the parent line plus a component per part,
+    // each already carrying the expression it counts by.
+    if (svc.components && svc.components.length > 0) {
+      onUpdate({
+        lines: linesFromSavedAssembly(state.lines, {
+          id: svc.id,
+          name: svc.name,
+          unit: svc.unit ?? null,
+          unitPrice: svc.unitPrice,
+          quantity: svc.defaultQuantity ?? null,
+          cost: svc.cost,
+          taxable: svc.taxable,
+          components: svc.components.map((c) => ({
+            d: c.d,
+            unit: c.unit,
+            qtyExpr: c.qtyExpr,
+            roundUp: c.roundUp,
+            cost: c.cost,
+            rate: c.rate,
+            markupBps: c.markupBps,
+          })),
+        }),
+      });
+      return;
+    }
     // Hourly service: quantity = the service's typical hours (editable on the line);
     // rate = the hourly rate. "4 hrs × $150" lands exactly as the trade says it.
     const q = svc.measuredBy === "hour" ? (svc.laborHours ?? 1) || 1 : 1;
@@ -169,7 +204,15 @@ export function QuoteCard({
         ...state.lines,
         // Taxability is seeded from the book entry and stays editable on the line — the model
         // Housecall Pro and Jobber both use. Only the exception is recorded.
-        { d: svc.name, q, r: svc.unitPrice, c: svc.cost, ...(svc.taxable ? {} : { notax: true }) },
+        {
+          d: svc.name,
+          q,
+          r: svc.unitPrice,
+          c: svc.cost,
+          pricebookItemId: svc.id,
+          ...(svc.unit ? { unit: svc.unit } : {}),
+          ...(svc.taxable ? {} : { notax: true }),
+        },
       ],
     });
   }
@@ -350,6 +393,8 @@ export function QuoteCard({
             sections={state.sections}
             onLines={(next) => onUpdate({ lines: next })}
             onSections={(next) => onUpdate({ sections: next.sections, lines: next.lines })}
+            savedAssemblies={savedAssemblies}
+            onSaveAssembly={onSaveAssembly}
             materialize={materialize}
             taxed={(state.pricing.tax ?? 0) > 0}
             provenanceFor={(d) => lineProvenance(d, services)}
@@ -415,6 +460,12 @@ export function QuoteCard({
                       onClick={() => addPbLine(svc)}
                     >
                       {svc.name} · <b>{fmt$rate(svc.unitPrice)}</b>
+                      {svc.components && svc.components.length > 0 ? (
+                        <span className="muted">
+                          {" "}
+                          · {svc.components.length} part{svc.components.length === 1 ? "" : "s"}
+                        </span>
+                      ) : null}
                     </button>
                   ))}
                   {pbMaterialMatches.map((m) => (

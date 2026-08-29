@@ -40,6 +40,28 @@ import { reportWriteError } from "../write-error";
 export type AddResult = { ok: true } | { ok: false; reason: "empty" | "duplicate" | "failed" };
 
 /** Replace a service by id in a list with the server's canonical DTO; returns a new array. */
+/** What the composer hands over to save an assembly. Money is DOLLARS, like every store amount. */
+export interface SaveAssemblyFields {
+  /** The entry to overwrite. Null mints a new one — "Save to pricebook" and "Save as new". */
+  itemId: string | null;
+  name: string;
+  unit?: string | null;
+  unitPrice: number;
+  /** The run the rate is true for — an assembly's rate means nothing without it. */
+  quantity: number;
+  cost?: number;
+  taxable?: boolean;
+  components: {
+    d: string;
+    unit?: string | null;
+    qtyExpr?: string | null;
+    roundUp?: boolean;
+    cost: number;
+    rate: number;
+    markupBps?: number | null;
+  }[];
+}
+
 function reconcileService(list: Service[], id: string, dto: ServiceDTO): Service[] {
   const updated = serviceDtoToStore(dto);
   return list.map((s) => (s.id === id ? updated : s));
@@ -113,6 +135,14 @@ export interface PricebookSlice {
    * one-tap labor-hours chip) can surface the failure instead of losing it. */
   updateService: (id: string, fields: ServiceUpdateFields) => Promise<{ ok: boolean }>;
   archiveService: (id: string) => void;
+  /**
+   * Save an assembly from a quote into the book, or overwrite the entry it came from.
+   *
+   * NOT optimistic. The server mints the entry's id and the id of every part, and the composer
+   * needs the real one back — a saved assembly whose line points at a made-up id could never be
+   * updated. So this waits, then adopts what the server returns.
+   */
+  saveAssembly: (cmd: SaveAssemblyFields) => Promise<{ ok: boolean; service?: Service }>;
 
   addCategory: (name: string, parentId?: string | null) => Promise<AddResult>;
 
@@ -241,6 +271,40 @@ export const createPricebookSlice: StateCreator<PricebookSlice, [], [], Priceboo
         reportWriteError("archiveService", e);
         set({ services: snapshot });
       });
+  },
+
+  saveAssembly: async (cmd) => {
+    try {
+      const dto = await trpcVanilla.v1.pricebook.service.saveAssembly.mutate({
+        itemId: cmd.itemId,
+        name: cmd.name,
+        unit: cmd.unit,
+        unitPriceCents: Math.round(cmd.unitPrice * 100),
+        quantity: cmd.quantity,
+        costCents: Math.round((cmd.cost ?? 0) * 100),
+        taxable: cmd.taxable,
+        components: cmd.components.map((c) => ({
+          description: c.d,
+          unit: c.unit,
+          qtyExpr: c.qtyExpr,
+          roundUp: c.roundUp,
+          unitCostCents: Math.round(c.cost * 100),
+          unitPriceCents: Math.round(c.rate * 100),
+          markupBps: c.markupBps,
+        })),
+      });
+      const saved = serviceDtoToStore(dto);
+      // Overwrite in place when the entry already existed; append when it is new.
+      set((s) => ({
+        services: s.services.some((svc) => svc.id === saved.id)
+          ? s.services.map((svc) => (svc.id === saved.id ? saved : svc))
+          : [...s.services, saved],
+      }));
+      return { ok: true, service: saved };
+    } catch (e: unknown) {
+      reportWriteError("saveAssembly", e);
+      return { ok: false };
+    }
   },
 
   // ---- categories ---------------------------------------------------------

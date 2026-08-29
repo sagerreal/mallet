@@ -27,7 +27,7 @@
  *   - descMic() / 🎤     — no speech API in the app yet
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useLeads, useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
@@ -69,7 +69,7 @@ import {
   type ProposalChip,
   type TierKey,
 } from "./composer-state";
-import { sectionsForPayload } from "./line-math";
+import { sectionsForPayload, type SavedComponent } from "./line-math";
 import { useSmsGate } from "@/features/a2p/use-sms-ready";
 import { suggestFromGood } from "./gbb-suggest";
 import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
@@ -90,6 +90,70 @@ export default function ComposerPage() {
   const addLeadNote = useAppStore((s) => s.addLeadNote);
   // The real pricebook catalog — "From pricebook" reads it; "Save to book" writes to it.
   const services = useAppStore((s) => s.services);
+  /**
+   * Every saved assembly's parts, keyed by pricebook entry — what the editor compares a
+   * quote's assembly against to decide whether it is unsaved, in the book, or drifted.
+   * Derived here so the comparison has one source and the table never reaches into the store.
+   */
+  const saveAssemblyToBook = useAppStore((s) => s.saveAssembly);
+
+  /**
+   * Save the assembly at `parentIndex` into the book. The server mints the ids, so the line
+   * re-points at whatever came back — without that, a "Save as new" would leave the quote
+   * pointing at the entry it was copied FROM and the next Update would overwrite the wrong one.
+   */
+  async function saveAssembly(parentIndex: number, itemId: string | null) {
+    const parent = cs.lines[parentIndex];
+    if (!parent) return;
+    const components = cs.lines.filter((l) => l.parentIndex === parentIndex);
+    if (components.length === 0) return;
+    const result = await saveAssemblyToBook({
+      itemId,
+      name: parent.d.trim() || "Untitled assembly",
+      unit: parent.unit ?? null,
+      unitPrice: parent.r ?? 0,
+      // The run the rate is true for. Saved WITH the rate because an assembly's parts are
+      // counted by expressions whose "+1" terms do not scale — see defaultQuantity's own note.
+      quantity: parent.q > 0 ? parent.q : 1,
+      cost: parent.c ?? 0,
+      taxable: !parent.notax,
+      components: components.map((c) => ({
+        d: c.d.trim() || "Part",
+        unit: c.unit ?? null,
+        qtyExpr: c.qtyExpr ?? null,
+        roundUp: c.roundUp ?? false,
+        cost: c.c ?? 0,
+        rate: c.r ?? 0,
+        markupBps: c.markupBps ?? null,
+      })),
+    });
+    if (!result.ok || !result.service) return;
+    const savedId = result.service.id;
+    setCs((prev) => ({
+      ...prev,
+      lines: prev.lines.map((l, i) => (i === parentIndex ? { ...l, pricebookItemId: savedId } : l)),
+    }));
+  }
+
+  const savedAssemblies = useMemo(() => {
+    const byItem = new Map<string, SavedComponent[]>();
+    for (const service of services) {
+      if (!service.components || service.components.length === 0) continue;
+      byItem.set(
+        service.id,
+        service.components.map((c) => ({
+          d: c.d,
+          unit: c.unit,
+          qtyExpr: c.qtyExpr,
+          roundUp: c.roundUp,
+          cost: c.cost,
+          rate: c.rate,
+          markupBps: c.markupBps,
+        })),
+      );
+    }
+    return byItem;
+  }, [services]);
   const materials = useAppStore((s) => s.materials);
   const laborRates = useAppStore((s) => s.laborRates);
   // One-tap "Update labor to Nh" chips write back through the store's service update.
@@ -1000,6 +1064,8 @@ export default function ComposerPage() {
         isDrafting={draftEstimateMutation.isPending || draftTiersMutation.isPending}
         aiDraftError={aiDraftError}
         services={services}
+        savedAssemblies={savedAssemblies}
+        onSaveAssembly={saveAssembly}
         run={
           run
             ? {

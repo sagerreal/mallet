@@ -277,6 +277,17 @@ export const estimateLines = pgTable(
     // survives for costing and future reprice-from-book actions. No FK — a deleted material
     // must not constrain its historical lines.
     materialId: uuid("material_id"),
+    /**
+     * The pricebook SERVICE this line came from. Provenance, like materialId — and for an
+     * assembly it is also the link that makes "Update in pricebook" possible: without it the
+     * only way to tell which saved entry a line came from is to match on description, which is
+     * wrong the moment someone renames the line.
+     *
+     * A snapshot pointer, never live repricing: editing the pricebook entry does not change a
+     * quote already built from it. Deliberately NO foreign key, same as materialId above — a
+     * deleted pricebook entry must not cascade into the history of quotes already sent.
+     */
+    pricebookItemId: uuid("pricebook_item_id"),
     // Customer-facing scope prose under this line: Includes / Excludes / Prep / Products, plain
     // text rendered pre-wrap. This is the "pages of words" a $2-15M shop's proposal carries.
     scope: text("scope"),

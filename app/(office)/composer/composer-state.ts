@@ -56,6 +56,12 @@ export interface ComposerLine {
    * line is ungrouped, which is where every line on an ungrouped quote lives.
    */
   sectionIndex?: number;
+  /**
+   * The pricebook entry this line came from. Provenance, and for an assembly it is the link
+   * that makes "Update in pricebook" possible — matching on description instead would be wrong
+   * the moment someone renames the line.
+   */
+  pricebookItemId?: string;
 }
 
 

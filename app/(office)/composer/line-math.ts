@@ -315,3 +315,115 @@ export function withTypedRate(line: ComposerLine, rate: number): ComposerLine {
   const { markupBps: _dropped, ...rest } = line;
   return { ...rest, r: rate };
 }
+
+/** A saved assembly's part, as the pricebook hands it over (dollars, like every store amount). */
+export interface SavedComponent {
+  readonly d: string;
+  readonly unit?: string;
+  readonly qtyExpr?: string;
+  readonly roundUp?: boolean;
+  readonly cost: number;
+  readonly rate: number;
+  readonly markupBps?: number;
+}
+
+/**
+ * A saved assembly dropped onto the quote: the parent line, then its parts beneath it.
+ *
+ * A copy, not a translation — the stored fields and the line's fields are the same fields, so
+ * what the office saved is exactly what lands.
+ *
+ * It lands at the RUN it was saved at, not at 1. An assembly's parts are counted by expressions
+ * whose "+1" terms do not scale: one post every eight feet plus an end post is $3.51 a foot
+ * over 100 feet and $29.38 a foot over one. Dropping it in at 1 would show a line contradicting
+ * the very price the picker just offered. The office retypes the run for this job, and every
+ * part recounts the moment they do.
+ */
+export function linesFromSavedAssembly(
+  lines: readonly ComposerLine[],
+  saved: {
+    readonly id: string;
+    readonly name: string;
+    readonly unit?: string | null;
+    readonly unitPrice: number;
+    readonly quantity?: number | null;
+    readonly cost: number;
+    readonly taxable: boolean;
+    readonly components: readonly SavedComponent[];
+  },
+): ComposerLine[] {
+  const at = lines.length;
+  const parent: ComposerLine = {
+    d: saved.name,
+    // 1 only when the entry predates the saved run — an older row, not a wrong one.
+    q: saved.quantity && saved.quantity > 0 ? saved.quantity : 1,
+    r: saved.unitPrice,
+    ...(saved.cost > 0 ? { c: saved.cost } : {}),
+    ...(saved.unit ? { unit: saved.unit } : {}),
+    ...(saved.taxable ? {} : { notax: true as const }),
+    // The link that makes "Update in pricebook" possible later.
+    pricebookItemId: saved.id,
+  };
+  const components: ComposerLine[] = saved.components.map((c) => ({
+    d: c.d,
+    // The stored quantity is whatever the expression resolves to against a driver of 1; the
+    // office's first edit to the driver replaces it. Storing 0 here would read as free.
+    q: resolveQuantity({ d: c.d, q: 1, r: c.rate, qtyExpr: c.qtyExpr, roundUp: c.roundUp }, parent).value,
+    r: c.rate,
+    ...(c.cost > 0 ? { c: c.cost } : {}),
+    ...(c.unit ? { unit: c.unit } : {}),
+    ...(c.qtyExpr ? { qtyExpr: c.qtyExpr } : {}),
+    ...(c.roundUp ? { roundUp: true } : {}),
+    ...(c.markupBps === undefined ? {} : { markupBps: c.markupBps }),
+    parentIndex: at,
+  }));
+  return withRollUps([...lines, parent, ...components]);
+}
+
+/**
+ * Is this assembly in the pricebook, the same as what is there, or drifted from it?
+ *
+ * The three states the office acts on: save it, leave it alone, or update it. Comparing the
+ * PARTS and not the parent's own price is deliberate — an assembly whose rate was rounded on
+ * the way into the quote has not "drifted", and telling the office it had would train them to
+ * ignore the word.
+ */
+export type AssemblySyncState = "unsaved" | "synced" | "modified";
+
+export function assemblySyncState(
+  parent: ComposerLine,
+  components: readonly ComposerLine[],
+  saved: readonly SavedComponent[] | undefined,
+): AssemblySyncState {
+  if (!parent.pricebookItemId || saved === undefined) return "unsaved";
+  return liveSignature(components) === savedSignature(saved) ? "synced" : "modified";
+}
+
+/** The live parts, in the same shape the saved ones are compared in. */
+function liveSignature(components: readonly ComposerLine[]): string {
+  return JSON.stringify(
+    components.map((c) => [
+      c.d,
+      c.unit ?? "",
+      c.qtyExpr ?? "",
+      Boolean(c.roundUp),
+      Math.round((c.c ?? 0) * 100),
+      Math.round((c.r ?? 0) * 100),
+      c.markupBps ?? null,
+    ]),
+  );
+}
+
+function savedSignature(components: readonly SavedComponent[]): string {
+  return JSON.stringify(
+    components.map((c) => [
+      c.d,
+      c.unit ?? "",
+      c.qtyExpr ?? "",
+      Boolean(c.roundUp),
+      Math.round(c.cost * 100),
+      Math.round(c.rate * 100),
+      c.markupBps ?? null,
+    ]),
+  );
+}

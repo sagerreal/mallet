@@ -41,6 +41,24 @@ export function serviceDtoToStore(dto: ServiceDTO): Service {
     active: dto.active,
     position: dto.position,
     measuredBy: dto.measuredBy,
+    ...(dto.unit ? { unit: dto.unit } : {}),
+    ...(dto.defaultQuantity === null ? {} : { defaultQuantity: dto.defaultQuantity }),
+    // Only the exception is written: an ordinary service carries no `components` key at all,
+    // so its store shape is byte-identical to what it was before assemblies existed.
+    ...(dto.components.length > 0
+      ? {
+          components: dto.components.map((c) => ({
+            id: c.id,
+            d: c.description,
+            ...(c.unit ? { unit: c.unit } : {}),
+            ...(c.qtyExpr ? { qtyExpr: c.qtyExpr } : {}),
+            ...(c.roundUp ? { roundUp: true } : {}),
+            cost: c.unitCostCents / 100,   // cents → dollars
+            rate: c.unitPriceCents / 100,  // cents → dollars
+            ...(c.markupBps === null ? {} : { markupBps: c.markupBps }),
+          })),
+        }
+      : {}),
   };
 }
 

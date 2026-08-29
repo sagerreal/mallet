@@ -28,6 +28,7 @@ export * from "./pricebook-categories";
 export * from "./pricebook-items";
 export * from "./pricebook-materials";
 export * from "./pricebook-service-materials";
+export * from "./pricebook-item-components";
 export * from "./labor-rates";
 export * from "./job-terms";
 export * from "./presentation-templates";

@@ -15,6 +15,9 @@ const toLaborHours = (v: string | null): number | null => (v == null ? null : Nu
 export const laborHoursToColumn = (v: number | null): string | null =>
   v == null ? null : String(v);
 
+// `default_quantity` is numeric(12,2) — same string boundary as labor_hours above.
+export const quantityToColumn = (v: number | null): string | null => (v == null ? null : String(v));
+
 /**
  * `measured_by` as THIS build understands it.
  *
@@ -64,6 +67,8 @@ export const rowToService = (row: ServiceRow): Service => {
     active: row.active,
     position: row.position,
     measuredBy: readMeasuredBy(row.measuredBy, row.id),
+    unit: row.unit,
+    defaultQuantity: row.defaultQuantity == null ? null : Number(row.defaultQuantity),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

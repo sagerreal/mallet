@@ -321,3 +321,83 @@ describe("LineTable — the costing view", () => {
     expect(screen.queryByLabelText("Markup percent, line 1")).toBeNull();
   });
 });
+
+describe("LineTable — the pricebook control", () => {
+  const onSaveAssembly = vi.fn();
+  const savedParts = [
+    { d: "Line posts", unit: "ea", qtyExpr: "qty/8+1", roundUp: true, cost: 18, rate: 24.3, markupBps: 3500 },
+  ];
+
+  const withBook = (lines: ComposerLine[], saved?: Map<string, typeof savedParts>) => {
+    cleanup();
+    onSaveAssembly.mockClear();
+    return render(
+      <LineTable
+        lines={lines}
+        showCost={false}
+        onLines={onLines}
+        savedAssemblies={saved}
+        onSaveAssembly={onSaveAssembly}
+      />,
+    );
+  };
+
+  const bookedPosts: ComposerLine = {
+    d: "Line posts",
+    q: 14,
+    r: 24.3,
+    c: 18,
+    unit: "ea",
+    qtyExpr: "qty/8+1",
+    roundUp: true,
+    markupBps: 3500,
+    parentIndex: 0,
+  };
+
+  it("offers to save an assembly that is not in the book", () => {
+    withBook([fence, posts]);
+    expect(screen.getByText("+ Save to pricebook")).toBeTruthy();
+    fireEvent.click(screen.getByText("+ Save to pricebook"));
+    expect(onSaveAssembly).toHaveBeenCalledWith(0, null);
+  });
+
+  it("says so, and offers nothing to press, when the assembly matches the book", () => {
+    // An assembly that matches has nothing to do — a button there would be a control that
+    // decides nothing.
+    withBook(
+      [{ ...fence, pricebookItemId: "pb-1" }, bookedPosts],
+      new Map([["pb-1", savedParts]]),
+    );
+    expect(screen.getByText("✓ In pricebook")).toBeTruthy();
+    expect(screen.queryByText("+ Save to pricebook")).toBeNull();
+    expect(screen.queryByText("↑ Update in pricebook")).toBeNull();
+  });
+
+  it("offers both update and save-as-new once it has drifted", () => {
+    withBook(
+      [{ ...fence, pricebookItemId: "pb-1" }, { ...bookedPosts, r: 26 }],
+      new Map([["pb-1", savedParts]]),
+    );
+    fireEvent.click(screen.getByText("↑ Update in pricebook"));
+    expect(onSaveAssembly).toHaveBeenCalledWith(0, "pb-1");
+    fireEvent.click(screen.getByText("+ Save as new"));
+    expect(onSaveAssembly).toHaveBeenLastCalledWith(0, null);
+  });
+
+  it("reads as unsaved while the book has not loaded", () => {
+    // The honest answer when nothing is known — never "✓ In pricebook" on faith.
+    withBook([{ ...fence, pricebookItemId: "pb-1" }, bookedPosts], undefined);
+    expect(screen.getByText("+ Save to pricebook")).toBeTruthy();
+  });
+
+  it("offers nothing on a plain line — there is no assembly to save", () => {
+    withBook([{ d: "Trip charge", q: 1, r: 95 }]);
+    expect(screen.queryByText("+ Save to pricebook")).toBeNull();
+  });
+
+  it("offers nothing at all when the caller does not handle saving", () => {
+    cleanup();
+    render(<LineTable lines={[fence, posts]} showCost={false} onLines={onLines} />);
+    expect(screen.queryByText("+ Save to pricebook")).toBeNull();
+  });
+});

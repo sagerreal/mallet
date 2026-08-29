@@ -1524,6 +1524,9 @@
   .linehint{background:none;border:0;padding:0;font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
   .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
   .linehint[aria-expanded="true"]{color:var(--ink)}
+  /* A statement, not a control: "✓ In pricebook" sits in the hint row and reads as the
+     answer to the question the two buttons beside it would otherwise ask. */
+  .linehint-note{font-size:var(--type-xs);font-weight:600;color:var(--ink-3);white-space:nowrap}
   .lineedit tbody .linedetail>td{padding:0 var(--space-3) var(--space-3);border-bottom:none}
   .linedepth{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--paper);padding:var(--space-3)}
   .linedepth-head{display:flex;align-items:baseline;justify-content:space-between;gap:var(--space-3);margin-bottom:var(--space-2)}

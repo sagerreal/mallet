@@ -21,6 +21,9 @@ import {
   withMarkup,
   repriceFromCost,
   withTypedRate,
+  linesFromSavedAssembly,
+  assemblySyncState,
+  type SavedComponent,
 } from "./line-math";
 import type { ComposerLine } from "./composer-state";
 
@@ -281,5 +284,94 @@ describe("pricing from cost", () => {
 
   it("refuses a negative markup rather than pricing below cost by accident", () => {
     expect(withMarkup(line({ c: 18 }), -500).markupBps).toBe(0);
+  });
+});
+
+describe("linesFromSavedAssembly", () => {
+  const saved = {
+    id: "pb-1",
+    name: "Cedar privacy fence",
+    unit: "LF",
+    unitPrice: 11.58,
+    quantity: 100,
+    cost: 8.4,
+    taxable: true,
+    components: [
+      { d: "Line posts", unit: "ea", qtyExpr: "qty/8+1", roundUp: true, cost: 18, rate: 24.3, markupBps: 3500 },
+      { d: "Pickets", unit: "ea", qtyExpr: "qty*2", cost: 2.1, rate: 4.15 },
+    ] satisfies SavedComponent[],
+  };
+
+  it("drops the parent in with its parts beneath it", () => {
+    const next = linesFromSavedAssembly([{ d: "Trip charge", q: 1, r: 95 }], saved);
+    expect(next.map((l) => l.d)).toEqual(["Trip charge", "Cedar privacy fence", "Line posts", "Pickets"]);
+    expect(next[2]?.parentIndex).toBe(1);
+    expect(next[3]?.parentIndex).toBe(1);
+  });
+
+  it("copies the parts exactly — the stored fields ARE the line's fields", () => {
+    const posts = linesFromSavedAssembly([], saved)[1]!;
+    expect(posts).toMatchObject({ unit: "ea", qtyExpr: "qty/8+1", roundUp: true, c: 18, r: 24.3, markupBps: 3500 });
+  });
+
+  it("records which entry it came from, so it can be updated later", () => {
+    expect(linesFromSavedAssembly([], saved)[0]?.pricebookItemId).toBe("pb-1");
+  });
+
+  it("lands at the run it was saved at, so its price still means what the picker said", () => {
+    // The defect this guards: at a driver of 1, "qty/8+1" gives $29.38 a foot for an entry the
+    // picker just offered at $3.51 a foot. The same entry, contradicting itself on screen.
+    const next = linesFromSavedAssembly([], saved);
+    expect(next[0]?.q).toBe(100);
+    expect(next[1]?.q).toBe(14); // ceil(100/8 + 1)
+    expect(next[2]?.q).toBe(200); // 100*2
+  });
+
+  it("falls back to 1 for an entry saved before the run was kept", () => {
+    // An older row, not a wrong one — it still applies, and the office types the run.
+    expect(linesFromSavedAssembly([], { ...saved, quantity: null })[0]?.q).toBe(1);
+  });
+
+  it("carries the exception, not the default, for tax", () => {
+    expect(linesFromSavedAssembly([], saved)[0]?.notax).toBeUndefined();
+    expect(linesFromSavedAssembly([], { ...saved, taxable: false })[0]?.notax).toBe(true);
+  });
+});
+
+describe("assemblySyncState", () => {
+  const savedParts: SavedComponent[] = [
+    { d: "Line posts", unit: "ea", qtyExpr: "qty/8+1", roundUp: true, cost: 18, rate: 24.3, markupBps: 3500 },
+  ];
+  const liveParts = [
+    line({ d: "Line posts", unit: "ea", qtyExpr: "qty/8+1", roundUp: true, c: 18, r: 24.3, markupBps: 3500 }),
+  ];
+  const parent = line({ d: "Cedar privacy fence", q: 100, pricebookItemId: "pb-1" });
+
+  it("is unsaved when the line names no entry", () => {
+    expect(assemblySyncState(line({ d: "Fence" }), liveParts, savedParts)).toBe("unsaved");
+  });
+
+  it("is unsaved when the entry it names is not in the book any more", () => {
+    expect(assemblySyncState(parent, liveParts, undefined)).toBe("unsaved");
+  });
+
+  it("is synced when the parts match", () => {
+    expect(assemblySyncState(parent, liveParts, savedParts)).toBe("synced");
+  });
+
+  it("is modified once a part changes", () => {
+    const edited = [{ ...liveParts[0]!, r: 26 }];
+    expect(assemblySyncState(parent, edited, savedParts)).toBe("modified");
+  });
+
+  it("is modified when a part is added or removed", () => {
+    expect(assemblySyncState(parent, [...liveParts, line({ d: "Rails" })], savedParts)).toBe("modified");
+    expect(assemblySyncState(parent, [], savedParts)).toBe("modified");
+  });
+
+  it("stays synced when only the PARENT's own rate moved", () => {
+    // The roll-up rounds to the cent on the way into a quote. Calling that drift would train
+    // the office to ignore the word.
+    expect(assemblySyncState({ ...parent, r: 3.4 }, liveParts, savedParts)).toBe("synced");
   });
 });
