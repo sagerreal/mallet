@@ -48,20 +48,6 @@ export function GbbTiers({
     onUpdate({ gbb: updateTier(g, k, patch) });
   }
 
-  function updateLine(tier: GBBTier, i: number, patch: Partial<ComposerLine>) {
-    patchTier(tier.k, {
-      lines: tier.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)),
-    });
-  }
-
-  function removeLine(tier: GBBTier, i: number) {
-    patchTier(tier.k, { lines: tier.lines.filter((_, idx) => idx !== i) });
-  }
-
-  function addLine(tier: GBBTier) {
-    patchTier(tier.k, { lines: [...tier.lines, emptyLine()] });
-  }
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
       {g.opts.map((tier) => {
@@ -134,9 +120,7 @@ export function GbbTiers({
               priceMode={state.priceDisplay}
               lines={tier.lines}
               showCost={showCost}
-              onUpdateLine={(i, patch) => updateLine(tier, i, patch)}
-              onRemoveLine={(i) => removeLine(tier, i)}
-              onAddLine={() => addLine(tier)}
+              onLines={(next) => patchTier(tier.k, { lines: next })}
               materialize={materialize}
               taxed={(state.pricing.tax ?? 0) > 0}
             />

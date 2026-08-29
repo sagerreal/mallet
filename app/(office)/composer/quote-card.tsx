@@ -158,24 +158,6 @@ export function QuoteCard({
     ? (state.gbb?.opts.find((o) => o.k === "good")?.lines ?? [])
     : state.lines;
 
-  function updateLine(i: number, patch: Partial<ComposerLine>) {
-    onUpdate({
-      lines: state.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)),
-    });
-  }
-
-  function removeLine(i: number) {
-    onUpdate({
-      lines: state.lines.filter((_, idx) => idx !== i),
-    });
-  }
-
-  function addLine() {
-    onUpdate({
-      lines: [...state.lines, { d: "", q: 1, r: 0 }],
-    });
-  }
-
   // Appends a snapshot of the service — later edits to the pricebook entry
   // never retroactively change a quote already built from it.
   function addPbLine(svc: Service) {
@@ -365,9 +347,7 @@ export function QuoteCard({
             lines={state.lines}
             showCost={showCost}
             priceMode={state.priceDisplay}
-            onUpdateLine={updateLine}
-            onRemoveLine={removeLine}
-              onAddLine={addLine}
+            onLines={(next) => onUpdate({ lines: next })}
             materialize={materialize}
             taxed={(state.pricing.tax ?? 0) > 0}
             provenanceFor={(d) => lineProvenance(d, services)}

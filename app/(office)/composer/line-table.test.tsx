@@ -1,0 +1,187 @@
+// @vitest-environment jsdom
+/**
+ * app/(office)/composer/line-table.test.tsx
+ *
+ * Assemblies in the editor: a line priced from the components beneath it.
+ *
+ * These are the interactions where a wrong answer moves money — a component counted off the
+ * wrong driver, a parent priced from the wrong parts, or a removal that re-parents someone
+ * else's components. The arithmetic itself is covered in line-math.test.ts; what is tested here
+ * is that the table wires it up and hands the caller a finished array.
+ */
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { render, screen, fireEvent, within, cleanup } from "@testing-library/react";
+import { LineTable } from "./line-table";
+import type { ComposerLine } from "./composer-state";
+
+const onLines = vi.fn();
+beforeEach(() => {
+  onLines.mockClear();
+  cleanup();
+});
+
+const fence: ComposerLine = { d: "Cedar privacy fence", q: 100, r: 0, unit: "LF" };
+const posts: ComposerLine = {
+  d: "Line posts",
+  q: 14,
+  r: 24.3,
+  c: 18,
+  qtyExpr: "qty/8+1",
+  roundUp: true,
+  parentIndex: 0,
+};
+
+/** Renders fresh each time, so re-rendering with what the table handed back is one call. */
+const table = (lines: ComposerLine[], showCost = false) => {
+  cleanup();
+  return render(<LineTable lines={lines} showCost={showCost} onLines={onLines} />);
+};
+
+/** The array the table handed back on the last call. */
+const lastLines = (): ComposerLine[] => onLines.mock.calls[onLines.mock.calls.length - 1]![0];
+
+/** jest-dom is not loaded here — read the element and assert on it directly. */
+const input = (label: string): HTMLInputElement => screen.getByLabelText(label) as HTMLInputElement;
+
+describe("LineTable — building an assembly", () => {
+  it("adds a component seeded with the driver, directly beneath its parent", () => {
+    table([fence, { d: "Trip charge", q: 1, r: 95 }]);
+    fireEvent.click(screen.getAllByTitle("Price this line from the parts and labour under it")[0]!);
+    const next = lastLines();
+    expect(next.map((l) => l.d)).toEqual(["Cedar privacy fence", "", "Trip charge"]);
+    // Seeded with `qty` rather than blank: the estimator is shown the variable, not told about it.
+    expect(next[1]).toMatchObject({ parentIndex: 0, qtyExpr: "qty" });
+  });
+
+  it("offers no component button on a component — the document stays one level deep", () => {
+    table([fence, posts]);
+    expect(screen.getAllByTitle("Price this line from the parts and labour under it")).toHaveLength(1);
+  });
+});
+
+describe("LineTable — a component's quantity is math", () => {
+  it("shows what the math resolved to, next to the math itself", () => {
+    table([fence, posts]);
+    expect(input("Quantity or math, component 2").value).toBe("qty/8+1");
+    expect(screen.getByText("= 14")).toBeTruthy();
+  });
+
+  it("stores the typed expression AND the number it produced", () => {
+    table([fence, posts]);
+    fireEvent.change(input("Quantity or math, component 2"), { target: { value: "qty/4" } });
+    expect(lastLines()[1]).toMatchObject({ qtyExpr: "qty/4", q: 25 });
+  });
+
+  it("says so when the math does not resolve, and prices nothing off it", () => {
+    table([fence, posts]);
+    fireEvent.change(input("Quantity or math, component 2"), { target: { value: "qty/" } });
+    // Re-render with what the table handed back — this is what the caller would store.
+    table(lastLines());
+    expect(screen.getByText("Check the math")).toBeTruthy();
+    expect(input("Quantity or math, component 2").getAttribute("aria-invalid")).toBe("true");
+  });
+
+  it("clears the expression when a plain number is typed", () => {
+    // An ordinary line must never carry an expression — its wire shape stays what it was.
+    table([fence, posts]);
+    fireEvent.change(input("Quantity or math, component 2"), { target: { value: "20" } });
+    expect(lastLines()[1]?.qtyExpr).toBeUndefined();
+    expect(lastLines()[1]?.q).toBe(20);
+  });
+
+  it("recounts every component when the driver changes", () => {
+    table([fence, posts]);
+    fireEvent.change(input("Quantity, line 1"), { target: { value: "200" } });
+    // 200/8+1 = 26 posts, and the parent reprices off them.
+    expect(lastLines()[1]?.q).toBe(14); // the component's own stored number is untouched…
+    table(lastLines());
+    expect(screen.getByText("= 26")).toBeTruthy(); // …but what it resolves to follows the driver
+  });
+});
+
+describe("LineTable — the parent is priced by its parts", () => {
+  it("rolls the components up into the parent's rate and does not offer a price field", () => {
+    table([fence, posts]);
+    fireEvent.change(input("Price, line 2"), { target: { value: "24.30" } });
+    const rolled = lastLines()[0]!;
+    // 14 posts × $24.30 = $340.20 over a 100 LF run → $3.40 a foot.
+    expect(rolled.r).toBe(3.4);
+    table(lastLines());
+    expect(screen.queryByLabelText("Price, line 1")).toBeNull();
+    expect(screen.getByLabelText("Price, line 1 — set by its components")).toBeTruthy();
+  });
+
+  it("rolls the components' cost up too", () => {
+    table([fence, posts], true);
+    fireEvent.change(input("Your cost, line 2"), { target: { value: "20" } });
+    // 14 × $20 = $280 over 100 LF → $2.80 a foot.
+    expect(lastLines()[0]?.c).toBe(2.8);
+  });
+
+  it("leaves a plain line's own price field alone", () => {
+    table([{ d: "Trip charge", q: 1, r: 95 }]);
+    expect(input("Price, line 1").value).toBe("95");
+  });
+});
+
+describe("LineTable — removing", () => {
+  it("takes an assembly's components with the parent", () => {
+    table([fence, posts, { d: "Trip charge", q: 1, r: 95 }]);
+    fireEvent.click(screen.getByLabelText("Remove line 1"));
+    expect(lastLines().map((l) => l.d)).toEqual(["Trip charge"]);
+  });
+
+  it("keeps a later assembly's components pointed at their own parent", () => {
+    // The defect: a plain filter leaves the gate's component pointing at whatever line slid
+    // into its index — the component's money moves to another assembly.
+    table([fence, posts, { d: "Gate", q: 1, r: 400 }, { d: "Hinges", q: 2, r: 30, parentIndex: 2 }]);
+    fireEvent.click(screen.getByLabelText("Remove line 1"));
+    const next = lastLines();
+    expect(next.map((l) => l.d)).toEqual(["Gate", "Hinges"]);
+    expect(next[next[1]!.parentIndex!]?.d).toBe("Gate");
+  });
+});
+
+describe("LineTable — the unit", () => {
+  it("keeps the unit the quantity is counted in", () => {
+    table([fence]);
+    expect(input("Unit, line 1").value).toBe("LF");
+    fireEvent.change(input("Unit, line 1"), { target: { value: "ft" } });
+    expect(lastLines()[0]?.unit).toBe("ft");
+  });
+
+  it("drops the unit entirely when it is cleared, rather than storing an empty string", () => {
+    table([fence]);
+    fireEvent.change(input("Unit, line 1"), { target: { value: "" } });
+    expect(lastLines()[0]?.unit).toBeUndefined();
+  });
+});
+
+describe("LineTable — sub-items are the previous generation", () => {
+  it("offers the editor on a line that already has them", () => {
+    table([{ d: "Painting", q: 1, r: 100, sub: [{ d: "Walls", q: 2400, amt: 9840 }] }]);
+    expect(screen.getByText("↳ Sub-items (1)")).toBeTruthy();
+  });
+
+  it("does not offer them on a line that does not", () => {
+    table([{ d: "Painting", q: 1, r: 100 }]);
+    expect(screen.queryByText(/Sub-items/)).toBeNull();
+    expect(screen.queryByText(/Add sub-items/)).toBeNull();
+  });
+});
+
+describe("LineTable — the rest of the row still works", () => {
+  it("adds a line from the footer", () => {
+    table([fence]);
+    fireEvent.click(screen.getByText("+ Add line"));
+    expect(lastLines()).toHaveLength(2);
+  });
+
+  it("keeps the scope editor reachable", () => {
+    table([fence]);
+    fireEvent.click(screen.getByText("¶ Add scope"));
+    const detail = screen.getByLabelText(/scope/i);
+    expect(within(document.body).getByText("¶ Add scope")).toBeTruthy();
+    expect(detail).toBeTruthy();
+  });
+});

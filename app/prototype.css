@@ -1539,6 +1539,24 @@
   .lineedit tbody .subrow input:nth-child(3){width:72px}
   .linedepth-foot{display:flex;align-items:baseline;gap:var(--space-3);margin-top:var(--space-2)}
   .linedepth-note{font-size:var(--type-xs);color:var(--ink-3)}
+  /* ---------- assemblies: a line priced from the components under it ----------
+     A fence is ONE line the customer reads and four the estimator works in. The
+     components are money, so they stay rows in the ledger rather than moving into a
+     panel — an indent and a rail are the whole treatment. */
+  .lineedit tbody tr.component>td{background:var(--green-50)}
+  .lineedit tbody tr.component>td:first-child{padding-left:var(--space-8)}
+  .lineedit tbody tr.component>td:first-child{box-shadow:inset var(--space-1) 0 0 calc(var(--space-1) * -0.5) var(--line)}
+  .lineedit tbody tr.component-last>td{border-bottom:1px solid var(--line)}
+  /* The computed count under a quantity that was typed as math. Quiet, and only
+     present when there is math to explain — a plain number explains itself. */
+  .qty-note{display:block;padding:0 var(--space-2) var(--space-2xs) 0;text-align:right;font-size:var(--type-xs);font-variant-numeric:tabular-nums;color:var(--ink-3)}
+  .qty-note.bad{color:var(--red);font-weight:600}
+  .lineedit tbody input[aria-invalid="true"]{border-color:var(--red)}
+  /* The unit sits with the number it counts, not in a column of its own — a unit
+     with no quantity beside it is a word floating in a ledger. */
+  .lineedit tbody input.unit{text-align:left;font-size:var(--type-sm);color:var(--ink-2)}
+  /* A rolled-up rate is not typed, so it does not read as a field. */
+  .lineedit .rolled{display:block;text-align:right;padding-right:var(--space-2);font-variant-numeric:tabular-nums;color:var(--ink-2)}
   /* 'One total' dims the amount column in the EDITOR — the numbers stay yours. */
   .lineedit .amt.customer-hidden{opacity:.45}
   /* The $ visibility chip in the quote-card header. Amber when the proposal mode is on —
