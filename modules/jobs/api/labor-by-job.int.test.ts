@@ -273,6 +273,21 @@ suite("v1.jobs.laborByJob (live DB)", () => {
     expect(row?.materialsCents).toBe(0); // quoted materials are a separate figure, untouched
   });
 
+  /**
+   * TWO orders on one job must SUM, not overwrite — the accumulate loop in `purchasedByJob`
+   * (`out.set(jobId, (out.get(jobId) ?? 0) + cents)`) was untested until now, and it is exactly
+   * the loop a leftJoin/innerJoin regression on the per-order query would silently break.
+   */
+  it("sums TWO purchase orders on one job", async () => {
+    const job = await addJob("C-PO-TWOORDERS", 500_00);
+    await addEntry(job, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });
+    await addPO(job, "ordered", { lines: [{ qty: 1, unitCostMillicents: 1_000_000 }] }); // $10
+    await addPO(job, "ordered", { freightCents: 500, lines: [{ qty: 1, unitCostMillicents: 2_000_000 }] }); // $20 + $5
+
+    const row = (await week()).items.find((i) => i.num === "C-PO-TWOORDERS");
+    expect(row?.purchasedCents).toBe(3_500); // 1,000 + (2,000 + 500)
+  });
+
   it("counts nothing from a draft order — a draft is not money committed", async () => {
     const job = await addJob("C-PO-DRAFT", 500_00);
     await addEntry(job, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });

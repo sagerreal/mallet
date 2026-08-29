@@ -284,7 +284,11 @@ export class DrizzleLaborReader {
         `,
       })
       .from(purchaseOrders)
-      .innerJoin(
+      // LEFT, not inner: an ordered PO always having at least one line is an APPLICATION-only
+      // invariant, nothing at the DB enforces it. An inner join would make a line-less order
+      // invisible here, silently dropping its freight and tax off a job's cost — the
+      // `coalesce(sum(...), 0)` above already handles the no-lines case.
+      .leftJoin(
         purchaseOrderLines,
         and(eq(purchaseOrderLines.poId, purchaseOrders.id), eq(purchaseOrderLines.orgId, purchaseOrders.orgId)),
       )
