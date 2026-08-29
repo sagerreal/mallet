@@ -64,6 +64,13 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
   materialId: string | null;
   scope?: string;
   subItems?: { description: string; quantity: number; unit?: string; amountCents: number }[];
+  unit?: string;
+  qtyExpr?: string;
+  roundUp?: boolean;
+  parentIndex?: number;
+  customerVisible?: boolean;
+  markupBps?: number;
+  sectionIndex?: number;
 } {
   const sub = realSubItems(l.sub);
   return {
@@ -87,5 +94,14 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
           })),
         }
       : {}),
+    // The composition fields are OMITTED when they carry nothing, so an ordinary line's wire
+    // shape is byte-identical to what it was before assemblies existed.
+    ...(l.unit?.trim() ? { unit: l.unit } : {}),
+    ...(l.qtyExpr?.trim() ? { qtyExpr: l.qtyExpr } : {}),
+    ...(l.roundUp ? { roundUp: true } : {}),
+    ...(l.parentIndex !== undefined ? { parentIndex: l.parentIndex } : {}),
+    ...(l.hidden ? { customerVisible: false } : {}),
+    ...(l.markupBps !== undefined ? { markupBps: l.markupBps } : {}),
+    ...(l.sectionIndex !== undefined ? { sectionIndex: l.sectionIndex } : {}),
   };
 }

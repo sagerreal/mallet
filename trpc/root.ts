@@ -4,6 +4,7 @@ import { createLeadRouter } from "@mallet/customers";
 import { createEstimateRouter } from "@mallet/quoting";
 import { createJobRouter, createFieldRouter, createVisitRouter } from "@mallet/jobs";
 import { createInvoiceRouter, createFieldInvoiceRouter, createTerminalRouter } from "@mallet/invoicing";
+import { createPurchaseOrderRouter } from "@mallet/purchasing";
 import { createNotificationRouter } from "@mallet/notifications";
 import { createAiRouter, createFieldCopilotRouter } from "@mallet/ai";
 import { createIdentityRouter } from "@mallet/identity";
@@ -41,6 +42,8 @@ export const appRouter = router({
     fieldInvoicing: createFieldInvoiceRouter(),
     // Stripe Terminal (Tap to Pay) server plumbing — the native reader PR consumes these.
     terminal: createTerminalRouter(),
+    // What a trade shop buys from a supplier — an office surface, mounted beside invoicing.
+    purchasing: createPurchaseOrderRouter(),
     notifications: createNotificationRouter(),
     ai: createAiRouter(),
     fieldCopilot: createFieldCopilotRouter(),

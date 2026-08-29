@@ -226,7 +226,10 @@ export function SelectMenu({
         >
           {selected ? selected.label : placeholder}
         </span>
-        <span aria-hidden="true" style={{ flexShrink: 0, fontSize: "var(--type-sm)", color: "var(--ink-3)" }}>
+        {/* Class, not inline style: a caller scoping this control below the type floor (e.g.
+            .po-scope) needs a selector that can reach it — an inline style outranks anything
+            external short of !important. */}
+        <span aria-hidden="true" className="select-trigger-caret" style={{ flexShrink: 0 }}>
           ▾
         </span>
       </button>

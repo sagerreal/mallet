@@ -69,6 +69,7 @@ import {
   type ProposalChip,
   type TierKey,
 } from "./composer-state";
+import { sectionsForPayload } from "./line-math";
 import { useSmsGate } from "@/features/a2p/use-sms-ready";
 import { suggestFromGood } from "./gbb-suggest";
 import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
@@ -248,7 +249,16 @@ export default function ComposerPage() {
           tier: l.tier ?? null,
           scope: l.scope ?? null,
           subItems: l.subItems ?? null,
+          id: l.id,
+          unit: l.unit ?? null,
+          qtyExpr: l.qtyExpr ?? null,
+          roundUp: l.roundUp,
+          parentLineId: l.parentLineId ?? null,
+          customerVisible: l.customerVisible,
+          markupBps: l.markupBps ?? null,
+          sectionId: l.sectionId ?? null,
         })),
+        sections: dto.sections.map((section) => ({ id: section.id, name: section.name })),
       }),
     );
   }, [reviseId, reviseQuery.data]);
@@ -620,9 +630,12 @@ export default function ComposerPage() {
   // picks one of the three options on their quote page. termsSnapshot rides both formats.
   function buildDraftPayload(lead: NonNullable<typeof selectedLead>) {
     const gbb = cs.format === "gbb" && cs.gbb ? cs.gbb : null;
+    // Headings whose name was cleared are dropped here, with their lines re-pointed — the
+    // server refuses a blank one, and an emptied name should not fail the whole save.
+    const grouped = sectionsForPayload(cs.sections, cs.lines);
     const payloadLines: (ComposerLine & { tier?: TierKey })[] = gbb
       ? tieredLinesForPayload(gbb)
-      : realLines(cs.lines);
+      : realLines(grouped.lines);
     return {
       leadId: lead.id,
       // NAMED AFTER THE WORK. "Quote" was the fallback when the customer record had no job
@@ -635,6 +648,11 @@ export default function ComposerPage() {
       depBps: Math.round((cs.pricing.dep ?? 0) * 100),
       validDays: cs.validDays,
       lines: payloadLines.map(lineToPayload),
+      // Headings only travel with a single quote: three tiers with one heading list would be
+      // three competing groupings of the same document.
+      ...(gbb === null && grouped.sections.length > 0
+        ? { sections: grouped.sections.map((name) => ({ name })) }
+        : {}),
       // Which numbers the customer sees — 'lines' is the historical default, 'total' the
       // proposal format ($ chip on the line-table header).
       priceDisplay: cs.priceDisplay,

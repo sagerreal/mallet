@@ -11,6 +11,12 @@
  * caller passes (Draft with AI / From pricebook / Show your cost) so the
  * card above stays bare: title + format toggle, nothing else.
  *
+ * A line may be an ASSEMBLY — priced from the components beneath it, each counted off its
+ * quantity ("qty/8+1" posts for a fence run). Components are rows, not a panel: they are money,
+ * and money belongs in the ledger. The table owns the array arithmetic (adding, removing and
+ * re-parenting shift every index, and a wrong index moves money into another assembly), so the
+ * caller receives a finished array and only has to store it.
+ *
  * Accessibility: every cell input carries an explicit aria-label naming its column and row
  * ("Quantity, line 2"). The <th> column headers do NOT name these inputs — a screen reader
  * announcing a bare spinbutton is what axe's `label` rule flags, and it went unnoticed while an
@@ -18,21 +24,30 @@
  *
  * Row actions are deliberately minimal: Optional (customer-facing choice), No tax (only once
  * the quote carries a rate — with no rate nothing is taxed and the chip would decide nothing),
- * and remove. Save-to-book died when the estimator's learning loop took over feeding the
- * pricebook; the Photo chip returns when it attaches real photos.
+ * + Component, and remove. Save-to-book died when the estimator's learning loop took over
+ * feeding the pricebook; the Photo chip returns when it attaches real photos.
  */
 
 import { Fragment, useId, useState } from "react";
-import { fmt$ } from "@/lib/format";
 import { realSubItems, withSubPatch, type ComposerLine } from "./composer-state";
 import { ScopeEditor, SubItemEditor } from "./line-depth";
+import { LineRow } from "./line-row";
+import {
+  componentIndexes,
+  removeLineAt,
+  addComponent,
+  withRollUps,
+  sectionTotal,
+  removeSectionAt,
+} from "./line-math";
+import { fmt$ } from "@/lib/format";
 
 export function LineTable({
   lines,
+  sections = [],
   showCost,
-  onUpdateLine,
-  onRemoveLine,
-  onAddLine,
+  onLines,
+  onSections,
   footerTools,
   materialize,
   provenanceFor,
@@ -40,11 +55,21 @@ export function LineTable({
   priceMode = "lines",
 }: {
   lines: ComposerLine[];
+  /** Headings the lines are grouped under, in render order. Empty = an ungrouped quote. */
+  sections?: string[];
   showCost: boolean;
-  onUpdateLine: (i: number, patch: Partial<ComposerLine>) => void;
-  onRemoveLine: (i: number) => void;
-  /** Renders "+ Add line" first in the footer toolbar. */
-  onAddLine?: () => void;
+  /**
+   * The whole array after an edit, already rolled up. One callback rather than
+   * update/add/remove: every structural change re-indexes the components, and three callers
+   * each doing that arithmetic is how one of them gets it wrong.
+   */
+  onLines: (next: ComposerLine[]) => void;
+  /**
+   * Both arrays together, because removing a heading re-indexes every line that named one.
+   * Absent means this table does not offer sections — the GBB tiers, where a heading per tier
+   * would be three competing groupings of one quote.
+   */
+  onSections?: (next: { sections: string[]; lines: ComposerLine[] }) => void;
   /** Extra tools for the footer toolbar (uniform .lineedit-tool styling). */
   footerTools?: React.ReactNode;
   /** Brief post-draft window: rows animate in (CSS only, reduced-motion safe). */
@@ -59,7 +84,7 @@ export function LineTable({
   /** 'total' dims the amount column — those numbers stay yours; the customer sees one price. */
   priceMode?: "lines" | "total";
 }) {
-  const cols = showCost ? 6 : 5;
+  const cols = showCost ? 8 : 6;
   // GBB renders three LineTables at once — panel ids must be unique per instance or every
   // tier's aria-controls points at whichever twin rendered first.
   const uid = useId();
@@ -76,18 +101,161 @@ export function LineTable({
   // Rows are index-keyed, so removing one shifts every index above it. Remap both open-sets
   // through the removal or an open panel silently re-attaches under the WRONG line — inviting
   // customer-facing scope prose to be typed into a different line's editor.
-  const dropIndex = (set: ReadonlySet<number>, removed: number): ReadonlySet<number> => {
+  const dropIndexes = (set: ReadonlySet<number>, removed: ReadonlySet<number>): ReadonlySet<number> => {
     const next = new Set<number>();
     for (const n of set) {
-      if (n === removed) continue;
-      next.add(n > removed ? n - 1 : n);
+      if (removed.has(n)) continue;
+      next.add(n - [...removed].filter((r) => r < n).length);
     }
     return next;
   };
-  const handleRemoveLine = (i: number) => {
-    setScopeOpen(dropIndex(scopeOpen, i));
-    setSubOpen(dropIndex(subOpen, i));
-    onRemoveLine(i);
+  const shiftIndexes = (set: ReadonlySet<number>, insertedAt: number): ReadonlySet<number> => {
+    const next = new Set<number>();
+    for (const n of set) next.add(n >= insertedAt ? n + 1 : n);
+    return next;
+  };
+
+  // Every write funnels through here so a component edit always reprices its parent.
+  const commit = (next: ComposerLine[]) => onLines(withRollUps(next));
+
+  const updateLine = (i: number, patch: Partial<ComposerLine>) =>
+    commit(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  // A patch can only SET a key. Dropping one — a typed price clearing its markup — needs the
+  // whole line, so the two live side by side rather than one pretending to do both.
+  const replaceLine = (i: number, next: ComposerLine) =>
+    commit(lines.map((l, idx) => (idx === i ? next : l)));
+
+  const removeLine = (i: number) => {
+    const removed = new Set<number>([i, ...componentIndexes(lines, i)]);
+    setScopeOpen(dropIndexes(scopeOpen, removed));
+    setSubOpen(dropIndexes(subOpen, removed));
+    commit(removeLineAt(lines, i));
+  };
+
+  const addComponentTo = (parentIndex: number) => {
+    const existing = componentIndexes(lines, parentIndex);
+    const at = (existing[existing.length - 1] ?? parentIndex) + 1;
+    setScopeOpen(shiftIndexes(scopeOpen, at));
+    setSubOpen(shiftIndexes(subOpen, at));
+    commit(addComponent(lines, parentIndex, { d: "", q: 1, r: 0, qtyExpr: "qty" }));
+  };
+
+  const addLine = (sectionIndex?: number) =>
+    commit([...lines, sectionIndex == null ? { d: "", q: 1, r: 0 } : { d: "", q: 1, r: 0, sectionIndex }]);
+
+  const addSection = () =>
+    onSections?.({ sections: [...sections, `Section ${sections.length + 1}`], lines });
+
+  const renameSection = (at: number, name: string) =>
+    onSections?.({ sections: sections.map((s, i) => (i === at ? name : s)), lines });
+
+  const removeSection = (at: number) => onSections?.(removeSectionAt(sections, lines, at));
+
+  /**
+   * The affordances under a description — scope prose, components, and sub-items on the quotes
+   * that already carry them. They ride here rather than in the row-actions column because that
+   * column is a fixed width holding chips, and a fourth control pushed the ✕ off the row.
+   */
+  const hintsFor = (line: ComposerLine, i: number, isComponent: boolean) => {
+    const hasContent = Boolean(line.d && line.d.trim());
+    const subs = realSubItems(line.sub).length;
+    const components = componentIndexes(lines, i).length;
+    const hasDepth = Boolean(line.scope?.trim()) || subs > 0 || components > 0;
+    if (!hasContent && !hasDepth) return null;
+    return (
+      <div className="linehints">
+        <button
+          type="button"
+          className="linehint"
+          aria-expanded={scopeOpen.has(i)}
+          aria-controls={`${uid}-scope-${i}`}
+          title="Scope prose the customer reads under this line — Includes, Excludes, Products"
+          onClick={() => setScopeOpen(toggle(scopeOpen, i))}
+        >
+          {line.scope?.trim() ? "¶ Scope" : "¶ Add scope"}
+        </button>
+        {/* Sub-items predate components and mean the same thing, so they are offered only on
+            the quotes that already carry them — those stay editable, nothing new grows one. */}
+        {subs > 0 && (
+          <button
+            type="button"
+            className="linehint"
+            aria-expanded={subOpen.has(i)}
+            aria-controls={`${uid}-sub-${i}`}
+            title="Your estimate math — rolls up into this line's price, never shown to the customer"
+            onClick={() => setSubOpen(toggle(subOpen, i))}
+          >
+            ↳ Sub-items ({subs})
+          </button>
+        )}
+        {/* A component cannot have components of its own — the document stays one level deep. */}
+        {!isComponent && (
+          <button
+            type="button"
+            className="linehint"
+            title="Price this line from the parts and labour under it"
+            onClick={() => addComponentTo(i)}
+          >
+            {components > 0 ? `↳ Add component (${components})` : "↳ Add component"}
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  /** A row plus whichever depth editors it has open. Shared by lines and their components. */
+  const renderRow = (line: ComposerLine, i: number, parent?: ComposerLine, lastComponent?: boolean) => {
+    const components = componentIndexes(lines, i);
+    const hasContent = Boolean(line.d && line.d.trim());
+    const hasDepth = Boolean(line.scope?.trim()) || realSubItems(line.sub).length > 0;
+    return (
+      <Fragment key={i}>
+        <LineRow
+          line={line}
+          index={i}
+          parent={parent}
+          hasComponents={components.length > 0}
+          showCost={showCost}
+          taxed={taxed}
+          priceMode={priceMode}
+          lastComponent={lastComponent}
+          provenanceFor={provenanceFor}
+          onUpdate={(patch) => updateLine(i, patch)}
+          onReplace={(next) => replaceLine(i, next)}
+          onRemove={() => removeLine(i)}
+          hints={hintsFor(line, i, Boolean(parent))}
+        />
+        {(hasContent || hasDepth) && scopeOpen.has(i) && (
+          <tr className="linedetail">
+            <td colSpan={cols} id={`${uid}-scope-${i}`}>
+              <ScopeEditor
+                value={line.scope ?? ""}
+                lineNo={i + 1}
+                onChange={(scope) => updateLine(i, { scope: scope || undefined })}
+              />
+            </td>
+          </tr>
+        )}
+        {(hasContent || hasDepth) && subOpen.has(i) && (
+          <tr className="linedetail">
+            <td colSpan={cols} id={`${uid}-sub-${i}`}>
+              <SubItemEditor
+                sub={line.sub ?? []}
+                lineNo={i + 1}
+                onChange={(sub) => {
+                  const next = withSubPatch(line, sub);
+                  updateLine(i, { sub: next.sub, r: next.r });
+                }}
+              />
+            </td>
+          </tr>
+        )}
+        {components.map((at, n) =>
+          renderRow(lines[at]!, at, line, n === components.length - 1),
+        )}
+      </Fragment>
+    );
   };
 
   return (
@@ -95,218 +263,92 @@ export function LineTable({
       <table>
         <colgroup>
           <col />
-          <col style={{ width: 68 }} />
+          <col style={{ width: 84 }} />
+          <col style={{ width: 56 }} />
           <col style={{ width: 96 }} />
           {showCost && <col style={{ width: 96 }} />}
+          {showCost && <col style={{ width: 72 }} />}
           <col style={{ width: 104 }} />
-          {/* Actions hold just Optional + ✕ now — sized to fit, so AMOUNT no
-              longer floats beside a wide dead zone. */}
-          <col style={{ width: 122 }} />
+          {/* Actions hold the chips + ✕ — sized to fit, so AMOUNT no longer floats
+              beside a wide dead zone. Adding a component lives under the description. */}
+          <col style={{ width: 168 }} />
         </colgroup>
         <thead>
           <tr>
             <th>Description</th>
             <th className="num">Qty</th>
+            <th>Unit</th>
             <th className="num">Price</th>
             {showCost && <th className="num">Your cost</th>}
+            {showCost && <th className="num">Markup</th>}
             <th className="num">Amount</th>
             <th aria-hidden="true"></th>
           </tr>
         </thead>
         <tbody>
-          {lines.map((x, i) => {
-            const amt = (x.q ?? 1) * (x.r ?? 0);
-            const margin =
-              x.c && x.c > 0 && x.r > 0
-                ? Math.round((100 * (x.r - x.c)) / x.r)
-                : null;
-            const hasContent = Boolean(x.d && x.d.trim());
-            // A line whose description was cleared mid-rewrite must NOT strand its depth: the
-            // price stays locked by sub-items, so the controls that reach them stay visible too.
-            const hasDepth = Boolean(x.scope?.trim()) || realSubItems(x.sub).length > 0;
-            return (
-              <Fragment key={i}>
-              <tr>
+          {/* Ungrouped lines lead: on a quote with no sections that is every line, and on one
+              with sections they are the work that sits above the first heading. */}
+          {lines.map((line, i) =>
+            line.parentIndex == null && line.sectionIndex == null ? renderRow(line, i) : null,
+          )}
+          {sections.map((name, at) => (
+            <Fragment key={`section-${at}`}>
+              <tr className="sectionrow">
                 <td>
                   <input
-                    value={x.d}
-                    placeholder="Describe the work…"
-                    aria-label={`Description, line ${i + 1}`}
-                    onChange={(e) => onUpdateLine(i, { d: e.target.value })}
-                  />
-                  {(() => {
-                    const src = hasContent ? provenanceFor?.(x.d) : null;
-                    return src ? <span className="line-prov">{src}</span> : null;
-                  })()}
-                  {(hasContent || hasDepth) && (
-                    <div className="linehints">
-                      <button
-                        type="button"
-                        className="linehint"
-                        aria-expanded={scopeOpen.has(i)}
-                        aria-controls={`${uid}-scope-${i}`}
-                        title="Scope prose the customer reads under this line — Includes, Excludes, Products"
-                        onClick={() => setScopeOpen(toggle(scopeOpen, i))}
-                      >
-                        {x.scope?.trim() ? "¶ Scope" : "¶ Add scope"}
-                      </button>
-                      <button
-                        type="button"
-                        className="linehint"
-                        aria-expanded={subOpen.has(i)}
-                        aria-controls={`${uid}-sub-${i}`}
-                        title="Your estimate math — rolls up into this line's price, never shown to the customer"
-                        onClick={() => setSubOpen(toggle(subOpen, i))}
-                      >
-                        {realSubItems(x.sub).length > 0
-                          ? `↳ Sub-items (${realSubItems(x.sub).length})`
-                          : "↳ Add sub-items"}
-                      </button>
-                    </div>
-                  )}
-                </td>
-                <td>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    className="num"
-                    value={x.q}
-                    aria-label={`Quantity, line ${i + 1}`}
-                    onChange={(e) => onUpdateLine(i, { q: +e.target.value })}
+                    value={name}
+                    aria-label={`Section name, section ${at + 1}`}
+                    onChange={(e) => renameSection(at, e.target.value)}
                   />
                 </td>
-                <td>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    className="num"
-                    value={x.r}
-                    aria-label={
-                      realSubItems(x.sub).length > 0
-                        ? `Price, line ${i + 1} — set by its sub-items below`
-                        : `Price, line ${i + 1}`
-                    }
-                    disabled={realSubItems(x.sub).length > 0}
-                    title={
-                      realSubItems(x.sub).length > 0
-                        ? "Priced by its sub-items — edit them below"
-                        : undefined
-                    }
-                    onChange={(e) => onUpdateLine(i, { r: +e.target.value })}
-                  />
-                </td>
-                {showCost && (
-                  <td>
-                    <input
-                      type="number"
-                      inputMode="decimal"
-                      className="num"
-                      value={x.c ?? ""}
-                      placeholder="—"
-                      aria-label={`Your cost, line ${i + 1}`}
-                      title="What you paid (owner-only) — margin shows itself."
-                      onChange={(e) =>
-                        onUpdateLine(i, { c: +e.target.value || undefined })
-                      }
-                    />
-                  </td>
-                )}
-                <td className={`amt${amt === 0 ? " zero" : ""}${priceMode === "total" ? " customer-hidden" : ""}`}>
-                  {fmt$(amt)}
-                  {showCost && margin !== null && (
-                    <div
-                      className="muted"
-                      style={{ fontWeight: 500, fontSize: "var(--type-xs)" }}
-                    >
-                      {margin}% margin
-                    </div>
-                  )}
-                </td>
+                <td colSpan={cols - 3} />
+                <td className="sectionrow-total">{fmt$(sectionTotal(lines, at))}</td>
                 <td className="rowacts">
-                  {hasContent && (
-                    <>
-                      <button
-                        className={`optchip${x.opt ? " on" : ""}`}
-                        title="Optional add-on — the customer can add or skip this on their quote page"
-                        onClick={() => onUpdateLine(i, { opt: !x.opt })}
-                      >
-                        {x.opt ? "✓ Optional" : "Optional"}
-                      </button>{" "}
-                      {taxed && (
-                        <>
-                          <button
-                            className={`optchip${x.notax ? " on" : ""}`}
-                            title="Not taxable — the shop's sales-tax rate is not charged on this line. It is still billed in full."
-                            aria-pressed={Boolean(x.notax)}
-                            onClick={() => onUpdateLine(i, { notax: !x.notax })}
-                          >
-                            {x.notax ? "✓ No tax" : "No tax"}
-                          </button>{" "}
-                        </>
-                      )}
-                    </>
-                  )}
-                  {(hasContent || lines.length > 1) && (
-                    <button
-                      className="lineedit-tool"
-                      title="Remove this line"
-                      aria-label="Remove this line"
-                      onClick={() => handleRemoveLine(i)}
-                    >
-                      ✕
-                    </button>
-                  )}
+                  <button
+                    className="lineedit-tool"
+                    title="Remove this heading — the lines under it stay, ungrouped"
+                    aria-label={`Remove section ${at + 1}`}
+                    onClick={() => removeSection(at)}
+                  >
+                    ✕
+                  </button>
                 </td>
               </tr>
-              {(hasContent || hasDepth) && scopeOpen.has(i) && (
-                <tr className="linedetail">
-                  <td colSpan={cols} id={`${uid}-scope-${i}`}>
-                    <ScopeEditor
-                      value={x.scope ?? ""}
-                      lineNo={i + 1}
-                      onChange={(scope) => onUpdateLine(i, { scope: scope || undefined })}
-                    />
-                  </td>
-                </tr>
+              {lines.map((line, i) =>
+                line.parentIndex == null && line.sectionIndex === at ? renderRow(line, i) : null,
               )}
-              {(hasContent || hasDepth) && subOpen.has(i) && (
-                <tr className="linedetail">
-                  <td colSpan={cols} id={`${uid}-sub-${i}`}>
-                    <SubItemEditor
-                      sub={x.sub ?? []}
-                      lineNo={i + 1}
-                      onChange={(sub) => {
-                        const next = withSubPatch(x, sub);
-                        onUpdateLine(i, { sub: next.sub, r: next.r });
-                      }}
-                    />
-                  </td>
-                </tr>
-              )}
-              </Fragment>
-            );
-          })}
+              <tr>
+                <td colSpan={cols}>
+                  <button
+                    type="button"
+                    className="linehint"
+                    style={{ margin: "var(--space-1) 0 var(--space-1) var(--space-3)" }}
+                    onClick={() => addLine(at)}
+                  >
+                    + Add line to {name || `section ${at + 1}`}
+                  </button>
+                </td>
+              </tr>
+            </Fragment>
+          ))}
         </tbody>
-        {(onAddLine || footerTools) && (
-          <tfoot>
-            <tr>
-              <td colSpan={cols}>
-                <div className="lineedit-bar">
-                  {onAddLine && (
-                    <button
-                      type="button"
-                      className="lineedit-tool primary"
-                      onClick={onAddLine}
-                    >
-                      + Add line
-                    </button>
-                  )}
-                  {footerTools}
-                </div>
-              </td>
-            </tr>
-          </tfoot>
-        )}
+        <tfoot>
+          <tr>
+            <td colSpan={cols}>
+              <div className="lineedit-bar">
+                <button type="button" className="lineedit-tool primary" onClick={() => addLine()}>
+                  + Add line
+                </button>
+                {onSections && (
+                  <button type="button" className="lineedit-tool" onClick={addSection}>
+                    + Section
+                  </button>
+                )}
+                {footerTools}
+              </div>
+            </td>
+          </tr>
+        </tfoot>
       </table>
     </div>
   );

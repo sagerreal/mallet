@@ -53,6 +53,13 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         tier: null,
         scope: null,
         subItems: null,
+        unit: null,
+        qtyExpr: null,
+        roundUp: false,
+        parentLineId: null,
+        sectionId: null,
+        customerVisible: true,
+        markupBps: null,
       },
       {
         id: "line-2",
@@ -67,8 +74,16 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         tier: null,
         scope: null,
         subItems: null,
+        unit: null,
+        qtyExpr: null,
+        roundUp: false,
+        parentLineId: null,
+        sectionId: null,
+        customerVisible: true,
+        markupBps: null,
       },
     ],
+    sections: [],
     subtotal: makeMoneyDTO(20000),
     discount: makeMoneyDTO(1000),
     tax: makeMoneyDTO(1520),
@@ -176,6 +191,63 @@ function makePriorInv(overrides: Partial<Invoice> = {}): Invoice {
 // ---------------------------------------------------------------------------
 // dtoEstimateToStore
 // ---------------------------------------------------------------------------
+
+describe("dtoEstimateToStore — assembly components", () => {
+  const component = (over: Record<string, unknown>) => ({
+    id: "line-2",
+    description: "Line posts",
+    quantity: 14,
+    rate: makeMoneyDTO(2430),
+    cost: makeMoneyDTO(1800),
+    isOptional: false,
+    needsPhoto: false,
+    taxable: true,
+    position: 1,
+    tier: null,
+    scope: null,
+    subItems: null,
+    unit: "ea",
+    qtyExpr: "qty/8+1",
+    roundUp: true,
+    parentLineId: "line-1",
+    sectionId: null,
+    customerVisible: false,
+    markupBps: 3500,
+    ...over,
+  });
+
+  it("resolves the parent id to its index — the store never holds a line id", () => {
+    const dto = makeEstimateDTO();
+    const result = dtoEstimateToStore(
+      { ...dto, lines: [dto.lines[0]!, component({}) as (typeof dto.lines)[number]] },
+      makePriorEst(),
+    );
+    expect(result.lines[1]?.parentIndex).toBe(0);
+    expect(result.lines[1]?.unit).toBe("ea");
+    expect(result.lines[1]?.qtyExpr).toBe("qty/8+1");
+    expect(result.lines[1]?.roundUp).toBe(true);
+    expect(result.lines[1]?.markupBps).toBe(3500);
+    // customerVisible:false comes back as the `hidden` exception, the same shape as notax.
+    expect(result.lines[1]?.hidden).toBe(true);
+  });
+
+  it("leaves an ordinary line with no composition keys at all", () => {
+    const result = dtoEstimateToStore(makeEstimateDTO(), makePriorEst());
+    expect(result.lines[0]?.parentIndex).toBeUndefined();
+    expect(result.lines[0]?.hidden).toBeUndefined();
+    expect(result.lines[0]?.unit).toBeUndefined();
+    expect(result.lines[0]?.roundUp).toBeUndefined();
+  });
+
+  it("drops a parent reference that names no line in this estimate", () => {
+    const dto = makeEstimateDTO();
+    const result = dtoEstimateToStore(
+      { ...dto, lines: [component({ parentLineId: "gone" }) as (typeof dto.lines)[number]] },
+      makePriorEst(),
+    );
+    expect(result.lines[0]?.parentIndex).toBeUndefined();
+  });
+});
 
 describe("dtoEstimateToStore", () => {
   it("maps id, num, leadId, title, status correctly", () => {
@@ -1003,6 +1075,13 @@ describe("dtoEstimateToStore — scope, sub-items, price display", () => {
           tier: null,
           scope: "Includes:\n1. Walls",
           subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+          unit: null,
+          qtyExpr: null,
+          roundUp: false,
+          parentLineId: null,
+          sectionId: null,
+          customerVisible: true,
+          markupBps: null,
         },
       ],
     });

@@ -42,7 +42,7 @@ import { useActiveModal, useAppStore } from "@/lib/store/app-store";
 import { calcQuote } from "@/lib/prototype-sample";
 import type { Brand, Estimate, EstimateLine, QuoteTierKey } from "@/lib/store/types";
 import { fmt$ } from "@/lib/format";
-import { estTierName } from "@/lib/estimates";
+import { estTierName, quotedEstLines } from "@/lib/estimates";
 import { clockNow } from "@/features/home/send";
 import { ModalLoading } from "./modal-loading";
 
@@ -72,7 +72,7 @@ function tierViewsFromEstimate(
   const tiers = TIER_ORDER.map((k) => ({
     k,
     name: estTierName(e, k),
-    lines: e.lines.filter((l) => l.tier === k),
+    lines: quotedEstLines(e.lines).filter((l) => l.tier === k),
   })).filter((t) => t.lines.some((l) => !l.opt));
   if (tiers.length === 0) return null;
   const rec = tiers.some((t) => t.k === e.recommendedTier)
@@ -320,12 +320,15 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
   }
 
   // custCalc: non-opt lines + selected opt lines (flipped to non-opt), via calcQuote.
-  const selectedOptLines: EstimateLine[] = estimate.lines
+  // The customer's copy never shows an assembly's parts — see quotedEstLines. Indexes below
+  // are into THIS list, and the toggle state is keyed by them, so it is taken once.
+  const shown = quotedEstLines(estimate.lines);
+  const selectedOptLines: EstimateLine[] = shown
     .map((x, i): EstimateLine | null =>
       x.opt && selected[i] ? { ...x, opt: false } : null
     )
     .filter((x): x is EstimateLine => x !== null);
-  const calcLines: EstimateLine[] = estimate.lines
+  const calcLines: EstimateLine[] = shown
     .filter((x) => !x.opt)
     .concat(selectedOptLines);
   const pricing = estimate.pricing ?? { disc: 0, dep: 0, tax: 0 };
@@ -341,10 +344,10 @@ function LineItemsPath({ estimate, brand, onApprove, onDecline }: LineItemsPathP
       </p>
 
       {/* fixed line rows */}
-      <CustLines lines={estimate.lines} taxed={(pricing.tax ?? 0) > 0} />
+      <CustLines lines={shown} taxed={(pricing.tax ?? 0) > 0} />
 
       {/* optional add-ons the customer can toggle on */}
-      <CustAddons lines={estimate.lines} selected={selected} onToggle={toggle} />
+      <CustAddons lines={shown} selected={selected} onToggle={toggle} />
 
       {/* deferred: join-a-plan add-on row (needs plans model) */}
 

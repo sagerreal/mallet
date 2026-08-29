@@ -24,6 +24,12 @@ export interface CostingItem {
   readonly source: "measured" | "scheduled" | "mixed";
   readonly quotedCents: number;
   readonly materialsCents: number;
+  /**
+   * What was actually BOUGHT via a placed purchase order, cents. Reported beside `materialsCents`,
+   * never folded into it — a PO buys the same physical part a job line was quoted for, and summing
+   * the two would report roughly double the material cost and invent a loss that never happened.
+   */
+  readonly purchasedCents: number;
   readonly revenueCents: number | null;
   readonly callbackOf: string | null;
   readonly scheduledHours: number;
@@ -94,6 +100,12 @@ export interface CostingTotals {
   readonly revenueCents: number;
   readonly laborCents: number | null;
   readonly materialsCents: number;
+  /**
+   * What was actually bought via placed purchase orders, cents — summed beside `materialsCents`,
+   * NEVER folded into it or into `directCostCents`/`marginCents`. Quoted and purchased answer two
+   * different questions and adding them together invents a loss that never happened.
+   */
+  readonly purchasedCents: number;
   readonly directCostCents: number | null;
   readonly marginCents: number | null;
   readonly marginPct: number | null;
@@ -127,6 +139,8 @@ export function costingTotals(rows: readonly CostingRow[], paidHours: number): C
   const anyUnknown = flat.some(costUnknown);
   const laborCents = anyUnknown ? null : flat.reduce((s, r) => s + (r.costCents ?? 0), 0);
   const materialsCents = flat.reduce((s, r) => s + r.materialsCents, 0);
+  // Never added into laborCents/materialsCents/directCostCents/marginCents — see the field doc.
+  const purchasedCents = flat.reduce((s, r) => s + r.purchasedCents, 0);
   const revenueCents = flat.reduce((s, r) => s + (r.revenueCents ?? 0), 0);
   const directCostCents = laborCents === null ? null : laborCents + materialsCents;
   const marginCents = directCostCents === null ? null : revenueCents - directCostCents;
@@ -138,6 +152,7 @@ export function costingTotals(rows: readonly CostingRow[], paidHours: number): C
     revenueCents,
     laborCents,
     materialsCents,
+    purchasedCents,
     directCostCents,
     marginCents,
     marginPct:

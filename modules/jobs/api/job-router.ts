@@ -491,6 +491,12 @@ export const createJobRouter = () =>
               quotedCents: z.number().int(),
               /** Parts cost. 0 is a real answer — a service call with no parts costs no parts. */
               materialsCents: z.number().int(),
+              /**
+               * What was actually BOUGHT via a placed purchase order, cents. Reported ALONGSIDE
+               * materialsCents, never summed into it — the two answer different questions (what we
+               * said it would cost vs. what we actually spent).
+               */
+              purchasedCents: z.number().int(),
               /** Billed EX TAX. Null = not invoiced, which is not the same as invoiced for nothing. */
               revenueCents: z.number().int().nullable(),
               /** The job this one came back on, when it is a warranty callback. */

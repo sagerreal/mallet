@@ -82,6 +82,32 @@ suite("v1.jobs.laborByJob (live DB)", () => {
               ${e.start}, ${e.end}, 'manual', 'draft')`;
   };
 
+  let poCounter = 0;
+
+  /**
+   * One purchase order with lines, inserted directly like every other fixture in this file — the
+   * domain layer's own placement rule (a placed order must carry its number, a draft must not) is
+   * a DB check constraint, so `num` is only set for a non-draft.
+   */
+  const addPO = async (
+    jobId: string | null,
+    status: "draft" | "ordered" | "cancelled",
+    opts: { lines: { qty: number; unitCostMillicents: number }[]; freightCents?: number; taxCents?: number },
+  ) => {
+    const num = status === "draft" ? null : `PO-COSTING-${++poCounter}`;
+    const [po] = await admin<{ id: string }[]>`
+      insert into purchase_orders (org_id, vendor, status, job_id, num, freight_cents, tax_cents)
+      values (${orgId}, 'Costing Supply Co', ${status}, ${jobId}, ${num},
+              ${opts.freightCents ?? 0}, ${opts.taxCents ?? 0})
+      returning id`;
+    for (const l of opts.lines) {
+      await admin`
+        insert into purchase_order_lines (org_id, po_id, description, qty, unit_cost_millicents)
+        values (${orgId}, ${po!.id}, 'Part', ${l.qty}, ${l.unitCostMillicents})`;
+    }
+    return po!.id;
+  };
+
   beforeAll(async () => {
     admin = postgres(process.env.DATABASE_URL as string, { max: 1, ssl: "require", prepare: false });
 
@@ -146,6 +172,9 @@ suite("v1.jobs.laborByJob (live DB)", () => {
       // Entries reference users with no ON DELETE, so they go before the org cascade reaches them.
       await admin`delete from time_entries where org_id = ${org}`;
       await admin`delete from job_visits where org_id = ${org}`;
+      // purchase_orders' FK to jobs has no ON DELETE either — same reasoning.
+      await admin`delete from purchase_order_lines where org_id = ${org}`;
+      await admin`delete from purchase_orders where org_id = ${org}`;
       await admin`delete from orgs where id = ${org}`;
     }
     await admin.end({ timeout: 5 });
@@ -220,6 +249,76 @@ suite("v1.jobs.laborByJob (live DB)", () => {
 
     const row = (await week()).items.find((i) => i.num === "C-PARTIAL");
     expect(row).toMatchObject({ hours: 2, costCents: 3200, costIsPartial: true });
+  });
+
+  /**
+   * QUOTED AND PURCHASED ARE NOT ADDED TOGETHER, and freight/tax live once per ORDER — a naive
+   * join-then-sum over the lines would multiply them by the line count. Two lines here is the
+   * point: a bug that adds freight+tax per line would report $45 instead of $35.
+   */
+  it("charges a placed order's lines plus freight and tax, counted ONCE per order", async () => {
+    const job = await addJob("C-PO-ORDERED", 500_00);
+    await addEntry(job, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });
+    await addPO(job, "ordered", {
+      freightCents: 800,
+      taxCents: 200,
+      lines: [
+        { qty: 2, unitCostMillicents: 500_000 }, // 2 × $5.00 = $10.00
+        { qty: 1, unitCostMillicents: 1_500_000 }, // 1 × $15.00 = $15.00
+      ],
+    });
+
+    const row = (await week()).items.find((i) => i.num === "C-PO-ORDERED");
+    expect(row?.purchasedCents).toBe(3_500); // 1,000 + 1,500 + 800 + 200
+    expect(row?.materialsCents).toBe(0); // quoted materials are a separate figure, untouched
+  });
+
+  /**
+   * TWO orders on one job must SUM, not overwrite — the accumulate loop in `purchasedByJob`
+   * (`out.set(jobId, (out.get(jobId) ?? 0) + cents)`) was untested until now, and it is exactly
+   * the loop a leftJoin/innerJoin regression on the per-order query would silently break.
+   */
+  it("sums TWO purchase orders on one job", async () => {
+    const job = await addJob("C-PO-TWOORDERS", 500_00);
+    await addEntry(job, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });
+    await addPO(job, "ordered", { lines: [{ qty: 1, unitCostMillicents: 1_000_000 }] }); // $10
+    await addPO(job, "ordered", { freightCents: 500, lines: [{ qty: 1, unitCostMillicents: 2_000_000 }] }); // $20 + $5
+
+    const row = (await week()).items.find((i) => i.num === "C-PO-TWOORDERS");
+    expect(row?.purchasedCents).toBe(3_500); // 1,000 + (2,000 + 500)
+  });
+
+  it("counts nothing from a draft order — a draft is not money committed", async () => {
+    const job = await addJob("C-PO-DRAFT", 500_00);
+    await addEntry(job, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });
+    await addPO(job, "draft", { freightCents: 500, lines: [{ qty: 1, unitCostMillicents: 1_000_000 }] });
+
+    const row = (await week()).items.find((i) => i.num === "C-PO-DRAFT");
+    expect(row?.purchasedCents).toBe(0);
+  });
+
+  it("counts nothing from a cancelled order — it never happened", async () => {
+    const job = await addJob("C-PO-CANCELLED", 500_00);
+    await addEntry(job, { date: TUE, tech: cheapTechId, start: "08:00", end: "09:00" });
+    await addPO(job, "cancelled", { freightCents: 500, lines: [{ qty: 1, unitCostMillicents: 1_000_000 }] });
+
+    const row = (await week()).items.find((i) => i.num === "C-PO-CANCELLED");
+    expect(row?.purchasedCents).toBe(0);
+  });
+
+  /**
+   * A stock/truck-restock order has no job — `job_id` is nullable for exactly this case. It must
+   * never land on whichever job happens to be in the week rather than vanishing.
+   */
+  it("never attributes a stock order (no job) to any job in the week", async () => {
+    await addPO(null, "ordered", {
+      freightCents: 900,
+      taxCents: 100,
+      lines: [{ qty: 1, unitCostMillicents: 10_000_000 }],
+    });
+
+    const row = (await week()).items.find((i) => i.num === "C-MEASURED");
+    expect(row?.purchasedCents).toBe(0);
   });
 
   it("a tech is refused — labor cost is not a field surface", async () => {

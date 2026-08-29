@@ -149,32 +149,14 @@ export function QuoteCard({
   }, [isGbb, suggestReplacesTypedTiers]);
   // What would send right now — recommended tier in GBB, the table in single.
   const sendLines = linesForSend(state);
-  const m = calcQuote(
-    sendLines.map((l) => ({ d: l.d, q: l.q, r: l.r, opt: l.opt })),
-    state.pricing
-  );
+  // The whole line, not a hand-picked four fields: re-listing them here is what kept `notax`
+  // out of the office's tax base (a No-tax line was still taxed in this number, though never on
+  // the customer's document) and would have kept `parentIndex` out of the subtotal the same way.
+  const m = calcQuote(sendLines, state.pricing);
   // Where an AI draft would land: the Good tier in GBB, else the table.
   const aiTargetLines = isGbb
     ? (state.gbb?.opts.find((o) => o.k === "good")?.lines ?? [])
     : state.lines;
-
-  function updateLine(i: number, patch: Partial<ComposerLine>) {
-    onUpdate({
-      lines: state.lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)),
-    });
-  }
-
-  function removeLine(i: number) {
-    onUpdate({
-      lines: state.lines.filter((_, idx) => idx !== i),
-    });
-  }
-
-  function addLine() {
-    onUpdate({
-      lines: [...state.lines, { d: "", q: 1, r: 0 }],
-    });
-  }
 
   // Appends a snapshot of the service — later edits to the pricebook entry
   // never retroactively change a quote already built from it.
@@ -365,9 +347,9 @@ export function QuoteCard({
             lines={state.lines}
             showCost={showCost}
             priceMode={state.priceDisplay}
-            onUpdateLine={updateLine}
-            onRemoveLine={removeLine}
-              onAddLine={addLine}
+            sections={state.sections}
+            onLines={(next) => onUpdate({ lines: next })}
+            onSections={(next) => onUpdate({ sections: next.sections, lines: next.lines })}
             materialize={materialize}
             taxed={(state.pricing.tax ?? 0) > 0}
             provenanceFor={(d) => lineProvenance(d, services)}

@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
-import type { OrgId, LeadId, Result, AppError, Clock } from "@mallet/shared/types";
-import { asEstimateId, asEstimateLineId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
+import type { OrgId, LeadId, EstimateLineId, Result, AppError, Clock } from "@mallet/shared/types";
+import { asEstimateId, asEstimateLineId, asEstimateSectionId, money, zeroMoney, validation, ok, err, isOk } from "@mallet/shared/types";
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
+import { EstimateSection } from "../domain/estimate-section";
 import type { EstimateSubItem, PresentationSnapshot, PriceDisplay, QuoteTier, TierNames } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 import type { AiDraftLine } from "../domain/edit-delta";
@@ -29,6 +30,22 @@ export interface EstimateLineInput {
   readonly scope?: string | null;
   /** Internal estimating math behind the price. Never reaches a customer surface. */
   readonly subItems?: readonly EstimateSubItem[] | null;
+  /** What the quantity is counted in ("LF", "hr"). */
+  readonly unit?: string | null;
+  /** How the quantity was authored, when typed as math ("qty/8+1"). */
+  readonly qtyExpr?: string | null;
+  readonly roundUp?: boolean;
+  /** The parent this line is a component of, as an index into this same payload. */
+  readonly parentIndex?: number | null;
+  readonly customerVisible?: boolean;
+  readonly markupBps?: number | null;
+  /** The section this line sits under, as an index into the command's `sections`. */
+  readonly sectionIndex?: number | null;
+}
+
+/** A named group of lines. Its POSITION is its index here — the payload order is the order. */
+export interface EstimateSectionInput {
+  readonly name: string;
 }
 
 export interface DraftEstimateCommand {
@@ -40,6 +57,8 @@ export interface DraftEstimateCommand {
   readonly depBps: number;
   readonly validDays: number | null;
   readonly lines: readonly EstimateLineInput[];
+  /** The headings the lines are grouped under. Absent on an ungrouped quote, still the common one. */
+  readonly sections?: readonly EstimateSectionInput[];
   /** Non-null marks the draft as Good/Better/Best (domain validates line tags match). */
   readonly recommendedTier?: QuoteTier | null;
   readonly tierNames?: TierNames | null;
@@ -89,7 +108,10 @@ export class DraftEstimateUseCase {
       return err(validation("an estimate needs at least one line", "lines"));
     }
 
-    const lines = this.buildLines(cmd.lines);
+    const sections = this.buildSections(cmd.sections ?? []);
+    if (!isOk(sections)) return sections;
+
+    const lines = this.buildLines(cmd.lines, sections.value);
     if (!isOk(lines)) return lines;
     const built = lines.value;
     if (!built.some((line) => !line.props.isOptional)) {
@@ -128,6 +150,7 @@ export class DraftEstimateUseCase {
       priceDisplay: cmd.priceDisplay ?? "lines",
       presentationSnapshot: cmd.presentationSnapshot ?? null,
       lines: built,
+      sections: sections.value,
       createdAt: now,
       updatedAt: now,
     });
@@ -151,16 +174,67 @@ export class DraftEstimateUseCase {
     return ok(estimate.value);
   }
 
-  /** Validate + build the line value objects, positions preserved. First bad line fails fast. */
-  private buildLines(
-    inputs: readonly EstimateLineInput[],
-  ): Result<EstimateLine[], AppError> {
-    const built: EstimateLine[] = [];
+  /**
+   * Build the section value objects. Position is the payload index — the order the office typed
+   * them in IS the order the customer reads them in, with nothing else to keep in sync.
+   */
+  private buildSections(
+    inputs: readonly EstimateSectionInput[],
+  ): Result<EstimateSection[], AppError> {
+    const built: EstimateSection[] = [];
     for (let i = 0; i < inputs.length; i += 1) {
       const input = inputs[i];
       if (!input) continue;
+      const section = EstimateSection.create({
+        id: asEstimateSectionId(this.ids.newId()),
+        name: input.name,
+        position: i,
+      });
+      if (!isOk(section)) return section;
+      built.push(section.value);
+    }
+    return ok(built);
+  }
+
+  /** Validate + build the line value objects, positions preserved. First bad line fails fast. */
+  private buildLines(
+    inputs: readonly EstimateLineInput[],
+    sections: readonly EstimateSection[],
+  ): Result<EstimateLine[], AppError> {
+    const built: EstimateLine[] = [];
+    // Mint every id up front so a component can name its parent before that parent is built.
+    const ids = inputs.map(() => asEstimateLineId(this.ids.newId()));
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i];
+      if (!input) continue;
+      // A component's parent is an index into this payload; the server mints the ids, so
+      // resolve it here. Only one level: a component cannot itself carry components, which
+      // keeps the customer's document a list of priced lines rather than a tree.
+      let parentLineId: EstimateLineId | null = null;
+      let driverQuantity: number | null = null;
+      if (input.parentIndex != null) {
+        const parentInput = inputs[input.parentIndex];
+        if (input.parentIndex >= i || !parentInput) {
+          return err(validation("a component must follow the line it belongs to", "parentIndex"));
+        }
+        if (parentInput.parentIndex != null) {
+          return err(validation("a component cannot have components of its own", "parentIndex"));
+        }
+        const resolved = ids[input.parentIndex];
+        if (!resolved) return err(validation("unknown parent line", "parentIndex"));
+        parentLineId = resolved;
+        driverQuantity = parentInput.quantity;
+      }
+      // A line names its section by index too, for the same reason a component names its parent
+      // by index: the server mints the ids.
+      let sectionId: string | null = null;
+      if (input.sectionIndex != null) {
+        const section = sections[input.sectionIndex];
+        if (!section) return err(validation("unknown section", "sectionIndex"));
+        sectionId = section.id;
+      }
       const line = EstimateLine.create({
-        id: asEstimateLineId(this.ids.newId()),
+        id: ids[i]!,
         description: input.description,
         quantity: input.quantity,
         rate: money(input.rateCents),
@@ -173,6 +247,16 @@ export class DraftEstimateUseCase {
         materialId: input.materialId ?? null,
         scope: input.scope ?? null,
         subItems: input.subItems ?? null,
+        unit: input.unit ?? null,
+        qtyExpr: input.qtyExpr ?? null,
+        roundUp: input.roundUp ?? false,
+        parentLineId,
+        // Supplying the driver is what makes create() re-run the math and reject a quantity the
+        // expression does not produce. Absent for a top-level line, which has no driver.
+        driverQuantity,
+        customerVisible: input.customerVisible ?? true,
+        markupBps: input.markupBps ?? null,
+        sectionId,
       });
       if (!isOk(line)) return line;
       built.push(line.value);

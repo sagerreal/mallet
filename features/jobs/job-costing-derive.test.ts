@@ -14,6 +14,7 @@ const item = (over: Partial<CostingItem> = {}): CostingItem => ({
   source: "measured",
   quotedCents: 50_000,
   materialsCents: 5_000,
+  purchasedCents: 0,
   revenueCents: 40_000,
   callbackOf: null,
   scheduledHours: 4,
@@ -50,6 +51,20 @@ describe("costingRows — margin", () => {
     const [r] = costingRows([item({ revenueCents: 0 })]);
     expect(r?.marginCents).toBe(-15_000);
     expect(r?.marginPct).toBeNull(); // not Infinity
+  });
+
+  /**
+   * QUOTED AND PURCHASED ARE NOT ADDED TOGETHER. materialsByJob sums what the job was QUOTED for
+   * parts; a PO buys the same physical part. Summing them reports roughly double the material cost
+   * and invents a loss. They are two columns answering two questions: what we said it would cost,
+   * and what we actually spent.
+   */
+  it("reports purchased cost beside quoted materials, never folded into margin", () => {
+    const [r] = costingRows([item({ materialsCents: 5_000, purchasedCents: 4_200 })]);
+    expect(r?.materialsCents).toBe(5_000);
+    expect(r?.purchasedCents).toBe(4_200);
+    // 40,000 − 10,000 (labour) − 5,000 (quoted materials) — purchasedCents plays no part.
+    expect(r?.marginCents).toBe(25_000);
   });
 });
 
@@ -111,6 +126,18 @@ describe("costingTotals", () => {
     expect(t.laborCents).toBe(13_000);
     expect(t.materialsCents).toBe(6_000);
     expect(t.marginCents).toBe(21_000);
+  });
+
+  it("sums purchased cost across jobs, beside materials, never folded into direct cost or margin", () => {
+    const rows = costingRows([
+      item({ jobId: "j1", purchasedCents: 4_200 }),
+      item({ jobId: "j2", callbackOf: "j1", revenueCents: null, costCents: 3_000, materialsCents: 1_000, purchasedCents: 800 }),
+    ]);
+    const t = costingTotals(rows, 10);
+    expect(t.purchasedCents).toBe(5_000); // 4,200 + 800
+    expect(t.materialsCents).toBe(6_000); // unchanged — quoted materials only
+    expect(t.directCostCents).toBe(19_000); // 13,000 labour + 6,000 materials — no purchased cost
+    expect(t.marginCents).toBe(21_000); // unaffected by purchasedCents
   });
 
   it("counts the callback in the MONEY but not in the job count", () => {

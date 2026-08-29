@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, isNull, isNotNull, inArray, notInArray, sql, type SQL } from "drizzle-orm";
-import { estimates, estimateLines, leads } from "@mallet/shared/db/schema";
+import { estimates, estimateLines, estimateSections, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
@@ -15,9 +15,10 @@ import {
   type Paginated,
 } from "@mallet/shared/types";
 import type { Estimate, EstimateLine } from "../domain/estimate";
+import type { EstimateSection } from "../domain/estimate-section";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
 import type { AiDraftSnapshot } from "../domain/edit-delta";
-import { toDomain, type EstimateLineRow } from "./estimate-mapper";
+import { toDomain, type EstimateLineRow, type EstimateSectionRow } from "./estimate-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
 // RLS appends org_id = current_org_id() to every statement — this class never filters by org
@@ -137,6 +138,13 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         },
       });
 
+    // Sections go in BEFORE the lines that reference them — the composite FK is checked per
+    // statement, so a line naming a section not yet inserted fails the whole save.
+    const sections = p.sections ?? [];
+    if (sections.length > 0) {
+      await this.upsertSections(p.id, p.orgId, sections, p.updatedAt);
+    }
+
     const keptIds = p.lines.map((line) => line.props.id);
     if (p.lines.length > 0) {
       await this.upsertLines(p.id, p.orgId, p.lines, p.updatedAt);
@@ -146,6 +154,52 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     const removeConds = [eq(estimateLines.estimateId, p.id), isNull(estimateLines.deletedAt)];
     if (keptIds.length > 0) removeConds.push(notInArray(estimateLines.id, keptIds));
     await this.tx.update(estimateLines).set({ deletedAt: p.updatedAt }).where(and(...removeConds));
+
+    // ...and sections AFTER the lines, so a section is only retired once nothing live points at
+    // it. The aggregate already guarantees that, but the order makes it true of the rows too.
+    const keptSectionIds = sections.map((section) => section.id);
+    const sectionConds = [
+      eq(estimateSections.estimateId, p.id),
+      isNull(estimateSections.deletedAt),
+    ];
+    if (keptSectionIds.length > 0) {
+      sectionConds.push(notInArray(estimateSections.id, keptSectionIds));
+    }
+    await this.tx
+      .update(estimateSections)
+      .set({ deletedAt: p.updatedAt })
+      .where(and(...sectionConds));
+  }
+
+  private async upsertSections(
+    estimateId: string,
+    orgId: OrgId,
+    sections: readonly EstimateSection[],
+    updatedAt: Date,
+  ): Promise<void> {
+    const rows = sections.map((section) => ({
+      id: section.props.id,
+      orgId,
+      estimateId,
+      name: section.props.name,
+      position: section.props.position,
+      updatedAt,
+      // A section re-added under an id that was retired comes back live, rather than staying
+      // invisibly deleted the way a re-added LINE used to.
+      deletedAt: null as Date | null,
+    }));
+    await this.tx
+      .insert(estimateSections)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: estimateSections.id,
+        set: {
+          name: sql`excluded.name`,
+          position: sql`excluded.position`,
+          updatedAt: sql`excluded.updated_at`,
+          deletedAt: sql`excluded.deleted_at`,
+        },
+      });
   }
 
   private async upsertLines(
@@ -172,6 +226,13 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         materialId: lp.materialId,
         scope: lp.scope ?? null,
         subItems: lp.subItems ? [...lp.subItems] : null,
+        unit: lp.unit ?? null,
+        qtyExpr: lp.qtyExpr ?? null,
+        roundUp: lp.roundUp ?? false,
+        parentLineId: lp.parentLineId ?? null,
+        sectionId: lp.sectionId ?? null,
+        customerVisible: lp.customerVisible ?? true,
+        markupBps: lp.markupBps ?? null,
         updatedAt,
         deletedAt: null as Date | null,
       };
@@ -194,6 +255,13 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           materialId: sql`excluded.material_id`,
           scope: sql`excluded.scope`,
           subItems: sql`excluded.sub_items`,
+          unit: sql`excluded.unit`,
+          qtyExpr: sql`excluded.qty_expr`,
+          roundUp: sql`excluded.round_up`,
+          parentLineId: sql`excluded.parent_line_id`,
+          sectionId: sql`excluded.section_id`,
+          customerVisible: sql`excluded.customer_visible`,
+          markupBps: sql`excluded.markup_bps`,
           updatedAt: sql`excluded.updated_at`,
           deletedAt: sql`excluded.deleted_at`,
         },
@@ -245,7 +313,13 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     const header = rows[0]?.estimate;
     if (!header) return null;
     const lineRows = rows.map((r) => r.line).filter((l): l is EstimateLineRow => l !== null);
-    return toDomain(header, lineRows);
+    // A second query rather than a second left join: joining sections too would multiply every
+    // line row by every section row and the de-duplication would be ours to get right.
+    const sectionRows = await this.tx
+      .select()
+      .from(estimateSections)
+      .where(and(eq(estimateSections.estimateId, id), isNull(estimateSections.deletedAt)));
+    return toDomain(header, lineRows, sectionRows);
   }
 
   list(
@@ -347,12 +421,20 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       .returning();
     const row = rows[0];
     if (!row) return null;
-    // Load lines separately (the header row from .returning() never carries line data).
-    const lineRows = await this.tx
-      .select()
-      .from(estimateLines)
-      .where(and(eq(estimateLines.estimateId, id), isNull(estimateLines.deletedAt)));
-    return toDomain(row, lineRows);
+    // Load lines and sections separately (the header row from .returning() carries neither).
+    // Sections are not optional here: a restored line that names a section the aggregate was not
+    // given is a dangling reference, and Estimate.create rejects the whole estimate.
+    const [lineRows, sectionRows] = await Promise.all([
+      this.tx
+        .select()
+        .from(estimateLines)
+        .where(and(eq(estimateLines.estimateId, id), isNull(estimateLines.deletedAt))),
+      this.tx
+        .select()
+        .from(estimateSections)
+        .where(and(eq(estimateSections.estimateId, id), isNull(estimateSections.deletedAt))),
+    ]);
+    return toDomain(row, lineRows, sectionRows);
   }
 
   // Keyset-paginate estimate headers, then batch-load their lines in ONE query (no N+1) and
@@ -411,12 +493,22 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           .limit(page.limit + 1);
 
     const ids = headers.map((h) => h.id);
-    const lineRows = ids.length
-      ? await this.tx
-          .select()
-          .from(estimateLines)
-          .where(and(inArray(estimateLines.estimateId, ids), isNull(estimateLines.deletedAt)))
-      : [];
+    // Two batched reads for the whole page, not two per estimate — the N+1 this list would
+    // otherwise become is the reason both are keyed by `inArray`.
+    const [lineRows, sectionRows] = ids.length
+      ? await Promise.all([
+          this.tx
+            .select()
+            .from(estimateLines)
+            .where(and(inArray(estimateLines.estimateId, ids), isNull(estimateLines.deletedAt))),
+          this.tx
+            .select()
+            .from(estimateSections)
+            .where(
+              and(inArray(estimateSections.estimateId, ids), isNull(estimateSections.deletedAt)),
+            ),
+        ])
+      : [[], []];
 
     const linesByEstimate = new Map<string, EstimateLineRow[]>();
     for (const line of lineRows) {
@@ -425,7 +517,16 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       linesByEstimate.set(line.estimateId, bucket);
     }
 
-    const rebuilt = headers.map((h) => toDomain(h, linesByEstimate.get(h.id) ?? []));
+    const sectionsByEstimate = new Map<string, EstimateSectionRow[]>();
+    for (const section of sectionRows) {
+      const bucket = sectionsByEstimate.get(section.estimateId) ?? [];
+      bucket.push(section);
+      sectionsByEstimate.set(section.estimateId, bucket);
+    }
+
+    const rebuilt = headers.map((h) =>
+      toDomain(h, linesByEstimate.get(h.id) ?? [], sectionsByEstimate.get(h.id) ?? []),
+    );
 
     if (!selected) {
       return buildPage(rebuilt, page, (e) => ({ createdAt: e.props.createdAt, id: e.props.id }));

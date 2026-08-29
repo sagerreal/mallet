@@ -20,7 +20,19 @@ import type { RouterOutputs } from "@/lib/trpc/client";
 import { daysSince } from "@/lib/clock";
 import { isVisitPlaced, recalcJobPlacement } from "./visit-placement";
 import { shortWhen } from "@/lib/format";
-import type { Addon, Estimate, Invoice, Job, JobLine, LeadNote, TimeEntry, Visit , JobFile } from "./types";
+import type {
+  Addon,
+  Estimate,
+  Invoice,
+  Job,
+  JobLine,
+  LeadNote,
+  PurchaseOrder,
+  PurchaseOrderNote,
+  TimeEntry,
+  Visit,
+  JobFile,
+} from "./types";
 import { JOB_ORIGIN } from "./hydrator-config";
 
 export type JobDTO = RouterOutputs["v1"]["visits"]["createVisit"];
@@ -508,7 +520,9 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     fu: dto.followUpOn !== undefined
       ? { on: dto.followUpOn, stage: dto.followUpStage }
       : priorFu,
-    lines: dto.lines.map((l) => ({
+    // The DTO names a component's parent by id; the store holds an INDEX, because the composer
+    // edits lines that have no server id yet. Resolve here, the one boundary that has both.
+    lines: dto.lines.map((l, _i, all) => ({
       d: l.description,
       q: l.quantity,
       r: l.rate.cents / 100,                                  // cents → dollars
@@ -525,7 +539,28 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
         unit: si.unit ?? undefined,
         amt: si.amountCents / 100,                            // cents → dollars
       })),
+      unit: l.unit ?? undefined,
+      qtyExpr: l.qtyExpr ?? undefined,
+      roundUp: l.roundUp || undefined,
+      parentIndex: l.parentLineId
+        ? (() => {
+            const at = all.findIndex((candidate) => candidate.id === l.parentLineId);
+            return at >= 0 ? at : undefined;
+          })()
+        : undefined,
+      // Only the EXCEPTION is written, like notax: an ordinary line carries no key.
+      ...(l.customerVisible ? {} : { hidden: true as const }),
+      markupBps: l.markupBps ?? undefined,
+      sectionIndex: l.sectionId
+        ? (() => {
+            const at = dto.sections.findIndex((section) => section.id === l.sectionId);
+            return at >= 0 ? at : undefined;
+          })()
+        : undefined,
     })),
+    // Already in render order from the domain — the store keeps names only, since a line names
+    // its section by position the same way a component names its parent.
+    sections: dto.sections.map((section) => section.name),
     pricing: {
       disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)
       tax: dto.taxBps / 100,
@@ -826,6 +861,79 @@ export function dtoToTimeEntry(dto: TimeEntryDTO): TimeEntry {
     status: dto.status,
     running: dto.running,
     approvedAt: dto.approvedAt ? Date.parse(dto.approvedAt) : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// PurchaseOrder DTO → store (hydrator + mutation reconcile path)
+// ---------------------------------------------------------------------------
+
+// Unlike invoices/estimates, purchasing has ONE dto shape for both the list query and every
+// mutation (create/update/place/cancel) — there is no separate summary DTO, because the list
+// endpoint already returns full lines. So this one mapper is the whole surface.
+export type PurchaseOrderDTO = RouterOutputs["v1"]["purchasing"]["create"];
+export type PurchaseOrderNoteDTO = RouterOutputs["v1"]["purchasing"]["addNote"];
+
+/**
+ * Map a purchaseOrderDTO to a store PurchaseOrder.
+ *
+ * Money: DTO carries integer cents; store uses dollars.
+ *   freight.cents / 100     → PurchaseOrder.freight     (dollars)
+ *   tax.cents / 100         → PurchaseOrder.tax         (dollars)
+ *   total.cents / 100       → PurchaseOrder.total       (dollars)
+ *   line.amount.cents / 100 → PurchaseOrderLine.amount  (dollars)
+ *
+ * unitCostMillicents is carried through UNCONVERTED — thousandths of a cent, a RATE rather than
+ * a money amount. Dividing it by 100 alongside the fields above would silently corrupt every
+ * line's per-unit cost; see the note on PurchaseOrderLine.unitCostMillicents.
+ *
+ * notes is always [] here: no DTO on this router carries the note trail (it is fetched
+ * separately via listNotes). The slice's merge helper — not this pure mapper — is responsible
+ * for preserving notes a modal already loaded across a hydrate or reconcile.
+ */
+export function dtoPurchaseOrderToStore(dto: PurchaseOrderDTO): PurchaseOrder {
+  return {
+    id: dto.id,
+    num: dto.num,
+    vendor: dto.vendor,
+    status: dto.status,
+    jobId: dto.jobId,
+    jobTitle: dto.jobTitle,
+    orderedAt: dto.orderedAt,
+    expectedAt: dto.expectedAt,
+    shipTo: dto.shipTo,
+    orderedByUserId: dto.orderedByUserId,
+    orderedByName: dto.orderedByName,
+    freight: dto.freight.cents / 100,
+    tax: dto.tax.cents / 100,
+    total: dto.total.cents / 100,
+    lines: dto.lines.map((l) => ({
+      id: l.id,
+      description: l.description,
+      qty: l.qty,
+      uom: l.uom,
+      unitCostMillicents: l.unitCostMillicents,
+      amount: l.amount.cents / 100,
+    })),
+    createdAt: dto.createdAt,
+    notes: [],
+  };
+}
+
+/**
+ * Map a purchaseOrderNoteDTO (returned by addNote/listNotes) to a store PurchaseOrderNote.
+ * No money involved — a straight field carry, same shape as dtoLeadNoteToStore's attachment fold.
+ */
+export function dtoPurchaseOrderNoteToStore(dto: PurchaseOrderNoteDTO): PurchaseOrderNote {
+  return {
+    id: dto.id,
+    body: dto.body,
+    authorUserId: dto.authorUserId,
+    authorName: dto.authorName,
+    ...(dto.attachmentPath && dto.attachmentType && dto.attachmentName
+      ? { attachment: { path: dto.attachmentPath, type: dto.attachmentType, name: dto.attachmentName } }
+      : {}),
+    createdAt: dto.createdAt,
   };
 }
 

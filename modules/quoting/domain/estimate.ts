@@ -1,6 +1,7 @@
 import type {
   EstimateId,
   EstimateLineId,
+  EstimateSectionId,
   OrgId,
   LeadId,
   Money,
@@ -22,6 +23,8 @@ import {
 import type { SignatureDraft, SignedSnapshot } from "./signature";
 import { createSignature } from "./signature";
 import { authorizationText } from "./authorization-text";
+import { evaluateQuantityExpression, MAX_QTY_EXPR_LENGTH } from "./quantity-expression";
+import { EstimateSection, orderSections } from "./estimate-section";
 
 const MAX_CHANGE_REQUEST_LENGTH = 2_000;
 
@@ -171,6 +174,25 @@ export interface EstimateLineProps {
   /** Internal estimating math behind the price — see EstimateSubItem. Null when the line was
    *  priced directly. Optional for the same reason as scope. */
   readonly subItems?: readonly EstimateSubItem[] | null;
+  /** What the quantity is counted in — "LF", "hr", "bags". Display only: it never enters the
+   *  money math, it tells the customer what they are buying 100 of. */
+  readonly unit?: string | null;
+  /**
+   * The typed math behind `quantity`, when the estimator authored one ("qty/8+1"). `quantity`
+   * stays the resolved number every total and every downstream surface reads; this is only how
+   * it was authored. create() re-evaluates it, so the two can never disagree in the database.
+   */
+  readonly qtyExpr?: string | null;
+  /** Round the resolved quantity up to a whole unit — you cannot buy half a post. */
+  readonly roundUp?: boolean;
+  /** The line this one is a component of, for an assembly. Null on an ordinary line. */
+  readonly parentLineId?: EstimateLineId | null;
+  /** The named group this line sits under. Null when ungrouped. */
+  readonly sectionId?: string | null;
+  /** Does the customer see this line at all. Distinct from isOptional (visible AND choosable). */
+  readonly customerVisible?: boolean;
+  /** Markup over cost in basis points when the line is priced from its cost; null = hand-priced. */
+  readonly markupBps?: number | null;
 }
 
 /**
@@ -184,6 +206,11 @@ export interface EstimateLineProps {
  */
 export type EstimateLineCreateProps = Omit<EstimateLineProps, "taxable"> & {
   readonly taxable?: boolean;
+  /**
+   * The parent's quantity, supplied only so create() can check a child's expression against the
+   * quantity being stored. Never kept on the line — the parent is the one place it lives.
+   */
+  readonly driverQuantity?: number | null;
 };
 
 // Scope is a proposal page's worth of prose, not a paragraph cap — the PaintScout exemplar runs
@@ -192,6 +219,7 @@ const MAX_SCOPE_CHARS = 8000;
 const MAX_SUB_ITEMS = 20;
 const MAX_SUB_DESCRIPTION_CHARS = 500;
 const MAX_SUB_UNIT_CHARS = 20;
+const MAX_UNIT_CHARS = 20;
 
 // Jsonb round-trip validation for a line's sub-items — malformed rows fail loud, valid input is
 // normalized (trimmed, blank unit → null) and frozen. Absent/empty reads as null, one meaning.
@@ -254,6 +282,50 @@ export class EstimateLine {
     }
     const subItems = validateSubItems(props.subItems);
     if (!subItems.ok) return subItems;
+
+    const unitTrimmed = typeof props.unit === "string" ? props.unit.trim() : null;
+    if (unitTrimmed !== null && unitTrimmed.length > MAX_UNIT_CHARS) {
+      return err(validation(`unit is limited to ${MAX_UNIT_CHARS} characters`, "unit"));
+    }
+
+    const exprTrimmed = typeof props.qtyExpr === "string" ? props.qtyExpr.trim() : null;
+    const qtyExpr = exprTrimmed !== null && exprTrimmed.length > 0 ? exprTrimmed : null;
+    if (qtyExpr !== null) {
+      if (qtyExpr.length > MAX_QTY_EXPR_LENGTH) {
+        return err(validation(`quantity math is limited to ${MAX_QTY_EXPR_LENGTH} characters`, "qtyExpr"));
+      }
+      // Reconcile ONLY when the caller supplies the driver — which the write path does and
+      // read-back cannot. On write, the stored quantity must be what this expression produces:
+      // anything else means the client computed something the server would not, and the money
+      // would follow the wrong one. On read there is no parent row to evaluate against, so the
+      // stored quantity stands; re-deriving it there would make every saved component of an
+      // assembly unreadable the moment its expression referenced a driver we no longer have.
+      if (props.driverQuantity != null) {
+        const evaluated = evaluateQuantityExpression(qtyExpr, props.driverQuantity, unitTrimmed);
+        if (!evaluated.ok) return evaluated;
+        const resolved = props.roundUp ? Math.ceil(evaluated.value) : evaluated.value;
+        if (Math.abs(resolved - props.quantity) > 1e-9) {
+          return err(
+            validation(
+              `line quantity ${props.quantity} does not match its own math (${qtyExpr} = ${resolved})`,
+              "quantity",
+            ),
+          );
+        }
+      }
+    }
+
+    if (props.parentLineId != null && props.parentLineId === props.id) {
+      return err(validation("a line cannot be its own parent", "parentLineId"));
+    }
+
+    if (props.markupBps != null) {
+      if (props.markupBps < 0) return err(validation("markup cannot be negative", "markupBps"));
+      if (!Number.isInteger(props.markupBps)) {
+        return err(validation("markup is whole basis points", "markupBps"));
+      }
+    }
+
     return ok(
       new EstimateLine({
         ...props,
@@ -261,6 +333,13 @@ export class EstimateLine {
         taxable: props.taxable ?? true,
         scope: scopeTrimmed !== null && scopeTrimmed.length > 0 ? scopeTrimmed : null,
         subItems: subItems.value,
+        unit: unitTrimmed !== null && unitTrimmed.length > 0 ? unitTrimmed : null,
+        qtyExpr,
+        roundUp: props.roundUp ?? false,
+        parentLineId: props.parentLineId ?? null,
+        sectionId: props.sectionId ?? null,
+        customerVisible: props.customerVisible ?? true,
+        markupBps: props.markupBps ?? null,
       }),
     );
   }
@@ -347,6 +426,12 @@ export interface EstimateProps {
   readonly signedAt?: Date | null;
   readonly signedSnapshot?: SignedSnapshot | null;
   readonly lines: readonly EstimateLine[];
+  /**
+   * Named groups the lines sit under. Optional so every pre-existing construction site reads as
+   * the historical default — an UNGROUPED estimate, which is still the common one. A line names
+   * its section; the sections themselves hold no lines and no money.
+   */
+  readonly sections?: readonly EstimateSection[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -380,7 +465,32 @@ export class Estimate {
     }
     const tierError = Estimate.validateTiers(props);
     if (tierError) return err(tierError);
+    const sectionError = Estimate.validateSections(props);
+    if (sectionError) return err(sectionError);
     return ok(new Estimate({ ...props, num, presentationSnapshot: presentation.value }));
+  }
+
+  /**
+   * Sections are referential integrity and nothing else: no duplicate ids, and no line pointing
+   * at a group that is not here. A dangling sectionId would render a line under a heading that
+   * does not exist — it would simply vanish from the customer's copy.
+   */
+  private static validateSections(props: EstimateProps): ValidationError | null {
+    const sections = props.sections ?? [];
+    const ids = new Set<string>();
+    for (const section of sections) {
+      if (ids.has(section.id)) {
+        return validation(`duplicate section: ${section.id}`, "sections");
+      }
+      ids.add(section.id);
+    }
+    for (const line of props.lines) {
+      const sectionId = line.props.sectionId;
+      if (sectionId !== null && sectionId !== undefined && !ids.has(sectionId)) {
+        return validation(`line references a section that is not on this estimate: ${sectionId}`, "sectionId");
+      }
+    }
+    return null;
   }
 
   // Tier consistency invariants. A tier may be empty while drafting (only send gates on the
@@ -458,15 +568,35 @@ export class Estimate {
     return this.effectiveLines().filter((line) => !line.props.isOptional);
   }
 
+  /**
+   * The lines money derives from, and the scope handed to the job.
+   *
+   * Components are dropped here as well as inside the two sums: this is also what `soldLines`
+   * reads, and "Line posts, 4×4×8 cedar" is a part the shop buys, not work on a technician's
+   * list. The customer bought the fence.
+   */
   private effectiveLines(): readonly EstimateLine[] {
-    if (this.p.recommendedTier === null || this.p.acceptedTier !== null) return this.p.lines;
-    return this.linesForTier(this.p.recommendedTier);
+    const quoted = this.p.lines.filter(Estimate.contributesMoney);
+    if (this.p.recommendedTier === null || this.p.acceptedTier !== null) return quoted;
+    return quoted.filter((line) => line.props.tier === this.p.recommendedTier);
+  }
+
+  /**
+   * Does this line put money on the bill at all.
+   *
+   * A COMPONENT does not: its money is already inside its parent, whose rate IS the roll-up of
+   * the parts beneath it. Counting both bills the customer twice for the same fence — a $1,158
+   * assembly charged as $2,316. This sits beside `isOptional` because it answers the same kind
+   * of question, and every derivation below runs through one of the two sums that use it.
+   */
+  private static contributesMoney(line: EstimateLine): boolean {
+    return !line.props.parentLineId;
   }
 
   // Sum of non-optional line amounts. Optional add-ons are excluded until toggled at accept.
   private static subtotalOf(lines: readonly EstimateLine[]): Money {
     return lines
-      .filter((line) => !line.props.isOptional)
+      .filter((line) => !line.props.isOptional && Estimate.contributesMoney(line))
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 
@@ -480,7 +610,7 @@ export class Estimate {
    */
   private static taxableBaseOf(lines: readonly EstimateLine[]): Money {
     return lines
-      .filter((line) => !line.props.isOptional && line.props.taxable)
+      .filter((line) => !line.props.isOptional && line.props.taxable && Estimate.contributesMoney(line))
       .reduce((sum, line) => addMoney(sum, line.amount()), zeroMoney);
   }
 
@@ -934,5 +1064,24 @@ export class Estimate {
 
   get props(): EstimateProps {
     return this.p;
+  }
+
+  /**
+   * The estimate's sections in render order. Callers read THIS rather than `props.sections` —
+   * ordering a group list at each of the four surfaces that renders one is how two of them end
+   * up disagreeing.
+   */
+  get sections(): readonly EstimateSection[] {
+    return orderSections(this.p.sections ?? []);
+  }
+
+  /**
+   * The lines under one section, in position order — and with `null`, the lines under no section
+   * at all, which is where an ungrouped estimate keeps every line it has.
+   */
+  linesInSection(sectionId: EstimateSectionId | null): readonly EstimateLine[] {
+    return this.p.lines
+      .filter((line) => (line.props.sectionId ?? null) === sectionId)
+      .sort((a, b) => a.props.position - b.props.position);
   }
 }

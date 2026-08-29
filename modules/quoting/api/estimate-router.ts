@@ -7,6 +7,7 @@ import { asEstimateId, asJobId, asLeadId, toPage, type OrgId } from "@mallet/sha
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { ESTIMATE_STATUSES, type Estimate, type EstimateStatus } from "../domain/estimate";
 import type { QuoteTier } from "../domain/estimate";
+import { MAX_SECTION_NAME_CHARS } from "../domain/estimate-section";
 import { DrizzleEstimateRepository } from "../infra/drizzle-estimate-repository";
 import { DraftEstimateUseCase } from "../app/draft-estimate";
 import { SendEstimateUseCase } from "../app/send-estimate";
@@ -83,6 +84,27 @@ const estimateLineDTO = z.object({
   scope: z.string().nullable(),
   /** The estimating math the composer rolls up into the rate. Office eyes only. */
   subItems: z.array(subItemDTO).nullable(),
+  /** What the quantity is counted in ("LF", "hr"). Display only — never in the money math. */
+  unit: z.string().nullable(),
+  /** How the quantity was authored, when it was typed as math ("qty/8+1"). Office eyes only:
+   *  the customer sees the resolved quantity, which is what `quantity` above already is. */
+  qtyExpr: z.string().nullable(),
+  roundUp: z.boolean(),
+  /** The line this one is a component of, for an assembly. */
+  parentLineId: z.string().uuid().nullable(),
+  /** The named group this line sits under. */
+  sectionId: z.string().uuid().nullable(),
+  /** Does the customer see this line at all. */
+  customerVisible: z.boolean(),
+  /** Markup over cost in basis points when priced from cost. Office eyes only. */
+  markupBps: z.number().int().nullable(),
+});
+
+/** A named group of lines. Carries no money — grouping can never change a price. */
+const estimateSectionDTO = z.object({
+  id: z.string().uuid(),
+  name: z.string(),
+  position: z.number().int(),
 });
 
 const estimateDTO = z.object({
@@ -95,6 +117,8 @@ const estimateDTO = z.object({
   taxBps: z.number().int(),
   depBps: z.number().int(),
   lines: z.array(estimateLineDTO),
+  /** The headings the lines are grouped under, in render order. Empty on an ungrouped quote. */
+  sections: z.array(estimateSectionDTO),
   subtotal: moneyDTO,
   discount: moneyDTO,
   tax: moneyDTO,
@@ -259,6 +283,29 @@ const lineInput = z.object({
     .min(1)
     .max(20)
     .optional(),
+  /** What the quantity is counted in. Bounds mirror the domain's. */
+  unit: z.string().trim().min(1).max(20).optional(),
+  /** How the quantity was authored. The server re-evaluates it against the parent's quantity
+   *  and rejects the line if it does not produce the quantity being stored. */
+  qtyExpr: z.string().trim().min(1).max(120).optional(),
+  roundUp: z.boolean().optional(),
+  /**
+   * The parent this line is a component of, as an INDEX into this same payload — not an id.
+   * The server mints line ids, so a client-supplied id would name a row that does not exist
+   * yet; an index is a reference the server can resolve and validate (must point at an earlier
+   * line, and that line must not itself be a component).
+   */
+  parentIndex: z.number().int().nonnegative().optional(),
+  customerVisible: z.boolean().optional(),
+  markupBps: z.number().int().nonnegative().optional(),
+  /** The section this line sits under, as an INDEX into the payload's `sections` — an id would
+   *  name a row the server has not minted yet, exactly like parentIndex above. */
+  sectionIndex: z.number().int().nonnegative().optional(),
+});
+
+/** A heading to group lines under. Its position is its index in the payload. */
+const sectionInput = z.object({
+  name: z.string().trim().min(1).max(MAX_SECTION_NAME_CHARS),
 });
 
 const draftInput = z
@@ -270,6 +317,8 @@ const draftInput = z
     depBps: z.number().int().min(0).max(10_000).optional(),
     validDays: z.number().int().positive().optional(),
     lines: z.array(lineInput).min(1),
+    /** The headings the lines are grouped under. Bounded so a payload cannot mint a group per line. */
+    sections: z.array(sectionInput).max(50).optional(),
     recommendedTier: tierEnum.optional(),
     tierNames: tierNamesInput.optional(),
     termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
@@ -444,8 +493,21 @@ const toEstimateDTO = (estimate: Estimate) => {
         tier: lp.tier,
         scope: lp.scope ?? null,
         subItems: lp.subItems ? [...lp.subItems] : null,
+        unit: lp.unit ?? null,
+        qtyExpr: lp.qtyExpr ?? null,
+        roundUp: lp.roundUp ?? false,
+        parentLineId: lp.parentLineId ?? null,
+        sectionId: lp.sectionId ?? null,
+        customerVisible: lp.customerVisible ?? true,
+        markupBps: lp.markupBps ?? null,
       };
     }),
+    // Ordered by the aggregate, not here — one place decides how sections read.
+    sections: estimate.sections.map((section) => ({
+      id: section.props.id,
+      name: section.props.name,
+      position: section.props.position,
+    })),
     subtotal: money(estimate.subtotal()),
     discount: money(estimate.discountAmount()),
     tax: money(estimate.taxAmount()),
@@ -622,7 +684,15 @@ export const createEstimateRouter = () =>
             materialId: line.materialId ?? null,
             scope: line.scope ?? null,
             subItems: line.subItems?.map((si) => ({ ...si, unit: si.unit ?? null })) ?? null,
+            unit: line.unit ?? null,
+            qtyExpr: line.qtyExpr ?? null,
+            roundUp: line.roundUp ?? false,
+            parentIndex: line.parentIndex ?? null,
+            customerVisible: line.customerVisible ?? true,
+            markupBps: line.markupBps ?? null,
+            sectionIndex: line.sectionIndex ?? null,
           })),
+          sections: input.sections ?? [],
           recommendedTier: input.recommendedTier ?? null,
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,

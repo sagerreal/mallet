@@ -127,6 +127,7 @@ export function JobCostingView({ weekStart, weekEnd, paidHours }: JobCostingView
             <th scope="col" className="r">Hours</th>
             <th scope="col" className="r">Labour</th>
             <th scope="col" className="r">Materials</th>
+            <th scope="col" className="r">Purchased</th>
             <th scope="col" className="r">Revenue</th>
             <th scope="col" className="r">Margin</th>
           </tr>
@@ -146,6 +147,7 @@ export function JobCostingView({ weekStart, weekEnd, paidHours }: JobCostingView
             </th>
             <td className="r">—</td>
             <td className="r ts-num">{num(unaccounted)}</td>
+            <td className="r">—</td>
             <td className="r">—</td>
             <td className="r">—</td>
             <td className="r">—</td>
@@ -229,6 +231,9 @@ function CostRow({ row, isCallback = false }: { row: CostingRow; isCallback?: bo
       </td>
       <td className="r ts-num">{row.costCents === null ? "—" : fmt$(row.costCents / 100)}</td>
       <td className="r ts-num">{row.materialsCents === 0 ? "—" : fmt$(row.materialsCents / 100)}</td>
+      {/* What was actually bought via a placed PO — beside Materials (what was quoted), never
+          folded into it or into margin: the two answer different questions. */}
+      <td className="r ts-num">{row.purchasedCents === 0 ? "—" : fmt$(row.purchasedCents / 100)}</td>
       <td className="r ts-num">{row.revenueCents === null ? "—" : fmt$(row.revenueCents / 100)}</td>
       <td className={`r ts-num${tone}`}>
         <b>{margin}</b>

@@ -389,3 +389,156 @@ describe("DraftEstimateUseCase — scope, sub-items, price display", () => {
     if (r.error.kind === "validation") expect(r.error.field).toBe("subItems");
   });
 });
+
+describe("DraftEstimateUseCase — assembly components", () => {
+  const cmd = (lines: EstimateLineInput[]) => ({
+    orgId: ORG,
+    leadId: LEAD,
+    title: null,
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    validDays: null,
+    lines,
+    priceDisplay: null,
+  });
+
+  const draftUseCase = () =>
+    new DraftEstimateUseCase(
+      new FakeEstimateRepository(),
+      new InMemoryEventBus(),
+      new FixedClock(new Date("2026-06-01T00:00:00Z")),
+      seqIds(),
+    );
+
+  it("resolves a component's parent index to the id the server minted", async () => {
+    const r = await draftUseCase().exec(
+      cmd([
+        oneLine({ description: "Cedar privacy fence", quantity: 100, unit: "LF" }),
+        oneLine({ description: "Line posts", quantity: 14, qtyExpr: "qty/8+1", roundUp: true, parentIndex: 0 }),
+      ]),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const [parent, child] = r.value.props.lines;
+    expect(child?.props.parentLineId).toBe(parent?.props.id);
+    expect(child?.props.qtyExpr).toBe("qty/8+1");
+    expect(child?.props.quantity).toBe(14);
+  });
+
+  it("rejects a quantity the component's own math does not produce", async () => {
+    // 100/8+1 rounded up is 14, not 99 — the server recomputes rather than trusting the client.
+    const r = await draftUseCase().exec(
+      cmd([
+        oneLine({ description: "Cedar privacy fence", quantity: 100 }),
+        oneLine({ description: "Line posts", quantity: 99, qtyExpr: "qty/8+1", roundUp: true, parentIndex: 0 }),
+      ]),
+    );
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("refuses a component that precedes its parent", async () => {
+    const r = await draftUseCase().exec(
+      cmd([oneLine({ quantity: 14, parentIndex: 1 }), oneLine({ quantity: 100 })]),
+    );
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("refuses a component of a component — the document stays one level deep", async () => {
+    const r = await draftUseCase().exec(
+      cmd([
+        oneLine({ quantity: 100 }),
+        oneLine({ quantity: 14, parentIndex: 0 }),
+        oneLine({ quantity: 2, parentIndex: 1 }),
+      ]),
+    );
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("carries the unit, visibility and markup a line was authored with", async () => {
+    const r = await draftUseCase().exec(
+      cmd([oneLine({ unit: "LF", customerVisible: false, markupBps: 3500 })]),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const line = r.value.props.lines[0]?.props;
+    expect(line?.unit).toBe("LF");
+    expect(line?.customerVisible).toBe(false);
+    expect(line?.markupBps).toBe(3500);
+  });
+});
+
+
+describe("DraftEstimateUseCase — sections", () => {
+  const cmd = (lines: EstimateLineInput[], sections?: { name: string }[]) => ({
+    orgId: ORG,
+    leadId: LEAD,
+    title: null,
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    validDays: null,
+    lines,
+    ...(sections ? { sections } : {}),
+    priceDisplay: null,
+  });
+
+  const draftUseCase = () =>
+    new DraftEstimateUseCase(
+      new FakeEstimateRepository(),
+      new InMemoryEventBus(),
+      new FixedClock(new Date("2026-06-01T00:00:00Z")),
+      seqIds(),
+    );
+
+  it("mints a section per heading, positioned by payload order", async () => {
+    const r = await draftUseCase().exec(
+      cmd([oneLine({ description: "Walls" })], [{ name: "Interior" }, { name: "Exterior" }]),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.sections.map((s) => [s.props.name, s.props.position])).toEqual([
+      ["Interior", 0],
+      ["Exterior", 1],
+    ]);
+  });
+
+  it("resolves a line's section index to the id the server minted", async () => {
+    const r = await draftUseCase().exec(
+      cmd(
+        [
+          oneLine({ description: "Walls", sectionIndex: 0 }),
+          oneLine({ description: "Siding", sectionIndex: 1 }),
+          oneLine({ description: "Trip charge" }),
+        ],
+        [{ name: "Interior" }, { name: "Exterior" }],
+      ),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const [interior, exterior] = r.value.sections;
+    expect(r.value.linesInSection(interior!.id).map((l) => l.props.description)).toEqual(["Walls"]);
+    expect(r.value.linesInSection(exterior!.id).map((l) => l.props.description)).toEqual(["Siding"]);
+    // A line with no section is not an error — it is an ungrouped line, which is the default.
+    expect(r.value.linesInSection(null).map((l) => l.props.description)).toEqual(["Trip charge"]);
+  });
+
+  it("refuses a section index that names no section", async () => {
+    const r = await draftUseCase().exec(cmd([oneLine({ sectionIndex: 3 })], [{ name: "Interior" }]));
+    expect(isOk(r)).toBe(false);
+    if (isOk(r)) return;
+    expect(r.error.message).toMatch(/unknown section/i);
+  });
+
+  it("refuses a blank heading rather than minting an untitled group", async () => {
+    const r = await draftUseCase().exec(cmd([oneLine({})], [{ name: "   " }]));
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("drafts with no sections at all — the ungrouped default", async () => {
+    const r = await draftUseCase().exec(cmd([oneLine({})]));
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.sections).toEqual([]);
+  });
+});

@@ -1539,6 +1539,33 @@
   .lineedit tbody .subrow input:nth-child(3){width:72px}
   .linedepth-foot{display:flex;align-items:baseline;gap:var(--space-3);margin-top:var(--space-2)}
   .linedepth-note{font-size:var(--type-xs);color:var(--ink-3)}
+  /* ---------- assemblies: a line priced from the components under it ----------
+     A fence is ONE line the customer reads and four the estimator works in. The
+     components are money, so they stay rows in the ledger rather than moving into a
+     panel — an indent and a rail are the whole treatment. */
+  .lineedit tbody tr.component>td{background:var(--green-50)}
+  .lineedit tbody tr.component>td:first-child{padding-left:var(--space-8)}
+  .lineedit tbody tr.component>td:first-child{box-shadow:inset var(--space-1) 0 0 calc(var(--space-1) * -0.5) var(--line)}
+  .lineedit tbody tr.component-last>td{border-bottom:1px solid var(--line)}
+  /* The computed count under a quantity that was typed as math. Quiet, and only
+     present when there is math to explain — a plain number explains itself. */
+  .qty-note{display:block;padding:0 var(--space-2) var(--space-2xs) 0;text-align:right;font-size:var(--type-xs);font-variant-numeric:tabular-nums;color:var(--ink-3)}
+  .qty-note.bad{color:var(--red);font-weight:600}
+  .lineedit tbody input[aria-invalid="true"]{border-color:var(--red)}
+  /* The unit sits with the number it counts, not in a column of its own — a unit
+     with no quantity beside it is a word floating in a ledger. */
+  .lineedit tbody input.unit{text-align:left;font-size:var(--type-sm);color:var(--ink-2)}
+  /* A number the app derived rather than the estimator typing it — quiet, so the two
+     are never confused at a glance. */
+  .lineedit tbody input.derived{color:var(--ink-2);font-weight:600}
+  /* A rolled-up rate is not typed, so it does not read as a field. */
+  .lineedit .rolled{display:block;text-align:right;padding-right:var(--space-2);font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  /* ---------- sections: named groups of lines ----------
+     A heading row carrying its own subtotal. It reads as a band, not a line —
+     the estimator's eye has to separate "Interior" from the work under it. */
+  .lineedit tbody tr.sectionrow>td{background:var(--green-50);border-bottom:1px solid var(--line);padding:var(--space-1) var(--space-2)}
+  .lineedit tbody tr.sectionrow input{font-weight:700;font-size:var(--type-sm);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+  .sectionrow-total{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;padding-right:var(--space-2);white-space:nowrap}
   /* 'One total' dims the amount column in the EDITOR — the numbers stay yours. */
   .lineedit .amt.customer-hidden{opacity:.45}
   /* The $ visibility chip in the quote-card header. Amber when the proposal mode is on —
@@ -1919,6 +1946,12 @@
   .custline{display:flex;justify-content:space-between;gap:var(--space-3);padding:var(--space-3) 0;border-bottom:1px solid var(--line-2);font-size:var(--type-base)}
   /* Scope prose under a line — the proposal's Includes/Excludes/Products. Pre-wrap keeps the
      shop's typed numbering and paragraph breaks exactly as written. */
+  /* A section heading on the customer's copy, with what the work under it comes to.
+     Reads as a band above its lines, not as another line. */
+  .custsection{display:flex;justify-content:space-between;align-items:baseline;gap:var(--space-3);
+    padding:var(--space-4) 0 var(--space-2);border-bottom:1px solid var(--line);
+    font-size:var(--type-sm);font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--ink-2)}
+  .custsection b{font-size:var(--type-base);letter-spacing:0;text-transform:none;color:var(--ink);font-variant-numeric:tabular-nums}
   .custline-scope{display:block;white-space:pre-wrap;color:var(--ink-2);font-size:var(--type-sm);line-height:1.55;margin-top:var(--space-2);max-width:62ch}
   /* "No tax" marker on a document line. Quiet: it qualifies the line it sits in, it is not a
      status the customer has to act on — and it only renders when the document charges tax. */
@@ -1948,6 +1981,10 @@
   .attachchip-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
   .attachchip-x{flex:none;border:0;background:none;color:var(--ink-3);font-weight:800;cursor:pointer;padding:0 var(--space-1);font-family:inherit}
   .attachchip-x:hover{color:var(--ink)}
+  /* note-composer.tsx's error line — a class so a scope like .po-scope can lift it past this
+     default; an inline font-size would outrank any external rule short of !important (the same
+     reason select-menu.tsx exposes its trigger caret as a class instead). */
+  .ncomposer-err{color:var(--red);font-size:var(--type-sm);margin:var(--space-2) 0 0}
   .cfrow .btn{flex:0 0 auto}
   .hookurl{display:flex;gap:var(--space-3);align-items:center;background:#11131c;color:#C7D2FE;padding:var(--space-3) var(--space-3);border-radius:var(--radius-sm);font-size:var(--type-sm);font-family:ui-monospace,Menlo,monospace}
   .hookurl code{flex:1;white-space:nowrap;overflow-x:auto}
@@ -3640,6 +3677,9 @@
   .select-trigger{background:var(--card)}
   .select-trigger:disabled{background:var(--bg)}
   .select-trigger:active{background:var(--manila-2)}
+  /* The trigger's own "▾" — a class so a scope like .po-scope can lift it past the type floor;
+     an inline font-size would outrank any external rule short of !important. */
+  .select-trigger-caret{font-size:var(--type-sm);color:var(--ink-3)}
   .select-option{background:transparent}
   .select-option.active{background:var(--manila-2)}
   .select-option:active{background:color-mix(in srgb,var(--ink) 12%,var(--manila-2))}
@@ -3703,3 +3743,45 @@
     /* The banner and the canceled note are bordered boxes once their fill is gone. */
     .invcard .deltabanner,.invcard .reqcard{border:1px solid #000}
   }
+
+  /* NOTHING ON A PURCHASE ORDER RENDERS BELOW THE BODY SIZE. Mallet's shared chrome is 11-13px —
+     .fsec-h and .stpill at --type-xs, .field label and .muted at --type-sm, .btn at --type-base —
+     against a 15px body. That is fine on a settings row and wrong on a document somebody retypes
+     off a supply-house invoice with a phone in one hand. Scoped to .po-scope (Money → Orders,
+     features/money/orders-panel.tsx, and the create + record PO modals) so the rest of the app
+     does not move; if the type scale is lifted globally this whole block goes away. Ported
+     verbatim from the approved design on mock/money-purchase-orders. This is a STANDING
+     requirement (Owen, raised more than once), not a preview affordance — it stays. */
+  .po-scope,.po-scope .muted,.po-scope .field label,.po-scope .fdd-l,.po-scope .fdd-v,
+  .po-scope .btn,.po-scope .stpill,.po-scope .lab,.po-scope p,.po-scope span,.po-scope b,
+  .po-scope .nfeed,.po-scope .nfeed *,.po-scope .linklike,.po-scope input,.po-scope select,
+  .po-scope .chip,.po-scope .list-tbl th,.po-scope .list-tbl td{font-size:var(--type-md)}
+  /* The chapter head keeps its uppercase label register but not its 11px. */
+  .po-scope .fsec-h,.po-scope .tjf-t,.po-scope .tjf-v,.po-scope .tjcaret{font-size:var(--type-md)}
+  /* Below 760px .list-tbl drops its <thead> and prints each cell's column caption from a
+     `td::before{content:attr(data-label)}` pseudo-element at --type-xs (11px, see the mobile
+     stacked-card block above) — getComputedStyle(node) does not see pseudo-elements, so the
+     ".po-scope .list-tbl td" rule above never touched this and "#"/"VENDOR"/"FOR JOB"/"STATUS"/
+     "TOTAL"/"ORDERED" rendered at 11px on a phone, the exact surface this file exists for. Real
+     specificity fix, not a !important: two classes + tbody+td+::before outranks the mobile
+     block's one class + tbody+td+::before. */
+  .po-scope .list-tbl tbody td::before{font-size:var(--type-md)}
+  /* The two modals' own controls that the selectors above do not already reach: SelectMenu's
+     trigger caret (an inline font-size on the SPAN itself normally wins, which is exactly why
+     select-menu.tsx now exposes it as a class), and the create form's own error paragraph
+     (already just a bare <p>, covered above, listed here only as a reminder it is covered). */
+  .po-scope .select-trigger-caret{font-size:var(--type-md)}
+  /* Three more spots the .list-tbl/.nfeed/span/input selectors above do not reach: a plain <div>
+     inside a <td> does not inherit the td rule's font-size (.empty-att sets its own), the note
+     composer's error line lives on a class so it can be lifted here without moving the shared
+     default, and the staged-file chip's "✕" is a <button> — :where(button){font:inherit} makes it
+     inherit from .attachchip, so the ".po-scope span" rule above never touches it. */
+  .po-scope .empty-att,.po-scope .ncomposer-err,.po-scope .attachchip-x{font-size:var(--type-md)}
+
+  /* THE PO LINE GRID READS AT THE BODY SIZE. The shared .lineedit input rule is --type-base
+     (13px) against a 15px body, and a purchase order is money somebody retypes off a
+     supply-house invoice, so it is the last place to shrink text. Scoped to .po-lines so the
+     estimate composer's own grid does not move. Ported verbatim from the approved design on
+     mock/money-purchase-orders (features/money/po-line-table.tsx renders this class). */
+  .po-lines tbody input,.po-lines tbody td,.po-lines thead th,.po-lines .lineedit-bar,
+  .po-lines .lineedit-bar *{font-size:var(--type-md)}

@@ -48,6 +48,7 @@ export function SectionTabs() {
 
   const inCustomers = CUSTOMER_AREA.some((r) => pathname.startsWith(r));
   const inJobs = pathname.startsWith("/jobs");
+  const inMoney = pathname.startsWith("/money");
 
   let tabs: SecTab[] = [];
   if (inCustomers) {
@@ -64,6 +65,14 @@ export function SectionTabs() {
       // No Checklists tab: checklists moved to the Office page in Jul 2026, and /jobs redirects
       // ?tab=checklists straight to /dashboard. Left in the Jobs row it was a tab that threw you
       // out of the section and could never show as active.
+    ];
+  } else if (inMoney) {
+    tabs = [
+      // Purchase orders are cash going OUT; every other row in Money is cash coming IN — kept as
+      // a separate SET rather than mixed into the receivables ledger, same reasoning the mock
+      // (mock/money-purchase-orders) used for its ViewToggle. This is the real tab grammar instead.
+      { href: "/money", label: "Getting paid", active: tab !== "orders" },
+      { href: "/money?tab=orders", label: "Orders", active: tab === "orders" },
     ];
   }
 

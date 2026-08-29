@@ -151,12 +151,18 @@ const RoomCardModalContent = dynamicModal(loadRoomCardModalContent, "md");
 const loadSiteTracerModalContent = () => import("./site-tracer/site-tracer-modal").then((m) => ({ default: m.SiteTracerModalContent }));
 const SiteTracerModalContent = dynamicModal(loadSiteTracerModalContent, "lg");
 
+const loadPOModalContent = () => import("./po-modal/po-modal").then((m) => ({ default: m.POModalContent }));
+const POModalContent = dynamicModal(loadPOModalContent, "lg");
+
+const loadNewPOModalContent = () => import("./new-po-modal").then((m) => ({ default: m.NewPOModal }));
+const NewPOModalContent = dynamicModal(loadNewPOModalContent, "md");
+
 /**
  * Every modal chunk, for the idle warm-up below. Built from the SAME `loadX` consts the
  * dynamic() wrappers use, so a new modal added above is one identifier away from being
  * preloaded — and a missed one degrades to today's skeleton, never to breakage.
  */
-const MODAL_LOADERS = [loadLeadModal, loadNewCustomerModal, loadTeamChatModalContent, loadSweepModalContent, loadQuoteSweepModalContent, loadThreadModalContent, loadCallModalContent, loadEstimateModalContent, loadJobModalContent, loadNewJobModalContent, loadPriceBuilderModalContent, loadTechQuoteModalContent, loadInvoiceModalContent, loadTechJobModalContent, loadCustQuoteModalContent, loadCustInvoiceModalContent, loadCloseOutModalContent, loadCleanUpModalContent, loadCompanyViewModalContent, loadImportCustomersModalContent, loadImportServicesModalContent, loadImportJobsModalContent, loadImportMaterialsModalContent, loadImportCompaniesModalContent, loadRoomCardModalContent, loadSiteTracerModalContent];
+const MODAL_LOADERS = [loadLeadModal, loadNewCustomerModal, loadTeamChatModalContent, loadSweepModalContent, loadQuoteSweepModalContent, loadThreadModalContent, loadCallModalContent, loadEstimateModalContent, loadJobModalContent, loadNewJobModalContent, loadPriceBuilderModalContent, loadTechQuoteModalContent, loadInvoiceModalContent, loadTechJobModalContent, loadCustQuoteModalContent, loadCustInvoiceModalContent, loadCloseOutModalContent, loadCleanUpModalContent, loadCompanyViewModalContent, loadImportCustomersModalContent, loadImportServicesModalContent, loadImportJobsModalContent, loadImportMaterialsModalContent, loadImportCompaniesModalContent, loadRoomCardModalContent, loadSiteTracerModalContent, loadPOModalContent, loadNewPOModalContent];
 
 // ---------------------------------------------------------------------------
 
@@ -305,6 +311,15 @@ export function ModalHost() {
       {/* wide — the satellite tracer needs the room for imagery. */}
       <Modal instant={switching} open={id === MODAL.SITE_TRACER} onClose={close} wide>
         <SiteTracerModalContent />
+      </Modal>
+
+      {/* wide — the line-item grid needs the room, same as the invoice/job sheets. */}
+      <Modal instant={switching} open={id === MODAL.PO} onClose={close} wide>
+        <POModalContent />
+      </Modal>
+
+      <Modal instant={switching} open={id === MODAL.NEW_PO} onClose={close} wide>
+        <NewPOModalContent />
       </Modal>
     </>
   );

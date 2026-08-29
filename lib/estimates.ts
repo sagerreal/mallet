@@ -12,9 +12,22 @@ import type { Estimate, EstimateLine, QuoteTierKey, Lead } from "@/lib/store/typ
  * a tiered estimate shows the RECOMMENDED tier pre-accept; after accept the
  * lines are already resolved (tags cleared server-side); single quotes show all.
  */
+/**
+ * The lines a CUSTOMER is shown, and the only ones that carry money.
+ *
+ * Components — the parts inside an assembly — are excluded. The parent line the customer reads
+ * already carries their money in its rate, so showing them would read as extra charges beside a
+ * total that does not contain them. Mirrors Estimate.contributesMoney in the domain; every
+ * office surface that renders a quote's lines should go through here.
+ */
+export function quotedEstLines(lines: readonly EstimateLine[]): EstimateLine[] {
+  return lines.filter((l) => l.parentIndex == null);
+}
+
 export function effectiveEstLines(e: Estimate): EstimateLine[] {
-  if (!e.recommendedTier || e.acceptedTier) return e.lines;
-  return e.lines.filter((l) => l.tier === e.recommendedTier);
+  const quoted = quotedEstLines(e.lines);
+  if (!e.recommendedTier || e.acceptedTier) return quoted;
+  return quoted.filter((l) => l.tier === e.recommendedTier);
 }
 
 /**

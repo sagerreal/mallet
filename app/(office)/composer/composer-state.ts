@@ -37,6 +37,25 @@ export interface ComposerLine {
   scope?: string;
   /** The estimating math behind the price — rolls up into r via withSubPatch. Never customer-visible. */
   sub?: ComposerSubItem[];
+  /** What the quantity is counted in ("LF", "hr"). Display only — never in the money math. */
+  unit?: string;
+  /** How the quantity was authored when it was typed as math ("qty/8+1"). `q` stays the resolved
+   *  number; the server re-derives it from this, so the two can never disagree. */
+  qtyExpr?: string;
+  /** Round the resolved quantity up to a whole unit. Absent reads as false. */
+  roundUp?: boolean;
+  /** Index of the line this is a component of, within the same array. An index and not an id
+   *  because the server mints line ids — a line being composed has none yet. */
+  parentIndex?: number;
+  /** Hidden from the customer's copy. Stated as the exception, like `notax`. */
+  hidden?: boolean;
+  /** Markup over cost in basis points, when the line is priced from its cost. */
+  markupBps?: number;
+  /**
+   * The section this line sits under, as an index into ComposerState.sections. Absent means the
+   * line is ungrouped, which is where every line on an ungrouped quote lives.
+   */
+  sectionIndex?: number;
 }
 
 
@@ -55,6 +74,7 @@ export {
 } from "./presentation-state";
 export { emptySubItem, realSubItems, subItemsTotal, withSubPatch, lineToPayload } from "./sub-items";
 import { realSubItems } from "./sub-items";
+import { reindexForPayload } from "./line-math";
 import { presentationFromSnapshot } from "./presentation-state";
 import type { ComposerPresentation, PresentationSnapshotPayload } from "./presentation-state";
 import type { ComposerSubItem } from "./sub-items";
@@ -155,6 +175,12 @@ export interface ComposerState {
   lines: ComposerLine[];
   /** GBB tiers — kept across format switches so toggling never loses tier edits. */
   gbb: GBBDraft | null;
+  /**
+   * Headings the lines are grouped under, in the order they render. Empty on an ungrouped
+   * quote, which is most of them. A line names one by index (ComposerLine.sectionIndex);
+   * sections themselves hold no lines and no money.
+   */
+  sections: string[];
   /** One-line in-flow note describing what the last format switch did. */
   switchNote: string | null;
   desc: string;
@@ -211,6 +237,7 @@ export const INITIAL_STATE: ComposerState = {
   format: "single",
   lines: [emptyLine()],
   gbb: null,
+  sections: [],
   switchNote: null,
   desc: "",
   aiOpen: false,
@@ -315,7 +342,20 @@ export interface TieredComposerLine extends ComposerLine {
 
 /** All tiers' real (non-blank) lines, each tagged with its tier key. */
 export function tieredLinesForPayload(gbb: GBBDraft): TieredComposerLine[] {
-  return gbb.opts.flatMap((o) => realLines(o.lines).map((l) => ({ ...l, tier: o.k })));
+  // Each tier is re-indexed WITHIN itself first, then offset by what came before: three arrays
+  // become one, and a parentIndex taken before the concatenation names a line in another tier.
+  const out: TieredComposerLine[] = [];
+  for (const option of gbb.opts) {
+    const offset = out.length;
+    for (const line of reindexForPayload(option.lines, isRealLine)) {
+      out.push({
+        ...line,
+        tier: option.k,
+        ...(line.parentIndex == null ? {} : { parentIndex: line.parentIndex + offset }),
+      });
+    }
+  }
+  return out;
 }
 
 // The server caps tier display names at 60 chars (tierNamesInput).
@@ -519,6 +559,17 @@ export interface ReviseSeedLine {
   scope: string | null;
   /** The estimating math behind the price (wire shape, cents). */
   subItems: { description: string; quantity: number; unit: string | null; amountCents: number }[] | null;
+  /** The stored line id, carried ONLY so a component can name its parent below. The composer
+   *  never holds line ids — the seed resolves them to array indexes and drops them. */
+  id: string;
+  /** The stored section id, resolved to an index against the seed's own section list. */
+  sectionId: string | null;
+  unit: string | null;
+  qtyExpr: string | null;
+  roundUp: boolean;
+  parentLineId: string | null;
+  customerVisible: boolean;
+  markupBps: number | null;
 }
 
 export interface ReviseSeed {
@@ -528,6 +579,8 @@ export interface ReviseSeed {
   taxBps: number;
   depBps: number;
   lines: ReviseSeedLine[];
+  /** The original's headings, in render order, with their ids so the lines can find them. */
+  sections: { id: string; name: string }[];
   recommendedTier: TierKey | null;
   tierNames: { good: string; better: string; best: string } | null;
   /** Which numbers the customer saw on the original — a revision must not silently re-expose
@@ -545,6 +598,17 @@ export interface ReviseSeed {
 }
 
 /**
+ * A component's parent as an index into the array it is being mapped WITH. Returns undefined
+ * when the line has no parent, or when the parent did not come along — a dangling reference
+ * would be worse than a line that simply stands on its own.
+ */
+function parentIndexWithin(line: ReviseSeedLine, within: ReviseSeedLine[]): number | undefined {
+  if (!line.parentLineId) return undefined;
+  const at = within.findIndex((candidate) => candidate.id === line.parentLineId);
+  return at >= 0 ? at : undefined;
+}
+
+/**
  * Boot the composer from an EXISTING sent quote ("Revise" — a customer asked for a
  * change). Restores lead, title, pricing and every line; a tiered quote restores its
  * three tiers + recommendation, a flat one lands in the single table. The original
@@ -552,7 +616,12 @@ export interface ReviseSeed {
  * abandoning the composer leaves the sent quote exactly as it was.
  */
 export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): ComposerState {
-  const toLine = (l: ReviseSeedLine): ComposerLine => ({
+  /**
+   * Resolve parent ids to indexes against the array the line will actually LAND in — the tiered
+   * path splits the seed into three arrays, so an index taken against the whole seed would point
+   * at the wrong line (or off the end) in every tier but the first.
+   */
+  const toLine = (l: ReviseSeedLine, _i: number, within: ReviseSeedLine[]): ComposerLine => ({
     d: l.d,
     q: l.q,
     r: l.rCents / 100,
@@ -571,6 +640,19 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
           })),
         }
       : {}),
+    ...(l.unit ? { unit: l.unit } : {}),
+    ...(l.qtyExpr ? { qtyExpr: l.qtyExpr } : {}),
+    ...(l.roundUp ? { roundUp: true } : {}),
+    ...(parentIndexWithin(l, within) !== undefined
+      ? { parentIndex: parentIndexWithin(l, within) }
+      : {}),
+    ...(l.customerVisible ? {} : { hidden: true }),
+    ...(l.markupBps != null ? { markupBps: l.markupBps } : {}),
+    ...(() => {
+      if (!l.sectionId) return {};
+      const at = seed.sections.findIndex((section) => section.id === l.sectionId);
+      return at >= 0 ? { sectionIndex: at } : {};
+    })(),
   });
   const pricing = { disc: seed.discBps / 100, tax: seed.taxBps / 100, dep: seed.depBps / 100 };
   const tiered = seed.lines.some((l) => l.tier != null);
@@ -585,6 +667,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       pricing,
       format: "single",
       lines,
+      sections: seed.sections.map((section) => section.name),
       priceDisplay: seed.priceDisplay,
       presentation: presentationFromSnapshot(seed.presentationSnapshot),
     };
@@ -724,6 +807,12 @@ export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): E
     if (l.scope?.trim()) e.scope = l.scope;
     const sub = realSubItems(l.sub);
     if (sub.length > 0) e.sub = sub.map((si) => ({ d: si.d, q: si.q, unit: si.unit, amt: si.amt }));
+    if (l.unit?.trim()) e.unit = l.unit;
+    if (l.qtyExpr?.trim()) e.qtyExpr = l.qtyExpr;
+    if (l.roundUp) e.roundUp = true;
+    if (l.parentIndex != null) e.parentIndex = l.parentIndex;
+    if (l.hidden) e.hidden = true;
+    if (l.markupBps != null) e.markupBps = l.markupBps;
     return e;
   });
 }
@@ -737,7 +826,14 @@ export function toEstimateLines(lines: (ComposerLine | TieredComposerLine)[]): E
  * payload (save draft AND send) filters through here.
  */
 export function realLines(lines: ComposerLine[]): ComposerLine[] {
-  return lines.filter((l) => (l.d ?? "").trim() !== "");
+  // Re-indexed, not just filtered: dropping a row shifts every position above it, and a
+  // component's parentIndex is a position. See reindexForPayload.
+  return reindexForPayload(lines, isRealLine);
+}
+
+/** A line with something written on it — the only kind that prices or persists. */
+export function isRealLine(line: ComposerLine): boolean {
+  return (line.d ?? "").trim() !== "";
 }
 
 /** True when at least one line has a non-blank description. */

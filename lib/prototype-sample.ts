@@ -82,6 +82,12 @@ export interface SampleEstimateLine {
   c?: number;
   h?: number;
   tune?: boolean;
+  /**
+   * Set when this line is a COMPONENT of the line at that index — a part inside an assembly.
+   * It contributes no money of its own: the parent's rate is already the roll-up of its parts,
+   * so counting both bills the same fence twice.
+   */
+  parentIndex?: number;
 }
 
 export interface SampleEstimate {
@@ -767,7 +773,10 @@ export function calcQuote(
   const discPct = clampSharePct(p.disc ?? 0);
   const depPct = clampSharePct(p.dep ?? 0);
   const taxPct = Math.max(0, p.tax ?? 0);
-  const billed = lines.filter((l) => !l.opt);
+  // Components are excluded before anything else: their money is inside their parent already.
+  // Mirrors Estimate.contributesMoney in the domain — the two must agree or the composer shows
+  // a total the customer's own document does not.
+  const billed = lines.filter((l) => !l.opt && l.parentIndex == null);
   const sub = billed.reduce((s, l) => s + l.q * l.r, 0);
   const taxBase = billed.filter((l) => !l.notax).reduce((s, l) => s + l.q * l.r, 0);
   const disc = sub * (discPct / 100);

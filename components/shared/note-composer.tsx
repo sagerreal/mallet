@@ -270,8 +270,13 @@ export function NoteComposer({
 
       {attachedName && <StagedFileChip name={attachedName} onRemove={attachment.clear} />}
 
+      {/* Class, not an inline font-size: an inline size wins over any external rule regardless of
+          specificity, which is what made this line unreachable for a scope like .po-scope
+          (app/prototype.css) that needs to lift text past this component's own default — the same
+          reason select-menu.tsx moved its trigger caret's size onto a class. The class's own rule
+          keeps every OTHER surface exactly as it was; only .po-scope overrides it. */}
       {error && (
-        <p role="alert" style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
+        <p className="ncomposer-err" role="alert">
           {error}
         </p>
       )}

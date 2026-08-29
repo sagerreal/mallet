@@ -167,6 +167,27 @@ export interface EstimateLine {
   scope?: string;
   /** Internal sub-items that roll up into the line's rate ($). Never shown to the customer. */
   sub?: EstimateSubItem[];
+  /** What the quantity is counted in ("LF", "hr"). Display only — never in the money math. */
+  unit?: string;
+  /**
+   * How the quantity was authored, when it was typed as math ("qty/8+1"). `q` above stays the
+   * resolved number; this is only the authoring layer, and the server re-derives `q` from it.
+   */
+  qtyExpr?: string;
+  /** Round the resolved quantity up to a whole unit. Absent reads as false. */
+  roundUp?: boolean;
+  /**
+   * Index of the line this one is a component of, within the same line array.
+   * An index rather than an id because the server mints line ids — the client never holds one
+   * for a line it has not saved yet.
+   */
+  parentIndex?: number;
+  /** Hidden from the customer's copy. Stated as the exception, like `notax`. */
+  hidden?: boolean;
+  /** Markup over cost in basis points when the line is priced from its cost. */
+  markupBps?: number;
+  /** The section this line sits under, as an index into the estimate's `sections`. */
+  sectionIndex?: number;
 }
 
 /** One row of the estimating math behind a line — amounts in DOLLARS like the rest of the store. */
@@ -210,6 +231,11 @@ export interface Estimate {
   validDays?: number;
   fu: { on: boolean; stage: number };
   lines: EstimateLine[];
+  /**
+   * Headings the lines are grouped under, in render order. Empty on an ungrouped quote. A line
+   * names one by index (EstimateLine.sectionIndex) — the store holds no ids.
+   */
+  sections?: string[];
   pricing?: { disc: number; dep: number; tax: number };
   /** Customer opens, oldest → newest. The customer is never told these exist. */
   reads?: EstimateRead[];
@@ -663,6 +689,85 @@ export interface InvoiceAuthorization {
   authorizedCents: number;
   /** Set ONLY when this bill exceeds what was signed. The part nobody authorised. */
   overage: { authorizedCents: number; invoicedCents: number; excessCents: number } | null;
+}
+
+// ---- Purchasing (Purchase orders) ------------------------------------------
+//
+// What a trade shop buys from a supplier. Unlike Invoice/Estimate, there is no
+// store-local "manual" draft path here: every PurchaseOrder in this store was
+// either hydrated from v1.purchasing.list or adopted from a mutation's return
+// DTO, so there is no `origin` field to distinguish a not-yet-persisted row —
+// see purchase-orders-slice.ts for the create flow this implies.
+
+export type POStatus = "draft" | "ordered" | "cancelled";
+export type POShipTo = "counter_pickup" | "job_site" | "shop";
+
+export interface PurchaseOrderLine {
+  id: string;
+  description: string;
+  qty: number;
+  uom: string;
+  /**
+   * Thousandths of a cent — a RATE, not a money amount. Carried through UNCONVERTED from the
+   * wire (see dtoPurchaseOrderToStore in dto-mapper.ts): this is NOT one of the dollar fields on
+   * this record and must never be divided by 100 alongside freight/tax/total/amount. Task 8's
+   * line editor divides this by 100_000 to display a per-unit dollar cost. Mirrors
+   * modules/purchasing/domain/purchase-order.ts POLineProps.unitCostMillicents.
+   */
+  unitCostMillicents: number;
+  /** Dollars — this line's extended amount (qty × unitCostMillicents, rounded to the cent). */
+  amount: number;
+}
+
+export interface PurchaseOrderNote {
+  id: string;
+  body: string;
+  authorUserId: string | null;
+  /** Resolved server-side from authorUserId — never a store lookup. */
+  authorName: string | null;
+  /**
+   * The ONE file this note carries — same one-attachment-per-note convention as LeadNote.att.
+   * `path` is the storage key inside the private bucket, never a URL; a view link is minted at
+   * click time via v1.purchasing.noteViewUrl.
+   */
+  attachment?: { path: string; type: string; name: string };
+  createdAt: string;
+}
+
+export interface PurchaseOrder {
+  id: string;
+  /** null on a draft; stamped server-side (gapless sequence) the moment `place` succeeds. */
+  num: string | null;
+  vendor: string;
+  status: POStatus;
+  jobId: string | null;
+  /** Resolved server-side from jobId — never a store lookup. */
+  jobTitle: string | null;
+  /** Calendar date "YYYY-MM-DD", or null — a postgres `date` column, not an instant. */
+  orderedAt: string | null;
+  /** Calendar date "YYYY-MM-DD", or null. */
+  expectedAt: string | null;
+  shipTo: POShipTo;
+  /** Stamped server-side at create from the caller's principal; never re-targetable. */
+  orderedByUserId: string | null;
+  /** Resolved server-side from orderedByUserId — never a store lookup. */
+  orderedByName: string | null;
+  /** Dollars. */
+  freight: number;
+  /** Dollars. */
+  tax: number;
+  /** Dollars — subtotal(lines) + freight + tax, the server's own figure. */
+  total: number;
+  lines: PurchaseOrderLine[];
+  /** ISO — purchase_orders.created_at, verbatim. */
+  createdAt: string;
+  /**
+   * The note trail. Empty until a modal loads it (v1.purchasing.listNotes) or appendPONote adds
+   * the first one — no list/mutation DTO in this router carries notes, so every fresh hydrate or
+   * reconcile would otherwise wipe out what a modal already fetched; the slice's merge helper
+   * (mergeIncomingPO) preserves this array across those writes instead of overwriting it with [].
+   */
+  notes: PurchaseOrderNote[];
 }
 
 // ---- Time entry (Timesheets) -----------------------------------------------

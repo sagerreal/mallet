@@ -213,6 +213,39 @@ export const estimates = pgTable(
 );
 
 // A priced line on an estimate. Composite FK (org_id, estimate_id) enforces intra-org containment.
+/**
+ * A named group of lines on one estimate — "Demolition & site prep", "New fence" — with its own
+ * subtotal on the customer's copy. A real table rather than a string on the line so a section can
+ * be renamed, reordered and emptied without touching its members, and so an empty section can
+ * exist while the estimator builds it out.
+ *
+ * Lines reference it nullably: an ungrouped line keeps its place in the document, it just has no
+ * heading above it.
+ */
+export const estimateSections = pgTable(
+  "estimate_sections",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    estimateId: uuid("estimate_id").notNull(),
+    name: text("name").notNull(),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    foreignKey({
+      name: "estimate_sections_estimate_fk",
+      columns: [t.orgId, t.estimateId],
+      foreignColumns: [estimates.orgId, estimates.id],
+    }).onDelete("cascade"),
+    // The composite target estimate_lines.section_id points at.
+    unique("estimate_sections_org_id_key").on(t.orgId, t.id),
+    index("estimate_sections_org_est_idx").on(t.orgId, t.estimateId),
+  ],
+);
+
 export const estimateLines = pgTable(
   "estimate_lines",
   {
@@ -252,6 +285,39 @@ export const estimateLines = pgTable(
     // rate_cents stays the single pricing source of truth — the composer derives it from these,
     // the server never enforces the sum.
     subItems: jsonb("sub_items").$type<SubItemsColumn>(),
+    // The unit the quantity is counted in — "LF", "hr", "bags". Display only: it never enters
+    // the money math (amount is still quantity × rate), it tells the customer what they are
+    // buying 100 of. Null on a line that is simply a thing rather than a measured amount.
+    unit: text("unit"),
+    /**
+     * The TYPED MATH behind `quantity`, when the estimator authored one ("qty/8+1" posts off a
+     * fence run). `quantity` above stays the resolved number every total, DTO, public page and
+     * invoice reads; this is the authoring layer, re-evaluated server-side on every write by
+     * modules/quoting/domain/quantity-expression.ts so the two can never disagree.
+     */
+    qtyExpr: text("qty_expr"),
+    /** Round the resolved quantity up to a whole unit — you cannot buy half a post. */
+    roundUp: boolean("round_up").notNull().default(false),
+    /**
+     * The parent this line is a component of, for an assembly: the parent carries the customer
+     * price and the children carry the estimating math. Composite FK to (org_id, id) on this
+     * same table. Null on an ordinary line.
+     */
+    parentLineId: uuid("parent_line_id"),
+    /** The named group this line sits under, if any. */
+    sectionId: uuid("section_id"),
+    /**
+     * Does the customer see this line at all. DEFAULT TRUE, load-bearing for the same reason
+     * `taxable` is: every line written before this column existed was shown, so `true` is what
+     * those rows already meant. Distinct from `is_optional` (visible, and choosable) and from
+     * the header's `price_display` (which hides amounts, not lines).
+     */
+    customerVisible: boolean("customer_visible").notNull().default(true),
+    /**
+     * Markup over cost, in basis points, when this line is priced from its cost rather than
+     * hand-priced. Null = hand-priced; `rate_cents` is the truth either way.
+     */
+    markupBps: integer("markup_bps"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
@@ -262,8 +328,23 @@ export const estimateLines = pgTable(
       columns: [t.orgId, t.estimateId],
       foreignColumns: [estimates.orgId, estimates.id],
     }).onDelete("cascade"),
+    // A component dies with its parent. Tenant-safe: a line can only parent a line in its own org.
+    foreignKey({
+      name: "estimate_lines_parent_fk",
+      columns: [t.orgId, t.parentLineId],
+      foreignColumns: [t.orgId, t.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "estimate_lines_section_fk",
+      columns: [t.orgId, t.sectionId],
+      foreignColumns: [estimateSections.orgId, estimateSections.id],
+    }).onDelete("set null"),
+    // The target of the parent self-FK above — a composite FK needs a unique to point at.
+    unique("estimate_lines_org_id_uq").on(t.orgId, t.id),
     index("estimate_lines_org_est_idx").on(t.orgId, t.estimateId),
+    index("estimate_lines_org_parent_idx").on(t.orgId, t.parentLineId),
     check("estimate_lines_qty_check", sql`${t.quantity} >= 0`),
+    check("estimate_lines_markup_check", sql`${t.markupBps} is null or ${t.markupBps} >= 0`),
     check("estimate_lines_tier_check", sql`${t.tier} in ('good', 'better', 'best')`),
     check("estimate_lines_rate_check", sql`${t.rateCents} >= 0`),
     check("estimate_lines_cost_check", sql`${t.costCents} >= 0`),

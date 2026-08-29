@@ -16,6 +16,7 @@ import { JobsHydrator } from "@/features/jobs/jobs-hydrator";
 import { TechsHydrator } from "@/features/team/techs-hydrator";
 import { EstimatesHydrator } from "@/features/quotes/estimates-hydrator";
 import { InvoicesHydrator } from "@/features/money/invoices-hydrator";
+import { OrdersHydrator } from "@/features/money/orders-hydrator";
 import { TasksHydrator } from "@/features/tasks/tasks-hydrator";
 import { CompaniesHydrator } from "@/features/customers/companies-hydrator";
 import { ChecklistsHydrator } from "@/features/checklists/checklists-hydrator";
@@ -78,6 +79,7 @@ export default async function OfficeLayout({ children }: { children: ReactNode }
         <TechsHydrator />
         <EstimatesHydrator />
         <InvoicesHydrator />
+        <OrdersHydrator />
         <TasksHydrator />
         <CompaniesHydrator />
         <ChecklistsHydrator />
