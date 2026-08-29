@@ -26,7 +26,14 @@ import { fmt$ } from "@/lib/format";
 import { QuoteLines } from "./QuoteLines";
 import { tierViewsFor } from "./tier-view";
 import { groupBySection } from "./section-groups";
-import { ProposalPhotos } from "./ProposalPhotos";
+import {
+  ProposalCover,
+  ProposalPage,
+  ProposalShell,
+  docHasCoverSheet,
+  docPages,
+  snapshotSheetStyle,
+} from "./ProposalDocument";
 import { payableDepositCents } from "@/modules/quoting/domain/deposit-payable";
 
 // Token format: 64 hex chars. Validate before hitting the DB.
@@ -193,15 +200,10 @@ export default async function PublicQuotePage({
   // it yet); thanks renders after the terms so the document ends on the shop's voice.
   const presentation = p.presentationSnapshot ?? null;
   const presentationCover = presentation?.pages.find((page) => page.key === "cover") ?? null;
-  // A page renders when it has words OR pictures. Filtering on prose alone hid a photos page
-  // whose whole content is the photos — which is most of them.
-  const presentationBody =
-    presentation?.pages.filter(
-      (page) =>
-        page.key !== "cover" &&
-        page.key !== "thanks" &&
-        (page.body.trim().length > 0 || (page.photos?.length ?? 0) > 0),
-    ) ?? [];
+  // Which pages render, and in what order — decided once, by the same rules the office's
+  // preview follows. A page renders when it has words OR pictures: filtering on prose alone hid
+  // a photos page whose whole content is the photos, which is most of them.
+  const presentationBody = presentation ? docPages(presentation) : [];
   // Short-lived links minted server-side — the visitor has no session, so there is no path by
   // which the browser could sign these for itself. See signProposalPhotos.
   const photoUrls = view.photoUrls ?? new Map<string, string>();
@@ -231,108 +233,64 @@ export default async function PublicQuotePage({
         padding: "0 0 var(--space-10)",
       }}
     >
-      {presentationCover && (
-        /* Proposal cover — the designed first page. Same column as the card; accent band. */
-        <div
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            background: "var(--accent)",
-            color: "var(--pri-fg)",
-            borderRadius: "0 0 16px 16px",
-            padding: "var(--space-8) var(--space-6) var(--space-6)",
-            marginBottom: "var(--space-4)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-mono, ui-monospace, monospace)",
-              fontSize: "var(--type-xs)",
-              letterSpacing: ".16em",
-              textTransform: "uppercase",
-              opacity: 0.75,
-            }}
-          >
-            {presentationCover.title.trim() || "Proposal"}
-          </div>
-          <h1
-            style={{
-              fontFamily: "var(--font-display)",
-              fontSize: "var(--type-3xl)",
-              lineHeight: 1.08,
-              letterSpacing: "-.02em",
-              margin: "var(--space-3) 0 var(--space-3)",
-            }}
-          >
-            {p.title?.trim() || `Quote ${p.num}`}
-          </h1>
-          <div style={{ fontSize: "var(--type-sm)", opacity: 0.85 }}>
-            Prepared for <b>{customerFirstName}</b> by {orgName} &middot; {p.num}
-          </div>
-          {presentationCover.body.trim() && (
-            /* The shop's own cover line — the composer's cover editor writes it, so it renders
-               here exactly as the preview showed it. */
-            <p
-              style={{
-                fontSize: "var(--type-sm)",
-                lineHeight: 1.6,
-                opacity: 0.85,
-                margin: "var(--space-3) 0 0",
-                whiteSpace: "pre-wrap",
-              }}
-            >
-              {presentationCover.body}
-            </p>
+      {/* The proposal, as paper — the same sheets the office previewed, carrying the shop's
+          own look. A quote with no presentation stays the plain card below, which is the
+          default and deliberately not a document. */}
+      {presentation && (
+        <div className="sheets" style={snapshotSheetStyle(presentation)}>
+          {docHasCoverSheet(presentation) && (
+            <article className="docsheet" aria-label="Cover page">
+              <ProposalCover
+                page={presentationCover}
+                title={p.title?.trim() || `Quote ${p.num}`}
+                customerFirstName={customerFirstName}
+                orgName={orgName}
+                quoteNum={p.num}
+                meta={presentation.meta}
+              />
+              {presentationBody.map((page) => (
+                <ProposalPage key={page.key} page={page} urls={photoUrls} />
+              ))}
+              <footer className="docsheet-foot">
+                <span>{orgName}</span>
+                <span>Page 1</span>
+              </footer>
+            </article>
           )}
         </div>
       )}
-      {presentationBody.map((page) => (
-        /* Designed body page (about us / reviews) — the shop's own words, pre-wrap. */
-        <div
-          key={page.key}
-          style={{
-            width: "100%",
-            maxWidth: 520,
-            background: "var(--card)",
-            border: "1px solid var(--line)",
-            borderRadius: "var(--radius-md)",
-            padding: "var(--space-5) var(--space-6)",
-            marginBottom: "var(--space-4)",
-            boxShadow: "var(--shadow)",
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-mono, ui-monospace, monospace)",
-              fontSize: "var(--type-xs)",
-              letterSpacing: ".14em",
-              textTransform: "uppercase",
-              color: "var(--ink-3)",
-              marginBottom: "var(--space-2)",
-            }}
-          >
-            {page.title.trim() || page.key}
-          </div>
-          <p style={{ whiteSpace: "pre-wrap", fontSize: "var(--type-base)", lineHeight: 1.55, margin: 0 }}>
-            {page.body}
-          </p>
-          <ProposalPhotos photos={page.photos ?? []} urls={photoUrls} />
-        </div>
-      ))}
-      {/* Quote card — max 520px, full-width on mobile */}
+
+      {/* The quote itself.
+          On a plain quote this is the 520px card it has always been. On a proposal it is the
+          estimate SHEET — in Simple that sheet also carries the cover and the photos, because
+          Simple is one page. Its machinery (add-on toggles, approve, sign, pay) is identical
+          either way: a document is not a reason to rebuild the part that takes the money. */}
+      <ProposalShell presentation={presentation} orgName={orgName}>
+        {presentation && !docHasCoverSheet(presentation) && (
+          <>
+            <ProposalCover
+              page={presentationCover}
+              title={p.title?.trim() || `Quote ${p.num}`}
+              customerFirstName={customerFirstName}
+              orgName={orgName}
+              quoteNum={p.num}
+              meta={presentation.meta}
+            />
+            {presentationBody.map((page) => (
+              <ProposalPage key={page.key} page={page} urls={photoUrls} />
+            ))}
+          </>
+        )}
       <div
         style={{
           width: "100%",
-          maxWidth: 520,
           background: "var(--card)",
-          border: "1px solid var(--line)",
-          borderRadius: "0 0 16px 16px",
           overflow: "hidden",
-          boxShadow: "var(--shadow)",
         }}
       >
-        {/* Branded header */}
+        {/* Branded header — a plain quote only. On a proposal the COVER already names the shop
+            and the quote, and a second brand band inside the document reads as another card. */}
+        {!presentation && (
         <div className="custhead">
           <div className="custlogo">{initials}</div>
           <div style={{ flex: 1 }}>
@@ -342,6 +300,7 @@ export default async function PublicQuotePage({
             </div>
           </div>
         </div>
+        )}
 
         {/* Body */}
         <div className="custbody">
@@ -487,6 +446,7 @@ export default async function PublicQuotePage({
           </p>
         </div>
       </div>
+      </ProposalShell>
 
       {presentationThanks && (
         /* Closing page — the document ends on the shop's voice. */

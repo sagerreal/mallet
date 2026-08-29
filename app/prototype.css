@@ -1530,7 +1530,7 @@
      scale rather than the app's: every size below is derived from --doc-size, which the
      toolbar changes. They are named --type-doc-* because that is what they are — type
      tokens, scoped to the document. */
-  .sheets{max-width:760px;margin:0 auto;
+  .sheets{width:100%;max-width:760px;margin:0 auto;
     --doc-gutter:54px;
     --type-doc:var(--doc-size,14px);
     --type-doc-xs:calc(var(--type-doc) * .72);
@@ -1593,6 +1593,14 @@
   .docphoto-slot.empty[disabled]{cursor:default;color:var(--ink-3)}
   .docphoto-tag{position:absolute;left:6px;top:6px;background:rgb(32 35 31 / 78%);color:#fff;border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-1);font-size:var(--type-doc-xs);font-weight:700;letter-spacing:.06em;text-transform:uppercase}
   .docphoto-cap{margin-top:var(--space-1);font-size:var(--type-doc-sm);color:var(--ink-3);line-height:1.4}
+  /* A phone is not paper. The fixed page height and the print gutter are what make a sheet
+     read as a page on a desktop; on a 390px screen they are 28% of the width in margin and a
+     screenful of blank below the content. The page footers stay — they are what separate one
+     sheet from the next when the edges no longer do. */
+  @media (max-width:760px){
+    .sheets{--doc-gutter:var(--space-5)}
+    .docsheet{min-height:0}
+  }
   /* ---------- the document toolbar ----------
      Grouped with dividers the way a document editor does it, not a row of pills. */
   .doctoolbar{display:flex;align-items:center;gap:var(--space-2xs);flex-wrap:wrap;background:var(--card);
