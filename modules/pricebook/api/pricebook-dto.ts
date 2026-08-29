@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Service } from "../domain/service";
+import type { ItemComponent } from "../domain/item-component";
 import type { Category } from "../domain/category";
 import type { Material } from "../domain/material";
 import type { ServiceMaterial } from "../domain/service-material";
@@ -23,6 +24,36 @@ export const measuredByKindDTO = z.enum([
   "site_lnft",
 ]);
 
+/** One part of a saved assembly. No quantity — only the expression it is counted by. */
+export const itemComponentDTO = z.object({
+  id: z.string().uuid(),
+  description: z.string(),
+  unit: z.string().nullable(),
+  qtyExpr: z.string().nullable(),
+  roundUp: z.boolean(),
+  unitCostCents: z.number().int().nonnegative(),
+  unitPriceCents: z.number().int().nonnegative(),
+  markupBps: z.number().int().nonnegative().nullable(),
+  position: z.number().int(),
+});
+
+export type ItemComponentDTO = z.infer<typeof itemComponentDTO>;
+
+export const toItemComponentDTO = (component: ItemComponent): ItemComponentDTO => {
+  const p = component.props;
+  return {
+    id: p.id,
+    description: p.description,
+    unit: p.unit,
+    qtyExpr: p.qtyExpr,
+    roundUp: p.roundUp,
+    unitCostCents: p.unitCostCents,
+    unitPriceCents: p.unitPriceCents,
+    markupBps: p.markupBps,
+    position: p.position,
+  };
+};
+
 export const serviceDTO = z.object({
   id: z.string().uuid(),
   categoryId: z.string().uuid().nullable(),
@@ -39,6 +70,14 @@ export const serviceDTO = z.object({
   active: z.boolean(),
   position: z.number().int(),
   measuredBy: measuredByKindDTO.nullable(),
+  /** What the price is per, in the trade's own words ("LF"). Display only. */
+  unit: z.string().nullable(),
+  /**
+   * The parts this entry is built from, when it is a saved ASSEMBLY. Empty on an ordinary
+   * service — the presence of parts is what makes an entry an assembly, so there is no separate
+   * flag that could disagree with the rows.
+   */
+  components: z.array(itemComponentDTO),
 });
 
 export type ServiceDTO = z.infer<typeof serviceDTO>;
@@ -101,7 +140,15 @@ export const seedPricebookDTO = z.object({
 
 export type SeedPricebookDTO = z.infer<typeof seedPricebookDTO>;
 
-export const toServiceDTO = (service: Service): ServiceDTO => {
+/**
+ * A service, with its parts when it has any. `components` is a parameter rather than something
+ * read here: the list path batches every entry's parts in one query, and a mapper that fetched
+ * its own would be the N+1 that batching exists to avoid.
+ */
+export const toServiceDTO = (
+  service: Service,
+  components: readonly ItemComponent[] = [],
+): ServiceDTO => {
   const p = service.props;
   return {
     id: p.id,
@@ -119,6 +166,8 @@ export const toServiceDTO = (service: Service): ServiceDTO => {
     active: p.active,
     position: p.position,
     measuredBy: p.measuredBy,
+    unit: p.unit,
+    components: components.map(toItemComponentDTO),
   };
 };
 

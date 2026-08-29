@@ -5,6 +5,8 @@ import { asServiceId, asMaterialId, toPage, isOk } from "@mallet/shared/types";
 import { logger } from "@mallet/shared/observability";
 import { pricebookFor } from "@/app/(office)/settings/pricebooks";
 import { DrizzleSettingsRepository, OrgSettings } from "@mallet/settings";
+import { DrizzleItemComponentRepository } from "../infra/drizzle-item-component-repository";
+import { SaveAssemblyUseCase } from "../app/save-assembly";
 import { DrizzleServiceRepository } from "../infra/drizzle-service-repository";
 import { DrizzleCategoryRepository } from "../infra/drizzle-category-repository";
 import { DrizzleMaterialRepository } from "../infra/drizzle-material-repository";
@@ -45,6 +47,34 @@ const serviceListInput = z.object({
   cursor: z.string().nullish(),
   search: z.string().max(200).optional(),
   categoryId: z.string().uuid().optional(),
+});
+
+/**
+ * Save an assembly from a quote into the book. `itemId` present overwrites that entry; absent
+ * mints a new one — which is what both "Save to pricebook" and "Save as new" do.
+ */
+const saveAssemblyInput = z.object({
+  itemId: z.string().uuid().nullish(),
+  name: z.string().trim().min(1).max(500),
+  unit: z.string().trim().min(1).max(20).nullish(),
+  unitPriceCents: z.number().int().nonnegative(),
+  costCents: z.number().int().nonnegative().optional(),
+  categoryId: z.string().uuid().nullish(),
+  taxable: z.boolean().optional(),
+  components: z
+    .array(
+      z.object({
+        description: z.string().trim().min(1).max(500),
+        unit: z.string().trim().min(1).max(20).nullish(),
+        qtyExpr: z.string().trim().min(1).max(120).nullish(),
+        roundUp: z.boolean().optional(),
+        unitCostCents: z.number().int().nonnegative().optional(),
+        unitPriceCents: z.number().int().nonnegative(),
+        markupBps: z.number().int().nonnegative().nullish(),
+      }),
+    )
+    .min(1)
+    .max(60),
 });
 
 const serviceCreateInput = z.object({
@@ -251,7 +281,14 @@ export const createPricebookRouter = () =>
             search: input.search,
             categoryId: input.categoryId,
           });
-          return { items: page.items.map(toServiceDTO), nextCursor: page.nextCursor };
+          // ONE query for the whole page's parts, not one per entry — that N+1 is exactly what
+          // listForMany exists to prevent, and the pricebook list renders every row it has.
+          const components = new DrizzleItemComponentRepository(ctx.tx, ctx.principal.orgId);
+          const byItem = await components.listForMany(page.items.map((s) => s.props.id));
+          return {
+            items: page.items.map((service) => toServiceDTO(service, byItem.get(service.props.id) ?? [])),
+            nextCursor: page.nextCursor,
+          };
         }),
 
       create: ownerOrOffice
@@ -283,6 +320,47 @@ export const createPricebookRouter = () =>
           return toServiceDTO(orThrow(result));
         }),
 
+      /**
+       * Save an assembly from a quote, or update the entry it came from. One procedure for
+       * all three affordances the composer offers — the difference is only whether an id
+       * came in.
+       */
+      saveAssembly: ownerOrOffice
+        .input(saveAssemblyInput)
+        .output(serviceDTO)
+        .mutation(async ({ ctx, input }) => {
+          const services = new DrizzleServiceRepository(ctx.tx, ctx.principal.orgId);
+          const components = new DrizzleItemComponentRepository(ctx.tx, ctx.principal.orgId);
+          const useCase = new SaveAssemblyUseCase(
+            services,
+            components,
+            ctx.deps.clock,
+            ctx.deps.ids,
+          );
+          const saved = orThrow(
+            await useCase.exec({
+              orgId: ctx.principal.orgId,
+              itemId: input.itemId ?? null,
+              name: input.name,
+              unit: input.unit ?? null,
+              unitPriceCents: input.unitPriceCents,
+              costCents: input.costCents ?? 0,
+              categoryId: input.categoryId ?? null,
+              taxable: input.taxable ?? true,
+              components: input.components.map((c) => ({
+                description: c.description,
+                unit: c.unit ?? null,
+                qtyExpr: c.qtyExpr ?? null,
+                roundUp: c.roundUp ?? false,
+                unitCostCents: c.unitCostCents ?? 0,
+                unitPriceCents: c.unitPriceCents,
+                markupBps: c.markupBps ?? null,
+              })),
+            }),
+          );
+          return toServiceDTO(saved.service, saved.components);
+        }),
+
       update: ownerOrOffice
         .input(serviceUpdateInput)
         .output(serviceDTO)
@@ -309,7 +387,11 @@ export const createPricebookRouter = () =>
             },
             ctx.principal.orgId,
           );
-          return toServiceDTO(orThrow(result));
+          // Reload the parts: editing an assembly's price through this endpoint must not
+          // report it as having none, which is what an empty list here would say.
+          const updated = orThrow(result);
+          const components = new DrizzleItemComponentRepository(ctx.tx, ctx.principal.orgId);
+          return toServiceDTO(updated, await components.listFor(updated.props.id));
         }),
 
       archive: ownerOrOffice
@@ -883,7 +965,8 @@ export const createPricebookRouter = () =>
         });
         const seeded = orThrow(result);
         return {
-          services: seeded.services.map(toServiceDTO),
+          // A seeded pack carries no assemblies, so every entry maps with no parts.
+          services: seeded.services.map((service) => toServiceDTO(service)),
           categories: seeded.categories.map(toCategoryDTO),
           materials: seeded.materials.map(toMaterialDTO),
         };

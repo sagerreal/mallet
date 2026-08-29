@@ -39,6 +39,8 @@ import {
   withRollUps,
   sectionTotal,
   removeSectionAt,
+  assemblySyncState,
+  type SavedComponent,
 } from "./line-math";
 import { fmt$ } from "@/lib/format";
 
@@ -48,6 +50,8 @@ export function LineTable({
   showCost,
   onLines,
   onSections,
+  savedAssemblies,
+  onSaveAssembly,
   footerTools,
   materialize,
   provenanceFor,
@@ -83,6 +87,14 @@ export function LineTable({
   taxed?: boolean;
   /** 'total' dims the amount column — those numbers stay yours; the customer sees one price. */
   priceMode?: "lines" | "total";
+  /**
+   * The parts of each saved assembly in the shop's book, keyed by pricebook entry. What the
+   * three states below are compared against. Absent means the book has not loaded — every
+   * assembly then reads as unsaved, which is the honest answer while nothing is known.
+   */
+  savedAssemblies?: ReadonlyMap<string, readonly SavedComponent[]>;
+  /** Save this assembly to the book. `itemId` present means overwrite; absent mints a new one. */
+  onSaveAssembly?: (parentIndex: number, itemId: string | null) => void;
 }) {
   const cols = showCost ? 8 : 6;
   // GBB renders three LineTables at once — panel ids must be unique per instance or every
@@ -200,7 +212,53 @@ export function LineTable({
             {components > 0 ? `↳ Add component (${components})` : "↳ Add component"}
           </button>
         )}
+        {!isComponent && components > 0 && onSaveAssembly && bookControl(line, i)}
       </div>
+    );
+  };
+
+  /**
+   * Where this assembly stands against the shop's book: not in it, matching it, or drifted
+   * from it. Three states, and each one offers only the action that state allows — an assembly
+   * that matches the book offers nothing to press, because there is nothing to do.
+   */
+  const bookControl = (line: ComposerLine, i: number) => {
+    const saved = line.pricebookItemId ? savedAssemblies?.get(line.pricebookItemId) : undefined;
+    const state = assemblySyncState(line, componentIndexes(lines, i).map((at) => lines[at]!), saved);
+    if (state === "synced") {
+      return <span className="linehint-note">✓ In pricebook</span>;
+    }
+    if (state === "modified") {
+      return (
+        <>
+          <button
+            type="button"
+            className="linehint"
+            title="Overwrite the pricebook entry this came from"
+            onClick={() => onSaveAssembly?.(i, line.pricebookItemId ?? null)}
+          >
+            ↑ Update in pricebook
+          </button>
+          <button
+            type="button"
+            className="linehint"
+            title="Keep the entry it came from and save this as a separate one"
+            onClick={() => onSaveAssembly?.(i, null)}
+          >
+            + Save as new
+          </button>
+        </>
+      );
+    }
+    return (
+      <button
+        type="button"
+        className="linehint"
+        title="Save this assembly to your pricebook so you can quote it again"
+        onClick={() => onSaveAssembly?.(i, null)}
+      >
+        + Save to pricebook
+      </button>
     );
   };
 

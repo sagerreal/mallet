@@ -421,6 +421,28 @@ export interface Service {
   // Null = today's flat-price semantics, unchanged. Kind values mirror
   // modules/pricebook/domain/service.ts's PaintingQuantityKind.
   measuredBy: string | null;
+  /** What the price is per, in the trade's own words ("LF"). Display only. */
+  unit?: string | null;
+  /**
+   * The parts this entry is built from, when it is a saved ASSEMBLY. Absent or empty on an
+   * ordinary service — having parts is what makes an entry an assembly, so nothing else can
+   * disagree with the rows. Money is DOLLARS here, like every store amount.
+   */
+  components?: ServiceComponent[];
+}
+
+/** One part of a saved assembly. No quantity — only the expression it is counted by. */
+export interface ServiceComponent {
+  id: string;
+  d: string;
+  unit?: string;
+  qtyExpr?: string;
+  roundUp?: boolean;
+  /** Dollars. */
+  cost: number;
+  /** Dollars. */
+  rate: number;
+  markupBps?: number;
 }
 
 export interface Category {
