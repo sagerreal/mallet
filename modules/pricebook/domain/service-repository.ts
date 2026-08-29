@@ -21,6 +21,8 @@ export interface ServiceRepository {
     active: boolean;
     position: number;
     measuredBy: ServicePricedBy | null;
+    /** What the price is per ("LF"). Optional so every existing caller is unchanged. */
+    unit?: string | null;
   }): Promise<Service>;
 
   findById(id: ServiceId): Promise<Service | null>;

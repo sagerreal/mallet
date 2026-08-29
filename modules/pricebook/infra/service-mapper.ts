@@ -64,6 +64,7 @@ export const rowToService = (row: ServiceRow): Service => {
     active: row.active,
     position: row.position,
     measuredBy: readMeasuredBy(row.measuredBy, row.id),
+    unit: row.unit,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

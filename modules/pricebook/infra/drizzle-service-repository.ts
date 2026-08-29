@@ -40,6 +40,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
     active: boolean;
     position: number;
     measuredBy: ServicePricedBy | null;
+    unit?: string | null;
   }): Promise<Service> {
     const rows = await this.tx
       .insert(pricebookItems)
@@ -60,6 +61,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
         active: input.active,
         position: input.position,
         measuredBy: input.measuredBy,
+        unit: input.unit ?? null,
       })
       .returning();
     const row = rows[0];
@@ -155,6 +157,7 @@ export class DrizzleServiceRepository implements ServiceRepository {
         active: p.active,
         position: p.position,
         measuredBy: p.measuredBy,
+        unit: p.unit,
         updatedAt: p.updatedAt,
       })
       // Guard: explicit org_id + non-deleted check (defense in depth alongside RLS).

@@ -37,6 +37,7 @@ const baseProps = (overrides: Partial<ServiceProps> = {}): ServiceProps => ({
   active: true,
   position: 0,
   measuredBy: null,
+  unit: null,
   createdAt: new Date("2026-07-01T00:00:00Z"),
   updatedAt: new Date("2026-07-01T00:00:00Z"),
   ...overrides,

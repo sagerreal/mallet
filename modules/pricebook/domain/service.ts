@@ -67,6 +67,9 @@ export const isMeasuredByKind = (v: string): v is ServicePricedBy =>
   Object.prototype.hasOwnProperty.call(TRIM_AREA_KIND_SET, v) ||
   Object.prototype.hasOwnProperty.call(SITE_KIND_SET, v);
 
+/** Matches the column, and the estimate line's own unit bound. */
+export const MAX_SERVICE_UNIT_CHARS = 20;
+
 export interface ServiceProps {
   readonly id: ServiceId;
   readonly orgId: OrgId;
@@ -87,6 +90,12 @@ export interface ServiceProps {
   // painting wall service priced per sqft) rather than a flat price. Null preserves today's
   // flat-price semantics unchanged.
   readonly measuredBy: ServicePricedBy | null;
+  /**
+   * What the price is per, in the trade's own words ("LF", "sq ft", "ea"). Display only — it
+   * never enters the money math. Distinct from measuredBy, which names a quantity the app can
+   * derive from a scan; a shop that quotes fence by the foot has a unit and no measured kind.
+   */
+  readonly unit: string | null;
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -108,7 +117,11 @@ export class Service {
     if (props.measuredBy !== null && !isMeasuredByKind(props.measuredBy)) {
       return err(validation("measuredBy must be a recognized room quantity kind", "measuredBy"));
     }
-    return ok(new Service({ ...props, name }));
+    const unit = props.unit?.trim() ?? "";
+    if (unit.length > MAX_SERVICE_UNIT_CHARS) {
+      return err(validation(`unit cannot exceed ${MAX_SERVICE_UNIT_CHARS} characters`, "unit"));
+    }
+    return ok(new Service({ ...props, name, unit: unit === "" ? null : unit }));
   }
 
   // Patch a subset of scalar fields. Undefined = keep current; explicit null is allowed for all
@@ -129,6 +142,7 @@ export class Service {
       active?: boolean;
       position?: number;
       measuredBy?: ServicePricedBy | null;
+      unit?: string | null;
     },
     now: Date,
   ): Result<Service, ValidationError> {
@@ -150,6 +164,7 @@ export class Service {
       active: fields.active !== undefined ? fields.active : this.p.active,
       position: fields.position !== undefined ? fields.position : this.p.position,
       measuredBy: fields.measuredBy !== undefined ? fields.measuredBy : this.p.measuredBy,
+      unit: fields.unit !== undefined ? fields.unit : this.p.unit,
       updatedAt: now,
     });
   }

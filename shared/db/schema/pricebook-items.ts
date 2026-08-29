@@ -46,6 +46,14 @@ export const pricebookItems = pgTable(
     // modules/pricebook/domain/service.ts's MEASURED_BY_KIND_SET/SITE_KIND_SET (compile-time
     // pinned to the measurements module's types without importing its barrel).
     measuredBy: text("measured_by"),
+    /**
+     * What the price is per, in the trade's own words ("LF", "sq ft", "ea").
+     *
+     * Distinct from measuredBy, which names a MEASURED quantity kind the app can derive from a
+     * scan. A shop that quotes fence by the linear foot has a unit and no measured kind; the two
+     * answer different questions and a service can carry either, both, or neither.
+     */
+    unit: text("unit"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
