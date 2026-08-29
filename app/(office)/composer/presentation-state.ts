@@ -10,13 +10,76 @@
  * re-exports everything here, so import sites are unchanged.
  */
 
-export type PresentationPageKey = "cover" | "about" | "reviews" | "thanks";
+/**
+ * The pages a proposal may carry, in the order they read. Mirrors the domain's
+ * PRESENTATION_PAGE_KEYS — `terms` and the estimate are not here: the terms come from the
+ * quote's own snapshot and the estimate from its lines, so neither is a page anyone writes.
+ */
+export type PresentationPageKey =
+  | "cover"
+  | "letter"
+  | "about"
+  | "photos"
+  | "process"
+  | "reviews"
+  | "warranty"
+  | "thanks";
+
+/**
+ * How much document goes out. Simple is one page — the work, the price, the signature and the
+ * terms. Full puts a cover letter and the shop's story in front of it. Simple is the default
+ * because most quotes are not a pitch.
+ */
+export type PresentationMode = "simple" | "full";
+
+export type PresentationFont = "basic" | "serif" | "mono";
+
+/** One photo, or a before/after PAIR — the thing trades actually send. */
+export interface ComposerPhoto {
+  id: string;
+  /** The object key in the private bucket. Never a URL — see PresentationPhoto. */
+  key: string;
+  /** The BEFORE image when this entry is a pair. Absent means a single photo. */
+  beforeKey?: string;
+  caption?: string;
+}
+
+/** The shop's look, applied to the whole document. */
+export interface ComposerDesign {
+  font: PresentationFont;
+  size: number;
+  /** "" means the default ink. */
+  accent: string;
+  bold: boolean;
+  italic: boolean;
+}
+
+/** What the cover prints beside the title — all of it editable on the page itself. */
+export interface ComposerDocMeta {
+  estimator: string;
+  estimatorRole: string;
+  contact: string;
+  estNumber: string;
+  validity: string;
+  date: string;
+}
+
+/** The look a document starts with: deliberately plain until the shop changes it. */
+export const DEFAULT_DESIGN: ComposerDesign = {
+  font: "basic",
+  size: 14,
+  accent: "",
+  bold: true,
+  italic: false,
+};
 
 export interface ComposerPresentationPage {
   key: PresentationPageKey;
   on: boolean;
   title: string;
   body: string;
+  /** Only the photos page carries these. */
+  photos?: ComposerPhoto[];
 }
 
 export interface ComposerPresentation {
@@ -24,12 +87,20 @@ export interface ComposerPresentation {
   templateId: string | null;
   name: string;
   pages: ComposerPresentationPage[];
+  /** Absent reads as 'simple' — the historical shape, and still the default. */
+  mode?: PresentationMode;
+  design?: Partial<ComposerDesign>;
+  meta?: Partial<ComposerDocMeta>;
 }
 
 /** The wire shape frozen onto the estimate — ON pages only, activation resolved away. */
 export interface PresentationSnapshotPayload {
   templateName: string;
-  pages: { key: PresentationPageKey; title: string; body: string }[];
+  pages: { key: PresentationPageKey; title: string; body: string; photos?: ComposerPhoto[] }[];
+  mode?: PresentationMode;
+  /** Partial because an older snapshot may carry only some of the look. designOf fills the rest. */
+  design?: Partial<ComposerDesign>;
+  meta?: Partial<ComposerDocMeta>;
 }
 
 /**
@@ -40,11 +111,27 @@ export function presentationSnapshotForPayload(
   p: ComposerPresentation | null,
 ): PresentationSnapshotPayload | undefined {
   if (!p) return undefined;
+  // What is ON travels, whatever the mode. Mode is a RENDERING choice — it decides how much of
+  // the document the customer is shown, not which pages exist. Filtering here instead would
+  // delete a shop's story from a quote the moment they previewed it as Simple, and would have
+  // silently stripped pages from every quote already in flight, since an older snapshot carries
+  // no mode at all.
   const pages = p.pages
     .filter((page) => page.on)
-    .map((page) => ({ key: page.key, title: page.title, body: page.body }));
+    .map((page) => ({
+      key: page.key,
+      title: page.title,
+      body: page.body,
+      ...(page.photos && page.photos.length > 0 ? { photos: page.photos } : {}),
+    }));
   if (pages.length === 0) return undefined;
-  return { templateName: p.name, pages };
+  return {
+    templateName: p.name,
+    pages,
+    ...(p.mode === undefined ? {} : { mode: p.mode }),
+    ...(p.design === undefined ? {} : { design: p.design }),
+    ...(p.meta === undefined ? {} : { meta: p.meta }),
+  };
 }
 
 /**
@@ -61,6 +148,9 @@ export function presentationFromSnapshot(
     templateId: null,
     name: snapshot.templateName,
     pages: snapshot.pages.map((page) => ({ ...page, on: true })),
+    ...(snapshot.mode === undefined ? {} : { mode: snapshot.mode }),
+    ...(snapshot.design === undefined ? {} : { design: snapshot.design }),
+    ...(snapshot.meta === undefined ? {} : { meta: snapshot.meta }),
   };
 }
 
@@ -86,5 +176,51 @@ export function patchPresentationPage(
   return {
     ...p,
     pages: p.pages.map((page) => (page.key === key ? { ...page, ...patch } : page)),
+  };
+}
+
+/** The document's look, with the defaults filled in for a presentation that has none. */
+export function designOf(p: ComposerPresentation | null): ComposerDesign {
+  return { ...DEFAULT_DESIGN, ...(p?.design ?? {}) };
+}
+
+/** Simple unless the shop said otherwise. */
+export function modeOf(p: ComposerPresentation | null): PresentationMode {
+  return p?.mode ?? "simple";
+}
+
+/** Change the document's look. Returns a new presentation — never mutates. */
+export function patchPresentationDesign(
+  p: ComposerPresentation,
+  patch: Partial<ComposerDesign>,
+): ComposerPresentation {
+  return { ...p, design: { ...designOf(p), ...patch } };
+}
+
+/** Switch between the one-page document and the full proposal. */
+export function setPresentationMode(
+  p: ComposerPresentation,
+  mode: PresentationMode,
+): ComposerPresentation {
+  return { ...p, mode };
+}
+
+/** Edit what the cover prints beside the title. */
+export function patchPresentationMeta(
+  p: ComposerPresentation,
+  patch: Partial<ComposerDocMeta>,
+): ComposerPresentation {
+  return { ...p, meta: { ...(p.meta ?? {}), ...patch } };
+}
+
+/** Replace the photos on a page. Returns a new presentation — never mutates. */
+export function setPagePhotos(
+  p: ComposerPresentation,
+  key: PresentationPageKey,
+  photos: ComposerPhoto[],
+): ComposerPresentation {
+  return {
+    ...p,
+    pages: p.pages.map((page) => (page.key === key ? { ...page, photos } : page)),
   };
 }

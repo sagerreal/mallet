@@ -46,15 +46,51 @@ const tierNamesInput = z.object({
   best: z.string().trim().min(1).max(60),
 });
 
+/**
+ * One photo on a proposal page, or a before/after PAIR. Object keys in the private bucket,
+ * never URLs — see PresentationPhoto for why.
+ */
+const presentationPhotoDTO = z.object({
+  id: z.string().min(1).max(64),
+  key: z.string().min(1).max(500),
+  beforeKey: z.string().min(1).max(500).nullish(),
+  caption: z.string().max(200).nullish(),
+});
+
 // Frozen presentation pages — carries no money, safe on every surface by construction.
 const presentationPageDTO = z.object({
-  key: z.enum(["cover", "about", "reviews", "thanks"]),
+  // The enum mirrors PRESENTATION_PAGE_KEYS. Kept as a literal here so the transport schema
+  // stays a leaf, the same reason pricebook's measuredByKindDTO is written out.
+  key: z.enum(["cover", "letter", "about", "photos", "process", "reviews", "warranty", "thanks"]),
   title: z.string().max(120),
   body: z.string().max(8_000),
+  photos: z.array(presentationPhotoDTO).max(12).optional(),
 });
 const presentationSnapshotInput = z.object({
   templateName: z.string().trim().min(1).max(80),
-  pages: z.array(presentationPageDTO).min(1).max(4),
+  pages: z.array(presentationPageDTO).min(1).max(8),
+  /** Absent reads as 'simple' — the historical shape, and still the default. */
+  mode: z.enum(["simple", "full"]).optional(),
+  design: z
+    .object({
+      font: z.enum(["basic", "serif", "mono"]).optional(),
+      size: z.number().int().min(10).max(24).optional(),
+      // #rrggbb or "" only: this is rendered into a style attribute on a public page.
+      accent: z.string().regex(/^(#[0-9a-fA-F]{6})?$/).optional(),
+      bold: z.boolean().optional(),
+      italic: z.boolean().optional(),
+    })
+    .optional(),
+  meta: z
+    .object({
+      estimator: z.string().max(200).optional(),
+      estimatorRole: z.string().max(200).optional(),
+      contact: z.string().max(200).optional(),
+      estNumber: z.string().max(200).optional(),
+      validity: z.string().max(200).optional(),
+      date: z.string().max(200).optional(),
+    })
+    .optional(),
 });
 const presentationSnapshotDTO = presentationSnapshotInput;
 
@@ -529,8 +565,34 @@ const toEstimateDTO = (estimate: Estimate) => {
     tierNames: p.tierNames,
     termsSnapshot: p.termsSnapshot,
     priceDisplay: estimate.priceDisplay(),
+    // Rebuilt field by field rather than spread: the domain's readonly arrays and optional
+    // keys are not the DTO's, and a spread would let a shape change pass silently.
     presentationSnapshot: p.presentationSnapshot
-      ? { templateName: p.presentationSnapshot.templateName, pages: [...p.presentationSnapshot.pages] }
+      ? {
+          templateName: p.presentationSnapshot.templateName,
+          pages: p.presentationSnapshot.pages.map((page) => ({
+            key: page.key,
+            title: page.title,
+            body: page.body,
+            ...(page.photos && page.photos.length > 0
+              ? {
+                  photos: page.photos.map((photo) => ({
+                    id: photo.id,
+                    key: photo.key,
+                    beforeKey: photo.beforeKey ?? null,
+                    caption: photo.caption ?? null,
+                  })),
+                }
+              : {}),
+          })),
+          ...(p.presentationSnapshot.mode === undefined ? {} : { mode: p.presentationSnapshot.mode }),
+          ...(p.presentationSnapshot.design === undefined
+            ? {}
+            : { design: { ...p.presentationSnapshot.design } }),
+          ...(p.presentationSnapshot.meta === undefined
+            ? {}
+            : { meta: { ...p.presentationSnapshot.meta } }),
+        }
       : null,
     publicToken: p.publicToken ?? null,
     publicUrl: publicUrlFor(p.publicToken ?? null),

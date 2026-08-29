@@ -25,6 +25,27 @@ import { createSignature } from "./signature";
 import { authorizationText } from "./authorization-text";
 import { evaluateQuantityExpression, MAX_QTY_EXPR_LENGTH } from "./quantity-expression";
 import { EstimateSection, orderSections } from "./estimate-section";
+// The proposal snapshot moved to its own file when it grew a document mode, a design, cover
+// meta and photos. Re-exported here so every existing import site is unchanged.
+import { validatePresentationSnapshot } from "./presentation-snapshot";
+import type { PresentationSnapshot } from "./presentation-snapshot";
+export {
+  PRESENTATION_PAGE_KEYS,
+  PRESENTATION_MODES,
+  PRESENTATION_FONTS,
+  validatePresentationSnapshot,
+  photoKeysIn,
+} from "./presentation-snapshot";
+export type {
+  PresentationPageKey,
+  PresentationMode,
+  PresentationFont,
+  PresentationSnapshot,
+  PresentationPage,
+  PresentationPhoto,
+  PresentationDesign,
+  PresentationMeta,
+} from "./presentation-snapshot";
 
 const MAX_CHANGE_REQUEST_LENGTH = 2_000;
 
@@ -78,52 +99,6 @@ export interface EstimateSubItem {
   readonly unit: string | null;
   readonly amountCents: number;
 }
-
-/** The page kinds a presentation may carry — the v1 set from the composer mock (no media). */
-export const PRESENTATION_PAGE_KEYS = ["cover", "about", "reviews", "thanks"] as const;
-export type PresentationPageKey = (typeof PRESENTATION_PAGE_KEYS)[number];
-
-const MAX_PRESENTATION_PAGES = PRESENTATION_PAGE_KEYS.length;
-const MAX_PRESENTATION_TITLE_CHARS = 120;
-const MAX_PRESENTATION_BODY_CHARS = 8000;
-
-/**
- * The designed pages frozen onto a quote at draft time — same snapshot semantics as
- * termsSnapshot: later template edits never rewrite a sent quote. Carries no money and no
- * internal fields, so it is safe on every public surface by construction.
- */
-export interface PresentationSnapshot {
-  readonly templateName: string;
-  readonly pages: readonly { readonly key: PresentationPageKey; readonly title: string; readonly body: string }[];
-}
-
-// Jsonb round-trip validation — malformed rows fail loud, same rule as tierNames.
-const validatePresentationSnapshot = (
-  input: PresentationSnapshot | null | undefined,
-): Result<PresentationSnapshot | null, ValidationError> => {
-  if (input == null) return ok(null);
-  if (typeof input.templateName !== "string" || input.templateName.trim().length === 0) {
-    return err(validation("presentation template name is required", "presentationSnapshot"));
-  }
-  if (!Array.isArray(input.pages) || input.pages.length === 0 || input.pages.length > MAX_PRESENTATION_PAGES) {
-    return err(validation("a presentation carries 1-4 pages", "presentationSnapshot"));
-  }
-  for (const page of input.pages) {
-    if (!(PRESENTATION_PAGE_KEYS as readonly string[]).includes(page.key)) {
-      return err(validation(`unknown presentation page: ${page.key}`, "presentationSnapshot"));
-    }
-    if (typeof page.title !== "string" || page.title.length > MAX_PRESENTATION_TITLE_CHARS) {
-      return err(validation("presentation page title is limited to 120 characters", "presentationSnapshot"));
-    }
-    if (typeof page.body !== "string" || page.body.length > MAX_PRESENTATION_BODY_CHARS) {
-      return err(validation("presentation page body is limited to 8000 characters", "presentationSnapshot"));
-    }
-  }
-  return ok({
-    templateName: input.templateName.trim(),
-    pages: input.pages.map((p) => ({ key: p.key, title: p.title, body: p.body })),
-  });
-};
 
 // Good/Better/Best. An estimate is tiered iff recommendedTier is non-null; then every line
 // carries a tier tag until accept resolves the estimate to the customer's chosen tier.
