@@ -68,11 +68,14 @@ export function SectionTabs() {
     ];
   } else if (inMoney) {
     tabs = [
+      // "Getting paid" is gone (Owen: just keep invoices under Money, call orders purchase
+      // orders) — /money with no ?tab= IS the invoices ledger, needing no tab of its own.
       // Purchase orders are cash going OUT; every other row in Money is cash coming IN — kept as
       // a separate SET rather than mixed into the receivables ledger, same reasoning the mock
-      // (mock/money-purchase-orders) used for its ViewToggle. This is the real tab grammar instead.
-      { href: "/money", label: "Getting paid", active: tab !== "orders" },
-      { href: "/money?tab=orders", label: "Orders", active: tab === "orders" },
+      // (mock/money-purchase-orders) used for its ViewToggle. This is the real tab grammar
+      // instead, and on mobile it is the only route to the tab at all (the sidebar's own NavSub
+      // — components/shell/sidebar.tsx — is desktop-only).
+      { href: "/money?tab=orders", label: "Purchase orders", active: tab === "orders" },
     ];
   }
 
