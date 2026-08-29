@@ -135,10 +135,12 @@ export function POLineTable({ lines, onChange, onRemove, onAdd, readOnly }: POLi
 
       {!locked && (
         <div className="lineedit-bar">
+          {/* No "· or pull one from the pricebook" — nothing wires a pricebook pull, and a house
+              rule against dead controls covers copy that advertises one just as much as a button
+              that does. */}
           <button type="button" className="linklike" onClick={onAdd}>
             + Add a line
           </button>
-          <span className="muted" > · or pull one from the pricebook</span>
         </div>
       )}
     </div>
