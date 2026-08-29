@@ -30,7 +30,7 @@ const baseOrder = (org: OrgId, overrides: Partial<PurchaseOrderProps> = {}): Pur
   jobId: null,
   orderedAt: null,
   expectedAt: null,
-  shipTo: "counter_pickup",
+  shipToAddress: null,
   orderedByUserId: null,
   freightCents: 0,
   taxCents: 0,
@@ -143,7 +143,7 @@ suite("DrizzlePurchaseOrderRepository against live Supabase RLS", () => {
     const org = asOrgId(orgId);
     const outcome = await withTenant(org, async (tx) => {
       const repo = new DrizzlePurchaseOrderRepository(tx, org);
-      const r = PurchaseOrder.create(baseOrder(org, { vendor: "Winsupply", shipTo: "shop" }));
+      const r = PurchaseOrder.create(baseOrder(org, { vendor: "Winsupply", shipToAddress: "456 Warehouse Ave" }));
       if (!isOk(r)) throw new Error("bad");
       await repo.save(r.value);
       const deletedCount = await repo.softDelete(r.value.props.id, new Date());

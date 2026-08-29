@@ -47,7 +47,7 @@ export class FakePurchaseOrderRepository implements PurchaseOrderRepository {
       jobId: null,
       orderedAt: null,
       expectedAt: null,
-      shipTo: "counter_pickup",
+      shipToAddress: null,
       orderedByUserId: null,
       freightCents: 0,
       taxCents: 0,

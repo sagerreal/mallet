@@ -38,7 +38,8 @@ export const purchaseOrderDTO = z.object({
   // fromDate()/toDate() sidestep it entirely rather than depend on which zone the server runs in.
   orderedAt: z.string().nullable(),
   expectedAt: z.string().nullable(),
-  shipTo: z.enum(["counter_pickup", "job_site", "shop"]),
+  // A free-text address someone typed — replaces the old 3-option ship-to picker.
+  shipToAddress: z.string().nullable(),
   // Stamped server-side from ctx.principal on create — never a client input (see the router's
   // create). Writable-and-unreadable is not a valid state for a field, so both the raw id and its
   // resolved display name are on the wire; a client that needs to re-target it can't, by design.
@@ -75,7 +76,7 @@ export const toPurchaseOrderDTO = (
     jobTitle: extras.jobTitle,
     orderedAt: fromDate(p.orderedAt),
     expectedAt: fromDate(p.expectedAt),
-    shipTo: p.shipTo,
+    shipToAddress: p.shipToAddress,
     orderedByUserId: p.orderedByUserId,
     orderedByName: extras.orderedByName,
     freight: money$(p.freightCents),

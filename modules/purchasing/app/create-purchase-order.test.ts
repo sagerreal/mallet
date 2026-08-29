@@ -21,7 +21,7 @@ const baseCmd = (overrides: Partial<CreatePurchaseOrderCommand> = {}): CreatePur
   vendor: "Ferguson",
   jobId: null,
   expectedAt: null,
-  shipTo: "counter_pickup",
+  shipToAddress: null,
   orderedByUserId: null,
   ...overrides,
 });

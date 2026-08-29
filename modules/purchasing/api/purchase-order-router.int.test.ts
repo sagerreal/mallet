@@ -72,7 +72,7 @@ const draftInput = (overrides: Record<string, unknown> = {}) => ({
   vendor: "Ferguson",
   jobId: null,
   expectedAt: null,
-  shipTo: "counter_pickup" as const,
+  shipToAddress: null,
   ...overrides,
 });
 

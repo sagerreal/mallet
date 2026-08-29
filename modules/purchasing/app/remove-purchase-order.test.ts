@@ -16,7 +16,7 @@ const orderedProps = (overrides: Partial<PurchaseOrderProps> = {}): PurchaseOrde
   jobId: null,
   orderedAt: new Date("2026-08-28T00:00:00Z"),
   expectedAt: null,
-  shipTo: "counter_pickup",
+  shipToAddress: null,
   orderedByUserId: null,
   freightCents: 0,
   taxCents: 0,

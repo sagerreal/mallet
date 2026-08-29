@@ -12,7 +12,7 @@ const base = {
   jobId: null,
   orderedAt: null,
   expectedAt: null,
-  shipTo: "counter_pickup" as const,
+  shipToAddress: null,
   orderedByUserId: null,
   freightCents: 0,
   taxCents: 0,

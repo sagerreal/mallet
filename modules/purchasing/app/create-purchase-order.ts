@@ -2,7 +2,7 @@ import type { OrgId, Result, AppError, Clock } from "@mallet/shared/types";
 import { ok, isOk } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import { PurchaseOrder, type ShipTo } from "../domain/purchase-order";
+import { PurchaseOrder } from "../domain/purchase-order";
 import type { PurchaseOrderRepository } from "../domain/purchase-order-repository";
 
 export interface CreatePurchaseOrderLineInput {
@@ -17,7 +17,7 @@ export interface CreatePurchaseOrderCommand {
   readonly vendor: string;
   readonly jobId: string | null;
   readonly expectedAt: Date | null;
-  readonly shipTo: ShipTo;
+  readonly shipToAddress: string | null;
   readonly orderedByUserId: string | null;
   readonly freightCents?: number;
   readonly taxCents?: number;
@@ -56,7 +56,7 @@ export class CreatePurchaseOrderUseCase {
       jobId: cmd.jobId,
       orderedAt: null,
       expectedAt: cmd.expectedAt,
-      shipTo: cmd.shipTo,
+      shipToAddress: cmd.shipToAddress,
       orderedByUserId: cmd.orderedByUserId,
       freightCents: cmd.freightCents ?? 0,
       taxCents: cmd.taxCents ?? 0,
