@@ -13,9 +13,16 @@ const appendPONote = vi.fn();
 const closeMock = vi.fn();
 const openModalMock = vi.fn();
 
+let storePurchaseOrders: Array<{ vendor: string }> = [];
+
 vi.mock("@/lib/store/app-store", () => ({
   useAppStore: (sel: (s: Record<string, unknown>) => unknown) =>
-    sel({ jobs: [{ id: "job-1", title: "Henderson repipe" }], adoptPurchaseOrder, appendPONote }),
+    sel({
+      jobs: [{ id: "job-1", title: "Henderson repipe" }],
+      purchaseOrders: storePurchaseOrders,
+      adoptPurchaseOrder,
+      appendPONote,
+    }),
   useCloseModal: () => closeMock,
   useOpenModal: () => openModalMock,
 }));
@@ -43,6 +50,7 @@ import { MODAL } from "@/lib/store/modal-ids";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  storePurchaseOrders = [];
 });
 
 describe("NewPOModal — the form itself", () => {
@@ -85,6 +93,23 @@ describe("NewPOModal — the form itself", () => {
     fireEvent.click(screen.getByRole("button", { name: "Order it →" }));
     expect(screen.getByText(/cannot be placed/)).toBeTruthy();
     expect(createMutate).not.toHaveBeenCalled();
+  });
+});
+
+describe("NewPOModal — vendor suggestions come from the store, never a fixture list", () => {
+  it("a shop's first order offers an empty datalist — that is correct, not a bug", () => {
+    storePurchaseOrders = [];
+    render(<NewPOModal />);
+    expect(document.querySelectorAll("#po-vendors option").length).toBe(0);
+  });
+
+  it("suggests distinct vendors already used, sorted, never a hardcoded demo list", () => {
+    storePurchaseOrders = [{ vendor: "Winsupply" }, { vendor: "Ferguson" }, { vendor: "Ferguson" }];
+    render(<NewPOModal />);
+    const options = [...document.querySelectorAll("#po-vendors option")].map((o) => o.getAttribute("value"));
+    expect(options).toEqual(["Ferguson", "Winsupply"]);
+    expect(options).not.toContain("Home Depot");
+    expect(options).not.toContain("SupplyHouse");
   });
 });
 

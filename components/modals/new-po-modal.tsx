@@ -43,8 +43,6 @@ import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoPurchaseOrderToStore } from "@/lib/store/dto-mapper";
 import { userMessage } from "@/lib/trpc/error-map";
 
-const VENDOR_SUGGESTIONS = ["Ferguson", "Home Depot", "SupplyHouse", "Winsupply"];
-
 const blankLine = (): PurchaseOrderLine => ({
   id: crypto.randomUUID(),
   description: "",
@@ -61,8 +59,15 @@ export function NewPOModal() {
   const close = useCloseModal();
   const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
+  const purchaseOrders = useAppStore((s) => s.purchaseOrders);
   const adoptPurchaseOrder = useAppStore((s) => s.adoptPurchaseOrder);
   const appendPONote = useAppStore((s) => s.appendPONote);
+
+  // Vendors ALREADY USED, not a fixture list — house rule is no demo/sample data. An empty
+  // datalist on a shop's first order is correct: there is nothing to suggest yet.
+  const vendorSuggestions = [...new Set(purchaseOrders.map((po) => po.vendor).filter((v) => v.trim()))].sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   const [vendor, setVendor] = useState("");
   const [jobId, setJobId] = useState<string>("");
@@ -206,7 +211,7 @@ export function NewPOModal() {
           />
           {/* Free text over a datalist of vendors already used — no vendor table yet. */}
           <datalist id="po-vendors">
-            {VENDOR_SUGGESTIONS.map((v) => (
+            {vendorSuggestions.map((v) => (
               <option key={v} value={v} />
             ))}
           </datalist>
