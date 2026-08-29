@@ -10,7 +10,14 @@
 import { fmt$, fmt$rate } from "@/lib/format";
 import { realSubItems, type ComposerLine } from "./composer-state";
 import { QuantityCell } from "./quantity-cell";
-import { resolveQuantity } from "./line-math";
+import {
+  resolveQuantity,
+  isPricedFromCost,
+  impliedMarkupBps,
+  withMarkup,
+  repriceFromCost,
+  withTypedRate,
+} from "./line-math";
 
 export interface LineRowProps {
   line: ComposerLine;
@@ -27,6 +34,8 @@ export interface LineRowProps {
   lastComponent?: boolean;
   provenanceFor?: (description: string) => "pricebook" | null;
   onUpdate: (patch: Partial<ComposerLine>) => void;
+  /** Replaces the whole line — for the edits that must ADD or REMOVE a key, not set one. */
+  onReplace: (next: ComposerLine) => void;
   onRemove: () => void;
   /** The depth toggles the table owns (scope prose, legacy sub-items). */
   hints?: React.ReactNode;
@@ -43,6 +52,7 @@ export function LineRow({
   lastComponent,
   provenanceFor,
   onUpdate,
+  onReplace,
   onRemove,
   hints,
 }: LineRowProps) {
@@ -93,7 +103,12 @@ export function LineRow({
             className="num"
             value={line.r}
             aria-label={`Price, line ${lineNo}`}
-            onChange={(e) => onUpdate({ r: +e.target.value })}
+            title={
+              isPricedFromCost(line)
+                ? "Priced from cost — typing a price here makes it yours and drops the markup"
+                : undefined
+            }
+            onChange={(e) => onReplace(withTypedRate(line, +e.target.value))}
           />
         )}
       </td>
@@ -112,7 +127,26 @@ export function LineRow({
               placeholder="—"
               aria-label={`Your cost, line ${lineNo}`}
               title="What you paid (owner-only) — margin shows itself."
-              onChange={(e) => onUpdate({ c: +e.target.value || undefined })}
+              onChange={(e) =>
+                onReplace(repriceFromCost({ ...line, c: +e.target.value || undefined }))
+              }
+            />
+          )}
+        </td>
+      )}
+      {showCost && (
+        <td>
+          {hasComponents ? (
+            <span className="rolled">—</span>
+          ) : (
+            <input
+              type="number"
+              inputMode="decimal"
+              className={`num${isPricedFromCost(line) ? " derived" : ""}`}
+              value={Math.round(impliedMarkupBps(line) / 100)}
+              aria-label={`Markup percent, line ${lineNo}`}
+              title="Markup over your cost. Editing it prices this line FROM the cost."
+              onChange={(e) => onReplace(withMarkup(line, +e.target.value * 100))}
             />
           )}
         </td>

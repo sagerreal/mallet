@@ -1555,6 +1555,9 @@
   /* The unit sits with the number it counts, not in a column of its own — a unit
      with no quantity beside it is a word floating in a ledger. */
   .lineedit tbody input.unit{text-align:left;font-size:var(--type-sm);color:var(--ink-2)}
+  /* A number the app derived rather than the estimator typing it — quiet, so the two
+     are never confused at a glance. */
+  .lineedit tbody input.derived{color:var(--ink-2);font-weight:600}
   /* A rolled-up rate is not typed, so it does not read as a field. */
   .lineedit .rolled{display:block;text-align:right;padding-right:var(--space-2);font-variant-numeric:tabular-nums;color:var(--ink-2)}
   /* ---------- sections: named groups of lines ----------

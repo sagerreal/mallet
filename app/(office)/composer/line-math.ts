@@ -277,3 +277,41 @@ export function sectionsForPayload(
     }),
   };
 }
+
+const BPS = 10_000;
+
+/**
+ * Is this line priced FROM its cost — cost × (1 + markup) — rather than from a typed price?
+ *
+ * There is no separate "price source" column, and there does not need to be: carrying a markup
+ * IS the statement that the price came from the cost. A typed price clears it, which is the
+ * estimator saying the number is theirs now.
+ */
+export function isPricedFromCost(line: ComposerLine): boolean {
+  return line.markupBps != null;
+}
+
+/** The markup a line's price implies over its cost, in basis points. 0 when there is no cost. */
+export function impliedMarkupBps(line: ComposerLine): number {
+  const cost = line.c ?? 0;
+  if (cost <= 0) return 0;
+  return Math.round(((line.r ?? 0) / cost - 1) * BPS);
+}
+
+/** Price this line from its cost. The markup is kept, so changing the cost reprices it. */
+export function withMarkup(line: ComposerLine, markupBps: number): ComposerLine {
+  const bps = Math.max(0, Math.round(markupBps));
+  const cost = line.c ?? 0;
+  return { ...line, markupBps: bps, r: Math.round(cost * (1 + bps / BPS) * 100) / 100 };
+}
+
+/** Re-apply an existing markup after the cost moved. A line priced by hand is left alone. */
+export function repriceFromCost(line: ComposerLine): ComposerLine {
+  return isPricedFromCost(line) ? withMarkup(line, line.markupBps!) : line;
+}
+
+/** A typed price. Drops the markup — the number is the estimator's now, not the cost's. */
+export function withTypedRate(line: ComposerLine, rate: number): ComposerLine {
+  const { markupBps: _dropped, ...rest } = line;
+  return { ...rest, r: rate };
+}

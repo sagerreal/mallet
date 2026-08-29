@@ -16,6 +16,11 @@ import {
   removeLineAt,
   addComponent,
   reindexForPayload,
+  isPricedFromCost,
+  impliedMarkupBps,
+  withMarkup,
+  repriceFromCost,
+  withTypedRate,
 } from "./line-math";
 import type { ComposerLine } from "./composer-state";
 
@@ -241,5 +246,40 @@ describe("reindexForPayload", () => {
     expect(out.map((l) => l.d)).toEqual(["Fence", "Posts", "Gate", "Hinges"]);
     expect(out[out[1]!.parentIndex!]?.d).toBe("Fence");
     expect(out[out[3]!.parentIndex!]?.d).toBe("Gate");
+  });
+});
+
+describe("pricing from cost", () => {
+  it("carrying a markup IS the statement that the price came from the cost", () => {
+    expect(isPricedFromCost(line({ markupBps: 3500 }))).toBe(true);
+    expect(isPricedFromCost(line({ r: 100 }))).toBe(false);
+  });
+
+  it("prices from the cost when a markup is set", () => {
+    expect(withMarkup(line({ c: 18 }), 3500).r).toBe(24.3);
+  });
+
+  it("reports the markup a typed price implies over the cost", () => {
+    expect(impliedMarkupBps(line({ c: 18, r: 24.3 }))).toBe(3500);
+  });
+
+  it("reports no markup against a cost of zero rather than dividing by it", () => {
+    expect(impliedMarkupBps(line({ c: 0, r: 100 }))).toBe(0);
+  });
+
+  it("reprices when the cost moves, but only a line that is priced from cost", () => {
+    expect(repriceFromCost({ ...line({ markupBps: 3500 }), c: 20 }).r).toBe(27);
+    // A hand-typed price is the estimator's number and a cost change must not move it.
+    expect(repriceFromCost({ ...line({ r: 100 }), c: 20 }).r).toBe(100);
+  });
+
+  it("drops the markup when a price is typed — the number is the estimator's now", () => {
+    const typed = withTypedRate(line({ c: 18, markupBps: 3500, r: 24.3 }), 30);
+    expect(typed.r).toBe(30);
+    expect("markupBps" in typed).toBe(false);
+  });
+
+  it("refuses a negative markup rather than pricing below cost by accident", () => {
+    expect(withMarkup(line({ c: 18 }), -500).markupBps).toBe(0);
   });
 });

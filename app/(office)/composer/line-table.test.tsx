@@ -278,3 +278,46 @@ describe("LineTable — sections", () => {
     expect(screen.queryByText("+ Section")).toBeNull();
   });
 });
+
+describe("LineTable — the costing view", () => {
+  it("shows the markup a typed price implies over the cost", () => {
+    table([{ d: "Line posts", q: 14, r: 24.3, c: 18 }], true);
+    expect(input("Markup percent, line 1").value).toBe("35");
+  });
+
+  it("prices the line from its cost when the markup is edited", () => {
+    table([{ d: "Line posts", q: 14, r: 0, c: 18 }], true);
+    fireEvent.change(input("Markup percent, line 1"), { target: { value: "35" } });
+    expect(lastLines()[0]).toMatchObject({ r: 24.3, markupBps: 3500 });
+  });
+
+  it("reprices a cost-plus line when the cost moves", () => {
+    table([{ d: "Line posts", q: 14, r: 24.3, c: 18, markupBps: 3500 }], true);
+    fireEvent.change(input("Your cost, line 1"), { target: { value: "20" } });
+    expect(lastLines()[0]?.r).toBe(27);
+  });
+
+  it("leaves a hand-typed price alone when the cost moves", () => {
+    table([{ d: "Line posts", q: 14, r: 24.3, c: 18 }], true);
+    fireEvent.change(input("Your cost, line 1"), { target: { value: "20" } });
+    expect(lastLines()[0]?.r).toBe(24.3);
+  });
+
+  it("drops the markup when a price is typed over it", () => {
+    table([{ d: "Line posts", q: 14, r: 24.3, c: 18, markupBps: 3500 }], true);
+    fireEvent.change(input("Price, line 1"), { target: { value: "30" } });
+    expect(lastLines()[0]?.markupBps).toBeUndefined();
+    expect(lastLines()[0]?.r).toBe(30);
+  });
+
+  it("shows no markup field where the price is not the line's to set", () => {
+    table([fence, posts], true);
+    expect(screen.queryByLabelText("Markup percent, line 1")).toBeNull();
+    expect(screen.getByLabelText("Markup percent, line 2")).toBeTruthy();
+  });
+
+  it("hides the whole costing view when the cost is not shown", () => {
+    table([{ d: "Line posts", q: 14, r: 24.3, c: 18 }], false);
+    expect(screen.queryByLabelText("Markup percent, line 1")).toBeNull();
+  });
+});

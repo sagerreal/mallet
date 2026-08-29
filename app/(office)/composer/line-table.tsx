@@ -84,7 +84,7 @@ export function LineTable({
   /** 'total' dims the amount column — those numbers stay yours; the customer sees one price. */
   priceMode?: "lines" | "total";
 }) {
-  const cols = showCost ? 7 : 6;
+  const cols = showCost ? 8 : 6;
   // GBB renders three LineTables at once — panel ids must be unique per instance or every
   // tier's aria-controls points at whichever twin rendered first.
   const uid = useId();
@@ -120,6 +120,11 @@ export function LineTable({
 
   const updateLine = (i: number, patch: Partial<ComposerLine>) =>
     commit(lines.map((l, idx) => (idx === i ? { ...l, ...patch } : l)));
+
+  // A patch can only SET a key. Dropping one — a typed price clearing its markup — needs the
+  // whole line, so the two live side by side rather than one pretending to do both.
+  const replaceLine = (i: number, next: ComposerLine) =>
+    commit(lines.map((l, idx) => (idx === i ? next : l)));
 
   const removeLine = (i: number) => {
     const removed = new Set<number>([i, ...componentIndexes(lines, i)]);
@@ -217,6 +222,7 @@ export function LineTable({
           lastComponent={lastComponent}
           provenanceFor={provenanceFor}
           onUpdate={(patch) => updateLine(i, patch)}
+          onReplace={(next) => replaceLine(i, next)}
           onRemove={() => removeLine(i)}
           hints={hintsFor(line, i, Boolean(parent))}
         />
@@ -261,6 +267,7 @@ export function LineTable({
           <col style={{ width: 56 }} />
           <col style={{ width: 96 }} />
           {showCost && <col style={{ width: 96 }} />}
+          {showCost && <col style={{ width: 72 }} />}
           <col style={{ width: 104 }} />
           {/* Actions hold the chips + ✕ — sized to fit, so AMOUNT no longer floats
               beside a wide dead zone. Adding a component lives under the description. */}
@@ -273,6 +280,7 @@ export function LineTable({
             <th>Unit</th>
             <th className="num">Price</th>
             {showCost && <th className="num">Your cost</th>}
+            {showCost && <th className="num">Markup</th>}
             <th className="num">Amount</th>
             <th aria-hidden="true"></th>
           </tr>
