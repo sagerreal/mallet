@@ -333,13 +333,15 @@ export function Sidebar({ initialMe }: { initialMe?: RouterOutputs["v1"]["identi
             />
             {moneyActive && (
               <div className="navsubs">
-                {/* Purchase orders are cash going OUT — everything else on Money is cash coming
-                    IN. Same ?tab= grammar as Jobs' Schedule/Timesheets pair, and the ONLY route
-                    to this tab on desktop: SectionTabs (components/shell/section-tabs.tsx) is
-                    mobile-only, so without this sub-nav /money?tab=orders had no link pointing
-                    at it at all here. */}
-                <NavSub href="/money" label="Getting paid" active={tab !== "orders"} />
-                <NavSub href="/money?tab=orders" label="Orders" active={tab === "orders"} />
+                {/* "Getting paid" is gone — Owen: "we dont need this getting paid tab, just keep
+                    invoices under money and call orders purchase orders." /money with no ?tab= IS
+                    the invoices ledger, exactly as before this feature existed, so it needs no
+                    entry of its own here. Purchase orders are cash going OUT — everything else on
+                    Money is cash coming IN — kept as a separate NavSub purely so
+                    /money?tab=orders has a link pointing at it: SectionTabs
+                    (components/shell/section-tabs.tsx) is mobile-only, so this is the ONLY route
+                    to the tab on desktop. */}
+                <NavSub href="/money?tab=orders" label="Purchase orders" active={tab === "orders"} />
               </div>
             )}
             {/* ARTIE'S BOARD IS HIDDEN FROM THE NAV, not deleted. /artie still renders and a saved

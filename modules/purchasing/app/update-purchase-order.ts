@@ -2,7 +2,7 @@ import type { OrgId, Result, AppError, Clock } from "@mallet/shared/types";
 import { ok, err, isOk, notFound, conflict } from "@mallet/shared/types";
 import type { IdGenerator } from "@mallet/shared/ports";
 import { logger } from "@mallet/shared/observability";
-import { PurchaseOrder, type ShipTo } from "../domain/purchase-order";
+import { PurchaseOrder } from "../domain/purchase-order";
 import type { PurchaseOrderRepository } from "../domain/purchase-order-repository";
 
 export interface UpdatePurchaseOrderLineInput {
@@ -19,7 +19,7 @@ export interface UpdatePurchaseOrderCommand {
   readonly vendor?: string;
   readonly jobId?: string | null;
   readonly expectedAt?: Date | null;
-  readonly shipTo?: ShipTo;
+  readonly shipToAddress?: string | null;
   readonly orderedByUserId?: string | null;
   readonly freightCents?: number;
   readonly taxCents?: number;
@@ -81,7 +81,7 @@ export class UpdatePurchaseOrderUseCase {
       vendor: cmd.vendor ?? po.props.vendor,
       jobId: cmd.jobId === undefined ? po.props.jobId : cmd.jobId,
       expectedAt: cmd.expectedAt === undefined ? po.props.expectedAt : cmd.expectedAt,
-      shipTo: cmd.shipTo ?? po.props.shipTo,
+      shipToAddress: cmd.shipToAddress === undefined ? po.props.shipToAddress : cmd.shipToAddress,
       orderedByUserId: cmd.orderedByUserId === undefined ? po.props.orderedByUserId : cmd.orderedByUserId,
       freightCents: cmd.freightCents ?? po.props.freightCents,
       taxCents: cmd.taxCents ?? po.props.taxCents,

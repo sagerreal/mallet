@@ -1,7 +1,6 @@
 import { err, ok, validation, type Result, type OrgId, type ValidationError } from "@mallet/shared/types";
 
 export type POStatus = "draft" | "ordered" | "cancelled";
-export type ShipTo = "counter_pickup" | "job_site" | "shop";
 
 export interface POLineProps {
   readonly id: string;
@@ -22,7 +21,9 @@ export interface PurchaseOrderProps {
   readonly jobId: string | null;
   readonly orderedAt: Date | null;
   readonly expectedAt: Date | null;
-  readonly shipTo: ShipTo;
+  /** A free-text address someone typed — replaces the old 3-option ShipTo picker. Null when
+   *  nobody has typed one yet (the vendor picks it up at the counter, or it just isn't known). */
+  readonly shipToAddress: string | null;
   readonly orderedByUserId: string | null;
   readonly freightCents: number;
   readonly taxCents: number;

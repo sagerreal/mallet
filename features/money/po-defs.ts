@@ -15,21 +15,15 @@
  * convert to cents at the point they need to, exactly as the mock's cents-domain math did.
  */
 
-import type { POStatus, POShipTo, PurchaseOrder, PurchaseOrderLine } from "@/lib/store/types";
+import type { POStatus, PurchaseOrder, PurchaseOrderLine } from "@/lib/store/types";
 
-export type { POStatus, POShipTo };
+export type { POStatus };
 
 /** One vocabulary, one token pair each. Neither modal may invent a label. */
 export const PO_STATUS_META: Record<POStatus, { label: string; c: string; bg: string }> = {
   draft: { label: "Draft", c: "var(--ink-3)", bg: "var(--paper)" },
   ordered: { label: "Ordered", c: "var(--amber)", bg: "var(--amber-bg)" },
   cancelled: { label: "Cancelled", c: "var(--ink-3)", bg: "var(--paper)" },
-};
-
-export const SHIP_TO_LABEL: Record<POShipTo, string> = {
-  counter_pickup: "Counter pickup",
-  job_site: "Job site",
-  shop: "The shop",
 };
 
 /** Field labels — identical strings in both modals. "For job" is never "Job" in one of them. */
@@ -39,6 +33,7 @@ export const PO_LABEL = {
   num: "PO number",
   orderedAt: "Ordered",
   expectedAt: "Expected",
+  // A free-text address, not a 3-option picker — see PurchaseOrder.shipToAddress.
   shipTo: "Ship to",
   orderedBy: "Ordered by",
   freight: "Freight",

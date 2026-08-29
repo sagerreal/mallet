@@ -40,7 +40,8 @@ export const toProps = (r: PORow, lines: readonly POLineRow[]): PurchaseOrderPro
   jobId: r.jobId,
   orderedAt: toDate(r.orderedAt),
   expectedAt: toDate(r.expectedAt),
-  shipTo: r.shipTo as PurchaseOrderProps["shipTo"],
+  // r.shipTo (the old column) is intentionally never read here — see the schema's own comment.
+  shipToAddress: r.shipToAddress,
   orderedByUserId: r.orderedByUserId,
   freightCents: r.freightCents,
   taxCents: r.taxCents,

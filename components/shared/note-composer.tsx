@@ -184,6 +184,17 @@ interface NoteComposerProps {
   onAttachFile?: (file: File) => Promise<void>;
   /** The file picker's filter, e.g. ".pdf,.jpg". Only meaningful with onAttachFile. */
   attachAccept?: string;
+  /**
+   * Fires when the person EXPLICITLY removes a staged file via the chip's "✕", before it has
+   * been submitted — never on the automatic reset a successful submit() already does (see
+   * "the next one starts empty" below). Only meaningful with onAttachFile.
+   *
+   * Exists for a caller that stores its own reference to the picked File alongside this
+   * component's display name (a create form staging a file for upload after its record exists —
+   * see components/modals/new-po-modal.tsx) — without it, that caller has no way to learn the
+   * chip's own "✕" was pressed, and would silently re-attach a file the person just removed.
+   */
+  onAttachFileClear?: () => void;
 }
 
 export function NoteComposer({
@@ -195,6 +206,7 @@ export function NoteComposer({
   onSubmit,
   onAttachFile,
   attachAccept,
+  onAttachFileClear,
 }: NoteComposerProps) {
   const [text, setText] = useState("");
   const [saving, setSaving] = useState(false);
@@ -268,7 +280,15 @@ export function NoteComposer({
         </button>
       </div>
 
-      {attachedName && <StagedFileChip name={attachedName} onRemove={attachment.clear} />}
+      {attachedName && (
+        <StagedFileChip
+          name={attachedName}
+          onRemove={() => {
+            attachment.clear();
+            onAttachFileClear?.();
+          }}
+        />
+      )}
 
       {/* Class, not an inline font-size: an inline size wins over any external rule regardless of
           specificity, which is what made this line unreachable for a scope like .po-scope

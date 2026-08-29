@@ -26,7 +26,7 @@ const FIXTURE_PO: PurchaseOrder = {
   jobTitle: null,
   orderedAt: null,
   expectedAt: null,
-  shipTo: "counter_pickup",
+  shipToAddress: null,
   orderedByUserId: "user-1",
   orderedByName: "Dana",
   freight: 0,

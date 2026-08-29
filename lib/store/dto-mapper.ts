@@ -901,7 +901,7 @@ export function dtoPurchaseOrderToStore(dto: PurchaseOrderDTO): PurchaseOrder {
     jobTitle: dto.jobTitle,
     orderedAt: dto.orderedAt,
     expectedAt: dto.expectedAt,
-    shipTo: dto.shipTo,
+    shipToAddress: dto.shipToAddress,
     orderedByUserId: dto.orderedByUserId,
     orderedByName: dto.orderedByName,
     freight: dto.freight.cents / 100,

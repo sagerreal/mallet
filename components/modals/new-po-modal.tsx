@@ -30,18 +30,35 @@ import { Field } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 import { DisclosureRow } from "@/components/ui/disclosure-row";
 import { DraftNumberInput } from "@/components/shared/draft-number-input";
+import { NoteComposer } from "@/components/shared/note-composer";
 import { POLineTable } from "@/features/money/po-line-table";
 import {
   PO_LABEL,
-  SHIP_TO_LABEL,
   STOCK_ORDER_LABEL,
   poLinesSummary,
   totalCents,
 } from "@/features/money/po-defs";
-import type { POShipTo, PurchaseOrder, PurchaseOrderLine } from "@/lib/store/types";
+import type { PurchaseOrder, PurchaseOrderLine } from "@/lib/store/types";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoPurchaseOrderToStore } from "@/lib/store/dto-mapper";
 import { userMessage } from "@/lib/trpc/error-map";
+import { jobAddr } from "@/features/jobs/jobs-helpers";
+import { MAX_FILE_BYTES } from "@/lib/store/upload-job-file";
+import {
+  PO_NOTE_ATTACH_ACCEPT,
+  uploadPONoteFile,
+  type UploadedPONoteAttachment,
+} from "@/lib/store/upload-po-note-file";
+
+/** The extensions PO_NOTE_ATTACH_ACCEPT admits, as a set — mirrors staged-attachment.tsx's own
+ *  derivation, but off the PURCHASING router's allowlist rather than the lead-note one. Validated
+ *  at PICK time (before the order exists to upload against), same reasoning
+ *  components/shared/staged-attachment.tsx documents: a rejected file must cost nothing, not a
+ *  closed modal the office believes carried it. */
+const PO_NOTE_EXTS = new Set(
+  PO_NOTE_ATTACH_ACCEPT.split(",").map((e) => e.trim().replace(/^\./, "").toLowerCase()),
+);
+const extOf = (name: string): string => name.split(".").pop()?.toLowerCase() ?? "";
 
 const blankLine = (): PurchaseOrderLine => ({
   id: crypto.randomUUID(),
@@ -59,6 +76,10 @@ export function NewPOModal() {
   const close = useCloseModal();
   const openModal = useOpenModal();
   const jobs = useAppStore((s) => s.jobs);
+  // Needed only to resolve a selected job's service address for the ship-to prefill — see
+  // handleJobChange below and jobAddr's own doc on why the store lead wins over the job's
+  // per-read custAddr snapshot.
+  const leads = useAppStore((s) => s.leads);
   const purchaseOrders = useAppStore((s) => s.purchaseOrders);
   const adoptPurchaseOrder = useAppStore((s) => s.adoptPurchaseOrder);
   const appendPONote = useAppStore((s) => s.appendPONote);
@@ -73,10 +94,18 @@ export function NewPOModal() {
   const [jobId, setJobId] = useState<string>("");
   const [lines, setLines] = useState<PurchaseOrderLine[]>([blankLine()]);
   const [expectedAt, setExpectedAt] = useState("");
-  const [shipTo, setShipTo] = useState<POShipTo>("counter_pickup");
+  const [shipToAddress, setShipToAddress] = useState("");
   const [freight, setFreight] = useState(0);
   const [tax, setTax] = useState(0);
-  const [note, setNote] = useState("");
+  // The one staged note, typed in the shared NoteComposer — same control the record sheet
+  // renders, reused rather than hand-rolled a second time (see the file's own header comment).
+  const [noteBody, setNoteBody] = useState("");
+  // The staged file rides in a ref (never re-rendered on its own) plus a display name for the
+  // DisclosureRow's own collapsed value — mirrors new-job-modal.tsx's staged.file/staged.name
+  // split, just without useStagedAttachment's hook (that hook validates against the LEAD note
+  // allowlist; this validates against the PURCHASING one — see PO_NOTE_EXTS above).
+  const noteFileRef = useRef<File | null>(null);
+  const [noteFileName, setNoteFileName] = useState<string | null>(null);
   const [staged, setStaged] = useState<RowKey | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -91,6 +120,20 @@ export function NewPOModal() {
   const patchLine = (id: string, p: Partial<PurchaseOrderLine>): void =>
     setLines((ls) => ls.map((l) => (l.id === id ? { ...l, ...p } : l)));
 
+  /**
+   * Picking a job defaults Ship to, to that job's service address — but only while the field is
+   * still empty. This is the whole reason a dropdown was chosen originally ("a free-text ship-to
+   * never gets the job address right"); prefilling solves it without taking the typing away, and
+   * never overwrites an address someone already typed.
+   */
+  const handleJobChange = (v: string): void => {
+    setJobId(v);
+    if (!v || shipToAddress.trim()) return;
+    const job = jobs.find((j) => j.id === v);
+    const addr = job ? jobAddr(job, leads) : "";
+    if (addr) setShipToAddress(addr);
+  };
+
   /** A full local `PurchaseOrder` shape, for the shared summary/total helpers only — `id`/
    *  `total`/`createdAt` etc. are placeholders never read for a not-yet-persisted draft (the
    *  helpers always recompute the money figures from lines/freight/tax, never from these). */
@@ -104,7 +147,7 @@ export function NewPOModal() {
       jobTitle: jobs.find((j) => j.id === jobId)?.title ?? null,
       orderedAt: null,
       expectedAt: expectedAt || null,
-      shipTo,
+      shipToAddress: shipToAddress.trim() || null,
       orderedByUserId: null,
       orderedByName: null,
       freight,
@@ -117,6 +160,29 @@ export function NewPOModal() {
   }
 
   const toggle = (k: RowKey) => () => setStaged((s) => (s === k ? null : k));
+
+  /**
+   * Add the staged note (text and/or file) to the now-created order. Returns false with the
+   * reason on screen, and leaves the modal open rather than closing it, when the FILE fails to
+   * attach — the order itself is already saved by this point, so a swallowed failure here would
+   * close the modal on an office that believes its note (a counter receipt, a permit) went with
+   * it. Mirrors new-job-modal.tsx's attachStagedFile.
+   */
+  async function attachStagedNote(poId: string): Promise<boolean> {
+    const file = noteFileRef.current;
+    if (!noteBody.trim() && !file) return true;
+    let attachment: UploadedPONoteAttachment | undefined;
+    if (file) {
+      try {
+        attachment = await uploadPONoteFile(poId, file);
+      } catch (err: unknown) {
+        setError(userMessage(err, "The order was saved, but the note's file wasn't — open it to try again."));
+        return false;
+      }
+    }
+    appendPONote(poId, { body: noteBody.trim(), ...(attachment ? { attachment } : {}) });
+    return true;
+  }
 
   async function submit(place: boolean): Promise<void> {
     if (inFlightRef.current) return;
@@ -141,7 +207,7 @@ export function NewPOModal() {
         vendor: vendor.trim(),
         jobId: jobId || null,
         expectedAt: expectedAt || null,
-        shipTo,
+        shipToAddress: shipToAddress.trim() || null,
         freightCents: Math.round(freight * 100),
         taxCents: Math.round(tax * 100),
         lines: cleanLines.map((l) => ({
@@ -162,7 +228,14 @@ export function NewPOModal() {
     // The draft is real the moment create() answers — adopt it before anything else can fail, so
     // a placement error below never loses it or tempts a retry into minting a duplicate.
     adoptPurchaseOrder(dtoPurchaseOrderToStore(createdDto));
-    if (note.trim()) appendPONote(createdDto.id, { body: note.trim() });
+
+    if (!(await attachStagedNote(createdDto.id))) {
+      // The order is saved; only the note's file failed. Leave the modal open on the error
+      // rather than closing over a silent loss — see attachStagedNote's own doc.
+      inFlightRef.current = false;
+      setSavingPath(null);
+      return;
+    }
 
     if (!place) {
       close();
@@ -220,7 +293,7 @@ export function NewPOModal() {
         <Field label={PO_LABEL.job}>
           <SelectMenu
             value={jobId}
-            onChange={setJobId}
+            onChange={handleJobChange}
             options={[{ value: "", label: STOCK_ORDER_LABEL }, ...jobOptions]}
             aria-label={PO_LABEL.job}
           />
@@ -251,16 +324,17 @@ export function NewPOModal() {
 
           <DisclosureRow
             label={PO_LABEL.shipTo}
-            value={SHIP_TO_LABEL[shipTo]}
+            value={shipToAddress.trim() || "no address"}
             open={staged === "ship"}
             onToggle={toggle("ship")}
           >
             <Field label={PO_LABEL.shipTo} style={{ margin: 0 }}>
-              <SelectMenu
-                value={shipTo}
-                onChange={(v) => setShipTo(v as POShipTo)}
-                options={(Object.keys(SHIP_TO_LABEL) as POShipTo[]).map((k) => ({ value: k, label: SHIP_TO_LABEL[k] }))}
+              <input
+                type="text"
+                value={shipToAddress}
+                placeholder="counter pickup, or an address"
                 aria-label={PO_LABEL.shipTo}
+                onChange={(e) => setShipToAddress(e.target.value)}
               />
             </Field>
           </DisclosureRow>
@@ -286,17 +360,37 @@ export function NewPOModal() {
             </div>
           </DisclosureRow>
 
-          {/* One box on CREATE — a record that does not exist yet has no trail to append to and
-              nothing to clip a file to. The record sheet's Notes chapter is the full feed. */}
-          <DisclosureRow label="Notes" value={note.trim() || "Add"} open={staged === "notes"} onToggle={toggle("notes")}>
-            <Field label="Notes" style={{ margin: 0 }}>
-              <input
-                type="text"
-                value={note}
-                placeholder="gate code, who to chase…"
-                onChange={(e) => setNote(e.target.value)}
-              />
-            </Field>
+          {/* One STAGED note on CREATE — a record that does not exist yet has no trail to append
+              to. Reuses the same NoteComposer the record sheet's Notes chapter renders (never a
+              second, hand-rolled control): attaching happens on pick as usual, but the file rides
+              in noteFileRef rather than uploading immediately (there is no poId to upload against
+              yet — see uploadPONoteFile), and the composer's "Add note" merely stages the typed
+              text rather than persisting it. Both are flushed together, once, by
+              attachStagedNote() after the order is created. */}
+          <DisclosureRow
+            label="Notes"
+            value={noteBody.trim() || (noteFileName ? `1 file · ${noteFileName}` : "Add")}
+            open={staged === "notes"}
+            onToggle={toggle("notes")}
+          >
+            <NoteComposer
+              placeholder="gate code, who to chase…"
+              attachAccept={PO_NOTE_ATTACH_ACCEPT}
+              onAttachFile={async (file) => {
+                const ext = extOf(file.name);
+                if (!PO_NOTE_EXTS.has(ext)) throw new Error(`Can't attach a .${ext || "unknown"} file.`);
+                if (file.size > MAX_FILE_BYTES) throw new Error("That file is over 10 MB.");
+                noteFileRef.current = file;
+                setNoteFileName(file.name);
+              }}
+              onAttachFileClear={() => {
+                noteFileRef.current = null;
+                setNoteFileName(null);
+              }}
+              onSubmit={(text) => {
+                setNoteBody(text);
+              }}
+            />
           </DisclosureRow>
         </div>
 

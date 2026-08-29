@@ -29,7 +29,12 @@ import {
 
 // ── wire input ────────────────────────────────────────────────────────────────
 
-const shipToEnum = z.enum(["counter_pickup", "job_site", "shop"]);
+/** A free-text ship-to address — replaces the old 3-option picker. Trimmed; blank becomes null. */
+const shipToAddressInput = z
+  .string()
+  .max(500)
+  .nullable()
+  .transform((v) => (v && v.trim() ? v.trim() : null));
 
 /** Calendar date, "YYYY-MM-DD" — orderedAt/expectedAt are postgres `date` columns, not instants. */
 const dateOnly = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "expected a YYYY-MM-DD date");
@@ -53,7 +58,7 @@ const createInput = z.object({
   vendor: z.string().min(1).max(500),
   jobId: z.string().uuid().nullable(),
   expectedAt: dateOnly.nullable(),
-  shipTo: shipToEnum,
+  shipToAddress: shipToAddressInput,
   // orderedByUserId is NOT here: it is stamped server-side from ctx.principal.userId (see
   // `create` below), never accepted from the client — the same rule addNote's authorUserId
   // follows. A field that named who ordered a $2,140 purchase would let any caller claim it was
@@ -68,7 +73,7 @@ const updateInput = z.object({
   vendor: z.string().min(1).max(500).optional(),
   jobId: z.string().uuid().nullable().optional(),
   expectedAt: dateOnly.nullable().optional(),
-  shipTo: shipToEnum.optional(),
+  shipToAddress: shipToAddressInput.optional(),
   // orderedByUserId is likewise absent — stamped once at create and never re-targetable from the
   // client. Omitting the key from the command below leaves it untouched (Update…Command treats
   // `undefined` as "leave it").
@@ -210,7 +215,7 @@ export const createPurchaseOrderRouter = () =>
           vendor: input.vendor,
           jobId: input.jobId,
           expectedAt: toDate(input.expectedAt),
-          shipTo: input.shipTo,
+          shipToAddress: input.shipToAddress,
           // Stamped from the caller, never from input — see createInput's comment.
           orderedByUserId: ctx.principal.userId,
           freightCents: input.freightCents,
@@ -232,7 +237,7 @@ export const createPurchaseOrderRouter = () =>
           jobId: input.jobId,
           // undefined means "leave it"; only convert when the field was actually sent.
           expectedAt: input.expectedAt === undefined ? undefined : toDate(input.expectedAt),
-          shipTo: input.shipTo,
+          shipToAddress: input.shipToAddress,
           // orderedByUserId is deliberately absent — undefined here leaves it untouched.
           freightCents: input.freightCents,
           taxCents: input.taxCents,

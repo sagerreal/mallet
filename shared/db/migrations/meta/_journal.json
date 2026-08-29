@@ -1310,6 +1310,13 @@
       "when": 1788028363006,
       "tag": "0186_silky_exiles",
       "breakpoints": true
+    },
+    {
+      "idx": 187,
+      "version": "7",
+      "when": 1788032920501,
+      "tag": "0187_lazy_franklin_richards",
+      "breakpoints": true
     }
   ]
 }

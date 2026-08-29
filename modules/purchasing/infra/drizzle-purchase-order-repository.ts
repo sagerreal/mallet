@@ -79,7 +79,9 @@ export class DrizzlePurchaseOrderRepository implements PurchaseOrderRepository {
       jobId: p.jobId,
       orderedAt: fromDate(p.orderedAt),
       expectedAt: fromDate(p.expectedAt),
-      shipTo: p.shipTo,
+      // ship_to (the old column) is deliberately never written — its NOT NULL default satisfies
+      // it on every insert. shipToAddress is the real field now.
+      shipToAddress: p.shipToAddress,
       orderedByUserId: p.orderedByUserId,
       freightCents: p.freightCents,
       taxCents: p.taxCents,

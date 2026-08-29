@@ -760,7 +760,6 @@ export interface InvoiceAuthorization {
 // see purchase-orders-slice.ts for the create flow this implies.
 
 export type POStatus = "draft" | "ordered" | "cancelled";
-export type POShipTo = "counter_pickup" | "job_site" | "shop";
 
 export interface PurchaseOrderLine {
   id: string;
@@ -807,7 +806,9 @@ export interface PurchaseOrder {
   orderedAt: string | null;
   /** Calendar date "YYYY-MM-DD", or null. */
   expectedAt: string | null;
-  shipTo: POShipTo;
+  /** A free-text address someone typed, or null when none has been. Replaces the old 3-option
+   *  ship-to picker (counter pickup / job site / the shop). */
+  shipToAddress: string | null;
   /** Stamped server-side at create from the caller's principal; never re-targetable. */
   orderedByUserId: string | null;
   /** Resolved server-side from orderedByUserId — never a store lookup. */

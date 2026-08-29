@@ -5,7 +5,6 @@ export type {
   PurchaseOrderProps,
   POLineProps,
   POStatus,
-  ShipTo,
 } from "./domain/purchase-order";
 export type { PurchaseOrderRepository, PONoteRow } from "./domain/purchase-order-repository";
 export { ListPurchaseOrdersUseCase } from "./app/list-purchase-orders";

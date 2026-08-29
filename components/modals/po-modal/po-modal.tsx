@@ -28,7 +28,6 @@ import { POLineTable } from "@/features/money/po-line-table";
 import {
   PO_LABEL,
   PO_STATUS_META,
-  SHIP_TO_LABEL,
   STOCK_ORDER_LABEL,
   poLinesSummary,
   poNotesSummary,
@@ -36,7 +35,7 @@ import {
   subtotalCents,
   totalCents,
 } from "@/features/money/po-defs";
-import type { POShipTo, PurchaseOrder, PurchaseOrderLine, PurchaseOrderNote } from "@/lib/store/types";
+import type { PurchaseOrder, PurchaseOrderLine, PurchaseOrderNote } from "@/lib/store/types";
 import { api } from "@/lib/trpc/client";
 import { trpcVanilla } from "@/lib/trpc/vanilla";
 import { dtoPurchaseOrderToStore, dtoPurchaseOrderNoteToStore } from "@/lib/store/dto-mapper";
@@ -386,12 +385,16 @@ export function POModal({ poId }: POModalProps) {
               />
             </Field>
             <Field label={PO_LABEL.shipTo} style={{ margin: 0 }}>
-              <SelectMenu
-                value={po.shipTo}
-                onChange={(v) => updatePurchaseOrder(po.id, { shipTo: v as POShipTo })}
-                options={(Object.keys(SHIP_TO_LABEL) as POShipTo[]).map((k) => ({ value: k, label: SHIP_TO_LABEL[k] }))}
-                aria-label={PO_LABEL.shipTo}
+              <input
+                type="text"
+                defaultValue={po.shipToAddress ?? ""}
+                placeholder="counter pickup, or an address"
                 disabled={isCancelled}
+                aria-label={PO_LABEL.shipTo}
+                onBlur={(e) => {
+                  const v = e.target.value.trim() || null;
+                  if (v !== po.shipToAddress) updatePurchaseOrder(po.id, { shipToAddress: v });
+                }}
               />
             </Field>
             {/* Stamped, never asked. "Who put a $2,140 boiler on the shop account" is a real
