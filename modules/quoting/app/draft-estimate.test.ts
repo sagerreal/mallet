@@ -467,3 +467,78 @@ describe("DraftEstimateUseCase — assembly components", () => {
     expect(line?.markupBps).toBe(3500);
   });
 });
+
+
+describe("DraftEstimateUseCase — sections", () => {
+  const cmd = (lines: EstimateLineInput[], sections?: { name: string }[]) => ({
+    orgId: ORG,
+    leadId: LEAD,
+    title: null,
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    validDays: null,
+    lines,
+    ...(sections ? { sections } : {}),
+    priceDisplay: null,
+  });
+
+  const draftUseCase = () =>
+    new DraftEstimateUseCase(
+      new FakeEstimateRepository(),
+      new InMemoryEventBus(),
+      new FixedClock(new Date("2026-06-01T00:00:00Z")),
+      seqIds(),
+    );
+
+  it("mints a section per heading, positioned by payload order", async () => {
+    const r = await draftUseCase().exec(
+      cmd([oneLine({ description: "Walls" })], [{ name: "Interior" }, { name: "Exterior" }]),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.sections.map((s) => [s.props.name, s.props.position])).toEqual([
+      ["Interior", 0],
+      ["Exterior", 1],
+    ]);
+  });
+
+  it("resolves a line's section index to the id the server minted", async () => {
+    const r = await draftUseCase().exec(
+      cmd(
+        [
+          oneLine({ description: "Walls", sectionIndex: 0 }),
+          oneLine({ description: "Siding", sectionIndex: 1 }),
+          oneLine({ description: "Trip charge" }),
+        ],
+        [{ name: "Interior" }, { name: "Exterior" }],
+      ),
+    );
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    const [interior, exterior] = r.value.sections;
+    expect(r.value.linesInSection(interior!.id).map((l) => l.props.description)).toEqual(["Walls"]);
+    expect(r.value.linesInSection(exterior!.id).map((l) => l.props.description)).toEqual(["Siding"]);
+    // A line with no section is not an error — it is an ungrouped line, which is the default.
+    expect(r.value.linesInSection(null).map((l) => l.props.description)).toEqual(["Trip charge"]);
+  });
+
+  it("refuses a section index that names no section", async () => {
+    const r = await draftUseCase().exec(cmd([oneLine({ sectionIndex: 3 })], [{ name: "Interior" }]));
+    expect(isOk(r)).toBe(false);
+    if (isOk(r)) return;
+    expect(r.error.message).toMatch(/unknown section/i);
+  });
+
+  it("refuses a blank heading rather than minting an untitled group", async () => {
+    const r = await draftUseCase().exec(cmd([oneLine({})], [{ name: "   " }]));
+    expect(isOk(r)).toBe(false);
+  });
+
+  it("drafts with no sections at all — the ungrouped default", async () => {
+    const r = await draftUseCase().exec(cmd([oneLine({})]));
+    expect(isOk(r)).toBe(true);
+    if (!isOk(r)) return;
+    expect(r.value.sections).toEqual([]);
+  });
+});

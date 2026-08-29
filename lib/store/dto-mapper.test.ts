@@ -83,6 +83,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         markupBps: null,
       },
     ],
+    sections: [],
     subtotal: makeMoneyDTO(20000),
     discount: makeMoneyDTO(1000),
     tax: makeMoneyDTO(1520),

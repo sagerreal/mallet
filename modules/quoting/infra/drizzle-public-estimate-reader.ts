@@ -1,5 +1,5 @@
 import { and, eq, isNull } from "drizzle-orm";
-import { estimates, estimateLines, orgs, leads } from "@mallet/shared/db/schema";
+import { estimates, estimateLines, estimateSections, orgs, leads } from "@mallet/shared/db/schema";
 import { ownerDb } from "@mallet/shared/db/owner-client";
 import { withTenant } from "@mallet/shared/db/tx";
 import type { OrgId } from "@mallet/shared/types";
@@ -99,9 +99,15 @@ export class DrizzlePublicEstimateReader {
       const estimateHeader = rows[0]?.estimate;
       if (!estimateHeader) return null;
       const lineRows = rows.map((r) => r.line).filter((l): l is EstimateLineRow => l !== null);
+      // The customer's copy is the surface sections exist FOR — the headings the work is grouped
+      // under. Loaded separately so the line join does not multiply by them.
+      const sectionRows = await tx
+        .select()
+        .from(estimateSections)
+        .where(and(eq(estimateSections.estimateId, header.id), isNull(estimateSections.deletedAt)));
       const target = await new DrizzleConnectTargetReader(tx, orgId).read();
       return {
-        estimate: toDomain(estimateHeader, lineRows),
+        estimate: toDomain(estimateHeader, lineRows, sectionRows),
         chargesEnabled: Boolean(target.connectedAccountId && target.chargesEnabled),
       };
     });

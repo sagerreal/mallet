@@ -1,6 +1,7 @@
 import type {
   EstimateId,
   EstimateLineId,
+  EstimateSectionId,
   OrgId,
   LeadId,
   Money,
@@ -23,6 +24,7 @@ import type { SignatureDraft, SignedSnapshot } from "./signature";
 import { createSignature } from "./signature";
 import { authorizationText } from "./authorization-text";
 import { evaluateQuantityExpression, MAX_QTY_EXPR_LENGTH } from "./quantity-expression";
+import { EstimateSection, orderSections } from "./estimate-section";
 
 const MAX_CHANGE_REQUEST_LENGTH = 2_000;
 
@@ -424,6 +426,12 @@ export interface EstimateProps {
   readonly signedAt?: Date | null;
   readonly signedSnapshot?: SignedSnapshot | null;
   readonly lines: readonly EstimateLine[];
+  /**
+   * Named groups the lines sit under. Optional so every pre-existing construction site reads as
+   * the historical default — an UNGROUPED estimate, which is still the common one. A line names
+   * its section; the sections themselves hold no lines and no money.
+   */
+  readonly sections?: readonly EstimateSection[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -457,7 +465,32 @@ export class Estimate {
     }
     const tierError = Estimate.validateTiers(props);
     if (tierError) return err(tierError);
+    const sectionError = Estimate.validateSections(props);
+    if (sectionError) return err(sectionError);
     return ok(new Estimate({ ...props, num, presentationSnapshot: presentation.value }));
+  }
+
+  /**
+   * Sections are referential integrity and nothing else: no duplicate ids, and no line pointing
+   * at a group that is not here. A dangling sectionId would render a line under a heading that
+   * does not exist — it would simply vanish from the customer's copy.
+   */
+  private static validateSections(props: EstimateProps): ValidationError | null {
+    const sections = props.sections ?? [];
+    const ids = new Set<string>();
+    for (const section of sections) {
+      if (ids.has(section.id)) {
+        return validation(`duplicate section: ${section.id}`, "sections");
+      }
+      ids.add(section.id);
+    }
+    for (const line of props.lines) {
+      const sectionId = line.props.sectionId;
+      if (sectionId !== null && sectionId !== undefined && !ids.has(sectionId)) {
+        return validation(`line references a section that is not on this estimate: ${sectionId}`, "sectionId");
+      }
+    }
+    return null;
   }
 
   // Tier consistency invariants. A tier may be empty while drafting (only send gates on the
@@ -1011,5 +1044,24 @@ export class Estimate {
 
   get props(): EstimateProps {
     return this.p;
+  }
+
+  /**
+   * The estimate's sections in render order. Callers read THIS rather than `props.sections` —
+   * ordering a group list at each of the four surfaces that renders one is how two of them end
+   * up disagreeing.
+   */
+  get sections(): readonly EstimateSection[] {
+    return orderSections(this.p.sections ?? []);
+  }
+
+  /**
+   * The lines under one section, in position order — and with `null`, the lines under no section
+   * at all, which is where an ungrouped estimate keeps every line it has.
+   */
+  linesInSection(sectionId: EstimateSectionId | null): readonly EstimateLine[] {
+    return this.p.lines
+      .filter((line) => (line.props.sectionId ?? null) === sectionId)
+      .sort((a, b) => a.props.position - b.props.position);
   }
 }

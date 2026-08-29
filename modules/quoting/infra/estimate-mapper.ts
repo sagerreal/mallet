@@ -1,10 +1,22 @@
-import { asEstimateId, asEstimateLineId, asOrgId, asLeadId, money } from "@mallet/shared/types";
-import { estimates, estimateLines } from "@mallet/shared/db/schema";
+import { asEstimateId, asEstimateLineId, asEstimateSectionId, asOrgId, asLeadId, money } from "@mallet/shared/types";
+import { estimates, estimateLines, estimateSections } from "@mallet/shared/db/schema";
 import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, isPriceDisplay, type PresentationSnapshot, type QuoteTier, type TierNames } from "../domain/estimate";
+import { EstimateSection } from "../domain/estimate-section";
 import type { SignedSnapshot } from "../domain/signature";
 
 export type EstimateRow = typeof estimates.$inferSelect;
 export type EstimateLineRow = typeof estimateLines.$inferSelect;
+export type EstimateSectionRow = typeof estimateSections.$inferSelect;
+
+export const toEstimateSection = (row: EstimateSectionRow): EstimateSection => {
+  const result = EstimateSection.create({
+    id: asEstimateSectionId(row.id),
+    name: row.name,
+    position: row.position,
+  });
+  if (!result.ok) throw new Error(`corrupt estimate_section ${row.id}: ${result.error.message}`);
+  return result.value;
+};
 
 export const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
   const result = EstimateLine.create({
@@ -41,7 +53,11 @@ export const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
 
 // Reconstruct the aggregate from a header row + its (already deleted-filtered) line rows. Corrupt
 // data fails loud rather than silently coercing.
-export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[]): Estimate => {
+export const toDomain = (
+  row: EstimateRow,
+  lineRows: readonly EstimateLineRow[],
+  sectionRows: readonly EstimateSectionRow[] = [],
+): Estimate => {
   if (!isEstimateStatus(row.status)) {
     throw new Error(`corrupt estimate ${row.id}: unknown status "${row.status}"`);
   }
@@ -96,6 +112,7 @@ export const toDomain = (row: EstimateRow, lineRows: readonly EstimateLineRow[])
     // rather than untrusted input.
     signedSnapshot: (row.signedSnapshot as SignedSnapshot | null) ?? null,
     lines,
+    sections: sectionRows.map(toEstimateSection),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
