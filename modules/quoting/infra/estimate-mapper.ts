@@ -1,12 +1,26 @@
 import { asEstimateId, asEstimateLineId, asEstimateSectionId, asOrgId, asLeadId, money } from "@mallet/shared/types";
-import { estimates, estimateLines, estimateSections } from "@mallet/shared/db/schema";
+import { estimates, estimateLines, estimateSections, estimateJobCosts } from "@mallet/shared/db/schema";
 import { Estimate, EstimateLine, isEstimateStatus, isEstimateOrigin, isPriceDisplay, type PresentationSnapshot, type QuoteTier, type TierNames } from "../domain/estimate";
 import { EstimateSection } from "../domain/estimate-section";
+import { EstimateJobCost } from "../domain/estimate-job-cost";
 import type { SignedSnapshot } from "../domain/signature";
 
 export type EstimateRow = typeof estimates.$inferSelect;
 export type EstimateLineRow = typeof estimateLines.$inferSelect;
 export type EstimateSectionRow = typeof estimateSections.$inferSelect;
+export type EstimateJobCostRow = typeof estimateJobCosts.$inferSelect;
+
+export const toEstimateJobCost = (row: EstimateJobCostRow): EstimateJobCost => {
+  const result = EstimateJobCost.create({
+    id: row.id,
+    description: row.description,
+    amountCents: row.amountCents,
+    purchaseOrderId: row.purchaseOrderId,
+    position: row.position,
+  });
+  if (!result.ok) throw new Error(`corrupt estimate_job_cost ${row.id}: ${result.error.message}`);
+  return result.value;
+};
 
 export const toEstimateSection = (row: EstimateSectionRow): EstimateSection => {
   const result = EstimateSection.create({
@@ -57,6 +71,7 @@ export const toDomain = (
   row: EstimateRow,
   lineRows: readonly EstimateLineRow[],
   sectionRows: readonly EstimateSectionRow[] = [],
+  jobCostRows: readonly EstimateJobCostRow[] = [],
 ): Estimate => {
   if (!isEstimateStatus(row.status)) {
     throw new Error(`corrupt estimate ${row.id}: unknown status "${row.status}"`);
@@ -113,6 +128,7 @@ export const toDomain = (
     signedSnapshot: (row.signedSnapshot as SignedSnapshot | null) ?? null,
     lines,
     sections: sectionRows.map(toEstimateSection),
+    jobCosts: jobCostRows.map(toEstimateJobCost),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });

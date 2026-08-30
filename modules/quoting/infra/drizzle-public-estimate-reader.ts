@@ -110,6 +110,9 @@ export class DrizzlePublicEstimateReader {
         .select()
         .from(estimateSections)
         .where(and(eq(estimateSections.estimateId, header.id), isNull(estimateSections.deletedAt)));
+      // Job costs are deliberately NOT loaded: they are the shop's own numbers — a dumpster,
+      // a sub's day, a placed purchase order — and the customer's bill is the lines. Absent by
+      // construction here rather than filtered later, so no surface can leak them by forgetting.
       const target = await new DrizzleConnectTargetReader(tx, orgId).read();
       return {
         estimate: toDomain(estimateHeader, lineRows, sectionRows),

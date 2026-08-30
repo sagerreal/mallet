@@ -245,6 +245,46 @@ export const estimates = pgTable(
  * Lines reference it nullably: an ungrouped line keeps its place in the document, it just has no
  * heading above it.
  */
+/**
+ * A cost on the job this quote prices that is NOT one of the quote's lines — a permit, a
+ * dumpster, a sub's day, or a purchase order already placed against the job.
+ *
+ * These never touch the customer's price. They exist so the margin the estimator reads is the
+ * real one: a $4,495 repaint with a $400 dumpster behind it is not a $4,495 repaint.
+ *
+ * `purchase_order_id` is PROVENANCE and a snapshot, not a live link. It records that this row
+ * came from PO-1042 so the same order cannot be pulled onto the quote twice; the amount is
+ * frozen at the moment it was pulled, like every other snapshot in this codebase. No FK, same
+ * rule as estimate_lines.material_id: a deleted order must not cascade into a sent quote.
+ *
+ * RLS keyed on org_id (hand-written migration — drizzle-kit does not emit it).
+ */
+export const estimateJobCosts = pgTable(
+  "estimate_job_costs",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id").notNull(),
+    estimateId: uuid("estimate_id").notNull(),
+    description: text("description").notNull(),
+    amountCents: integer("amount_cents").notNull().default(0),
+    purchaseOrderId: uuid("purchase_order_id"),
+    position: integer("position").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    unique("estimate_job_costs_org_id_key").on(t.orgId, t.id),
+    foreignKey({
+      name: "estimate_job_costs_estimate_fk",
+      columns: [t.orgId, t.estimateId],
+      foreignColumns: [estimates.orgId, estimates.id],
+    }).onDelete("cascade"),
+    index("estimate_job_costs_org_est_idx").on(t.orgId, t.estimateId),
+    check("estimate_job_costs_amount_check", sql`${t.amountCents} >= 0`),
+  ],
+);
+
 export const estimateSections = pgTable(
   "estimate_sections",
   {

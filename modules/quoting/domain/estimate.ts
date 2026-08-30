@@ -25,6 +25,7 @@ import { createSignature } from "./signature";
 import { authorizationText } from "./authorization-text";
 import { evaluateQuantityExpression, MAX_QTY_EXPR_LENGTH } from "./quantity-expression";
 import { EstimateSection, orderSections } from "./estimate-section";
+import { EstimateJobCost, jobCostTotalCents } from "./estimate-job-cost";
 // The proposal snapshot moved to its own file when it grew a document mode, a design, cover
 // meta and photos. Re-exported here so every existing import site is unchanged.
 import { validatePresentationSnapshot } from "./presentation-snapshot";
@@ -407,6 +408,12 @@ export interface EstimateProps {
    * its section; the sections themselves hold no lines and no money.
    */
   readonly sections?: readonly EstimateSection[];
+  /**
+   * What the job costs beyond the quote's own lines — a permit, a dumpster, a placed purchase
+   * order. Optional, so every construction site that predates them is unchanged. These NEVER
+   * enter any customer-facing number; see jobCostTotal.
+   */
+  readonly jobCosts?: readonly EstimateJobCost[];
   readonly createdAt: Date;
   readonly updatedAt: Date;
 }
@@ -1048,6 +1055,22 @@ export class Estimate {
    */
   get sections(): readonly EstimateSection[] {
     return orderSections(this.p.sections ?? []);
+  }
+
+  /** The job costs behind this quote, in the order the estimator entered them. */
+  get jobCosts(): readonly EstimateJobCost[] {
+    return [...(this.p.jobCosts ?? [])].sort((a, b) => a.props.position - b.props.position);
+  }
+
+  /**
+   * What the job costs beyond the lines, in cents.
+   *
+   * Deliberately NOT part of any total, subtotal, tax base or deposit. This is the shop's own
+   * number — the customer's bill is the lines. Wiring it into the money chain would charge a
+   * customer for the shop's dumpster.
+   */
+  jobCostTotal(): Money {
+    return money(jobCostTotalCents(this.p.jobCosts ?? []));
   }
 
   /**

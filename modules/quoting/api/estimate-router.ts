@@ -137,6 +137,15 @@ const estimateLineDTO = z.object({
   markupBps: z.number().int().nullable(),
 });
 
+/** A cost on the job that is not one of the quote's lines. Office-only, never customer-facing. */
+const jobCostDTO = z.object({
+  id: z.string().uuid(),
+  description: z.string(),
+  amount: moneyDTO,
+  purchaseOrderId: z.string().uuid().nullable(),
+  position: z.number().int(),
+});
+
 /** A named group of lines. Carries no money — grouping can never change a price. */
 const estimateSectionDTO = z.object({
   id: z.string().uuid(),
@@ -156,6 +165,11 @@ const estimateDTO = z.object({
   lines: z.array(estimateLineDTO),
   /** The headings the lines are grouped under, in render order. Empty on an ungrouped quote. */
   sections: z.array(estimateSectionDTO),
+  /**
+   * What the job costs beyond the lines. OFFICE ONLY — this DTO is the authed one; the public
+   * quote reader never loads them, so they cannot reach a customer surface by construction.
+   */
+  jobCosts: z.array(jobCostDTO),
   subtotal: moneyDTO,
   discount: moneyDTO,
   tax: moneyDTO,
@@ -345,6 +359,15 @@ const sectionInput = z.object({
   name: z.string().trim().min(1).max(MAX_SECTION_NAME_CHARS),
 });
 
+/** A cost on the job that is not one of the quote's lines. Office-only, never customer-facing. */
+const jobCostInput = z.object({
+  description: z.string().trim().min(1).max(500),
+  amountCents: z.number().int().nonnegative(),
+  /** The purchase order it was pulled from. Provenance — a snapshot, never a live link. */
+  purchaseOrderId: z.string().uuid().nullish(),
+});
+
+
 /**
  * A signed, direct-to-storage upload for a proposal photo, plus the key the snapshot records.
  *
@@ -378,6 +401,8 @@ const draftInput = z
     lines: z.array(lineInput).min(1),
     /** The headings the lines are grouped under. Bounded so a payload cannot mint a group per line. */
     sections: z.array(sectionInput).max(50).optional(),
+    /** What the job costs beyond the lines. Bounded the same way, and for the same reason. */
+    jobCosts: z.array(jobCostInput).max(50).optional(),
     recommendedTier: tierEnum.optional(),
     tierNames: tierNamesInput.optional(),
     termsSnapshot: z.string().trim().min(1).max(10_000).optional(),
@@ -561,6 +586,13 @@ const toEstimateDTO = (estimate: Estimate) => {
         markupBps: lp.markupBps ?? null,
       };
     }),
+    jobCosts: estimate.jobCosts.map((cost) => ({
+      id: cost.props.id,
+      description: cost.props.description,
+      amount: money(cost.props.amountCents),
+      purchaseOrderId: cost.props.purchaseOrderId,
+      position: cost.props.position,
+    })),
     // Ordered by the aggregate, not here — one place decides how sections read.
     sections: estimate.sections.map((section) => ({
       id: section.props.id,
@@ -821,6 +853,12 @@ export const createEstimateRouter = () =>
             sectionIndex: line.sectionIndex ?? null,
           })),
           sections: input.sections ?? [],
+          jobCosts:
+            input.jobCosts?.map((cost) => ({
+              description: cost.description,
+              amountCents: cost.amountCents,
+              purchaseOrderId: cost.purchaseOrderId ?? null,
+            })) ?? [],
           recommendedTier: input.recommendedTier ?? null,
           tierNames: input.tierNames ?? null,
           termsSnapshot: input.termsSnapshot ?? null,

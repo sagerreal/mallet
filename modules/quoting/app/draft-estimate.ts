@@ -4,6 +4,7 @@ import { asEstimateId, asEstimateLineId, asEstimateSectionId, money, zeroMoney, 
 import type { EventBus, IdGenerator } from "@mallet/shared/ports";
 import { Estimate, EstimateLine } from "../domain/estimate";
 import { EstimateSection } from "../domain/estimate-section";
+import { EstimateJobCost } from "../domain/estimate-job-cost";
 import type { EstimateSubItem, PresentationSnapshot, PriceDisplay, QuoteTier, TierNames } from "../domain/estimate";
 import type { EstimateRepository } from "../domain/estimate-repository";
 import type { AiDraftLine } from "../domain/edit-delta";
@@ -48,6 +49,14 @@ export interface EstimateSectionInput {
   readonly name: string;
 }
 
+/** A cost on the job that is not one of the quote's lines. Never touches the customer's price. */
+export interface EstimateJobCostInput {
+  readonly description: string;
+  readonly amountCents: number;
+  /** The purchase order this was pulled from, when it was. */
+  readonly purchaseOrderId?: string | null;
+}
+
 export interface DraftEstimateCommand {
   readonly orgId: OrgId;
   readonly leadId: LeadId;
@@ -59,6 +68,12 @@ export interface DraftEstimateCommand {
   readonly lines: readonly EstimateLineInput[];
   /** The headings the lines are grouped under. Absent on an ungrouped quote, still the common one. */
   readonly sections?: readonly EstimateSectionInput[];
+  /**
+   * What the job costs beyond the lines — a permit, a dumpster, a placed purchase order.
+   * The shop's own numbers: they change the margin the office reads and nothing the customer
+   * is shown.
+   */
+  readonly jobCosts?: readonly EstimateJobCostInput[];
   /** Non-null marks the draft as Good/Better/Best (domain validates line tags match). */
   readonly recommendedTier?: QuoteTier | null;
   readonly tierNames?: TierNames | null;
@@ -111,6 +126,9 @@ export class DraftEstimateUseCase {
     const sections = this.buildSections(cmd.sections ?? []);
     if (!isOk(sections)) return sections;
 
+    const jobCosts = this.buildJobCosts(cmd.jobCosts ?? []);
+    if (!isOk(jobCosts)) return jobCosts;
+
     const lines = this.buildLines(cmd.lines, sections.value);
     if (!isOk(lines)) return lines;
     const built = lines.value;
@@ -151,6 +169,7 @@ export class DraftEstimateUseCase {
       presentationSnapshot: cmd.presentationSnapshot ?? null,
       lines: built,
       sections: sections.value,
+      jobCosts: jobCosts.value,
       createdAt: now,
       updatedAt: now,
     });
@@ -192,6 +211,30 @@ export class DraftEstimateUseCase {
       });
       if (!isOk(section)) return section;
       built.push(section.value);
+    }
+    return ok(built);
+  }
+
+  /**
+   * Build the job-cost value objects. Position is the payload index, like sections — the order
+   * the estimator entered them is the order they read.
+   */
+  private buildJobCosts(
+    inputs: readonly EstimateJobCostInput[],
+  ): Result<EstimateJobCost[], AppError> {
+    const built: EstimateJobCost[] = [];
+    for (let i = 0; i < inputs.length; i += 1) {
+      const input = inputs[i];
+      if (!input) continue;
+      const cost = EstimateJobCost.create({
+        id: this.ids.newId(),
+        description: input.description,
+        amountCents: input.amountCents,
+        purchaseOrderId: input.purchaseOrderId ?? null,
+        position: i,
+      });
+      if (!isOk(cost)) return cost;
+      built.push(cost.value);
     }
     return ok(built);
   }

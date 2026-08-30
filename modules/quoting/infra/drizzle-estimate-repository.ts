@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, isNull, isNotNull, inArray, notInArray, sql, type SQL } from "drizzle-orm";
-import { estimates, estimateLines, estimateSections, leads } from "@mallet/shared/db/schema";
+import { estimates, estimateLines, estimateSections, estimateJobCosts, leads } from "@mallet/shared/db/schema";
 import type { TenantTx } from "@mallet/shared/db/tx";
 import { keysetBefore } from "@mallet/shared/db/keyset";
 import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueColumn } from "@mallet/shared/db/sort-page";
@@ -16,9 +16,10 @@ import {
 } from "@mallet/shared/types";
 import type { Estimate, EstimateLine } from "../domain/estimate";
 import type { EstimateSection } from "../domain/estimate-section";
+import type { EstimateJobCost } from "../domain/estimate-job-cost";
 import type { EstimateRepository, EstimateFilter } from "../domain/estimate-repository";
 import type { AiDraftSnapshot } from "../domain/edit-delta";
-import { toDomain, type EstimateLineRow, type EstimateSectionRow } from "./estimate-mapper";
+import { toDomain, type EstimateLineRow, type EstimateSectionRow, type EstimateJobCostRow } from "./estimate-mapper";
 
 // Real persistence. Constructed with a tenant-scoped tx (withTenant set app.current_org_id), so
 // RLS appends org_id = current_org_id() to every statement — this class never filters by org
@@ -202,6 +203,49 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       .update(estimateSections)
       .set({ deletedAt: p.updatedAt })
       .where(and(...sectionConds));
+
+    await this.replaceJobCosts(p.id, p.orgId, p.jobCosts ?? [], p.updatedAt);
+  }
+
+  /**
+   * Replace the estimate's job costs wholesale.
+   *
+   * Wholesale rather than a per-row diff for the same reason the pricebook replaces an
+   * assembly's parts: the estimator edits this list as one thing — add the dumpster, drop the
+   * permit, pull a purchase order — and a diff would have to guess which change was a rename
+   * and which was a replacement.
+   */
+  private async replaceJobCosts(
+    estimateId: string,
+    orgId: OrgId,
+    costs: readonly EstimateJobCost[],
+    now: Date,
+  ): Promise<void> {
+    // Retire first, then write — the other order soft-deletes the rows just inserted.
+    await this.tx
+      .update(estimateJobCosts)
+      .set({ deletedAt: now, updatedAt: now })
+      .where(
+        and(
+          eq(estimateJobCosts.estimateId, estimateId),
+          eq(estimateJobCosts.orgId, orgId),
+          isNull(estimateJobCosts.deletedAt),
+        ),
+      );
+    if (costs.length === 0) return;
+    await this.tx.insert(estimateJobCosts).values(
+      costs.map((cost) => ({
+        id: cost.props.id,
+        orgId,
+        estimateId,
+        description: cost.props.description,
+        amountCents: cost.props.amountCents,
+        purchaseOrderId: cost.props.purchaseOrderId,
+        position: cost.props.position,
+        createdAt: now,
+        updatedAt: now,
+      })),
+    );
   }
 
   private async upsertSections(
@@ -348,11 +392,17 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     const lineRows = rows.map((r) => r.line).filter((l): l is EstimateLineRow => l !== null);
     // A second query rather than a second left join: joining sections too would multiply every
     // line row by every section row and the de-duplication would be ours to get right.
-    const sectionRows = await this.tx
-      .select()
-      .from(estimateSections)
-      .where(and(eq(estimateSections.estimateId, id), isNull(estimateSections.deletedAt)));
-    return toDomain(header, lineRows, sectionRows);
+    const [sectionRows, jobCostRows] = await Promise.all([
+      this.tx
+        .select()
+        .from(estimateSections)
+        .where(and(eq(estimateSections.estimateId, id), isNull(estimateSections.deletedAt))),
+      this.tx
+        .select()
+        .from(estimateJobCosts)
+        .where(and(eq(estimateJobCosts.estimateId, id), isNull(estimateJobCosts.deletedAt))),
+    ]);
+    return toDomain(header, lineRows, sectionRows, jobCostRows);
   }
 
   list(
@@ -457,7 +507,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     // Load lines and sections separately (the header row from .returning() carries neither).
     // Sections are not optional here: a restored line that names a section the aggregate was not
     // given is a dangling reference, and Estimate.create rejects the whole estimate.
-    const [lineRows, sectionRows] = await Promise.all([
+    const [lineRows, sectionRows, jobCostRows] = await Promise.all([
       this.tx
         .select()
         .from(estimateLines)
@@ -466,8 +516,12 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         .select()
         .from(estimateSections)
         .where(and(eq(estimateSections.estimateId, id), isNull(estimateSections.deletedAt))),
+      this.tx
+        .select()
+        .from(estimateJobCosts)
+        .where(and(eq(estimateJobCosts.estimateId, id), isNull(estimateJobCosts.deletedAt))),
     ]);
-    return toDomain(row, lineRows, sectionRows);
+    return toDomain(row, lineRows, sectionRows, jobCostRows);
   }
 
   // Keyset-paginate estimate headers, then batch-load their lines in ONE query (no N+1) and
@@ -528,7 +582,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
     const ids = headers.map((h) => h.id);
     // Two batched reads for the whole page, not two per estimate — the N+1 this list would
     // otherwise become is the reason both are keyed by `inArray`.
-    const [lineRows, sectionRows] = ids.length
+    const [lineRows, sectionRows, jobCostRows] = ids.length
       ? await Promise.all([
           this.tx
             .select()
@@ -540,8 +594,14 @@ export class DrizzleEstimateRepository implements EstimateRepository {
             .where(
               and(inArray(estimateSections.estimateId, ids), isNull(estimateSections.deletedAt)),
             ),
+          this.tx
+            .select()
+            .from(estimateJobCosts)
+            .where(
+              and(inArray(estimateJobCosts.estimateId, ids), isNull(estimateJobCosts.deletedAt)),
+            ),
         ])
-      : [[], []];
+      : [[], [], []];
 
     const linesByEstimate = new Map<string, EstimateLineRow[]>();
     for (const line of lineRows) {
@@ -557,8 +617,20 @@ export class DrizzleEstimateRepository implements EstimateRepository {
       sectionsByEstimate.set(section.estimateId, bucket);
     }
 
+    const jobCostsByEstimate = new Map<string, EstimateJobCostRow[]>();
+    for (const cost of jobCostRows) {
+      const bucket = jobCostsByEstimate.get(cost.estimateId) ?? [];
+      bucket.push(cost);
+      jobCostsByEstimate.set(cost.estimateId, bucket);
+    }
+
     const rebuilt = headers.map((h) =>
-      toDomain(h, linesByEstimate.get(h.id) ?? [], sectionsByEstimate.get(h.id) ?? []),
+      toDomain(
+        h,
+        linesByEstimate.get(h.id) ?? [],
+        sectionsByEstimate.get(h.id) ?? [],
+        jobCostsByEstimate.get(h.id) ?? [],
+      ),
     );
 
     if (!selected) {

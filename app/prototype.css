@@ -1524,6 +1524,27 @@
   .linehint{background:none;border:0;padding:0;font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
   .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
   .linehint[aria-expanded="true"]{color:var(--ink)}
+  /* ---------- other job costs ----------
+     The shop's own numbers, in the costing view. A quiet list, because it is a ledger the
+     estimator reads rather than a form they fill in. */
+  .jobcosts{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);overflow:hidden;margin-top:var(--space-3)}
+  .jobcost-row{display:flex;align-items:center;gap:var(--space-2);padding:var(--space-1) var(--space-2);border-bottom:1px solid var(--line-2)}
+  .jobcost-row>input:first-child{flex:1;min-width:0;border:1.5px solid transparent;border-radius:var(--radius-sm);
+    padding:var(--space-2);font-family:inherit;font-size:var(--type-base);background:transparent;color:var(--ink)}
+  .jobcost-row>input:first-child:hover{background:var(--green-50)}
+  .jobcost-row>input:first-child:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  .jobcost-name{flex:1;min-width:0;display:flex;align-items:center;gap:var(--space-2);padding:var(--space-2);font-size:var(--type-base)}
+  /* A pulled order wears its number, so the row says where the money came from. */
+  .jobcost-tag{font-size:var(--type-xs);font-weight:700;letter-spacing:.04em;color:var(--ink-2);
+    background:var(--green-50);border:1px solid var(--line);border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-1);white-space:nowrap}
+  .jobcost-amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .jobcost-total{font-weight:800;font-variant-numeric:tabular-nums;padding-right:var(--space-2)}
+  .jobcost-picker{border-bottom:1px solid var(--line-2);background:var(--green-50);padding:var(--space-3)}
+  .jobcost-pick{display:flex;align-items:center;gap:var(--space-2);width:100%;border:1px solid var(--line);
+    background:var(--card);border-radius:var(--radius-sm);padding:var(--space-2);margin-bottom:var(--space-1);
+    font-family:inherit;font-size:var(--type-sm);color:var(--ink);cursor:pointer}
+  .jobcost-pick:hover:not([disabled]){border-color:var(--ink-3)}
+  .jobcost-pick[disabled]{color:var(--ink-3);cursor:default}
   /* ---------- the proposal document ----------
      Paper sheets, a document toolbar, and in-place editing — the composer-v4 mock's
      presentation, ported. The sheet is a SIMULATION of paper, so it carries its own type
