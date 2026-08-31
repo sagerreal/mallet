@@ -1573,6 +1573,88 @@
   .cardrow>.card{margin:0}
   @media (max-width:760px){.cardrow{grid-template-columns:1fr}}
 
+  /* ---------- the inspector rail ----------
+     The mock's docked right column: select a line and its details dock beside the ledger —
+     quantity, costs, margin, tax, visibility, section, scope. Anchored and in-flow (a grid
+     column, not a popover), which is what the no-floating-UI rule asks of a rail.
+     With nothing selected the ledger takes the full width and no rail renders. */
+  .lineedit-split{display:grid;grid-template-columns:minmax(0,1fr)}
+  .lineedit-split.railed{grid-template-columns:minmax(0,1fr) 290px}
+  .lineedit-split.railed.folded{grid-template-columns:minmax(0,1fr) 26px}
+  .lineedit-ledger{min-width:0}
+  .lineedit-railcol{position:relative;border-left:1px solid var(--line);background:var(--paper)}
+  /* The selected row — the mock's inset accent bar. */
+  .lineedit tbody tr.rowsel>td{background:var(--green-50)}
+  .lineedit tbody tr.rowsel>td:first-child{box-shadow:inset 2px 0 var(--green-700)}
+  /* The "Details" pull tab, vertically centred on the panel edge in both states. */
+  .rail-handle{position:absolute;z-index:8;top:50%;left:0;transform:translate(-50%,-50%);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:var(--space-1);
+    min-width:24px;min-height:24px; /* WCAG 2.2 target-size — the tab is a target, not just type */
+    padding:var(--space-2) var(--space-1);border:1px solid var(--line);
+    border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);
+    font-family:inherit;font-size:var(--type-xs);font-weight:600;letter-spacing:.06em;line-height:1;
+    cursor:pointer;box-shadow:0 1px 4px rgb(20 24 20 / 8%)}
+  .rail-handle .vtext{writing-mode:vertical-rl}
+  .rail-handle:hover{color:var(--ink);border-color:var(--ink-3)}
+  /* A folded rail is one clickable strip — the whole column reopens it. */
+  .rail-unfold{width:100%;height:100%;min-height:420px;border:0;background:transparent;cursor:pointer}
+  .rail-unfold:hover{background:var(--green-50)}
+  /* The inspector body */
+  .rail{padding:var(--space-3) var(--space-3) var(--space-4);min-height:420px}
+  .rail-head{padding-bottom:var(--space-3);border-bottom:1px solid var(--line)}
+  .rail-kicker{font-family:var(--font-space-mono),ui-monospace,monospace;font-size:var(--type-xs);
+    font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3)}
+  .rail-title{margin:var(--space-1) 0 0;font-size:var(--type-md);font-weight:700;line-height:1.28;
+    letter-spacing:-.015em;color:var(--ink);overflow-wrap:anywhere}
+  .rail-sub{margin:var(--space-2xs) 0 0;color:var(--ink-3);font-size:var(--type-xs)}
+  /* Property rows and expandable rows share one quiet list rhythm. */
+  .rail-prop{width:100%;min-height:40px;display:grid;grid-template-columns:1fr auto;align-items:center;
+    gap:var(--space-3);border:0;border-bottom:1px solid var(--line-2);background:transparent;
+    padding:0 var(--space-2xs);text-align:left;font-family:inherit;color:inherit}
+  button.rail-prop{cursor:pointer}
+  button.rail-prop:hover{background:var(--card)}
+  .rail-prop .k{color:var(--ink-2);font-size:var(--type-sm);font-weight:500}
+  .rail-prop .v{color:var(--ink);font-size:var(--type-sm);font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+  .rail-prop .v.good{color:var(--green-700)}
+  .rail-prop .v.bad{color:var(--red)}
+  .rail-editor{padding:var(--space-2) 0 var(--space-3);border-bottom:1px solid var(--line-2)}
+  .rail-grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-2)}
+  .rail input,.rail select,.rail textarea{width:100%;border:1.5px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--card);padding:var(--space-2);font-family:inherit;font-size:var(--type-sm);color:var(--ink)}
+  .rail input:focus,.rail select:focus,.rail textarea:focus{border-color:var(--green-600);outline:none}
+  .rail-hint{margin:var(--space-1) 0 0;color:var(--ink-3);font-size:var(--type-xs);line-height:1.4}
+  .rail-acc{width:100%;height:40px;display:flex;align-items:center;border:0;border-bottom:1px solid var(--line-2);
+    background:transparent;padding:0 var(--space-2xs);color:var(--ink-2);font-family:inherit;
+    font-size:var(--type-sm);font-weight:500;text-align:left;cursor:pointer}
+  .rail-acc:hover{background:var(--card)}
+  .rail-acc span{margin-left:auto;color:var(--ink-3);font-size:var(--type-xs);font-weight:550}
+  .rail-acc[aria-expanded="true"]{border-bottom:0}
+  .rail-accbody{padding:0 var(--space-2xs) var(--space-3);border-bottom:1px solid var(--line-2)}
+  .rail-comp{width:100%;display:flex;align-items:center;gap:var(--space-2);min-height:38px;border:0;
+    border-bottom:1px solid var(--line-2);background:transparent;padding:0;color:var(--ink);
+    font-family:inherit;font-size:var(--type-sm);text-align:left;cursor:pointer}
+  .rail-comp:hover{background:var(--card)}
+  .rail-comp .rc-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .rail-comp .rc-fig{color:var(--ink-3);font-size:var(--type-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rail-actions{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)}
+  /* The assembly disclosure + collapsed subline in the ledger. */
+  .asm-disc{width:24px;height:24px;flex:0 0 24px;display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);color:var(--ink-2);
+    font-family:inherit;font-size:var(--type-sm);font-weight:700;cursor:pointer;margin-right:var(--space-2)}
+  .asm-disc:hover{border-color:var(--ink-3);color:var(--ink)}
+  .asm-sub{display:block;margin:var(--space-2xs) 0 0 var(--space-2);font-size:var(--type-xs);color:var(--ink-3)}
+  .desc-cell{display:flex;align-items:center;min-width:0}
+  .desc-cell>input{min-width:0;flex:1}
+  /* On a narrow screen the rail is a full-width section BELOW the ledger — still in-flow,
+     still the same component; a 290px column beside a 400px table helps no one. */
+  @media (max-width:900px){
+    .lineedit-split.railed{grid-template-columns:minmax(0,1fr)}
+    .lineedit-railcol{border-left:0;border-top:1px solid var(--line)}
+    .rail-handle{display:none}
+    .lineedit-split.railed.folded{grid-template-columns:minmax(0,1fr)}
+    .lineedit-split.folded .lineedit-railcol{display:none}
+  }
+
   /* ---------- the estimate's masthead ----------
      The document's headline, edited where it is read. The title is an input that does not
      look like one until you touch it — a quote's name is not a form field, it is the first

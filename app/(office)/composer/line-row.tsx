@@ -28,11 +28,19 @@ export interface LineRowProps {
   /** Does this line have components. Its price is then rolled up, not typed. */
   hasComponents: boolean;
   showCost: boolean;
-  taxed: boolean;
   priceMode: "lines" | "total";
   /** True for the last component under a parent — closes the group with a rule. */
   lastComponent?: boolean;
   provenanceFor?: (description: string) => "pricebook" | null;
+  /** This row is docked in the inspector rail. */
+  selected?: boolean;
+  /** Clicking anywhere on the row selects it — inputs included; selection never eats the edit. */
+  onSelect?: () => void;
+  /** An assembly folded to its subline. */
+  collapsed?: boolean;
+  /** Present only on assembly parents — the ± disclosure. */
+  onToggleCollapse?: () => void;
+  componentCount?: number;
   onUpdate: (patch: Partial<ComposerLine>) => void;
   /** Replaces the whole line — for the edits that must ADD or REMOVE a key, not set one. */
   onReplace: (next: ComposerLine) => void;
@@ -47,10 +55,14 @@ export function LineRow({
   parent,
   hasComponents,
   showCost,
-  taxed,
   priceMode,
   lastComponent,
   provenanceFor,
+  selected,
+  onSelect,
+  collapsed,
+  onToggleCollapse,
+  componentCount = 0,
   onUpdate,
   onReplace,
   onRemove,
@@ -67,30 +79,62 @@ export function LineRow({
   // components existed and old quotes still carry them, so both lock the field.
   const pricedByParts = hasComponents || realSubItems(line.sub).length > 0;
 
+  const rowClass = [
+    isComponent ? `component${lastComponent ? " component-last" : ""}` : "",
+    selected ? "rowsel" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
-    <tr className={isComponent ? `component${lastComponent ? " component-last" : ""}` : undefined}>
+    <tr className={rowClass || undefined} onClick={onSelect}>
       <td>
-        <input
-          value={line.d}
-          placeholder={isComponent ? "Describe the cost item…" : "Describe the work…"}
-          aria-label={isComponent ? `Description, component ${lineNo}` : `Description, line ${lineNo}`}
-          onChange={(e) => onUpdate({ d: e.target.value })}
-        />
+        <div className="desc-cell">
+          {onToggleCollapse && (
+            <button
+              type="button"
+              className="asm-disc"
+              aria-expanded={!collapsed}
+              aria-label={collapsed ? `Expand assembly, line ${lineNo}` : `Collapse assembly, line ${lineNo}`}
+              onClick={(e) => {
+                // The disclosure folds the assembly; it must not ALSO change the selection.
+                e.stopPropagation();
+                onToggleCollapse();
+              }}
+            >
+              {collapsed ? "+" : "−"}
+            </button>
+          )}
+          <input
+            value={line.d}
+            placeholder={isComponent ? "Describe the cost item…" : "Describe the work…"}
+            aria-label={isComponent ? `Description, component ${lineNo}` : `Description, line ${lineNo}`}
+            onChange={(e) => onUpdate({ d: e.target.value })}
+          />
+        </div>
+        {/* Folded, the assembly says what it is holding — the mock's subline. */}
+        {collapsed && (
+          <span className="asm-sub">
+            Assembly · {componentCount} item{componentCount === 1 ? "" : "s"} · {quantity}
+            {line.unit ? ` ${line.unit}` : ""}
+          </span>
+        )}
         {hasContent && provenanceFor?.(line.d) ? <span className="line-prov">pricebook</span> : null}
         {hints}
       </td>
       <td>
         <QuantityCell line={line} parent={parent} lineNo={lineNo} onChange={onUpdate} />
       </td>
-      <td>
-        <input
-          className="unit"
-          value={line.unit ?? ""}
-          placeholder="—"
-          aria-label={`Unit, line ${lineNo}`}
-          onChange={(e) => onUpdate({ unit: e.target.value || undefined })}
-        />
-      </td>
+      {showCost && (
+        <td>
+          <input
+            className="unit"
+            value={line.unit ?? ""}
+            placeholder="—"
+            aria-label={`Unit, line ${lineNo}`}
+            onChange={(e) => onUpdate({ unit: e.target.value || undefined })}
+          />
+        </td>
+      )}
       <td>
         {pricedByParts ? (
           <span className="rolled" aria-label={`Price, line ${lineNo} — set by its components`}>
@@ -154,6 +198,7 @@ export function LineRow({
       <td
         className={`amt${amount === 0 ? " zero" : ""}${priceMode === "total" && !isComponent ? " customer-hidden" : ""}`}
       >
+        {line.opt ? "+" : ""}
         {fmt$(amount)}
         {showCost && margin !== null && (
           <div className="muted" style={{ fontWeight: 500, fontSize: "var(--type-xs)" }}>
@@ -161,45 +206,22 @@ export function LineRow({
           </div>
         )}
       </td>
+      {/* Rows stay quiet like the mock's: remove only. Optional, No tax and Round up moved
+          into the inspector rail — three chips per row was a toolbar, and the rail is where
+          second-order facts live now. The states still READ from the row: "+" on an optional
+          amount, "No tax" never mattered at a glance (the totals corner names the tax), and a
+          rounded count simply shows its whole number. */}
       <td className="rowacts">
-        {hasContent && !isComponent && (
-          <>
-            <button
-              className={`optchip${line.opt ? " on" : ""}`}
-              title="Optional add-on — the customer can add or skip this on their quote page"
-              onClick={() => onUpdate({ opt: !line.opt })}
-            >
-              {line.opt ? "✓ Optional" : "Optional"}
-            </button>{" "}
-            {taxed && (
-              <>
-                <button
-                  className={`optchip${line.notax ? " on" : ""}`}
-                  title="Not taxable — the shop's sales-tax rate is not charged on this line. It is still billed in full."
-                  aria-pressed={Boolean(line.notax)}
-                  onClick={() => onUpdate({ notax: !line.notax })}
-                >
-                  {line.notax ? "✓ No tax" : "No tax"}
-                </button>{" "}
-              </>
-            )}
-          </>
-        )}
-        {isComponent && (
-          <button
-            className={`optchip${line.roundUp ? " on" : ""}`}
-            title="Round the count up to a whole unit — you cannot buy half a post"
-            aria-pressed={Boolean(line.roundUp)}
-            onClick={() => onUpdate({ roundUp: !line.roundUp })}
-          >
-            {line.roundUp ? "✓ Round up" : "Round up"}
-          </button>
-        )}{" "}
         <button
           className="lineedit-tool"
           title={isComponent ? "Remove this component" : "Remove this line"}
           aria-label={isComponent ? `Remove component ${lineNo}` : `Remove line ${lineNo}`}
-          onClick={onRemove}
+          onClick={(e) => {
+            // Removal must not bubble into the row's onSelect — the bubbled select re-docks
+            // the removed index, which after the array shrinks is ANOTHER line's rail.
+            e.stopPropagation();
+            onRemove();
+          }}
         >
           ✕
         </button>

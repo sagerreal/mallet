@@ -32,6 +32,7 @@ import { Fragment, useId, useState } from "react";
 import { realSubItems, withSubPatch, type ComposerLine } from "./composer-state";
 import { ScopeEditor, SubItemEditor } from "./line-depth";
 import { LineRow } from "./line-row";
+import { LineInspector } from "./line-inspector";
 import {
   componentIndexes,
   removeLineAt,
@@ -99,13 +100,25 @@ export function LineTable({
   /** Save this assembly to the book. `itemId` present means overwrite; absent mints a new one. */
   onSaveAssembly?: (parentIndex: number, itemId: string | null) => void;
 }) {
-  const cols = showCost ? 8 : 6;
+  // Column count follows the view: pricing = description, qty, unit price, amount, actions;
+  // costing adds unit, unit cost and markup.
+  const cols = showCost ? 8 : 5;
   // GBB renders three LineTables at once — panel ids must be unique per instance or every
   // tier's aria-controls points at whichever twin rendered first.
   const uid = useId();
   // Which lines have their depth editors open. Presence of DATA lives on the line itself;
   // these sets are only the expand/collapse UI state, so they reset harmlessly on unmount.
   const [scopeOpen, setScopeOpen] = useState<ReadonlySet<number>>(new Set());
+  /**
+   * The selected line — what the inspector rail shows. Selection is UI state, index-keyed like
+   * the depth sets, so every structural change below remaps or clears it. Null = no rail, and
+   * the ledger takes the full width (the mock's c1-no-selection).
+   */
+  const [selected, setSelected] = useState<number | null>(null);
+  /** The rail folded to its seam — the mock's "Details ›" pull tab. */
+  const [railFolded, setRailFolded] = useState(false);
+  /** Collapsed assemblies: the parent row stays, its component rows hide behind a subline. */
+  const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
   const [subOpen, setSubOpen] = useState<ReadonlySet<number>>(new Set());
   const toggle = (set: ReadonlySet<number>, i: number): ReadonlySet<number> => {
     const next = new Set(set);
@@ -158,6 +171,13 @@ export function LineTable({
     const removed = new Set<number>([i, ...componentIndexes(lines, i)]);
     setScopeOpen(dropIndexes(scopeOpen, removed));
     setSubOpen(dropIndexes(subOpen, removed));
+    setCollapsed(dropIndexes(collapsed, removed));
+    // Selection follows the same remap: gone with its row, shifted past the hole otherwise —
+    // a stale index would dock the WRONG line's details in the rail.
+    setSelected((cur) => {
+      if (cur === null || removed.has(cur)) return null;
+      return cur - [...removed].filter((r) => r < cur).length;
+    });
     commit(removeLineAt(lines, i));
   };
 
@@ -166,6 +186,8 @@ export function LineTable({
     const at = (existing[existing.length - 1] ?? parentIndex) + 1;
     setScopeOpen(shiftIndexes(scopeOpen, at));
     setSubOpen(shiftIndexes(subOpen, at));
+    setCollapsed(shiftIndexes(collapsed, at));
+    setSelected((cur) => (cur !== null && cur >= at ? cur + 1 : cur));
     commit(addComponent(lines, parentIndex, { d: "", q: 1, r: 0, qtyExpr: "qty" }));
   };
 
@@ -283,6 +305,7 @@ export function LineTable({
     const components = componentIndexes(lines, i);
     const hasContent = Boolean(line.d && line.d.trim());
     const hasDepth = Boolean(line.scope?.trim()) || realSubItems(line.sub).length > 0;
+    const isCollapsed = components.length > 0 && collapsed.has(i);
     return (
       <Fragment key={i}>
         <LineRow
@@ -291,10 +314,18 @@ export function LineTable({
           parent={parent}
           hasComponents={components.length > 0}
           showCost={showCost}
-          taxed={taxed}
           priceMode={priceMode}
           lastComponent={lastComponent}
           provenanceFor={provenanceFor}
+          selected={selected === i}
+          onSelect={() => setSelected(i)}
+          collapsed={isCollapsed}
+          onToggleCollapse={
+            components.length > 0
+              ? () => setCollapsed((cur) => toggle(cur, i))
+              : undefined
+          }
+          componentCount={components.length}
           onUpdate={(patch) => updateLine(i, patch)}
           onReplace={(next) => replaceLine(i, next)}
           onRemove={() => removeLine(i)}
@@ -325,9 +356,9 @@ export function LineTable({
             </td>
           </tr>
         )}
-        {components.map((at, n) =>
-          renderRow(lines[at]!, at, line, n === components.length - 1),
-        )}
+        {/* A collapsed assembly keeps its parts — it just stops showing them. */}
+        {!isCollapsed &&
+          components.map((at, n) => renderRow(lines[at]!, at, line, n === components.length - 1))}
       </Fragment>
     );
   };
@@ -354,26 +385,30 @@ export function LineTable({
     );
   }
 
+  const railed = selected !== null;
   return (
     <div className={`lineedit${materialize ? " materialize" : ""}`}>
+      <div className={`lineedit-split${railed ? " railed" : ""}${railed && railFolded ? " folded" : ""}`}>
+      <div className="lineedit-ledger">
       <table>
         <colgroup>
           <col />
           <col style={{ width: 84 }} />
-          <col style={{ width: 56 }} />
+          {/* Unit rides the QUANTITY EDITOR in the rail on the pricing view — the mock's
+              pricing grid has no Unit column. It stays a column in the costing view, where
+              the whole point is seeing every number at once. */}
+          {showCost && <col style={{ width: 56 }} />}
           <col style={{ width: 96 }} />
           {showCost && <col style={{ width: 96 }} />}
           {showCost && <col style={{ width: 72 }} />}
           <col style={{ width: 104 }} />
-          {/* Actions hold the chips + ✕ — sized to fit, so AMOUNT no longer floats
-              beside a wide dead zone. Adding a component lives under the description. */}
-          <col style={{ width: 168 }} />
+          <col style={{ width: 64 }} />
         </colgroup>
         <thead>
           <tr>
             <th>Description</th>
             <th className="num">Qty</th>
-            <th>Unit</th>
+            {showCost && <th>Unit</th>}
             <th className="num">Unit price</th>
             {showCost && <th className="num">Unit cost</th>}
             {showCost && <th className="num">Markup</th>}
@@ -464,6 +499,42 @@ export function LineTable({
           </tr>
         </tfoot>
       </table>
+      </div>
+      {railed && (
+        <div className="lineedit-railcol">
+          <button
+            type="button"
+            className="rail-handle"
+            aria-expanded={!railFolded}
+            aria-label={railFolded ? "Show details" : "Hide details"}
+            onClick={() => setRailFolded((v) => !v)}
+          >
+            <span aria-hidden="true">{railFolded ? "‹" : "›"}</span>
+            <span className="vtext">Details</span>
+          </button>
+          {railFolded ? (
+            <button
+              type="button"
+              className="rail-unfold"
+              aria-label="Show details"
+              onClick={() => setRailFolded(false)}
+            />
+          ) : (
+            <LineInspector
+              lines={lines}
+              selected={selected}
+              sections={sections}
+              taxed={taxed}
+              onUpdate={updateLine}
+              onReplace={replaceLine}
+              onSelect={setSelected}
+              onRemove={removeLine}
+              onAddComponent={addComponentTo}
+            />
+          )}
+        </div>
+      )}
+      </div>
     </div>
   );
 }
