@@ -50,6 +50,9 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.getByLabel("Quantity or math, component 2").fill("qty/8+1");
     await page.getByLabel("Price, line 2").fill("24.30");
 
+    // The secondary tools live behind the footer's More menu now — scan it open, then use it.
+    await page.getByRole("button", { name: "More \u25be" }).click();
+    await scan(page, "composer \u00b7 footer More menu, open");
     await page.getByText("+ Section").click();
     await page.getByLabel("Section name, section 1").fill("Exterior");
     await page.getByText("+ Add line to Exterior").click();
