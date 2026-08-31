@@ -20,11 +20,7 @@ import type {
 } from "./presentation-state";
 import { designOf, modeOf } from "./presentation-state";
 
-const FONTS: { key: PresentationFont; label: string }[] = [
-  { key: "basic", label: "Default (sans)" },
-  { key: "serif", label: "Serif" },
-  { key: "mono", label: "Mono" },
-];
+import { DOC_FONTS } from "@/lib/doc-fonts";
 
 /** #rrggbb only — these are rendered into a style attribute on the customer's page. */
 export const DOC_ACCENTS: { key: string; label: string; color: string }[] = [
@@ -101,10 +97,14 @@ export function DocToolbar({
           value={design.font}
           onChange={(e) => onDesign({ font: e.target.value as PresentationFont })}
         >
-          {FONTS.map((font) => (
-            <option key={font.key} value={font.key}>
-              {font.label}
-            </option>
+          {(["Sans serif", "Serif", "Mono"] as const).map((group) => (
+            <optgroup key={group} label={group}>
+              {DOC_FONTS.filter((font) => font.group === group).map((font) => (
+                <option key={font.key} value={font.key}>
+                  {font.label}
+                </option>
+              ))}
+            </optgroup>
           ))}
         </select>
       </span>
@@ -190,6 +190,16 @@ function EmphasisGroup({
             onClick={() => onDesign({ accent: accent.key })}
           />
         ))}
+        {/* The whole gamut, not just the five quick picks. A native colour input — the value
+            is always #rrggbb, which is exactly what the transport's regex admits. */}
+        <input
+          type="color"
+          className="tb-swatch tb-swatch-any"
+          aria-label="Custom accent colour"
+          title="Any colour"
+          value={design.accent || "#20231E"}
+          onChange={(e) => onDesign({ accent: e.target.value })}
+        />
       </span>
     </span>
   );

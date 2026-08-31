@@ -56,6 +56,10 @@ export interface ComposerLine {
    * line is ungrouped, which is where every line on an ungrouped quote lives.
    */
   sectionIndex?: number;
+  /** What kind of cost this is — material/labor/equipment/subcontract/other. Office-side. */
+  ltype?: "material" | "labor" | "equipment" | "subcontract" | "other";
+  /** Photos attached to the line — office reference material, never on the customer copy. */
+  att?: { key: string; name: string }[];
   /**
    * The pricebook entry this line came from. Provenance, and for an assembly it is the link
    * that makes "Update in pricebook" possible — matching on description instead would be wrong
@@ -614,6 +618,8 @@ export interface ReviseSeedLine {
   parentLineId: string | null;
   customerVisible: boolean;
   markupBps: number | null;
+  lineType?: "material" | "labor" | "equipment" | "subcontract" | "other" | null;
+  attachments?: { key: string; name: string }[] | null;
 }
 
 export interface ReviseSeed {
@@ -694,6 +700,8 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       : {}),
     ...(l.customerVisible ? {} : { hidden: true }),
     ...(l.markupBps != null ? { markupBps: l.markupBps } : {}),
+    ...(l.lineType ? { ltype: l.lineType } : {}),
+    ...(l.attachments?.length ? { att: l.attachments.map((a) => ({ ...a })) } : {}),
     ...(() => {
       if (!l.sectionId) return {};
       const at = seed.sections.findIndex((section) => section.id === l.sectionId);

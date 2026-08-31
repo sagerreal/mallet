@@ -551,6 +551,8 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       // Only the EXCEPTION is written, like notax: an ordinary line carries no key.
       ...(l.customerVisible ? {} : { hidden: true as const }),
       markupBps: l.markupBps ?? undefined,
+      ...(l.lineType ? { ltype: l.lineType } : {}),
+      ...(l.attachments?.length ? { att: l.attachments.map((a) => ({ ...a })) } : {}),
       sectionIndex: l.sectionId
         ? (() => {
             const at = dto.sections.findIndex((section) => section.id === l.sectionId);

@@ -41,7 +41,12 @@ export type PresentationPageKey = (typeof PRESENTATION_PAGE_KEYS)[number];
 export const PRESENTATION_MODES = ["simple", "full"] as const;
 export type PresentationMode = (typeof PRESENTATION_MODES)[number];
 
-export const PRESENTATION_FONTS = ["basic", "serif", "mono"] as const;
+// Mirrors lib/doc-fonts DOC_FONT_KEYS (the doc-fonts parity test enforces the match there).
+export const PRESENTATION_FONTS = [
+  "basic", "system", "helvetica", "arial", "verdana", "trebuchet", "gill", "futura", "avenir",
+  "serif", "georgia", "palatino", "times", "garamond", "baskerville", "bookman",
+  "mono", "courier",
+] as const;
 export type PresentationFont = (typeof PRESENTATION_FONTS)[number];
 
 const MAX_PRESENTATION_PAGES = PRESENTATION_PAGE_KEYS.length;

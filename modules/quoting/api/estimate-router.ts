@@ -74,7 +74,16 @@ const presentationSnapshotInput = z.object({
   mode: z.enum(["simple", "full"]).optional(),
   design: z
     .object({
-      font: z.enum(["basic", "serif", "mono"]).optional(),
+      // The key set mirrors lib/doc-fonts DOC_FONTS. An unknown key would render the default
+      // face, but the boundary stays closed — a bare string here would let anything ride the
+      // snapshot into a public page's style resolution.
+      font: z
+        .enum([
+          "basic", "system", "helvetica", "arial", "verdana", "trebuchet", "gill", "futura",
+          "avenir", "serif", "georgia", "palatino", "times", "garamond", "baskerville",
+          "bookman", "mono", "courier",
+        ])
+        .optional(),
       size: z.number().int().min(10).max(24).optional(),
       // #rrggbb or "" only: this is rendered into a style attribute on a public page.
       accent: z.string().regex(/^(#[0-9a-fA-F]{6})?$/).optional(),
@@ -135,6 +144,10 @@ const estimateLineDTO = z.object({
   customerVisible: z.boolean(),
   /** Markup over cost in basis points when priced from cost. Office eyes only. */
   markupBps: z.number().int().nullable(),
+  /** What kind of cost this is. Office-side; the customer never sees it. */
+  lineType: z.enum(["material", "labor", "equipment", "subcontract", "other"]).nullable(),
+  /** Photos attached to the line — office reference material. */
+  attachments: z.array(z.object({ key: z.string(), name: z.string() })).nullable(),
 });
 
 /** A cost on the job that is not one of the quote's lines. Office-only, never customer-facing. */
@@ -352,6 +365,19 @@ const lineInput = z.object({
   /** The section this line sits under, as an INDEX into the payload's `sections` — an id would
    *  name a row the server has not minted yet, exactly like parentIndex above. */
   sectionIndex: z.number().int().nonnegative().optional(),
+  /** What kind of cost this is. Office-side; the customer never sees it. */
+  lineType: z.enum(["material", "labor", "equipment", "subcontract", "other"]).optional(),
+  /** Photos attached to the line — office reference material. Keys come from the org's own
+   *  proposal-photo uploads; the same shape check the photo DTO applies. */
+  attachments: z
+    .array(
+      z.object({
+        key: z.string().min(1).max(300),
+        name: z.string().trim().min(1).max(120),
+      }),
+    )
+    .max(8)
+    .optional(),
 });
 
 /** A heading to group lines under. Its position is its index in the payload. */
@@ -584,6 +610,8 @@ const toEstimateDTO = (estimate: Estimate) => {
         sectionId: lp.sectionId ?? null,
         customerVisible: lp.customerVisible ?? true,
         markupBps: lp.markupBps ?? null,
+        lineType: lp.lineType ?? null,
+        attachments: lp.attachments ? [...lp.attachments] : null,
       };
     }),
     jobCosts: estimate.jobCosts.map((cost) => ({
@@ -851,6 +879,8 @@ export const createEstimateRouter = () =>
             customerVisible: line.customerVisible ?? true,
             markupBps: line.markupBps ?? null,
             sectionIndex: line.sectionIndex ?? null,
+            lineType: line.lineType ?? null,
+            attachments: line.attachments ?? null,
           })),
           sections: input.sections ?? [],
           jobCosts:

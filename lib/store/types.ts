@@ -4,6 +4,8 @@
  * Kept separate so slices can import without circular deps.
  */
 
+import type { DocFontKey } from "@/lib/doc-fonts";
+
 import type { ModalId } from "./modal-ids";
 
 // ---- Lead / Customer -------------------------------------------------------
@@ -188,6 +190,10 @@ export interface EstimateLine {
   markupBps?: number;
   /** The section this line sits under, as an index into the estimate's `sections`. */
   sectionIndex?: number;
+  /** What kind of cost this is — material/labor/equipment/subcontract/other. Office-side. */
+  ltype?: "material" | "labor" | "equipment" | "subcontract" | "other";
+  /** Photos attached to the line — office reference material, never on the customer copy. */
+  att?: { key: string; name: string }[];
 }
 
 /** One row of the estimating math behind a line — amounts in DOLLARS like the rest of the store. */
@@ -458,7 +464,8 @@ export interface PresentationSnapshotView {
   }[];
   mode?: "simple" | "full";
   design?: {
-    font?: "basic" | "serif" | "mono";
+    /** A lib/doc-fonts key — the same closed set the transport admits. */
+    font?: DocFontKey;
     size?: number;
     accent?: string;
     bold?: boolean;

@@ -184,6 +184,15 @@ export function QuoteCard({
    * component is not billed at all: its parent carries the money AND the notax flag, so the
    * parent alone decides whether that money is taxable.
    */
+  /**
+   * Money the total carries that the customer's copy does not itemise — lines hidden from
+   * their copy. Stated in the corner (the mock's note) so the office is never surprised by a
+   * total bigger than the document reads. Parent-only, like every client sum.
+   */
+  const hiddenSell = state.lines
+    .filter((l) => l.hidden && !l.opt && l.parentIndex == null && (l.d ?? "").trim() !== "")
+    .reduce((sum, l) => sum + Math.round((l.q ?? 0) * (l.r ?? 0) * 100), 0) / 100;
+
   const taxableAfterDiscount =
     (sendLines
       .filter((l) => !l.opt && !l.notax && l.parentIndex == null && (l.d ?? "").trim() !== "")
@@ -525,6 +534,58 @@ export function QuoteCard({
         </>
       ))}
 
+      {/* Totals — what the customer receives (recommended tier in GBB) */}
+      {!run && (isGbb ? hasRealLine(sendLines) : state.lines.length > 0 || state.sections.length > 0) && (
+        <div
+          style={{
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "flex-end",
+            gap: "var(--space-1)",
+            padding: "var(--space-3) var(--space-2)",
+          }}
+        >
+          {isGbb && rec && (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {tierDisplayName(rec)} option — what the customer receives
+            </div>
+          )}
+          {/* The mock's voice: one headline number, then plain sentences under it. "Quote total"
+              rather than a Subtotal/Tax/Total ladder — the ladder is the customer's document;
+              this corner tells the ESTIMATOR what will be asked and when. */}
+          {state.pricing.disc ? (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {fmt$(m.sub)} − {state.pricing.disc}% discount ({fmt$(m.disc)})
+            </div>
+          ) : null}
+          <div style={{ fontWeight: 800, fontSize: "var(--type-md)" }}>
+            Quote total &nbsp; {fmt$(m.total)}
+          </div>
+          {state.pricing.dep ? (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {state.pricing.dep}% deposit due on signing — {fmt$(m.dep)}.
+            </div>
+          ) : null}
+          {hiddenSell > 0 && (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Includes {fmt$(hiddenSell)} from lines hidden on the customer copy.
+            </div>
+          )}
+          {optionalCount > 0 && (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {optionalCount} upgrade option{optionalCount === 1 ? "" : "s"} if accepted
+              &nbsp;<b style={{ color: "var(--ink)" }}>+{fmt$(optionalTotal)}</b>
+            </div>
+          )}
+          {state.pricing.tax ? (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Includes sales tax {state.pricing.tax}% — {fmt$(m.taxed)} on{" "}
+              {fmt$(taxableAfterDiscount)} taxable.
+            </div>
+          ) : null}
+        </div>
+      )}
+
       {/* The command bar — the ONE AI surface, BELOW the quote so manual entry
           reads as the default (the table above is untouched, nothing autofocuses).
           Mode follows the quote: empty → build; AI-drafted → refine; hand-typed
@@ -639,52 +700,6 @@ export function QuoteCard({
         </div>
       )}
 
-      {/* Totals — what the customer receives (recommended tier in GBB) */}
-      {!run && hasRealLine(sendLines) && (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "flex-end",
-            gap: "var(--space-1)",
-            padding: "var(--space-3) var(--space-2)",
-          }}
-        >
-          {isGbb && rec && (
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              {tierDisplayName(rec)} option — what the customer receives
-            </div>
-          )}
-          {/* The mock's voice: one headline number, then plain sentences under it. "Quote total"
-              rather than a Subtotal/Tax/Total ladder — the ladder is the customer's document;
-              this corner tells the ESTIMATOR what will be asked and when. */}
-          {state.pricing.disc ? (
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              {fmt$(m.sub)} − {state.pricing.disc}% discount ({fmt$(m.disc)})
-            </div>
-          ) : null}
-          <div style={{ fontWeight: 800, fontSize: "var(--type-md)" }}>
-            Quote total &nbsp; {fmt$(m.total)}
-          </div>
-          {state.pricing.dep ? (
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              {state.pricing.dep}% deposit due on signing — {fmt$(m.dep)}.
-            </div>
-          ) : null}
-          {optionalCount > 0 && (
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              {optionalCount} upgrade option{optionalCount === 1 ? "" : "s"} if accepted
-              &nbsp;<b style={{ color: "var(--ink)" }}>+{fmt$(optionalTotal)}</b>
-            </div>
-          )}
-          {state.pricing.tax ? (
-            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
-              Includes sales tax {state.pricing.tax}% — {fmt$(m.taxed)} on{" "}
-              {fmt$(taxableAfterDiscount)} taxable.
-            </div>
-          ) : null}
-        </div>
-      )}
     </div>
   );
 }
