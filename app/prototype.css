@@ -1706,6 +1706,11 @@
      the estimator's eye has to separate "Interior" from the work under it. */
   .lineedit tbody tr.sectionrow>td{background:var(--green-50);border-bottom:1px solid var(--line);padding:var(--space-1) var(--space-2)}
   .lineedit tbody tr.sectionrow input{font-weight:700;font-size:var(--type-sm);letter-spacing:.04em;text-transform:uppercase;color:var(--ink-2)}
+  /* Upgrade options: the same band grammar as a section heading, in the accent that says
+     "the customer chooses this" rather than "this is the work". */
+  .lineedit tbody tr.upgraderow>td{background:var(--manila);border-top:1px solid var(--line);border-bottom:1px solid var(--line);
+    padding:var(--space-1) var(--space-2);font-size:var(--type-sm);font-weight:700;letter-spacing:.04em;
+    text-transform:uppercase;color:var(--manila-ink)}
   .sectionrow-total{text-align:right;font-weight:700;font-variant-numeric:tabular-nums;padding-right:var(--space-2);white-space:nowrap}
   /* 'One total' dims the amount column in the EDITOR — the numbers stay yours. */
   .lineedit .amt.customer-hidden{opacity:.45}

@@ -210,10 +210,17 @@ export function reindexForPayload<T extends ComposerLine>(
     );
 }
 
-/** What the lines under one section add up to — components excluded, they are inside a parent. */
+/**
+ * What the lines under one section add up to.
+ *
+ * Components are out — their money is inside a parent. OPTIONAL lines are out too: they render
+ * in the upgrade band at the foot, not under the heading, and a section total that counts money
+ * shown somewhere else is a heading claiming work it does not have. The customer's own section
+ * totals are computed over the fixed lines only, so this matches what they will read.
+ */
 export function sectionTotal(lines: readonly ComposerLine[], sectionIndex: number): number {
   const cents = lines.reduce((sum, line) => {
-    if (line.sectionIndex !== sectionIndex || line.parentIndex != null) return sum;
+    if (line.sectionIndex !== sectionIndex || line.parentIndex != null || line.opt) return sum;
     return sum + toCents((line.q ?? 0) * (line.r ?? 0));
   }, 0);
   return fromCents(cents);

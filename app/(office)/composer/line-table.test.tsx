@@ -401,3 +401,51 @@ describe("LineTable — the pricebook control", () => {
     expect(screen.queryByText("+ Save to pricebook")).toBeNull();
   });
 });
+
+describe("LineTable — upgrade options are gathered at the foot", () => {
+  const rowInputs = () =>
+    [...document.querySelectorAll("tbody tr")]
+      .map((r) => (r.querySelector("input") as HTMLInputElement | null)?.value)
+      .filter((v) => v !== undefined);
+
+  it("puts an optional line last, whatever it was typed above", () => {
+    // The customer's copy renders add-ons after the work. An editor that shows them first is
+    // previewing a different document than the one that gets sent.
+    table([
+      { d: "Upgrade: stain & seal", q: 100, r: 3.25, opt: true },
+      { d: "Tear out fence", q: 100, r: 4.5 },
+    ]);
+    expect(rowInputs()).toEqual(["Tear out fence", "Upgrade options", "Upgrade: stain & seal"].filter(
+      (v) => v !== "Upgrade options",
+    ));
+  });
+
+  it("pulls an optional line OUT of its section — add-ons are their own group", () => {
+    table(
+      [
+        { d: "Repaint walls", q: 1, r: 1800, sectionIndex: 0 },
+        { d: "Upgrade: two coats", q: 1, r: 400, opt: true, sectionIndex: 0 },
+      ],
+      false,
+      ["Interior"],
+    );
+    const totals = [...document.querySelectorAll(".sectionrow-total")].map((n) => n.textContent);
+    // The section's own total excludes the add-on; the upgrade band carries it.
+    expect(totals).toEqual(["$1,800", "$400"]);
+    expect(screen.getByText("Upgrade options")).toBeTruthy();
+  });
+
+  it("shows no upgrade band when nothing is optional", () => {
+    table([{ d: "Repaint walls", q: 1, r: 1800 }]);
+    expect(screen.queryByText("Upgrade options")).toBeNull();
+  });
+
+  it("keeps an optional assembly's components with it", () => {
+    table([
+      { d: "Cedar fence", q: 100, r: 11.58, opt: true },
+      { d: "Line posts", q: 14, r: 24.3, parentIndex: 0 },
+    ]);
+    const values = rowInputs();
+    expect(values.indexOf("Line posts")).toBe(values.indexOf("Cedar fence") + 1);
+  });
+});
