@@ -74,11 +74,12 @@ import { sectionsForPayload, type SavedComponent } from "./line-math";
 import { useSmsGate } from "@/features/a2p/use-sms-ready";
 import { suggestFromGood } from "./gbb-suggest";
 import { MeasuredSurfacesPanel } from "./measured-surfaces-panel";
-import { CustomerSelector } from "./customer-selector";
+import { EstimateHead } from "./estimate-head";
 import { PresentationTab } from "./presentation-tab";
 import { SiteReference } from "./site-reference";
 import { QuoteCard } from "./quote-card";
 import { PricingCard } from "./pricing-card";
+import { JobCostsPanel } from "./job-costs-card";
 import { MessageCard } from "./message-card";
 import { SendCard } from "./send-card";
 
@@ -981,7 +982,19 @@ export default function ComposerPage() {
 
   return (
     <div>
-      <h1>New quote</h1>
+      {/* The masthead: the title, and the one line saying who it is for, what it is called and
+          how long it stands. The customer lives HERE rather than in a labelled block above —
+          "For Dana Whitfield · EST-1042 · Valid 30 days" is one sentence a person checks at a
+          glance, and splitting it made the office read two blocks to learn one thing. */}
+      <EstimateHead
+        state={cs}
+        onUpdate={update}
+        leads={leads}
+        lead={selectedLead ?? null}
+        quoteNum={null}
+        onNewCust={composerNewCust}
+        isAddingCust={createCustomerMutation.isPending}
+      />
 
       {/* Two full-page tabs, like the office page: Estimate = build the numbers & scope;
           Presentation = the designed pages the customer opens. The Estimate pane stays MOUNTED
@@ -1020,13 +1033,6 @@ export default function ComposerPage() {
       </div>
 
       <div hidden={tab !== "estimate"}>
-      <CustomerSelector
-        state={cs}
-        onUpdate={update}
-        leads={leads}
-        onNewCust={composerNewCust}
-        isAddingCust={createCustomerMutation.isPending}
-      />
       {custError && (
         <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-base)", margin: "-8px 0 var(--space-3)" }}>
           {custError}
@@ -1122,7 +1128,12 @@ export default function ComposerPage() {
       />
 
       {/* Pricing — discount, deposit, tax */}
-      <PricingCard state={cs} onUpdate={update} />
+      {/* Pricing and Other job costs sit side by side, both collapsed to a summary — two
+          quiet facts about the quote, not two full-width forms to scroll past. */}
+      <div className="cardrow">
+        <PricingCard state={cs} onUpdate={update} />
+        <JobCostsPanel state={cs} onUpdate={update} />
+      </div>
 
       {/* Message — intro + valid days */}
       <MessageCard state={cs} onUpdate={update} lead={selectedLead} />

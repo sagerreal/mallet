@@ -50,6 +50,7 @@ export function LineTable({
   showCost,
   onLines,
   onSections,
+  emptyTools,
   savedAssemblies,
   onSaveAssembly,
   footerTools,
@@ -76,6 +77,8 @@ export function LineTable({
   onSections?: (next: { sections: string[]; lines: ComposerLine[] }) => void;
   /** Extra tools for the footer toolbar (uniform .lineedit-tool styling). */
   footerTools?: React.ReactNode;
+  /** The subset of those tools worth offering on an EMPTY quote. Defaults to all of them. */
+  emptyTools?: React.ReactNode;
   /** Brief post-draft window: rows animate in (CSS only, reduced-motion safe). */
   materialize?: boolean;
   /** Optional per-line provenance caption ("pricebook") — B3. Null hides it. */
@@ -328,6 +331,36 @@ export function LineTable({
       </Fragment>
     );
   };
+
+  /**
+   * UNTOUCHED, not merely blank.
+   *
+   * A single blank row is the table's own scaffolding, and rendering it asks the office to
+   * decode an empty form — so the empty state stands in its place. But the moment they ASK for
+   * a line the table has to appear, even though that line is also blank: gating on blankness
+   * alone made "+ Add line item" look like it did nothing, which the test caught before this
+   * shipped. One scaffolding row means untouched; two means they asked.
+   */
+  const untouched =
+    lines.length <= 1 && lines.every((line) => (line.d ?? "").trim() === "" && !line.opt);
+  if (untouched && sections.length === 0) {
+    return (
+      <div className={`lineedit${materialize ? " materialize" : ""}`}>
+        <div className="lineedit-empty">
+          <b>No line items yet</b>
+          <span>Add a line with a description, scope, and final price — or start from your pricebook.</span>
+          <div className="lineedit-empty-acts">
+            <button type="button" className="btn primary sm" onClick={() => addLine()}>
+              + Add line item
+            </button>
+            {/* `emptyTools` and not the whole footer bar: "Show your cost" on a quote with no
+                lines is a control that reveals nothing. */}
+            {emptyTools ?? footerTools}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`lineedit${materialize ? " materialize" : ""}`}>

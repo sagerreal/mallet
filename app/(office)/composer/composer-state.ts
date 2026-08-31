@@ -206,6 +206,13 @@ export interface ComposerState {
   jobCosts: ComposerJobCost[];
   /** One-line in-flow note describing what the last format switch did. */
   switchNote: string | null;
+  /**
+   * What this quote is called, in the estimator's own words — the document's headline.
+   *
+   * Blank falls back to the customer's job description, then the first line, at payload time.
+   * Distinct from `desc`, which is what the AI bar was told to build.
+   */
+  title: string;
   desc: string;
   aiOpen: boolean;
   aiDrafted: boolean;
@@ -218,6 +225,8 @@ export interface ComposerState {
   aiOriginal: AiOriginalLine[] | null;
   pbOpen: boolean;
   priceOpen: boolean;
+  /** Is the Other-job-costs panel open. Collapsed by default, like Pricing. */
+  jobCostsOpen: boolean;
   msgOpen: boolean;
   fuOn: boolean;
   pricing: { disc: number; dep: number; tax: number };
@@ -263,12 +272,14 @@ export const INITIAL_STATE: ComposerState = {
   sections: [],
   jobCosts: [],
   switchNote: null,
+  title: "",
   desc: "",
   aiOpen: false,
   aiDrafted: false,
   aiOriginal: null,
   pbOpen: false,
   priceOpen: false,
+  jobCostsOpen: false,
   msgOpen: false,
   fuOn: true,
   pricing: { disc: 0, dep: 0, tax: 0 },

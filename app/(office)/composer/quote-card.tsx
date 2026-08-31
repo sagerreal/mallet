@@ -31,7 +31,6 @@ import {
 } from "./composer-state";
 import { LineTable } from "./line-table";
 import { linesFromSavedAssembly, type SavedComponent } from "./line-math";
-import { JobCostsCard } from "./job-costs-card";
 import { lineProvenance } from "./line-provenance";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
 
@@ -419,6 +418,15 @@ export function QuoteCard({
                 </button>
               </>
             }
+            emptyTools={
+              <button
+                className="lineedit-tool"
+                onClick={() => onUpdate({ pbOpen: !state.pbOpen })}
+                aria-pressed={state.pbOpen}
+              >
+                From pricebook
+              </button>
+            }
           />
           {state.pbOpen && (
             <div className="pbpanel">
@@ -486,16 +494,6 @@ export function QuoteCard({
           )}
         </>
       ))}
-
-      {/* Other job costs — the shop's own numbers, so the margin above is the real one. Only in
-          the costing view: on the pricing view there is no margin on screen to be wrong. */}
-      {showCost && (
-        <JobCostsCard
-          costs={state.jobCosts}
-          jobId={state.jobId}
-          onChange={(next) => onUpdate({ jobCosts: next })}
-        />
-      )}
 
       {/* The command bar — the ONE AI surface, BELOW the quote so manual entry
           reads as the default (the table above is untouched, nothing autofocuses).
