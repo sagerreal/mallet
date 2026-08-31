@@ -1,39 +1,26 @@
 "use client";
 
 /**
- * Message section — the intro that leads the quote text/email, the terms
- * attached to the quote, and the price-valid window. Boxed card shell;
- * collapsible in-flow.
+ * Terms section — the terms attached to the quote. Boxed card shell; collapsible in-flow.
  *
- * The intro (or the auto-intro fallback) IS the lead text of the send body —
- * see buildQuoteMessageBody in composer-state.ts. Terms come from the real
- * job_terms library (settings store, hydrated by SettingsHydrator); selecting
- * one SNAPSHOTS its text into the draft payload (terms_snapshot) — later term
- * edits never rewrite a sent quote. "None" attaches nothing.
+ * This card used to also hold the intro and the price-valid window; both moved to where they
+ * are read — the intro into the Send card (it is the note that rides with the link) and
+ * validity into the masthead. Terms come from the real job_terms library (settings store,
+ * hydrated by SettingsHydrator); selecting one SNAPSHOTS its text into the draft payload
+ * (terms_snapshot) — later term edits never rewrite a sent quote. "None" attaches nothing.
  */
 
 import { useAppStore } from "@/lib/store/app-store";
-import type { Lead } from "@/lib/store/types";
 import type { ComposerState } from "./composer-state";
 import { Field } from "@/components/ui/input";
 import { SelectMenu } from "@/components/ui/select-menu";
 
-// Keeps the composed SMS body comfortably under the 1600-char messaging cap
-// (intro + ~100 chars of fixed copy + the quote link). maxLength stops input
-// at the cap; the counter below makes that visible instead of silent — it
-// appears once the intro passes the warn threshold (a long paste lands
-// already clipped, and the counter says so).
-const INTRO_MAX_CHARS = 1200;
-const INTRO_COUNTER_FROM = 1000;
-
 export function MessageCard({
   state,
   onUpdate,
-  lead,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
-  lead: Lead | null;
 }) {
   // Real job_terms from settings (t = title, body = the text that snapshots).
   const terms = useAppStore((s) => s.terms);
@@ -58,41 +45,10 @@ export function MessageCard({
           className="reveal-head"
           onClick={() => onUpdate({ msgOpen: !state.msgOpen })}
         >
-          <span className="caret">▸</span> Message{" "}
-          <span className="muted" style={{ fontWeight: 500 }}>
-            — {state.intro ? "custom intro" : "auto intro"} · valid{" "}
-            {state.validDays}d
-            {state.terms ? ` · terms: ${selectedTerm?.t ?? "attached"}` : ""}
-          </span>
+          <span className="caret">▸</span> Terms
+          <span className="reveal-sum">{state.terms ? (selectedTerm?.t ?? "attached") : "none"}</span>
         </div>
         <div className="reveal-body">
-          <Field
-            label="Intro message"
-            hint={
-              <span className="muted">
-                (leads the text/email — the auto intro covers most sends)
-              </span>
-            }
-          >
-            <textarea
-              rows={2}
-              maxLength={INTRO_MAX_CHARS}
-              placeholder={`auto: Hi ${lead ? lead.name.split(" ")[0] : "there"} — thanks for having us out.`}
-              value={state.intro}
-              onChange={(e) =>
-                onUpdate({ intro: e.target.value.slice(0, INTRO_MAX_CHARS) })
-              }
-            />
-            {state.intro.length >= INTRO_COUNTER_FROM && (
-              <div
-                className="muted"
-                style={{ fontSize: "var(--type-xs)", textAlign: "right", marginTop: "var(--space-2xs)" }}
-              >
-                {state.intro.length}/{INTRO_MAX_CHARS}
-                {state.intro.length >= INTRO_MAX_CHARS ? " — at the limit" : ""}
-              </div>
-            )}
-          </Field>
           {/* The select's aria-label is gone: it outranked the visible label, so the
               label was decorative and getByLabelText matched nothing. */}
           <Field
@@ -123,19 +79,6 @@ export function MessageCard({
                 {state.terms.text}
               </p>
             )}
-          </Field>
-          <Field label="Price valid (days)" style={{ maxWidth: 200, marginBottom: "0" }}>
-            <input
-              type="number"
-              inputMode="decimal"
-              min={1}
-              value={state.validDays}
-              onChange={(e) =>
-                onUpdate({
-                  validDays: Math.max(1, +e.target.value || 14),
-                })
-              }
-            />
           </Field>
         </div>
       </div>

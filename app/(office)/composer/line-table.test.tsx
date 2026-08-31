@@ -192,7 +192,7 @@ describe("LineTable — sub-items are the previous generation", () => {
 describe("LineTable — the rest of the row still works", () => {
   it("adds a line from the footer", () => {
     table([fence]);
-    fireEvent.click(screen.getByText("+ Add line"));
+    fireEvent.click(screen.getByText("+ Line item"));
     expect(lastLines()).toHaveLength(2);
   });
 

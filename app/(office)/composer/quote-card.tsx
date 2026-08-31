@@ -159,6 +159,38 @@ export function QuoteCard({
   }, [isGbb, suggestReplacesTypedTiers]);
   // What would send right now — recommended tier in GBB, the table in single.
   const sendLines = linesForSend(state);
+  /**
+   * Untouched: no rows, no sections, single format. The mock's empty header is BARE — just
+   * "Line items" — because a format toggle and a price-visibility chip on a quote with nothing
+   * on it are controls that decide nothing yet.
+   */
+  const untouched = !isGbb && state.lines.length === 0 && state.sections.length === 0;
+
+  // The upgrade options, for the totals corner: what the customer can ADD, never in the total.
+  // Components are excluded here and below for the same reason calcQuote excludes them: their
+  // money is already inside their parent's rolled-up rate, and counting both is the exact
+  // "$1,158 assembly charged as $2,316" defect the domain names in Estimate.contributesMoney.
+  const optionalLines = sendLines.filter(
+    (l) => l.opt && l.parentIndex == null && (l.d ?? "").trim() !== "",
+  );
+  const optionalCount = optionalLines.length;
+  const optionalTotal =
+    optionalLines.reduce((cents, l) => cents + Math.round((l.q ?? 0) * (l.r ?? 0) * 100), 0) / 100;
+
+  /**
+   * What the tax sentence names as taxable: the NON-No-tax billed lines, after the discount.
+   * `m.sub − m.disc` is wrong the moment a line is No-tax — it would name a base the rate was
+   * never charged on, in the corner the estimator reads to sanity-check exactly that. And a
+   * component is not billed at all: its parent carries the money AND the notax flag, so the
+   * parent alone decides whether that money is taxable.
+   */
+  const taxableAfterDiscount =
+    (sendLines
+      .filter((l) => !l.opt && !l.notax && l.parentIndex == null && (l.d ?? "").trim() !== "")
+      .reduce((cents, l) => cents + Math.round((l.q ?? 0) * (l.r ?? 0) * 100), 0) /
+      100) *
+    (1 - (state.pricing.disc ?? 0) / 100);
+
   // The whole line, not a hand-picked four fields: re-listing them here is what kept `notax`
   // out of the office's tax base (a No-tax line was still taxed in this number, though never on
   // the customer's document) and would have kept `parentIndex` out of the subtotal the same way.
@@ -257,7 +289,7 @@ export function QuoteCard({
         }}
       >
         <h3 style={{ margin: "0" }}>
-          The quote
+          Line items
           {state.aiDrafted && (
             <span
               className="pill"
@@ -271,6 +303,7 @@ export function QuoteCard({
             </span>
           )}
         </h3>
+        {!untouched && (
         <div className="seg" role="group" aria-label="Quote format">
           <button
             type="button"
@@ -287,6 +320,8 @@ export function QuoteCard({
             Good, Better &amp; Best
           </button>
         </div>
+        )}
+        {!untouched && (
         <button
           type="button"
           className={`pricevis${state.priceDisplay === "total" ? " on" : ""}`}
@@ -299,6 +334,19 @@ export function QuoteCard({
             ? "$ Customer sees one total"
             : "$ Customer sees every price"}
         </button>
+        )}
+        {!untouched && (
+          <div className="seg" role="group" aria-label="View">
+            {/* The mock's header control. One state, two names: Pricing is the customer's
+                numbers, Costing adds your cost, markup and margin — never shown to them. */}
+            <button type="button" aria-pressed={!showCost} onClick={() => setShowCost(false)}>
+              Pricing
+            </button>
+            <button type="button" aria-pressed={showCost} onClick={() => setShowCost(true)}>
+              Costing
+            </button>
+          </div>
+        )}
       </div>
 
       {/* One-line note describing what the last format switch did */}
@@ -344,15 +392,6 @@ export function QuoteCard({
               </button>
             </>
           )}
-          <button
-            type="button"
-            className="lineedit-tool lineedit-spring"
-            title="Owner-only cost column with margin — never shown to the customer"
-            aria-pressed={showCost}
-            onClick={() => setShowCost((v) => !v)}
-          >
-            {showCost ? "Hide your cost" : "Show your cost"}
-          </button>
         </div>
       )}
 
@@ -406,15 +445,6 @@ export function QuoteCard({
                   aria-pressed={state.pbOpen}
                 >
                   From pricebook
-                </button>
-                <button
-                  type="button"
-                  className="lineedit-tool lineedit-spring"
-                  title="Owner-only cost column with margin — never shown to the customer"
-                  aria-pressed={showCost}
-                  onClick={() => setShowCost((v) => !v)}
-                >
-                  {showCost ? "Hide your cost" : "Show your cost"}
                 </button>
               </>
             }
@@ -625,31 +655,33 @@ export function QuoteCard({
               {tierDisplayName(rec)} option — what the customer receives
             </div>
           )}
-          {(state.pricing.disc || state.pricing.tax) ? (
-            <div className="muted" style={{ fontSize: "var(--type-base)" }}>
-              Subtotal &nbsp;{" "}
-              <b style={{ color: "var(--ink)" }}>{fmt$(m.sub)}</b>
-            </div>
-          ) : null}
+          {/* The mock's voice: one headline number, then plain sentences under it. "Quote total"
+              rather than a Subtotal/Tax/Total ladder — the ladder is the customer's document;
+              this corner tells the ESTIMATOR what will be asked and when. */}
           {state.pricing.disc ? (
-            <div className="muted" style={{ fontSize: "var(--type-base)" }}>
-              Discount {state.pricing.disc}% &nbsp;{" "}
-              <b style={{ color: "var(--red)" }}>−{fmt$(m.disc)}</b>
-            </div>
-          ) : null}
-          {state.pricing.tax ? (
-            <div className="muted" style={{ fontSize: "var(--type-base)" }}>
-              Tax {state.pricing.tax}% &nbsp;{" "}
-              <b style={{ color: "var(--ink)" }}>+{fmt$(m.taxed)}</b>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {fmt$(m.sub)} − {state.pricing.disc}% discount ({fmt$(m.disc)})
             </div>
           ) : null}
           <div style={{ fontWeight: 800, fontSize: "var(--type-md)" }}>
-            Total &nbsp; {fmt$(m.total)}
+            Quote total &nbsp; {fmt$(m.total)}
           </div>
           {state.pricing.dep ? (
-            <span className="pill green" style={{ marginTop: "var(--space-1)" }}>
-              Deposit due on acceptance: {fmt$(m.dep)} ({state.pricing.dep}%)
-            </span>
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {state.pricing.dep}% deposit due on signing — {fmt$(m.dep)}.
+            </div>
+          ) : null}
+          {optionalCount > 0 && (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              {optionalCount} upgrade option{optionalCount === 1 ? "" : "s"} if accepted
+              &nbsp;<b style={{ color: "var(--ink)" }}>+{fmt$(optionalTotal)}</b>
+            </div>
+          )}
+          {state.pricing.tax ? (
+            <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
+              Includes sales tax {state.pricing.tax}% — {fmt$(m.taxed)} on{" "}
+              {fmt$(taxableAfterDiscount)} taxable.
+            </div>
           ) : null}
         </div>
       )}

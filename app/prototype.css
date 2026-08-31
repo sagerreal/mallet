@@ -155,6 +155,31 @@
      browser across 6 routes x both themes; e2e/mobile-floors.spec.ts holds it. */
   input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),select,textarea{border-color:var(--line-strong)!important}
 
+  /* THE ONE EXEMPTION: the estimate editor's ledger and masthead (Owen's 1:1 mock,
+     estimate-editor.html). There a field is QUIET AT REST — the row is the surface — and
+     perceivable on approach: hover paints the tint, focus draws the ring (those states
+     selectively re-assert below, which is why the exemption is scoped :not(:focus)).
+     The floor exists so a control is never invisible; these are not invisible, they are
+     resting. Everything else in the app keeps the floor.
+
+     SCOPED under .estimate-editor (the composer page's root) on purpose: `.lineedit` is a
+     shared primitive — the purchase-order modals and the checklist editors build on it too,
+     and an unscoped exemption stripped THEIR field boundaries as a side effect. Only the
+     surface Owen specified as the mock goes quiet. */
+  .estimate-editor .lineedit tbody input:not(:focus),
+  .estimate-editor .esthead-title:not(:focus),
+  .estimate-editor .esthead-valid input:not(:focus),
+  .estimate-editor .custpick.inline>input:not(:focus),
+  .estimate-editor .jobcost-row>input:not(:focus){border-color:transparent!important}
+  .estimate-editor .lineedit tbody input:focus,
+  .estimate-editor .esthead-title:focus,
+  .estimate-editor .esthead-valid input:focus,
+  .estimate-editor .custpick.inline>input:focus,
+  .estimate-editor .jobcost-row>input:focus{border-color:var(--green-600)!important}
+  /* The amount field (DraftNumberInput) has no border of its own — without a transparent base
+     the focus re-assertion above recolours a border that is not there. */
+  .estimate-editor .jobcost-row>input{border:1.5px solid transparent;border-radius:var(--radius-sm)}
+
   /* ---------- app shell: full-height sidebar + in-content topbar ---------- */
   .appshell{display:flex;flex-direction:column;height:100vh;overflow:hidden}
   .layout{display:flex;flex:1;min-height:0;overflow:hidden}
@@ -1538,6 +1563,10 @@
   .lineedit-empty span{font-size:var(--type-sm);color:var(--ink-2);max-width:52ch}
   .lineedit-empty-acts{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;justify-content:center;margin-top:var(--space-2)}
 
+  /* A reveal header reads "Pricing ……… 50% deposit · 8.25% tax": label left, the summary
+     pushed to the right edge, the way the mock's panels read. */
+  .reveal-head .reveal-sum{margin-left:auto;font-weight:500;color:var(--ink-2);font-size:var(--type-sm)}
+
   /* Two summary cards side by side. They stack on a phone, where side-by-side would put two
      half-width panels of nothing next to each other. */
   .cardrow{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)}
@@ -1549,17 +1578,24 @@
      look like one until you touch it — a quote's name is not a form field, it is the first
      thing on the page. */
   .esthead{margin:0 0 var(--space-4)}
-  /* It carries a visible boundary because every text input in this app does — that floor is
-     `input…{border-color:var(--line-strong)!important}` up top, and it exists so a control is
-     never invisible. So this is sized and typed like a title rather than pretending not to be
-     a field: as wide as a title wants to be, not as wide as the column. */
-  .esthead-title{display:block;width:100%;max-width:24ch;border:1.5px solid var(--line);border-radius:var(--radius-sm);
-    background:var(--card);margin:0 0 var(--space-2);padding:var(--space-1) var(--space-2);
+  /* Quiet at rest, like the mock: the title reads as the page's headline, not a form field.
+     Hover paints the tint and focus draws the ring — see the floor exemption up top. */
+  .esthead-title{display:block;width:100%;max-width:24ch;border:1.5px solid transparent;border-radius:var(--radius-sm);
+    background:transparent;margin:0 0 var(--space-1) calc(var(--space-2) * -1);padding:var(--space-1) var(--space-2);
     font-family:var(--font-space-grotesk),var(--font-inter),system-ui,sans-serif;
     font-size:var(--type-3xl);font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--ink)}
+  /* The title is LARGE text (3:1 floor), so --ink-3 clears it; the small placeholders below
+     are now the field's only rest-state affordance, so they step up to --ink-2 (4.5:1+). */
   .esthead-title::placeholder{color:var(--ink-3)}
+  .custpick.inline>input::placeholder{color:var(--ink-2)}
+  .jobcost-row input::placeholder{color:var(--ink-2)}
   .esthead-title:hover{background:var(--green-50)}
   .esthead-title:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  .esthead-row{display:flex;align-items:flex-start;justify-content:space-between;gap:var(--space-3);flex-wrap:wrap}
+  .esthead-row .esthead-title{flex:1 1 20ch}
+  .esthead-acts .btn.primary{background:var(--pri-bg);color:var(--pri-fg);border-color:var(--pri-bg)}
+  .esthead-acts .btn.primary:hover{background:var(--pri-bg);color:var(--pri-fg);border-color:var(--pri-bg);filter:brightness(1.12)}
+  .esthead-acts{display:flex;align-items:center;gap:var(--space-2);padding-top:var(--space-2)}
   .esthead-meta{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);font-size:var(--type-sm);color:var(--ink-2)}
   .esthead-for{color:var(--ink-3)}
   .esthead-dot{color:var(--ink-3)}
@@ -1567,17 +1603,23 @@
     padding:var(--space-1) var(--space-2);margin-left:calc(var(--space-2) * -1);
     font-family:inherit;font-size:var(--type-sm);font-weight:700;color:var(--ink);cursor:pointer}
   .esthead-cust:hover{background:var(--green-50);border-color:var(--line)}
+  /* The mock's DRAFT stamp: quiet amber chip, uppercase, letter-spaced. */
+  .esthead-draft{display:inline-flex;align-items:center;border:1px solid var(--manila-line);background:var(--manila);
+    color:var(--manila-ink);border-radius:var(--radius-sm);padding:var(--space-2xs) var(--space-2);
+    font-size:var(--type-xs);font-weight:700;letter-spacing:.08em;text-transform:uppercase}
   .esthead-valid{display:inline-flex;align-items:center;gap:var(--space-1)}
-  .esthead-valid input{width:44px;border:1.5px solid transparent;border-radius:var(--radius-sm);background:transparent;
-    padding:var(--space-1);font-family:inherit;font-size:var(--type-sm);font-weight:700;color:var(--ink);
+  .esthead-valid input{width:3ch;box-sizing:content-box;border:1.5px solid transparent;border-radius:var(--radius-sm);background:transparent;
+    padding:var(--space-1) var(--space-2xs);font-family:inherit;font-size:var(--type-sm);font-weight:700;color:var(--ink);
     text-align:center;-moz-appearance:textfield;appearance:textfield}
   .esthead-valid input::-webkit-outer-spin-button,.esthead-valid input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .esthead-valid input:hover{background:var(--green-50)}
   .esthead-valid input:focus{border-color:var(--green-600);outline:none;background:var(--card)}
   /* The picker, inline in the masthead: no label, no width of its own, list in flow beneath. */
   .custpick.inline{position:relative;display:inline-block}
-  .custpick.inline>input{width:19ch;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--card);
-    padding:var(--space-1) var(--space-2);font-family:inherit;font-size:var(--type-sm);color:var(--ink)}
+  .custpick.inline>input{width:11ch;min-width:11ch;max-width:24ch;field-sizing:content;border:1.5px solid transparent;border-radius:var(--radius-sm);background:transparent;
+    padding:var(--space-1) var(--space-2);margin-left:calc(var(--space-2) * -1);
+    font-family:inherit;font-size:var(--type-sm);font-weight:700;color:var(--ink)}
+  .custpick.inline>input:hover{background:var(--green-50)}
   .custpick.inline>input:focus{border-color:var(--green-600);outline:none}
   .custpick-list.inline{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);
     margin-top:var(--space-1);overflow:hidden;min-width:26ch}

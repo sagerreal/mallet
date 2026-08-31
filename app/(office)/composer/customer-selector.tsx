@@ -77,7 +77,7 @@ export function CustomerSelector({
       <input
         type="text"
         value={state.custQuery}
-        placeholder="Customer name"
+        placeholder={inline ? "Customer" : "Customer name"}
         onChange={(e) => onUpdate({ custQuery: e.target.value })}
         onKeyDown={(e) => {
           // Route Enter through the guarded handler so rapid keypresses can't
