@@ -73,6 +73,9 @@ vi.mock("@/lib/trpc/client", () => ({
         archive: { useMutation: () => ({ mutate: archiveMutate }) },
         rules: { create: { useMutation: () => ({ mutate: vi.fn() }) } },
       },
+      // The job-costs panel is mounted on the page beside Pricing, so the page depends on
+      // this whether or not its picker is ever opened.
+      purchasing: { list: { useQuery: () => ({ data: { items: [] }, isPending: false }) } },
       settings: {
         get: { useQuery: () => ({ data: undefined }) },
         // The company bar on the presentation document — absent identity in these tests.

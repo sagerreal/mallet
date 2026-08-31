@@ -19,7 +19,9 @@ import { DraftNumberInput } from "@/components/shared/draft-number-input";
 import {
   jobCostTotal,
   pulledOrderIds,
+  realJobCosts,
   type ComposerJobCost,
+  type ComposerState,
 } from "./composer-state";
 
 export function JobCostsCard({
@@ -160,6 +162,49 @@ export function JobCostsCard({
         </button>
         <span className="lineedit-spring" />
         <span className="jobcost-total">{fmt$(jobCostTotal(costs))}</span>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The card the composer mounts — a collapsed summary that opens in flow, the peer of Pricing.
+ *
+ * It sits beside Pricing rather than inside the costing view because a job cost is part of the
+ * quote whatever the estimator is currently looking at, and a panel that appears only in one
+ * view is one the office forgets exists.
+ */
+export function JobCostsPanel({
+  state,
+  onUpdate,
+}: {
+  state: ComposerState;
+  onUpdate: (patch: Partial<ComposerState>) => void;
+}) {
+  const real = realJobCosts(state.jobCosts);
+  const summary =
+    real.length === 0
+      ? "None"
+      : `${real.length} cost${real.length === 1 ? "" : "s"} · ${fmt$(jobCostTotal(real))}`;
+  return (
+    <div className="card">
+      <div className={`reveal${state.jobCostsOpen ? " open" : ""}`}>
+        <div
+          className="reveal-head"
+          onClick={() => onUpdate({ jobCostsOpen: !state.jobCostsOpen })}
+        >
+          <span className="caret">▸</span> Other job costs{" "}
+          <span className="muted" style={{ fontWeight: 500 }}>
+            — {summary}
+          </span>
+        </div>
+        <div className="reveal-body">
+          <JobCostsCard
+            costs={state.jobCosts}
+            jobId={state.jobId}
+            onChange={(next) => onUpdate({ jobCosts: next })}
+          />
+        </div>
       </div>
     </div>
   );

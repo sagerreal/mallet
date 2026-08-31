@@ -42,34 +42,52 @@ function renderCard(over: Partial<ComposerState> = {}) {
 }
 
 describe("QuoteCard — the empty composer", () => {
-  it("shows the line editor immediately, with no hero in the way", () => {
+  /**
+   * A quote with nothing on it shows the mock's empty state rather than a blank row.
+   *
+   * This REVERSES an earlier decision here ("the editable row is there from the start — you can
+   * just start typing"). That decision was a reaction to a marketing HERO blocking the editor,
+   * and it fixed the right problem the wrong way: a single blank row asks the office to decode
+   * an empty form. The mock — which is the spec — states what a line is and offers the two ways
+   * to make one. What must NOT come back is the hero, and that is asserted below.
+   */
+  it("says what a line is, and offers the two ways to make one", () => {
     renderCard();
-    // The editable row is there from the start — you can just start typing.
-    expect(screen.getByPlaceholderText("Describe the work…")).toBeTruthy();
+    expect(screen.getByText("No line items yet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add line item" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /From pricebook/ })).toBeTruthy();
+    // The hero stays gone. That is what the earlier fix was actually protecting.
     expect(screen.queryByText("What’s the job?")).toBeNull();
     expect(screen.queryByText(/the quote\s+builds itself from your pricebook below/i)).toBeNull();
   });
 
-  it("makes '+ Add line' append a row that is actually rendered", () => {
-    // The regression itself: a blank appended line must still show up. Previously the state
-    // updated and the UI did not, because a blank line did not count as a "real" line.
+  it("makes '+ Add line item' append a row that is actually rendered", () => {
+    // The regression this has always guarded: a blank appended line must still show up.
+    // Previously the state updated and the UI did not, because a blank line did not count as
+    // a "real" line.
     const { onUpdate, state } = renderCard();
-    fireEvent.click(screen.getByRole("button", { name: "+ Add line" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add line item" }));
 
     expect(onUpdate).toHaveBeenCalledTimes(1);
     const next = onUpdate.mock.calls[0]![0] as Partial<ComposerState>;
     expect(next.lines).toHaveLength(state.lines.length + 1);
 
-    // Re-render with the produced state: the new blank row renders rather than vanishing.
+    // Re-render with the produced state: the table takes over from the empty state.
     renderCard({ lines: next.lines });
-    expect(screen.getAllByPlaceholderText("Describe the work…").length).toBeGreaterThan(1);
+    expect(screen.getAllByPlaceholderText("Describe the work…").length).toBeGreaterThan(0);
   });
 
-  it("keeps the editor visible whether or not the pricebook panel is open", () => {
+  it("shows the empty state whether or not the pricebook panel is open", () => {
     // The old body was gated on `!(quoteIsEmpty && !pbOpen)`, which is why opening the pricebook
     // was what finally revealed the accumulated blank rows.
     renderCard({ pbOpen: false });
-    expect(screen.getByPlaceholderText("Describe the work…")).toBeTruthy();
+    expect(screen.getByText("No line items yet")).toBeTruthy();
+  });
+
+  it("gives way to the table the moment a line has something written on it", () => {
+    renderCard({ lines: [{ d: "Water heater", q: 1, r: 1450 }] });
+    expect(screen.queryByText("No line items yet")).toBeNull();
+    expect(screen.getByLabelText("Description, line 1")).toBeTruthy();
   });
 });
 

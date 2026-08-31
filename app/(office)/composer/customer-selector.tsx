@@ -14,12 +14,19 @@ export function CustomerSelector({
   leads,
   onNewCust,
   isAddingCust,
+  inline,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
   leads: Lead[];
   onNewCust: () => void;
   isAddingCust: boolean;
+  /**
+   * Render inside the estimate's masthead rather than as a block of its own: no label, no
+   * width of its own, and the suggestion list hangs under the field in flow. The picker's
+   * behaviour is identical — only its frame changes.
+   */
+  inline?: boolean;
 }) {
   const lead: Lead | null =
     state.leadId != null
@@ -58,10 +65,15 @@ export function CustomerSelector({
     : [];
 
   return (
-    <div style={{ margin: "var(--space-2) 0 var(--space-4)", maxWidth: 520 }}>
-      <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>
-        Customer
-      </div>
+    <div
+      className={inline ? "custpick inline" : "custpick"}
+      style={inline ? undefined : { margin: "var(--space-2) 0 var(--space-4)", maxWidth: 520 }}
+    >
+      {!inline && (
+        <div style={{ fontWeight: 700, fontSize: "var(--type-base)", marginBottom: "var(--space-2)" }}>
+          Customer
+        </div>
+      )}
       <input
         type="text"
         value={state.custQuery}
@@ -75,23 +87,33 @@ export function CustomerSelector({
             onNewCust();
           }
         }}
-        style={{
-          width: "100%",
-          border: "1.5px solid var(--line)",
-          borderRadius: q ? "9px 9px 0 0" : 9,
-          padding: "var(--space-2) var(--space-3)",
-          fontFamily: "inherit",
-          fontSize: "var(--type-base)",
-        }}
+        aria-label="Customer name"
+        style={
+          inline
+            ? undefined
+            : {
+                width: "100%",
+                border: "1.5px solid var(--line)",
+                borderRadius: q ? "9px 9px 0 0" : 9,
+                padding: "var(--space-2) var(--space-3)",
+                fontFamily: "inherit",
+                fontSize: "var(--type-base)",
+              }
+        }
       />
       {q && (
         <div
-          style={{
-            border: "1.5px solid var(--line)",
-            borderTop: "none",
-            borderRadius: "0 0 9px 9px",
-            overflow: "hidden",
-          }}
+          className={inline ? "custpick-list inline" : "custpick-list"}
+          style={
+            inline
+              ? undefined
+              : {
+                  border: "1.5px solid var(--line)",
+                  borderTop: "none",
+                  borderRadius: "0 0 9px 9px",
+                  overflow: "hidden",
+                }
+          }
         >
           {matches.map((x) => (
             <div

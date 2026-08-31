@@ -68,6 +68,9 @@ vi.mock("@/lib/trpc/client", () => ({
         archive: { useMutation: () => ({ mutate: vi.fn() }) },
         rules: { create: { useMutation: () => ({ mutate: vi.fn() }) } },
       },
+      // The purchase orders the job-costs panel offers. It is mounted on the page now (beside
+      // Pricing), so the page depends on this whether or not the picker is ever opened.
+      purchasing: { list: { useQuery: () => ({ data: { items: [] }, isPending: false }) } },
       // The shop's default sales-tax rate — no rate on file in these tests, so nothing seeds.
       settings: {
         get: { useQuery: () => ({ data: undefined }) },

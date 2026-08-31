@@ -1530,6 +1530,58 @@
     font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
   .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
   .linehint[aria-expanded="true"]{color:var(--ink)}
+  /* The line table with nothing in it. Says what a line IS and offers the two ways to make
+     one — a single blank row asked the office to decode an empty form. */
+  .lineedit-empty{display:flex;flex-direction:column;align-items:center;gap:var(--space-2);
+    padding:var(--space-10) var(--space-6);text-align:center}
+  .lineedit-empty b{font-size:var(--type-lg);font-weight:800;color:var(--ink)}
+  .lineedit-empty span{font-size:var(--type-sm);color:var(--ink-2);max-width:52ch}
+  .lineedit-empty-acts{display:flex;align-items:center;gap:var(--space-2);flex-wrap:wrap;justify-content:center;margin-top:var(--space-2)}
+
+  /* Two summary cards side by side. They stack on a phone, where side-by-side would put two
+     half-width panels of nothing next to each other. */
+  .cardrow{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-3)}
+  .cardrow>.card{margin:0}
+  @media (max-width:760px){.cardrow{grid-template-columns:1fr}}
+
+  /* ---------- the estimate's masthead ----------
+     The document's headline, edited where it is read. The title is an input that does not
+     look like one until you touch it — a quote's name is not a form field, it is the first
+     thing on the page. */
+  .esthead{margin:0 0 var(--space-4)}
+  /* It carries a visible boundary because every text input in this app does — that floor is
+     `input…{border-color:var(--line-strong)!important}` up top, and it exists so a control is
+     never invisible. So this is sized and typed like a title rather than pretending not to be
+     a field: as wide as a title wants to be, not as wide as the column. */
+  .esthead-title{display:block;width:100%;max-width:24ch;border:1.5px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--card);margin:0 0 var(--space-2);padding:var(--space-1) var(--space-2);
+    font-family:var(--font-space-grotesk),var(--font-inter),system-ui,sans-serif;
+    font-size:var(--type-3xl);font-weight:800;letter-spacing:-.02em;line-height:1.1;color:var(--ink)}
+  .esthead-title::placeholder{color:var(--ink-3)}
+  .esthead-title:hover{background:var(--green-50)}
+  .esthead-title:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  .esthead-meta{display:flex;align-items:center;flex-wrap:wrap;gap:var(--space-2);font-size:var(--type-sm);color:var(--ink-2)}
+  .esthead-for{color:var(--ink-3)}
+  .esthead-dot{color:var(--ink-3)}
+  .esthead-cust{border:1.5px solid transparent;border-radius:var(--radius-sm);background:transparent;
+    padding:var(--space-1) var(--space-2);margin-left:calc(var(--space-2) * -1);
+    font-family:inherit;font-size:var(--type-sm);font-weight:700;color:var(--ink);cursor:pointer}
+  .esthead-cust:hover{background:var(--green-50);border-color:var(--line)}
+  .esthead-valid{display:inline-flex;align-items:center;gap:var(--space-1)}
+  .esthead-valid input{width:44px;border:1.5px solid transparent;border-radius:var(--radius-sm);background:transparent;
+    padding:var(--space-1);font-family:inherit;font-size:var(--type-sm);font-weight:700;color:var(--ink);
+    text-align:center;-moz-appearance:textfield;appearance:textfield}
+  .esthead-valid input::-webkit-outer-spin-button,.esthead-valid input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .esthead-valid input:hover{background:var(--green-50)}
+  .esthead-valid input:focus{border-color:var(--green-600);outline:none;background:var(--card)}
+  /* The picker, inline in the masthead: no label, no width of its own, list in flow beneath. */
+  .custpick.inline{position:relative;display:inline-block}
+  .custpick.inline>input{width:19ch;border:1.5px solid var(--line);border-radius:var(--radius-sm);background:var(--card);
+    padding:var(--space-1) var(--space-2);font-family:inherit;font-size:var(--type-sm);color:var(--ink)}
+  .custpick.inline>input:focus{border-color:var(--green-600);outline:none}
+  .custpick-list.inline{border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);
+    margin-top:var(--space-1);overflow:hidden;min-width:26ch}
+
   /* ---------- other job costs ----------
      The shop's own numbers, in the costing view. A quiet list, because it is a ledger the
      estimator reads rather than a form they fill in. */
