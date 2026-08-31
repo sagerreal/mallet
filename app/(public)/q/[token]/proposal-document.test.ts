@@ -6,7 +6,7 @@
  * attribute on a page anyone with the link can open.
  */
 import { describe, it, expect } from "vitest";
-import { docPages, docHasCoverSheet, snapshotSheetStyle, type ProposalSnapshot } from "./ProposalDocument";
+import { docPages, docHasCoverSheet, docWarranty, snapshotSheetStyle, type ProposalSnapshot } from "./ProposalDocument";
 
 const page = (key: string, body = "", photos?: ProposalSnapshot["pages"][number]["photos"]) => ({
   key,
@@ -64,6 +64,34 @@ describe("docPages", () => {
 
   it("never renders the cover through this list — the sheet places it itself", () => {
     expect(docPages(snapshot({ mode: "full", pages: written })).map((p) => p.key)).not.toContain("cover");
+  });
+});
+
+describe("docWarranty", () => {
+  const withWarranty = [
+    page("cover", "12 Alder Ct"),
+    page("letter", "Hi Dana —"),
+    page("warranty", "Two years on workmanship."),
+  ];
+
+  it("moves the warranty AFTER the estimate — never through the body list, in either mode", () => {
+    for (const mode of ["full", "simple"] as const) {
+      const snap = snapshot({ mode, pages: withWarranty });
+      expect(docPages(snap).map((p) => p.key)).not.toContain("warranty");
+      expect(docWarranty(snap)?.body).toBe("Two years on workmanship.");
+    }
+  });
+
+  it("renders a LEGACY snapshot's warranty exactly once — moved, not doubled or dropped", () => {
+    const snap = snapshot({ mode: "full", pages: withWarranty });
+    const bodyKeys = docPages(snap).map((p) => p.key);
+    const total = bodyKeys.filter((k) => k === "warranty").length + (docWarranty(snap) ? 1 : 0);
+    expect(total).toBe(1);
+  });
+
+  it("hides an unwritten warranty — no bare heading on the customer's copy", () => {
+    expect(docWarranty(snapshot({ pages: [page("warranty", "")] }))).toBeNull();
+    expect(docWarranty(snapshot({ pages: [page("cover", "x")] }))).toBeNull();
   });
 });
 

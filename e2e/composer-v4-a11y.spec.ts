@@ -118,10 +118,7 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.getByLabel("Description, line 1").fill("Interior repaint");
     await page.getByLabel("Price, line 1").fill("4495");
     await page.getByRole("tab", { name: /presentation/i }).click();
-
-    const template = page.getByRole("button", { name: "Interior" });
-    if ((await template.count()) === 0) test.skip(true, "no presentation template in this org");
-    await template.click();
+    // No template gate any more — every quote opens on its document, Simple by default.
     await settle(page);
     await scan(page, "composer · proposal, Simple");
 
@@ -159,9 +156,6 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.getByLabel("Price, line 1").fill("4495");
 
     await page.getByRole("tab", { name: /presentation/i }).click();
-    const template = page.getByRole("button", { name: "Interior" });
-    if ((await template.count()) === 0) test.skip(true, "no presentation template in this org");
-    await template.click();
     await page.getByRole("button", { name: "Full proposal" }).click();
     await settle(page);
 
@@ -197,9 +191,6 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.goto("/composer");
     await settle(page);
     await page.getByRole("tab", { name: /presentation/i }).click();
-    const template = page.getByRole("button", { name: "Interior" });
-    if ((await template.count()) === 0) test.skip(true, "no presentation template in this org");
-    await template.click();
     await settle(page);
     for (let i = 0; i < 6; i += 1) await page.getByLabel("Increase font size").click();
     await page.getByLabel("Plum accent").click();

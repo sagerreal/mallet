@@ -88,10 +88,18 @@ export function docPages(snapshot: ProposalSnapshot): ProposalSnapshot["pages"] 
   if ((snapshot.mode ?? "simple") === "simple") {
     return snapshot.pages.filter((page) => page.key === "photos" && renders(page));
   }
-  const order = ["letter", "about", "photos", "process", "reviews", "warranty"];
+  // Warranty is NOT here — it renders after the estimate, beside the terms, in both modes:
+  // what is promised belongs with the page being signed. See docWarranty below.
+  const order = ["letter", "about", "photos", "process", "reviews"];
   return order
     .map((key) => snapshot.pages.find((page) => page.key === key))
     .filter((page): page is ProposalSnapshot["pages"][number] => Boolean(page && renders(page)));
+}
+
+/** The warranty, when written — rendered after the estimate, beside the terms, both modes. */
+export function docWarranty(snapshot: ProposalSnapshot): ProposalSnapshot["pages"][number] | null {
+  const page = snapshot.pages.find((x) => x.key === "warranty");
+  return page && page.body.trim().length > 0 ? page : null;
 }
 
 export function ProposalCover({
@@ -109,17 +117,20 @@ export function ProposalCover({
   quoteNum: string;
   meta?: ProposalSnapshot["meta"];
 }) {
+  // The cover page's stored `title` is the "what this covers" line UNDER the h2 — the same
+  // meaning the office's CoverHead renders and its editor teaches. The kicker is fixed: this
+  // document is a proposal from this shop, and no page field renames that.
   return (
     <header className="doccover">
-      <div className="kick">{page?.title.trim() || "Proposal"}</div>
+      <div className="kick">Proposal{orgName ? ` · ${orgName}` : ""}</div>
       <h2>{title}</h2>
-      <p className="sub">Prepared for {customerFirstName}</p>
-      {page?.body.trim() ? <p className="docbody">{page.body}</p> : null}
+      {page?.title.trim() ? <p className="sub">{page.title}</p> : null}
       <div className="docmeta">
-        <MetaBlock label="Prepared by" value={meta?.estimator ?? orgName} sub={meta?.estimatorRole} />
-        {meta?.contact ? <MetaBlock label="Contact" value={meta.contact} /> : null}
-        <MetaBlock label="Quote" value={meta?.estNumber ?? quoteNum} sub={meta?.validity} />
+        <MetaBlock label="Prepared for" value={customerFirstName} sub={meta?.date} />
+        <MetaBlock label="From" value={meta?.estimator ?? orgName} sub={meta?.contact ?? meta?.estimatorRole} />
+        <MetaBlock label="Estimate" value={meta?.estNumber ?? quoteNum} sub={meta?.validity} />
       </div>
+      {page?.body.trim() ? <p className="docbody">{page.body}</p> : null}
     </header>
   );
 }

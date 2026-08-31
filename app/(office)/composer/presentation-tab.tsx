@@ -19,11 +19,11 @@ import { api } from "@/lib/trpc/client";
 import { Field } from "@/components/ui/input";
 import type { ComposerLine, ComposerPresentation, ComposerState } from "./composer-state";
 import { gbbTierTotal, patchPresentationPage, realLines, togglePresentationPage } from "./composer-state";
-import { patchPresentationDesign, setPagePhotos, setPresentationMode } from "./presentation-state";
+import { defaultPresentation, patchPresentationDesign, setPagePhotos, setPresentationMode } from "./presentation-state";
 import type { ComposerPhoto, ComposerPresentationPage } from "./presentation-state";
 import { PhotoPage } from "./photo-page";
 import { DocToolbar } from "./doc-toolbar";
-import { coverSheetPages, estimateSheetPages, hasCoverSheet, sheetStyleFor } from "./doc-design";
+import { coverSheetPages, estimateSheetPhotos, hasCoverSheet, sheetStyleFor, warrantySheetPage } from "./doc-design";
 import type { PresentationPageKey } from "./presentation-state";
 import { computeQuoteTotals } from "@/app/(public)/q/[token]/quote-totals";
 
@@ -83,7 +83,9 @@ export function PresentationTab({
   const [editError, setEditError] = useState<string | null>(null);
 
   const templates = templatesQuery.data ?? [];
-  const p = state.presentation;
+  // Every quote is a document (the mock's model). A legacy draft saved with none gets the
+  // default — the first edit or save writes it onto the quote.
+  const p = state.presentation ?? defaultPresentation();
 
   function pickTemplate(id: string) {
     const t = templates.find((x) => x.id === id);
@@ -122,7 +124,14 @@ export function PresentationTab({
   }
 
   async function saveEditor() {
-    if (!p || !p.templateId || !editKey) return;
+    if (!editKey) return;
+    // Unlinked — the default document, or the frozen copy a revise restores: the edit is this
+    // quote's alone. Nothing is shared, so nothing writes to the server.
+    if (!p.templateId) {
+      onUpdate({ presentation: patchPresentationPage(p, editKey, { title: editTitle, body: editBody }) });
+      setEditKey(null);
+      return;
+    }
     const t = templates.find((x) => x.id === p.templateId);
     if (!t) {
       // The template list is empty or no longer holds this id — archived in another session, or
@@ -148,15 +157,29 @@ export function PresentationTab({
     }
   }
 
-  // EXACTLY the title buildDraftPayload freezes onto the quote (page.tsx: lead.job || first
-  // line || "Quote") — the preview lied when it showed state.desc, which is the AI prompt box
-  // and never reaches the customer.
-  const quoteTitle = leadJob?.trim() || state.lines.find((l) => l.d.trim())?.d?.trim() || "Quote";
+  // EXACTLY the title buildDraftPayload freezes onto the quote — the masthead title when one
+  // was typed, else the customer's job description, else the first line. A preview showing any
+  // other chain is lying about the document that gets sent.
+  const quoteTitle =
+    state.title.trim() || leadJob?.trim() || state.lines.find((l) => l.d.trim())?.d?.trim() || "Quote";
+
+  const identity = identityQuery.data ?? null;
+  const orgName = identity?.name ?? "";
+  const orgInitials = orgName
+    .split(/\s+/)
+    .slice(0, 2)
+    .map((w) => w[0] ?? "")
+    .join("")
+    .toUpperCase();
+  const photosPage = estimateSheetPhotos(p);
+  const warrantyPage = warrantySheetPage(p);
+
 
   const editorProps = {
     editTitle,
     editBody,
     editError,
+    saveLabel: p.templateId ? "Save to template" : "Save",
     saving: updateMutation.isPending,
     onTitle: setEditTitle,
     onBody: setEditBody,
@@ -164,27 +187,41 @@ export function PresentationTab({
     onCancel: () => setEditKey(null),
   };
 
+  // Built once, placed by mode: the cover SHEET leads a Full document; Simple keeps the cover
+  // head inline on its one page.
+  const coverHead = (
+    <CoverHead
+      page={p.pages.find((page) => page.key === "cover") ?? null}
+      quoteTitle={quoteTitle}
+      leadName={leadName}
+      orgName={orgName}
+      contact={[identity?.address, identity?.phone].filter(Boolean).join(" · ")}
+      validDays={state.validDays}
+      editing={editKey === "cover"}
+      onEdit={() => openEditor(p, "cover")}
+      onGoToEstimate={onGoToEstimate}
+      uid={uid}
+      {...editorProps}
+    />
+  );
+
   return (
     <div>
-      {/* ---- controls: template pills + per-quote page chips ---- */}
+      {/* ---- the template row — which shared page-set this document draws from ---- */}
       <div className="card">
         <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", flexWrap: "wrap" }}>
           <span style={{ fontWeight: 700 }}>Template</span>
-          <button
-            type="button"
-            className={p === null ? "chip on" : "chip"}
-            aria-pressed={p === null}
-            onClick={() => onUpdate({ presentation: null })}
-          >
-            No presentation
-          </button>
           {templates.map((t) => (
             <button
               type="button"
               key={t.id}
-              className={p?.templateId === t.id ? "chip on" : "chip"}
-              aria-pressed={p?.templateId === t.id}
-              onClick={() => pickTemplate(t.id)}
+              className={p.templateId === t.id ? "chip on" : "chip"}
+              aria-pressed={p.templateId === t.id}
+              onClick={() =>
+                p.templateId === t.id
+                  ? onUpdate({ presentation: defaultPresentation() })
+                  : pickTemplate(t.id)
+              }
             >
               {t.name}
             </button>
@@ -226,129 +263,142 @@ export function PresentationTab({
         {createError && (
           <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>{createError}</p>
         )}
-        {templatesQuery.isPending && (
-          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
-            Loading your templates…
-          </p>
-        )}
         {templatesQuery.isError && (
           <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
             Your templates didn&apos;t load — reload the page to try again.
           </p>
         )}
-        {templates.length === 0 && !templatesQuery.isPending && !templatesQuery.isError && !newOpen && (
-          <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "var(--space-3) 0 0" }}>
-            A presentation wraps this quote in your own pages — a cover, who you are, your reviews, a
-            thank-you — before the customer reaches the price. Create your first template to start;
-            without one the customer gets the plain quote.
-          </p>
-        )}
       </div>
 
       {/* ---- the document toolbar ---- */}
-      {p && (
-        <div style={{ maxWidth: 760, margin: "var(--space-4) auto 0" }}>
-          <DocToolbar
-            presentation={p}
-            onMode={(mode) => onUpdate({ presentation: setPresentationMode(p, mode) })}
-            onDesign={(patch) => onUpdate({ presentation: patchPresentationDesign(p, patch) })}
-            onTogglePage={(key) => onUpdate({ presentation: togglePresentationPage(p, key) })}
-          />
-        </div>
-      )}
+      <div style={{ maxWidth: 760, margin: "var(--space-4) auto 0" }}>
+        <DocToolbar
+          presentation={p}
+          onMode={(mode) => onUpdate({ presentation: setPresentationMode(p, mode) })}
+          onDesign={(patch) => onUpdate({ presentation: patchPresentationDesign(p, patch) })}
+          onTogglePage={(key) => onUpdate({ presentation: togglePresentationPage(p, key) })}
+        />
+      </div>
+
+      {/* ---- customer chrome: one slim bar — who it's from, and the way to accept ---- */}
+      <div
+        style={{
+          maxWidth: 760,
+          margin: "var(--space-3) auto 0",
+          display: "flex",
+          alignItems: "center",
+          gap: "var(--space-3)",
+          background: "var(--card)",
+          border: "1px solid var(--line)",
+          borderRadius: "var(--radius-md)",
+          padding: "var(--space-2) var(--space-3)",
+        }}
+      >
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontWeight: 800 }}>
+          {orgInitials && (
+            <span
+              aria-hidden
+              style={{
+                width: "var(--space-6)",
+                height: "var(--space-6)",
+                borderRadius: "var(--radius-xs)",
+                background: "var(--accent)",
+                color: "var(--pri-fg)",
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                fontSize: "var(--type-xs)",
+              }}
+            >
+              {orgInitials}
+            </span>
+          )}
+          {orgName}
+        </span>
+        <button
+          type="button"
+          className="btn primary sm"
+          style={{ marginLeft: "auto" }}
+          title="Scrolls to the acceptance block — the button the customer gets"
+          onClick={() => {
+            // The accept preview exists once the estimate has lines; before that, land on the
+            // estimate section itself — the button must never be a silent no-op.
+            const target =
+              document.querySelector("[data-accept-anchor]") ??
+              document.querySelector('[aria-label="Your estimate"]');
+            target?.scrollIntoView({ behavior: "smooth", block: "center" });
+          }}
+        >
+          Accept estimate
+        </button>
+      </div>
 
       {/* ---- the document, as paper ----
-          Simple is ONE sheet: the work, the price, the signature and the terms. Full puts the
-          cover and the shop's story on a sheet in front of it. Most quotes are not a pitch. */}
-      {p && (
-        <div className="sheets" style={sheetStyleFor(p)}>
-          {hasCoverSheet(p) && (
-            <article className="docsheet" aria-label="Cover page">
-              <CoverSection
-                page={p.pages.find((page) => page.key === "cover") ?? null}
-                quoteTitle={quoteTitle}
-                leadName={leadName}
-                canEdit={p.templateId !== null}
-                editing={editKey === "cover"}
-                onEdit={() => openEditor(p, "cover")}
+          Simple is ONE sheet: cover head, photos, the estimate, the warranty, the terms and
+          the thank-you. Full puts a cover letter and the shop's story on a sheet in front. */}
+      <div className="sheets" style={sheetStyleFor(p)}>
+        {hasCoverSheet(p) && (
+          <article className="docsheet" aria-label="Cover page">
+            {coverHead}
+            {coverSheetPages(p).map((page) => (
+              <PageSection
+                key={page.key}
+                page={page}
+                editing={editKey === page.key}
+                onEdit={() => openEditor(p, page.key)}
+                uid={uid}
+                onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
+                {...editorProps}
+              />
+            ))}
+            <footer className="docsheet-foot">
+              <span>{orgName}</span>
+              <span>Page 1 of 2</span>
+            </footer>
+          </article>
+        )}
+
+        <article className="docsheet" aria-label="The estimate">
+          {!hasCoverSheet(p) && coverHead}
+          {!hasCoverSheet(p) && photosPage && (
+            <PageSection
+              page={photosPage}
+              editing={editKey === photosPage.key}
+              onEdit={() => openEditor(p, photosPage.key)}
+              uid={uid}
+              onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, photosPage.key, next) })}
+              {...editorProps}
+            />
+          )}
+          <EstimateSection state={state} onGoToEstimate={onGoToEstimate} />
+          {warrantyPage && (
+            <PageSection
+              page={warrantyPage}
+              editing={editKey === warrantyPage.key}
+              onEdit={() => openEditor(p, warrantyPage.key)}
+              uid={uid}
+              {...editorProps}
+            />
+          )}
+          <TermsSection text={state.terms?.text ?? null} />
+          {p.pages
+            .filter((page) => page.on && page.key === "thanks")
+            .map((page) => (
+              <ThanksSection
+                key={page.key}
+                page={page}
+                editing={editKey === page.key}
+                onEdit={() => openEditor(p, page.key)}
                 uid={uid}
                 {...editorProps}
               />
-              <CompanyBar identity={identityQuery.data ?? null} validDays={state.validDays} />
-              {coverSheetPages(p).map((page) => (
-                <PageSection
-                  key={page.key}
-                  page={page}
-                  canEdit={p.templateId !== null}
-                  editing={editKey === page.key}
-                  onEdit={() => openEditor(p, page.key)}
-                  uid={uid}
-                  onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
-                  {...editorProps}
-                />
-              ))}
-              <footer className="docsheet-foot">
-                <span>{identityQuery.data?.name ?? ""}</span>
-                <span>Page 1</span>
-              </footer>
-            </article>
-          )}
-
-          <article className="docsheet" aria-label="The estimate">
-            {!hasCoverSheet(p) && (
-              <>
-                <CoverSection
-                  page={p.pages.find((page) => page.key === "cover") ?? null}
-                  quoteTitle={quoteTitle}
-                  leadName={leadName}
-                  canEdit={p.templateId !== null}
-                  editing={editKey === "cover"}
-                  onEdit={() => openEditor(p, "cover")}
-                  uid={uid}
-                  {...editorProps}
-                />
-                {estimateSheetPages(p).map((page) => (
-                  <PageSection
-                    key={page.key}
-                    page={page}
-                    canEdit={p.templateId !== null}
-                    editing={editKey === page.key}
-                    onEdit={() => openEditor(p, page.key)}
-                    uid={uid}
-                    onPhotos={(next) => onUpdate({ presentation: setPagePhotos(p, page.key, next) })}
-                    {...editorProps}
-                  />
-                ))}
-              </>
-            )}
-            <EstimateSection state={state} quoteTitle={quoteTitle} onGoToEstimate={onGoToEstimate} />
-            {p.pages
-              .filter((page) => page.on && page.key === "thanks")
-              .map((page) => (
-                <ThanksSection
-                  key={page.key}
-                  page={page}
-                  canEdit={p.templateId !== null}
-                  editing={editKey === page.key}
-                  onEdit={() => openEditor(p, page.key)}
-                  uid={uid}
-                  {...editorProps}
-                />
-              ))}
-            <footer className="docsheet-foot">
-              <span>{identityQuery.data?.name ?? ""}</span>
-              <span>{hasCoverSheet(p) ? "Page 2" : "Page 1"}</span>
-            </footer>
-          </article>
-        </div>
-      )}
-
-      {p && p.templateId === null && (
-        <p className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-3)", textAlign: "center" }}>
-          From a sent quote — these pages are the frozen copy it was sent with. Pick a template
-          above to edit shared pages.
-        </p>
-      )}
+            ))}
+          <footer className="docsheet-foot">
+            <span>{orgName}</span>
+            <span>{hasCoverSheet(p) ? "Page 2 of 2" : "Page 1 of 1"}</span>
+          </footer>
+        </article>
+      </div>
     </div>
   );
 }
@@ -359,6 +409,8 @@ interface SectionEditorProps {
   editTitle: string;
   editBody: string;
   editError: string | null;
+  /** "Save to template" when the copy is linked (shared content); plain "Save" when it is this quote's alone. */
+  saveLabel: string;
   saving: boolean;
   onTitle: (v: string) => void;
   onBody: (v: string) => void;
@@ -452,7 +504,7 @@ function SectionEditor({
       )}
       <div style={{ display: "flex", gap: "var(--space-2)" }}>
         <button type="button" className="btn primary sm" disabled={editor.saving} onClick={editor.onSave}>
-          Save to template
+          {editor.saveLabel}
         </button>
         <button type="button" className="btn ghost sm" onClick={editor.onCancel}>
           Cancel
@@ -468,144 +520,133 @@ type PresentationPage = ComposerPresentationPage;
 
 // ---- cover ---------------------------------------------------------------------
 
-function CoverSection({
+/**
+ * The mock's cover head — kicker, the document's title, the "what this covers" line, and the
+ * three meta blocks (Prepared for / From / Estimate). Light, on the sheet, exactly what the
+ * customer's ProposalCover prints; teaching copy stands in for a customer not yet picked.
+ */
+function CoverHead({
   page,
   quoteTitle,
   leadName,
-  canEdit,
+  orgName,
+  contact,
+  validDays,
   editing,
   onEdit,
+  onGoToEstimate,
   uid,
   ...editor
 }: {
   page: PresentationPage | null;
   quoteTitle: string;
   leadName: string | null;
-  canEdit: boolean;
+  orgName: string;
+  contact: string;
+  validDays: number;
   editing: boolean;
   onEdit: () => void;
+  onGoToEstimate: () => void;
   uid: string;
 } & SectionEditorProps) {
   const today = new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const editorId = `${uid}-edit-cover`;
   return (
-    <section
-      aria-label="Cover page"
-      style={{
-        position: "relative",
-        background: "var(--accent)",
-        color: "var(--pri-fg)",
-        padding: "var(--space-10) var(--space-8) var(--space-8)",
-      }}
-    >
-      {canEdit && (
-        <EditChip label="EDIT COVER ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
-      )}
-      <div style={{ ...kickerStyle, letterSpacing: ".2em", opacity: 0.75 }}>
-        {page?.title.trim() || "Proposal"}
+    <header className="doccover" aria-label="Cover">
+      <EditChip label="EDIT COVER ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
+      <div className="kick">Proposal{orgName ? ` · ${orgName}` : ""}</div>
+      <h2>{quoteTitle}</h2>
+      {page?.title.trim() ? <p className="sub">{page.title}</p> : null}
+      <div className="docmeta">
+        <div className="blk">
+          <div className="k">Prepared for</div>
+          <div className="v">
+            {leadName ? (
+              <>
+                <b>{leadName}</b>
+                <div>{today}</div>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={onGoToEstimate}
+                style={{
+                  background: "none",
+                  border: 0,
+                  padding: 0,
+                  font: "inherit",
+                  textAlign: "left",
+                  cursor: "pointer",
+                  color: "var(--ink-2)",
+                }}
+              >
+                Add a customer on the Estimate tab —<br />their name leads the cover
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="blk">
+          <div className="k">From</div>
+          <div className="v">
+            <b>{orgName || "Your company"}</b>
+            {contact ? <div>{contact}</div> : null}
+          </div>
+        </div>
+        <div className="blk">
+          <div className="k">Estimate</div>
+          <div className="v">
+            <b>Draft</b>
+            <div>Valid {validDays} days</div>
+          </div>
+        </div>
       </div>
-      <h2
-        style={{
-          fontFamily: "var(--font-display)",
-          fontSize: "var(--type-4xl)",
-          fontWeight: 800,
-          lineHeight: 1.05,
-          letterSpacing: "-.03em",
-          margin: "var(--space-4) 0 var(--space-4)",
-          maxWidth: "16ch",
-        }}
-      >
-        {quoteTitle}
-      </h2>
-      <div style={{ fontSize: "var(--type-md)", opacity: 0.8 }}>
-        {leadName ? (
-          <>
-            Prepared for <b style={{ opacity: 1 }}>{leadName}</b> &middot; {today}
-          </>
-        ) : (
-          "Pick a customer on the Estimate tab"
-        )}
-      </div>
-      {page?.body.trim() && (
-        <p
-          style={{
-            fontSize: "var(--type-base)",
-            lineHeight: 1.6,
-            opacity: 0.8,
-            margin: "var(--space-4) 0 0",
-            maxWidth: "60ch",
-            whiteSpace: "pre-wrap",
-          }}
-        >
+      {page?.body.trim() ? (
+        <p className="docbody" style={{ whiteSpace: "pre-wrap" }}>
           {page.body}
         </p>
-      )}
+      ) : null}
       {editing && (
         <SectionEditor
           id={editorId}
-          titleLabel="Cover heading"
-          titleHint="The small line above the title — e.g. Proposal."
+          titleLabel="What this covers"
+          titleHint="The line under the title — e.g. Cedar privacy fence, supply & install."
           editor={editor}
         />
       )}
-    </section>
+    </header>
   );
 }
 
-// ---- company bar ---------------------------------------------------------------
+// ---- terms ---------------------------------------------------------------------
 
-function CompanyBar({
-  identity,
-  validDays,
-}: {
-  identity: { name: string; address: string | null; phone: string | null } | null;
-  validDays: number;
-}) {
-  const name = identity?.name ?? "";
-  const initials = name
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((w) => w[0] ?? "")
-    .join("")
-    .toUpperCase();
-  const contact = [identity?.address, identity?.phone].filter(Boolean).join(" · ");
+/** Fixed — a proposal with no terms is not a proposal. The text is the quote's own snapshot. */
+function TermsSection({ text }: { text: string | null }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: "var(--space-4)",
-        flexWrap: "wrap",
-        background: "var(--accent-2)",
-        color: "var(--pri-fg)",
-        padding: "var(--space-3) var(--space-8)",
-        fontSize: "var(--type-sm)",
-      }}
+    <section
+      aria-label="Terms and conditions"
+      style={{ position: "relative", padding: "var(--space-8)", borderTop: "1px solid var(--line)" }}
     >
-      <span style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", fontWeight: 800, fontSize: "var(--type-base)" }}>
-        {initials && (
-          <span
-            aria-hidden
-            style={{
-              width: "var(--space-6)",
-              height: "var(--space-6)",
-              borderRadius: "var(--radius-xs)",
-              background: "var(--pri-fg)",
-              color: "var(--accent)",
-              display: "inline-flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: "var(--type-xs)",
-            }}
-          >
-            {initials}
-          </span>
-        )}
-        {name}
-      </span>
-      {contact && <span style={{ opacity: 0.75 }}>{contact}</span>}
-      <span style={{ ...kickerStyle, marginLeft: "auto", opacity: 0.75 }}>Valid {validDays} days</span>
-    </div>
+      <div style={{ ...kickerStyle, color: "var(--ink-3)", marginBottom: "var(--space-3)" }}>
+        Terms &amp; conditions
+      </div>
+      {text?.trim() ? (
+        <p
+          style={{
+            fontSize: "var(--type-sm)",
+            color: "var(--ink-2)",
+            whiteSpace: "pre-wrap",
+            lineHeight: 1.6,
+            margin: 0,
+          }}
+        >
+          {text}
+        </p>
+      ) : (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
+          No terms yet — pick them in the Terms panel on the Estimate tab.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -613,7 +654,6 @@ function CompanyBar({
 
 function PageSection({
   page,
-  canEdit,
   editing,
   onEdit,
   uid,
@@ -621,7 +661,6 @@ function PageSection({
   ...editor
 }: {
   page: PresentationPage;
-  canEdit: boolean;
   editing: boolean;
   onEdit: () => void;
   uid: string;
@@ -642,9 +681,7 @@ function PageSection({
         // again in a way that costs legibility is not emphasis, it is a defect.
       }}
     >
-      {canEdit && (
-        <EditChip label="EDIT ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
-      )}
+      <EditChip label="EDIT ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
       <div style={{ ...kickerStyle, color: "var(--ink-3)", marginBottom: "var(--space-3)" }}>
         {page.title.trim() || page.key}
       </div>
@@ -663,8 +700,11 @@ function PageSection({
         </p>
       ) : (
         // A page with PICTURES is not empty. The photos page's whole content is its photos, so
-        // testing the prose alone told the office a page full of before-and-afters was blank.
+        // testing the prose alone told the office a page full of before-and-afters was blank —
+        // and its own add-photo frame already says what to do, so the generic line would say
+        // it twice.
         !editing &&
+        page.key !== "photos" &&
         (page.photos?.length ?? 0) === 0 && (
           <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
             Empty — hidden from the customer until it says something.
@@ -674,7 +714,7 @@ function PageSection({
       {/* The photos page carries images, not prose — its body is the caption above them. */}
       {page.key === "photos" && onPhotos && (
         <div style={{ marginTop: page.body.trim() ? "var(--space-3)" : 0 }}>
-          <PhotoPage photos={page.photos ?? []} onChange={onPhotos} readOnly={!canEdit} />
+          <PhotoPage photos={page.photos ?? []} onChange={onPhotos} readOnly={false} />
         </div>
       )}
       {editing && <SectionEditor id={editorId} titleLabel="Page title" editor={editor} />}
@@ -686,11 +726,9 @@ function PageSection({
 
 function EstimateSection({
   state,
-  quoteTitle,
   onGoToEstimate,
 }: {
   state: ComposerState;
-  quoteTitle: string;
   onGoToEstimate: () => void;
 }) {
   const gbb = state.format === "gbb" && state.gbb ? state.gbb : null;
@@ -733,20 +771,9 @@ function EstimateSection({
           cursor: "pointer",
         }}
       >
-        FROM THE ESTIMATE TAB — EDIT THERE ›
+        EDIT ON THE ESTIMATE TAB ›
       </button>
       <div style={{ ...kickerStyle, color: "var(--ink-3)", marginBottom: "var(--space-3)" }}>Your estimate</div>
-      <h3
-        style={{
-          fontFamily: "var(--font-display)",
-          fontSize: "var(--type-xl)",
-          fontWeight: 800,
-          letterSpacing: "-.02em",
-          margin: "0 0 var(--space-3)",
-        }}
-      >
-        {quoteTitle}
-      </h3>
 
       {gbb ? (
         <>
@@ -782,7 +809,7 @@ function EstimateSection({
         </>
       ) : workLines.length === 0 ? (
         <p className="muted" style={{ fontSize: "var(--type-sm)", margin: 0 }}>
-          Your estimate appears here — build it on the Estimate tab.
+          No line items yet — build the estimate on the Estimate tab.
         </p>
       ) : (
         <>
@@ -887,9 +914,11 @@ function EstimateSection({
             )}
           </div>
 
-          {/* What the customer's accept button will say — a preview, not a control. */}
+          {/* What the customer's accept button will say — a preview, not a control. The
+              company bar's "Accept estimate" scrolls here, the way the customer's own does. */}
           <div
             aria-hidden
+            data-accept-anchor
             style={{
               marginTop: "var(--space-4)",
               background: "var(--accent)",
@@ -932,14 +961,12 @@ function TotalRow({ label, cents, muted }: { label: string; cents: number; muted
 
 function ThanksSection({
   page,
-  canEdit,
   editing,
   onEdit,
   uid,
   ...editor
 }: {
   page: PresentationPage;
-  canEdit: boolean;
   editing: boolean;
   onEdit: () => void;
   uid: string;
@@ -956,9 +983,7 @@ function ThanksSection({
         padding: "var(--space-10) var(--space-8)",
       }}
     >
-      {canEdit && (
-        <EditChip label="EDIT ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
-      )}
+      <EditChip label="EDIT ›" editing={editing} controls={editorId} onClick={editing ? editor.onCancel : onEdit} />
       <h3
         style={{
           fontFamily: "var(--font-display)",

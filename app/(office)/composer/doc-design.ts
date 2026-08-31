@@ -51,13 +51,14 @@ export function sheetStyleFor(p: ComposerPresentation | null): CSSProperties {
  */
 export function coverSheetPages(p: ComposerPresentation): ComposerPresentationPage[] {
   if (modeOf(p) === "simple") return [];
+  // Warranty is NOT here — it rides the estimate sheet, beside the terms, in both modes:
+  // what is promised belongs on the page being signed.
   const order: PresentationPageKey[] = [
     "letter",
     "about",
     "photos",
     "process",
     "reviews",
-    "warranty",
   ];
   return order
     .map((key) => p.pages.find((page) => page.key === key))
@@ -70,16 +71,19 @@ export function hasCoverSheet(p: ComposerPresentation | null): boolean {
 }
 
 /**
- * The written pages that render on the estimate sheet.
- *
- * In Simple that is the photos, and only the photos: a shop sending a one-page quote still
- * wants the before-and-afters on it — that is the thing trades actually send — but not the
- * cover letter and the company story, which is what makes a document Full.
- *
- * Empty in Full, where those pages live on the sheet in front.
+ * The photos on the estimate sheet — Simple mode only: a shop sending a one-page quote still
+ * wants the before-and-afters on it, but not the cover letter and the company story, which is
+ * what makes a document Full. In Full the photos ride the cover sheet.
  */
-export function estimateSheetPages(p: ComposerPresentation): ComposerPresentationPage[] {
-  if (modeOf(p) === "full") return [];
+export function estimateSheetPhotos(p: ComposerPresentation): ComposerPresentationPage | null {
+  if (modeOf(p) === "full") return null;
   const photos = p.pages.find((page) => page.key === "photos");
-  return photos?.on ? [photos] : [];
+  return photos?.on ? photos : null;
+}
+
+/** The warranty — rendered after the estimate, beside the terms, in BOTH modes: what is
+ *  promised belongs on the page being signed. */
+export function warrantySheetPage(p: ComposerPresentation): ComposerPresentationPage | null {
+  const warranty = p.pages.find((page) => page.key === "warranty");
+  return warranty?.on ? warranty : null;
 }

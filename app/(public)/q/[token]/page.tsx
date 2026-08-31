@@ -29,6 +29,7 @@ import { groupBySection } from "./section-groups";
 import {
   ProposalCover,
   ProposalPage,
+  docWarranty,
   ProposalShell,
   docHasCoverSheet,
   docPages,
@@ -207,6 +208,7 @@ export default async function PublicQuotePage({
   // Short-lived links minted server-side — the visitor has no session, so there is no path by
   // which the browser could sign these for itself. See signProposalPhotos.
   const photoUrls = view.photoUrls ?? new Map<string, string>();
+  const warrantyPage = presentation ? docWarranty(presentation) : null;
   const presentationThanks =
     presentation?.pages.find((page) => page.key === "thanks" && page.body.trim().length > 0) ?? null;
 
@@ -436,8 +438,18 @@ export default async function PublicQuotePage({
             </>
           )}
 
-          {/* Terms snapshot — both formats, plain functional block. Kept on a settled quote: the
-              terms are part of what was agreed to. */}
+          {/* Warranty, then terms — after the estimate, the mock's signing page: what is
+              promised sits with what is being agreed to, in the same quiet register. */}
+          {warrantyPage && (
+            <div style={{ marginTop: "var(--space-4)", paddingTop: "var(--space-3)", borderTop: "1px solid var(--line-2)" }}>
+              <div className="muted" style={{ fontSize: "var(--type-xs)", marginBottom: "var(--space-1)" }}>
+                {warrantyPage.title.trim() || "Warranty"}
+              </div>
+              <p style={{ fontSize: "var(--type-sm)", lineHeight: 1.55, margin: 0, whiteSpace: "pre-wrap", color: "var(--ink-2)" }}>
+                {warrantyPage.body}
+              </p>
+            </div>
+          )}
           {p.termsSnapshot && <TermsBlock text={p.termsSnapshot} />}
 
           {/* Footer */}
