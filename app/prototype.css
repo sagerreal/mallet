@@ -1646,6 +1646,8 @@
   .rail-comp:hover{background:var(--card)}
   .rail-comp .rc-name{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .rail-comp .rc-fig{color:var(--ink-3);font-size:var(--type-xs);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .rail-file{display:flex;align-items:center;gap:var(--space-2);min-height:32px}
+  .rail-file-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:var(--type-sm);color:var(--ink-2)}
   .rail-actions{display:flex;gap:var(--space-2);flex-wrap:wrap;margin-top:var(--space-3)}
   /* The assembly disclosure + collapsed subline in the ledger. */
   .asm-disc{width:24px;height:24px;flex:0 0 24px;display:inline-flex;align-items:center;justify-content:center;
@@ -1836,6 +1838,10 @@
   .tb-swatches{display:flex;align-items:center;gap:var(--space-1);padding-left:var(--space-2xs)}
   /* 24px, not smaller: a colour chip is a target, and the a11y floor is 24×24. */
   .tb-swatch{width:24px;height:24px;border-radius:var(--radius-sm);border:1px solid var(--line);cursor:pointer;padding:0}
+  /* The native colour input, dressed as one more swatch. */
+  .tb-swatch-any{appearance:none;-webkit-appearance:none;background:conic-gradient(#e66,#ea3,#3a6,#36a,#a3a,#e66);overflow:hidden}
+  .tb-swatch-any::-webkit-color-swatch-wrapper{padding:0;opacity:0}
+  .tb-swatch-any::-webkit-color-swatch{border:0;opacity:0}
   .tb-swatch[aria-pressed="true"]{box-shadow:0 0 0 2px var(--card),0 0 0 4px var(--ink)}
   .tb-page{height:28px;padding:0 var(--space-2);border:0;border-radius:var(--radius-sm);background:transparent;
     font-family:inherit;font-size:var(--type-sm);font-weight:600;color:var(--ink-3);cursor:pointer}

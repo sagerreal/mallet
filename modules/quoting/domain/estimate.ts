@@ -169,6 +169,23 @@ export interface EstimateLineProps {
   readonly customerVisible?: boolean;
   /** Markup over cost in basis points when the line is priced from its cost; null = hand-priced. */
   readonly markupBps?: number | null;
+  /** What kind of cost this is — material/labor/equipment/subcontract/other. Office-side. */
+  readonly lineType?: LineType | null;
+  /** Photos attached to the line — office reference material, never on the customer copy. */
+  readonly attachments?: readonly LineAttachment[] | null;
+}
+
+export const MAX_LINE_ATTACHMENTS = 8;
+
+/** The cost vocabulary a line can be tagged with. Closed here; text in the column. */
+export const LINE_TYPES = ["material", "labor", "equipment", "subcontract", "other"] as const;
+export type LineType = (typeof LINE_TYPES)[number];
+
+export interface LineAttachment {
+  /** A key into the org's proposal-photo storage (the upload path validates its shape). */
+  readonly key: string;
+  /** The name it was attached under — what the office reads in the list. */
+  readonly name: string;
 }
 
 /**
@@ -302,6 +319,20 @@ export class EstimateLine {
       }
     }
 
+    if (props.lineType != null && !LINE_TYPES.includes(props.lineType)) {
+      return err(validation("unknown line type", "lineType"));
+    }
+    if (props.attachments != null) {
+      if (props.attachments.length > MAX_LINE_ATTACHMENTS) {
+        return err(validation(`a line holds at most ${MAX_LINE_ATTACHMENTS} attachments`, "attachments"));
+      }
+      for (const a of props.attachments) {
+        if (!a.key.trim() || !a.name.trim()) {
+          return err(validation("an attachment needs a key and a name", "attachments"));
+        }
+      }
+    }
+
     return ok(
       new EstimateLine({
         ...props,
@@ -316,6 +347,8 @@ export class EstimateLine {
         sectionId: props.sectionId ?? null,
         customerVisible: props.customerVisible ?? true,
         markupBps: props.markupBps ?? null,
+        lineType: props.lineType ?? null,
+        attachments: props.attachments && props.attachments.length > 0 ? props.attachments : null,
       }),
     );
   }

@@ -14,7 +14,8 @@
  * Anchored and in-flow (a grid column, not a popover) — what the no-floating-UI rule asks.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { uploadProposalPhoto } from "@/lib/store/upload-proposal-photo";
 import { fmt$rate } from "@/lib/format";
 import type { ComposerLine } from "./composer-state";
 import {
@@ -27,7 +28,7 @@ import {
 } from "./line-math";
 
 type EditKey = "quantity" | "cost" | "price" | "section" | null;
-type AccKey = "scope" | "assembly" | "more" | null;
+type AccKey = "scope" | "files" | "assembly" | "more" | null;
 
 export interface LineInspectorProps {
   lines: ComposerLine[];
@@ -41,7 +42,17 @@ export interface LineInspectorProps {
   onSelect: (i: number) => void;
   onRemove: (i: number) => void;
   onAddComponent: (i: number) => void;
+  /** Copy this line — an assembly comes with its parts. */
+  onDuplicate: (i: number) => void;
 }
+
+const LINE_TYPE_LABELS = {
+  material: "Material",
+  labor: "Labor",
+  equipment: "Equipment",
+  subcontract: "Subcontract",
+  other: "Other",
+} as const;
 
 export function LineInspector(props: LineInspectorProps) {
   const { lines, selected } = props;
@@ -54,10 +65,55 @@ export function LineInspector(props: LineInspectorProps) {
   const parent = line.parentIndex != null ? lines[line.parentIndex] : undefined;
   const components = componentIndexes(lines, selected);
   const isAssembly = components.length > 0;
+  /**
+   * The mock's two inspectors: a hand-typed line is SIMPLE — its quantity and price are edited
+   * in the row, so the rail carries the qualitative facts (scope, attachments, tax, section).
+   * The math rows dock only where the math lives somewhere other than the row: assemblies,
+   * their parts, and lines priced from a cost or an expression.
+   */
+  const simple =
+    !parent && !isAssembly && line.c == null && line.markupBps == null && !line.qtyExpr?.trim();
   const kind = parent ? "Assembly item" : isAssembly ? "Assembly" : "Line item";
   const quantity = resolveQuantity(line, parent);
   const toggleEdit = (key: EditKey) => setEdit((cur) => (cur === key ? null : key));
   const toggleAcc = (key: AccKey) => setAcc((cur) => (cur === key ? null : key));
+
+  /* Scope — the customer-facing prose, edited where the rest of the line's detail lives. */
+  const scopeAcc = (
+    <>
+      <button
+        type="button"
+        className="rail-acc"
+        aria-expanded={acc === "scope"}
+        onClick={() => toggleAcc("scope")}
+      >
+        Scope
+        <span>
+          {line.scope?.trim() ? "Added" : "None"} {acc === "scope" ? "⌄" : "›"}
+        </span>
+      </button>
+      {acc === "scope" && (
+        <div className="rail-accbody">
+          <textarea
+            rows={6}
+            aria-label="Scope"
+            placeholder="What is included and excluded…"
+            value={line.scope ?? ""}
+            onChange={(e) => props.onUpdate(selected, { scope: e.target.value || undefined })}
+          />
+        </div>
+      )}
+    </>
+  );
+  const filesAcc = (
+    <AttachmentsAcc
+      line={line}
+      selected={selected}
+      open={acc === "files"}
+      onToggle={() => toggleAcc("files")}
+      onUpdate={props.onUpdate}
+    />
+  );
 
   return (
     <div className="rail" data-testid="line-inspector">
@@ -75,23 +131,31 @@ export function LineInspector(props: LineInspectorProps) {
         ) : null}
       </div>
 
+      {/* The mock's SIMPLE inspector reads Scope → Attachments → the property rows; the full
+          inspector leads with the math and files follow the scope. Same pieces, two orders. */}
+      {simple && scopeAcc}
+      {simple && filesAcc}
       <div>
-        <QuantityProp
-          {...props}
-          line={line}
-          parent={parent}
-          isAssembly={isAssembly}
-          open={edit === "quantity"}
-          onToggle={() => toggleEdit("quantity")}
-        />
-        <CostPriceProps
-          {...props}
-          line={line}
-          parent={parent}
-          isAssembly={isAssembly}
-          edit={edit}
-          onToggle={toggleEdit}
-        />
+        {!simple && (
+          <>
+            <QuantityProp
+              {...props}
+              line={line}
+              parent={parent}
+              isAssembly={isAssembly}
+              open={edit === "quantity"}
+              onToggle={() => toggleEdit("quantity")}
+            />
+            <CostPriceProps
+              {...props}
+              line={line}
+              parent={parent}
+              isAssembly={isAssembly}
+              edit={edit}
+              onToggle={toggleEdit}
+            />
+          </>
+        )}
         {/* Tax renders only when the quote charges tax — otherwise it decides nothing.
             A component's money rides its parent, so the parent's row is the one that counts. */}
         {props.taxed && !parent && (
@@ -148,29 +212,8 @@ export function LineInspector(props: LineInspectorProps) {
         )}
       </div>
 
-      {/* Scope — the customer-facing prose, edited where the rest of the line's detail lives. */}
-      <button
-        type="button"
-        className="rail-acc"
-        aria-expanded={acc === "scope"}
-        onClick={() => toggleAcc("scope")}
-      >
-        Scope
-        <span>
-          {line.scope?.trim() ? "Added" : "None"} {acc === "scope" ? "⌄" : "›"}
-        </span>
-      </button>
-      {acc === "scope" && (
-        <div className="rail-accbody">
-          <textarea
-            rows={6}
-            aria-label="Scope"
-            placeholder="What is included and excluded…"
-            value={line.scope ?? ""}
-            onChange={(e) => props.onUpdate(selected, { scope: e.target.value || undefined })}
-          />
-        </div>
-      )}
+      {!simple && scopeAcc}
+      {!simple && filesAcc}
 
       {isAssembly && (
         <>
@@ -261,6 +304,24 @@ export function LineInspector(props: LineInspectorProps) {
       </button>
       {acc === "more" && (
         <div className="rail-accbody">
+          <div className="rail-editor" style={{ marginBottom: "var(--space-2)" }}>
+            <select
+              aria-label="Line type"
+              value={line.ltype ?? ""}
+              onChange={(e) =>
+                props.onUpdate(selected, {
+                  ltype: (e.target.value || undefined) as ComposerLine["ltype"],
+                })
+              }
+            >
+              <option value="">Type — none</option>
+              {Object.entries(LINE_TYPE_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>
+                  {label}
+                </option>
+              ))}
+            </select>
+          </div>
           {parent ? (
             <p className="rail-hint" style={{ margin: 0 }}>
               Tax and optional status follow the parent assembly.
@@ -276,6 +337,14 @@ export function LineInspector(props: LineInspectorProps) {
               >
                 {line.opt ? "Optional" : "Required"}
               </button>
+              <button
+                type="button"
+                className="btn sm"
+                title="Copy this line — an assembly comes with its parts"
+                onClick={() => props.onDuplicate(selected)}
+              >
+                Duplicate line
+              </button>
             </div>
           )}
           <div className="rail-actions">
@@ -290,6 +359,110 @@ export function LineInspector(props: LineInspectorProps) {
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Attachments — photos pinned to the line as office reference material ("this is the panel").
+ * Uploaded through the same org-wide storage the proposal's photos use; never rendered on the
+ * customer copy.
+ */
+function AttachmentsAcc({
+  line,
+  selected,
+  open,
+  onToggle,
+  onUpdate,
+}: {
+  line: ComposerLine;
+  selected: number;
+  open: boolean;
+  onToggle: () => void;
+  onUpdate: (i: number, patch: Partial<ComposerLine>) => void;
+}) {
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const att = line.att ?? [];
+
+  const attach = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const key = await uploadProposalPhoto(file);
+      onUpdate(selected, { att: [...att, { key, name: file.name }] });
+    } catch {
+      setError("That photo didn’t upload — check your connection and try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <>
+      <button
+        type="button"
+        className="rail-acc"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        Attachments
+        <span>
+          {att.length > 0 ? att.length : "None"} {open ? "⌄" : "›"}
+        </span>
+      </button>
+      {open && (
+        <div className="rail-accbody">
+          {att.map((a, at) => (
+            <div key={a.key} className="rail-file">
+              <span className="rail-file-name">{a.name}</span>
+              <button
+                type="button"
+                className="lineedit-tool"
+                aria-label={`Remove attachment ${a.name}`}
+                onClick={() =>
+                  onUpdate(selected, {
+                    att: att.filter((_, i) => i !== at).length
+                      ? att.filter((_, i) => i !== at)
+                      : undefined,
+                  })
+                }
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          <div className="rail-actions" style={{ marginTop: att.length ? "var(--space-2)" : 0 }}>
+            <button
+              type="button"
+              className="btn sm"
+              disabled={busy}
+              onClick={() => fileRef.current?.click()}
+            >
+              {busy ? "Uploading…" : "+ Attach photo"}
+            </button>
+          </div>
+          {error && (
+            <p className="rail-hint" role="alert" style={{ color: "var(--red)" }}>
+              {error}
+            </p>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            aria-hidden="true"
+            tabIndex={-1}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) void attach(file);
+            }}
+          />
+        </div>
+      )}
+    </>
   );
 }
 

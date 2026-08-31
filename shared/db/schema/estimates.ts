@@ -36,7 +36,8 @@ type PresentationSnapshotColumn = {
   /** Absent reads as 'simple' — every snapshot written before the document had a mode. */
   mode?: "simple" | "full";
   design?: {
-    font?: "basic" | "serif" | "mono";
+    /** A lib/doc-fonts key. String at rest — the domain validates membership on read/write. */
+    font?: string;
     size?: number;
     accent?: string;
     bold?: boolean;
@@ -392,6 +393,20 @@ export const estimateLines = pgTable(
      * hand-priced. Null = hand-priced; `rate_cents` is the truth either way.
      */
     markupBps: integer("markup_bps"),
+    /**
+     * What KIND of cost this line is — material / labor / equipment / subcontract / other.
+     * Office-side categorisation (costing reads it later); the customer never sees it.
+     * Text, not an enum type: the vocabulary is validated at the boundary and a new kind
+     * must not need a migration.
+     */
+    lineType: text("line_type"),
+    /**
+     * Photos attached to the line — office-side reference material ("this is the panel"),
+     * never rendered on the customer copy. Jsonb like sub_items: attachments live and die
+     * with their line and are never queried independently. Each entry is a key into the
+     * org's proposal-photo storage plus the name it was attached under.
+     */
+    attachments: jsonb("attachments").$type<{ key: string; name: string }[]>(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),

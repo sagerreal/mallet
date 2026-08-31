@@ -40,6 +40,8 @@ export interface EstimateLineInput {
   readonly parentIndex?: number | null;
   readonly customerVisible?: boolean;
   readonly markupBps?: number | null;
+  readonly lineType?: "material" | "labor" | "equipment" | "subcontract" | "other" | null;
+  readonly attachments?: readonly { key: string; name: string }[] | null;
   /** The section this line sits under, as an index into the command's `sections`. */
   readonly sectionIndex?: number | null;
 }
@@ -299,6 +301,8 @@ export class DraftEstimateUseCase {
         driverQuantity,
         customerVisible: input.customerVisible ?? true,
         markupBps: input.markupBps ?? null,
+        lineType: input.lineType ?? null,
+        attachments: input.attachments ?? null,
         sectionId,
       });
       if (!isOk(line)) return line;

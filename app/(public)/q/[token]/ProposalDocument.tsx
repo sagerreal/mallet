@@ -11,6 +11,7 @@
  */
 
 import type { CSSProperties } from "react";
+import { docFontStack } from "@/lib/doc-fonts";
 import { ProposalPhotos } from "./ProposalPhotos";
 
 /** The snapshot shape as it reaches this page. Structural — no import from the office's state. */
@@ -29,7 +30,7 @@ export interface ProposalSnapshot {
   }[];
   readonly mode?: "simple" | "full";
   readonly design?: {
-    readonly font?: "basic" | "serif" | "mono";
+    readonly font?: string;
     readonly size?: number;
     readonly accent?: string;
     readonly bold?: boolean;
@@ -45,10 +46,6 @@ export interface ProposalSnapshot {
   };
 }
 
-const FONT_STACKS: Record<string, string> = {
-  serif: "'Iowan Old Style', Palatino, Charter, Georgia, serif",
-  mono: "var(--font-space-mono), ui-monospace, monospace",
-};
 
 /**
  * The shop's look as custom properties the sheet's own type scale reads.
@@ -59,7 +56,7 @@ const FONT_STACKS: Record<string, string> = {
  */
 export function snapshotSheetStyle(snapshot: ProposalSnapshot): CSSProperties {
   const design = snapshot.design ?? {};
-  const stack = design.font ? FONT_STACKS[design.font] : undefined;
+  const stack = docFontStack(design.font);
   const accent = design.accent && /^#[0-9a-fA-F]{6}$/.test(design.accent) ? design.accent : null;
   return {
     ...(stack ? { "--doc-font": stack } : {}),

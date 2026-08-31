@@ -71,6 +71,8 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
   customerVisible?: boolean;
   markupBps?: number;
   sectionIndex?: number;
+  lineType?: "material" | "labor" | "equipment" | "subcontract" | "other";
+  attachments?: { key: string; name: string }[];
 } {
   const sub = realSubItems(l.sub);
   return {
@@ -103,5 +105,7 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
     ...(l.hidden ? { customerVisible: false } : {}),
     ...(l.markupBps !== undefined ? { markupBps: l.markupBps } : {}),
     ...(l.sectionIndex !== undefined ? { sectionIndex: l.sectionIndex } : {}),
+    ...(l.ltype ? { lineType: l.ltype } : {}),
+    ...(l.att?.length ? { attachments: l.att.map((a) => ({ ...a })) } : {}),
   };
 }

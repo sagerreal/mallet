@@ -202,6 +202,28 @@ export function LineTable({
     commit(addComponent(lines, parentIndex, { d: "", q: 1, r: 0, qtyExpr: "qty" }));
   };
 
+  /** Copy a line after its block — an assembly comes with its parts, indexes remapped. */
+  const duplicateLine = (i: number) => {
+    const parts = componentIndexes(lines, i);
+    const after = (parts[parts.length - 1] ?? i) + 1;
+    const copies: ComposerLine[] = [
+      { ...lines[i]! },
+      ...parts.map((at) => ({ ...lines[at]!, parentIndex: after })),
+    ];
+    const next = [...lines.slice(0, after), ...copies, ...lines.slice(after)].map((l, idx) => {
+      // Lines BELOW the insertion keep pointing at their own parents, which just moved down.
+      if (idx > after + parts.length && l.parentIndex != null && l.parentIndex >= after) {
+        return { ...l, parentIndex: l.parentIndex + copies.length };
+      }
+      return l;
+    });
+    setScopeOpen(new Set<number>());
+    setSubOpen(new Set<number>());
+    setCollapsed(new Set<number>());
+    setSelected(after);
+    commit(next);
+  };
+
   const addLine = (sectionIndex?: number) =>
     commit([...lines, sectionIndex == null ? { d: "", q: 1, r: 0 } : { d: "", q: 1, r: 0, sectionIndex }]);
 
@@ -583,6 +605,7 @@ export function LineTable({
               onSelect={setSelected}
               onRemove={removeLine}
               onAddComponent={addComponentTo}
+              onDuplicate={duplicateLine}
             />
           )}
         </div>
