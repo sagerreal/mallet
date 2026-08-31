@@ -28,7 +28,7 @@
  * feeding the pricebook; the Photo chip returns when it attaches real photos.
  */
 
-import { Fragment, useId, useState } from "react";
+import { Fragment, useEffect, useId, useRef, useState } from "react";
 import { realSubItems, withSubPatch, type ComposerLine } from "./composer-state";
 import { ScopeEditor, SubItemEditor } from "./line-depth";
 import { LineRow } from "./line-row";
@@ -120,6 +120,17 @@ export function LineTable({
   /** Collapsed assemblies: the parent row stays, its component rows hide behind a subline. */
   const [collapsed, setCollapsed] = useState<ReadonlySet<number>>(new Set());
   const [subOpen, setSubOpen] = useState<ReadonlySet<number>>(new Set());
+  /** The footer's "More ▾" menu. Closes on an outside press, like any menu. */
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!moreOpen) return;
+    const close = (e: PointerEvent) => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
+    };
+    document.addEventListener("pointerdown", close);
+    return () => document.removeEventListener("pointerdown", close);
+  }, [moreOpen]);
   const toggle = (set: ReadonlySet<number>, i: number): ReadonlySet<number> => {
     const next = new Set(set);
     if (next.has(i)) next.delete(i);
@@ -193,6 +204,17 @@ export function LineTable({
 
   const addLine = (sectionIndex?: number) =>
     commit([...lines, sectionIndex == null ? { d: "", q: 1, r: 0 } : { d: "", q: 1, r: 0, sectionIndex }]);
+
+  /**
+   * A blank assembly: parent line plus one component counted off its quantity. The mock seeds
+   * a cedar-fence example here; the app's no-demo-data rule makes it blank instead. Selecting
+   * the parent docks the rail, whose driver-quantity hint teaches the qty-math model.
+   */
+  const addAssembly = () => {
+    const at = lines.length;
+    commit(addComponent([...lines, { d: "", q: 1, r: 0 }], at, { d: "", q: 1, r: 0, qtyExpr: "qty" }));
+    setSelected(at);
+  };
 
   const addSection = () =>
     onSections?.({ sections: [...sections, `Section ${sections.length + 1}`], lines });
@@ -488,12 +510,43 @@ export function LineTable({
                 <button type="button" className="lineedit-tool primary" onClick={() => addLine()}>
                   + Line item
                 </button>
-                {onSections && (
-                  <button type="button" className="lineedit-tool" onClick={addSection}>
-                    + Section
+                {/* The mock's footer grammar: ONE more button. Several extras gather behind
+                    "More ▾"; a lone extra (the GBB tier bars) renders flat — a one-item menu
+                    is a longer path to the same button. */}
+                {footerTools || onSections ? (
+                  <span className="more-wrap" ref={moreRef}>
+                    <button
+                      type="button"
+                      className="lineedit-tool"
+                      aria-expanded={moreOpen}
+                      aria-controls={`${uid}-more`}
+                      onClick={() => setMoreOpen((v) => !v)}
+                    >
+                      More ▾
+                    </button>
+                    {moreOpen && (
+                      <span
+                        className="more-menu"
+                        id={`${uid}-more`}
+                        onClick={() => setMoreOpen(false)}
+                      >
+                        {footerTools}
+                        {onSections && (
+                          <button type="button" className="lineedit-tool" onClick={addSection}>
+                            + Section
+                          </button>
+                        )}
+                        <button type="button" className="lineedit-tool" onClick={addAssembly}>
+                          + Assembly
+                        </button>
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  <button type="button" className="lineedit-tool" onClick={addAssembly}>
+                    + Assembly
                   </button>
                 )}
-                {footerTools}
               </div>
             </td>
           </tr>

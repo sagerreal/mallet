@@ -1538,6 +1538,16 @@
   .lineedit tr:hover .rowacts>*,.lineedit tr:focus-within .rowacts>*,.lineedit .rowacts>.on{opacity:1}
   .lineedit tfoot td{border-top:1px solid var(--line);background:var(--green-50);padding:0}
   .lineedit-bar{display:flex;align-items:center;gap:var(--space-1);padding:var(--space-1) var(--space-2)}
+  /* The footer's "More ▾" menu — the mock's grammar: the bar shows + Line item and one more
+     button; the secondary tools (From pricebook, + Section, + Assembly) live behind it. Pops
+     UP over the ledger like any dropdown; the no-float rule is the AI bar's, not this one's. */
+  .more-wrap{position:relative;display:inline-flex}
+  .more-menu{position:absolute;left:0;bottom:calc(100% + 7px);z-index:12;min-width:176px;
+    padding:var(--space-1);border:1px solid var(--line);border-radius:var(--radius-md);
+    background:var(--card);box-shadow:0 8px 24px rgb(32 33 30 / 12%)}
+  .more-menu .lineedit-tool{display:block;width:100%;border:0;background:transparent;
+    padding:var(--space-2);text-align:left;border-radius:var(--radius-xs)}
+  .more-menu .lineedit-tool:hover{background:var(--paper);color:var(--ink)}
   /* B3 provenance caption — a quiet "pricebook" tag under a drafted line, so the
      owner sees which prices came from their own book vs the AI's off-book adds. */
   .line-prov{display:inline-block;margin:var(--space-2xs) 0 0 var(--space-2xs);font-size:var(--type-xs);font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--green-700)}
@@ -1901,8 +1911,9 @@
   .lineedit-tool.primary{color:var(--ink)}
   .lineedit-tool[aria-pressed="true"]{background:var(--card);color:var(--ink);box-shadow:inset 0 0 0 1px var(--line)}
   /* footer-bar tools read as pressable at rest: white chips on the tinted band */
-  .lineedit-bar>.lineedit-tool{background:var(--card);border:1px solid var(--line);color:var(--ink)}
-  .lineedit-bar>.lineedit-tool:hover{border-color:var(--ink-3)}
+  .lineedit-bar>.lineedit-tool,.lineedit-bar .more-wrap>.lineedit-tool{background:var(--card);border:1px solid var(--line);color:var(--ink)}
+  .lineedit-bar>.lineedit-tool:hover,.lineedit-bar .more-wrap>.lineedit-tool:hover{border-color:var(--ink-3)}
+  .lineedit-bar .more-wrap>.lineedit-tool[aria-expanded="true"]{color:var(--ink);border-color:var(--ink-3)}
   .lineedit-bar{gap:var(--space-2);padding:var(--space-2) var(--space-3)}
   .lineedit-sep{width:1px;height:16px;background:var(--line);margin:0 var(--space-2);flex-shrink:0}
   .lineedit-spring{margin-left:auto}
