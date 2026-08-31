@@ -224,8 +224,13 @@ export function LineTable({
     commit(next);
   };
 
-  const addLine = (sectionIndex?: number) =>
+  const addLine = (sectionIndex?: number) => {
+    // The mock selects what it just made — the new line's details dock immediately, so the
+    // rail is never a hidden feature you discover by clicking a row.
+    setSelected(lines.length);
+    setRailFolded(false);
     commit([...lines, sectionIndex == null ? { d: "", q: 1, r: 0 } : { d: "", q: 1, r: 0, sectionIndex }]);
+  };
 
   /**
    * A blank assembly: parent line plus one component counted off its quantity. The mock seeds
@@ -236,6 +241,7 @@ export function LineTable({
     const at = lines.length;
     commit(addComponent([...lines, { d: "", q: 1, r: 0 }], at, { d: "", q: 1, r: 0, qtyExpr: "qty" }));
     setSelected(at);
+    setRailFolded(false);
   };
 
   const addSection = () =>

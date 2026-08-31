@@ -92,13 +92,7 @@ export function QuoteCard({
   /** Brief window after a reveal: rows animate in (CSS, reduced-motion safe). */
   materialize: boolean;
 }) {
-  // Command-bar text — local to the card; mirrored into state.desc in build/
-  // rebuild modes (the drafter reads it there), cleared after a refine.
-  // Initialized FROM state.desc so a seeded description (the composer's ?desc=
-  // handoff from the new-customer modal) lands visibly in the bar; later seeds
-  // (?job=/?revise=, which set desc post-mount) don't retro-fill it.
-  const [barText, setBarText] = useState(state.desc);
-  const [confirmRebuild, setConfirmRebuild] = useState(false);
+
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered
   // costs live on in the lines.
@@ -119,38 +113,6 @@ export function QuoteCard({
   const quoteIsEmpty = isGbb
     ? !(state.gbb?.opts.some((o) => hasRealLine(o.lines)) ?? false)
     : !hasRealLine(state.lines);
-
-  // The bar's mode follows the quote's state.
-  const barMode: "build" | "refine" | "rebuild" = quoteIsEmpty
-    ? "build"
-    : state.aiDrafted
-      ? "refine"
-      : "rebuild";
-
-  function runBar() {
-    setConfirmRebuild(false);
-    if (barMode === "refine") {
-      onRefine(barText);
-      setBarText("");
-    } else {
-      onAiDraft();
-    }
-  }
-
-  function submitBar() {
-    // Hand-typed lines are never replaced without an in-flow confirm.
-    if (barMode === "rebuild" && !confirmRebuild) {
-      setConfirmRebuild(true);
-      return;
-    }
-    runBar();
-  }
-
-  // Entering refine mode (a draft just landed) clears the bar — the build
-  // text served its purpose; the field now awaits corrections.
-  useEffect(() => {
-    if (barMode === "refine") setBarText("");
-  }, [barMode]);
 
   const [confirmSuggest, setConfirmSuggest] = useState(false);
   useEffect(() => {
@@ -329,20 +291,6 @@ export function QuoteCard({
             Good, Better &amp; Best
           </button>
         </div>
-        )}
-        {!untouched && (
-        <button
-          type="button"
-          className={`pricevis${state.priceDisplay === "total" ? " on" : ""}`}
-          title="Which numbers the customer sees. One total = scope prose + a single price at the bottom; your rates stay in the data either way. Optional add-on prices always show."
-          onClick={() =>
-            onUpdate({ priceDisplay: state.priceDisplay === "total" ? "lines" : "total" })
-          }
-        >
-          {state.priceDisplay === "total"
-            ? "$ Customer sees one total"
-            : "$ Customer sees every price"}
-        </button>
         )}
         {!untouched && (
           <div className="seg" role="group" aria-label="View">
@@ -583,73 +531,6 @@ export function QuoteCard({
               {fmt$(taxableAfterDiscount)} taxable.
             </div>
           ) : null}
-        </div>
-      )}
-
-      {/* The command bar — the ONE AI surface, BELOW the quote so manual entry
-          reads as the default (the table above is untouched, nothing autofocuses).
-          Mode follows the quote: empty → build; AI-drafted → refine; hand-typed
-          lines → rebuild behind an in-flow confirm (never silently replaced). */}
-      {!run && (
-        <div style={{ marginBottom: "var(--space-2xs)" }}>
-          <div className="aibar">
-            <input
-              type="text"
-              value={barText}
-              aria-label={
-                barMode === "refine"
-                  ? "Tell it what to change"
-                  : "Describe the job"
-              }
-              placeholder={
-                barMode === "refine"
-                  ? "What should change?"
-                  : barMode === "rebuild"
-                    ? "Rebuild the quote…"
-                    : "Describe the job…"
-              }
-              disabled={isDrafting}
-              onChange={(e) => {
-                setBarText(e.target.value);
-                setConfirmRebuild(false);
-                if (barMode !== "refine") onUpdate({ desc: e.target.value });
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && barText.trim() && !isDrafting) submitBar();
-              }}
-            />
-            <button
-              type="button"
-              className="aibar-go"
-              disabled={isDrafting || !barText.trim()}
-              onClick={submitBar}
-            >
-              {isDrafting ? "Working…" : barMode === "refine" ? "Update it" : "Build it"}
-            </button>
-          </div>
-          {confirmRebuild && (
-            <div style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
-              <span style={{ fontSize: "var(--type-base)", fontWeight: 600 }}>
-                Replaces the lines you typed — sure?
-              </span>
-              <button className="btn sm primary" onClick={runBar}>
-                Build it
-              </button>
-              <button className="btn sm ghost" onClick={() => setConfirmRebuild(false)}>
-                Keep mine
-              </button>
-            </div>
-          )}
-          {!confirmRebuild && barMode === "refine" && (
-            <p className="aibar-hint">
-              Corrections it should keep come back as one-tap saves below.
-            </p>
-          )}
-          {aiDraftError && (
-            <div style={{ fontSize: "var(--type-sm)", color: "var(--red, #c0392b)", marginTop: "var(--space-2)" }}>
-              {aiDraftError}
-            </div>
-          )}
         </div>
       )}
 
