@@ -127,6 +127,19 @@ export function LineTable({
     return next;
   };
 
+  /**
+   * The optional lines, wherever they were typed. They render last, together — see the band
+   * below. A component of an optional parent travels with it and is not listed here.
+   */
+  const optionalIndexes = lines.reduce<number[]>((found, line, i) => {
+    if (line.parentIndex == null && line.opt) found.push(i);
+    return found;
+  }, []);
+  const optionalTotal = optionalIndexes.reduce(
+    (sum, i) => sum + Math.round((lines[i]!.q ?? 0) * (lines[i]!.r ?? 0) * 100),
+    0,
+  ) / 100;
+
   // Every write funnels through here so a component edit always reprices its parent.
   const commit = (next: ComposerLine[]) => onLines(withRollUps(next));
 
@@ -345,9 +358,12 @@ export function LineTable({
         </thead>
         <tbody>
           {/* Ungrouped lines lead: on a quote with no sections that is every line, and on one
-              with sections they are the work that sits above the first heading. */}
+              with sections they are the work that sits above the first heading.
+              OPTIONAL lines are not here — they are gathered at the foot, below. */}
           {lines.map((line, i) =>
-            line.parentIndex == null && line.sectionIndex == null ? renderRow(line, i) : null,
+            line.parentIndex == null && line.sectionIndex == null && !line.opt
+              ? renderRow(line, i)
+              : null,
           )}
           {sections.map((name, at) => (
             <Fragment key={`section-${at}`}>
@@ -373,7 +389,9 @@ export function LineTable({
                 </td>
               </tr>
               {lines.map((line, i) =>
-                line.parentIndex == null && line.sectionIndex === at ? renderRow(line, i) : null,
+                line.parentIndex == null && line.sectionIndex === at && !line.opt
+                  ? renderRow(line, i)
+                  : null,
               )}
               <tr>
                 <td colSpan={cols}>
@@ -389,6 +407,19 @@ export function LineTable({
               </tr>
             </Fragment>
           ))}
+          {/* Upgrade options, gathered at the foot whatever section they were typed in.
+              The customer's copy renders add-ons after the work — an editor that shows them
+              first, or scattered through the sections, is previewing a different document than
+              the one that gets sent. */}
+          {optionalIndexes.length > 0 && (
+            <>
+              <tr className="upgraderow">
+                <td colSpan={cols - 1}>Upgrade options</td>
+                <td className="sectionrow-total">{fmt$(optionalTotal)}</td>
+              </tr>
+              {optionalIndexes.map((i) => renderRow(lines[i]!, i))}
+            </>
+          )}
         </tbody>
         <tfoot>
           <tr>
