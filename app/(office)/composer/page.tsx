@@ -344,6 +344,8 @@ export default function ComposerPage() {
           customerVisible: l.customerVisible,
           markupBps: l.markupBps ?? null,
           sectionId: l.sectionId ?? null,
+          lineType: l.lineType ?? null,
+          attachments: l.attachments ?? null,
         })),
         sections: dto.sections.map((section) => ({ id: section.id, name: section.name })),
         jobCosts: dto.jobCosts.map((cost) => ({

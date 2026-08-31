@@ -32,7 +32,10 @@ export type PresentationPageKey =
  */
 export type PresentationMode = "simple" | "full";
 
-export type PresentationFont = "basic" | "serif" | "mono";
+import type { DocFontKey } from "@/lib/doc-fonts";
+
+/** A key from lib/doc-fonts DOC_FONTS. Unknown keys render the default face — never a crash. */
+export type PresentationFont = DocFontKey;
 
 /** One photo, or a before/after PAIR — the thing trades actually send. */
 export interface ComposerPhoto {

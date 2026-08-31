@@ -15,11 +15,7 @@ import type {
 } from "./presentation-state";
 import { designOf, modeOf } from "./presentation-state";
 
-const FONT_STACKS: Record<ComposerDesign["font"], string> = {
-  basic: "",
-  serif: "'Iowan Old Style', Palatino, Charter, Georgia, serif",
-  mono: "var(--font-space-mono), ui-monospace, monospace",
-};
+import { docFontStack } from "@/lib/doc-fonts";
 
 /**
  * The design as custom properties the sheet's own type scale reads (`--type-doc-*` derive
@@ -27,7 +23,7 @@ const FONT_STACKS: Record<ComposerDesign["font"], string> = {
  * defaults here, so a document with no design set renders exactly as it always did.
  */
 export function sheetStyle(design: ComposerDesign): CSSProperties {
-  const stack = FONT_STACKS[design.font];
+  const stack = docFontStack(design.font);
   return {
     ...(stack ? { "--doc-font": stack } : {}),
     "--doc-size": `${design.size}px`,

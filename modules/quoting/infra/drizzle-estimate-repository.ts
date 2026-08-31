@@ -310,6 +310,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         sectionId: lp.sectionId ?? null,
         customerVisible: lp.customerVisible ?? true,
         markupBps: lp.markupBps ?? null,
+        lineType: lp.lineType ?? null,
+        attachments: lp.attachments ? [...lp.attachments] : null,
         updatedAt,
         deletedAt: null as Date | null,
       };
@@ -339,6 +341,8 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           sectionId: sql`excluded.section_id`,
           customerVisible: sql`excluded.customer_visible`,
           markupBps: sql`excluded.markup_bps`,
+          lineType: sql`excluded.line_type`,
+          attachments: sql`excluded.attachments`,
           updatedAt: sql`excluded.updated_at`,
           deletedAt: sql`excluded.deleted_at`,
         },

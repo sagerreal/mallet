@@ -178,12 +178,14 @@ describe("LineTable — the unit", () => {
   });
 
   it("has no unit column on the pricing view — the rail's quantity editor owns it there", () => {
-    table([fence]);
+    // A COSTED line: hand-typed (simple) lines edit everything in the row and their rail
+    // carries no math rows at all, exactly like the mock's simple inspector.
+    table([{ ...fence, c: 2.1 }]);
     expect(screen.queryByLabelText("Unit, line 1")).toBeNull();
     fireEvent.click(screen.getByLabelText("Description, line 1"));
     // The unit input opens with the rail's quantity editor — one property editor at a time.
     fireEvent.click(screen.getByText("Quantity").closest("button")!);
-    expect(screen.getByLabelText("Unit")).toBeTruthy();
+    expect(screen.getByLabelText("Unit", { exact: true })).toBeTruthy();
   });
 });
 
