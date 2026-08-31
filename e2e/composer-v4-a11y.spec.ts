@@ -41,6 +41,8 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.goto("/composer");
     await settle(page);
 
+    // The composer starts with ZERO rows now (the mock's empty state) — ask for the first one.
+    await page.getByRole("button", { name: "+ Add line item" }).click();
     await page.getByLabel("Description, line 1").fill("Cedar privacy fence");
     await page.getByLabel("Quantity, line 1").fill("100");
     await page.getByLabel("Unit, line 1").fill("LF");
@@ -56,7 +58,8 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.getByLabel("Price, line 3").fill("240");
 
     // The costing view — markup column, rolled-up cells, and the job-costs card.
-    await page.getByText("Show your cost").click();
+    // The costing view is the header segmented control now, not a footer toggle.
+    await page.getByRole("button", { name: "Costing" }).click();
     await settle(page);
     await scan(page, "composer · estimate, costing view");
   });
@@ -64,9 +67,11 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
   test("the job-costs picker, open", async ({ page }) => {
     await page.goto("/composer");
     await settle(page);
+    await page.getByRole("button", { name: "+ Add line item" }).click();
     await page.getByLabel("Description, line 1").fill("Interior repaint");
     await page.getByLabel("Price, line 1").fill("4495");
-    await page.getByText("Show your cost").click();
+    // Job costs live in their own collapsed panel beside Pricing now, not inside the costing view.
+    await page.getByText("Other job costs").click();
     await page.getByText("+ Add job cost").click();
     await page.getByLabel("What the cost is, job cost 1").fill("Dumpster");
     await page.getByLabel("Amount, job cost 1").fill("400");
@@ -78,6 +83,7 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
   test("the proposal document — Simple, then Full with every section on", async ({ page }) => {
     await page.goto("/composer");
     await settle(page);
+    await page.getByRole("button", { name: "+ Add line item" }).click();
     await page.getByLabel("Description, line 1").fill("Interior repaint");
     await page.getByLabel("Price, line 1").fill("4495");
     await page.getByRole("tab", { name: /presentation/i }).click();
@@ -111,11 +117,13 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
   test("the customer's copy of a proposal", async ({ page }) => {
     await page.goto("/composer");
     await settle(page);
-    await page.getByPlaceholder("Customer name").fill("Cardfix");
+    // The customer field is inline in the masthead now — "For [Customer]".
+    await page.getByPlaceholder("Customer").fill("Cardfix");
     await page.waitForTimeout(700);
     const match = page.locator(".cmp-opt").filter({ hasText: /Cardfix/i }).first();
     if ((await match.count()) === 0) test.skip(true, "no customer to quote in this org");
     await match.click();
+    await page.getByRole("button", { name: "+ Add line item" }).click();
     await page.getByLabel("Description, line 1").fill("Interior repaint — 3 bedrooms");
     await page.getByLabel("Price, line 1").fill("4495");
 

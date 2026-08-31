@@ -786,6 +786,9 @@ export default function ComposerPage() {
   }
 
   async function sendComposer() {
+    // A Save draft is already persisting this quote — a concurrent send would draft it AGAIN
+    // and deliver the duplicate. The buttons disable for this; the guard makes it structural.
+    if (isSavingDraft) return;
     if (!selectedLead) return; // send requires a lead
     if (!hasRealLine(linesForSend(cs))) return;
     // Send-only gate: no destination on file for the chosen channel. The Send
@@ -915,6 +918,8 @@ export default function ComposerPage() {
   // quote page (/q/<token>) in a new tab — the exact view the customer will see.
   // In GBB format that includes the three-option tier picker.
   async function previewComposer() {
+    if (isSavingDraft) return; // same duplicate-draft guard as sendComposer
+
     if (!selectedLead) return;
     if (!hasRealLine(linesForSend(cs))) return;
     setSendError(null);
@@ -981,7 +986,9 @@ export default function ComposerPage() {
   const recTierName = recTier ? tierDisplayName(recTier) : null;
 
   return (
-    <div>
+    // .estimate-editor scopes the quiet-field exemption (see prototype.css) to THIS surface —
+    // .lineedit is shared with the PO modals and checklist editors, which keep their borders.
+    <div className="estimate-editor">
       {/* The masthead: the title, and the one line saying who it is for, what it is called and
           how long it stands. The customer lives HERE rather than in a labelled block above —
           "For Dana Whitfield · EST-1042 · Valid 30 days" is one sentence a person checks at a
@@ -994,6 +1001,22 @@ export default function ComposerPage() {
         quoteNum={null}
         onNewCust={composerNewCust}
         isAddingCust={createCustomerMutation.isPending}
+        // The mock's top-right actions — the SAME handlers and the SAME gates as the Send card,
+        // so the two can never disagree about whether this quote may go out.
+        onPreview={previewComposer}
+        onSend={sendComposer}
+        previewGateReason={sendGateReason(selectedLead != null, linesForSend(cs), recTierName)}
+        sendGateReason={
+          sendGateReason(selectedLead != null, linesForSend(cs), recTierName) ??
+          (selectedLead != null
+            ? cs.sendChannel === "text" && !smsGate.ready
+              ? smsGate.note
+              : deliveryGateReason(cs.sendChannel, selectedLead)
+            : null)
+        }
+        isSending={isSending}
+        isSavingDraft={isSavingDraft}
+        sendError={sendError}
       />
 
       {/* Two full-page tabs, like the office page: Estimate = build the numbers & scope;
@@ -1077,23 +1100,6 @@ export default function ComposerPage() {
           customer has a scoped walkthrough (the tech→office estimating lane). */}
       <SiteReference leadId={cs.leadId} />
 
-      {/* Measure — satellite measurement's point of entry, always available on
-          the quote page (no customer or job needed; org toggle gates it). A
-          trace made here is HELD on this quote (cs.heldTraces) and seeded
-          client-side; a picked customer's measured jobs still list their
-          capture rows. A ?job= boot has already seeded the whole job, so its
-          rows start "Seeded". */}
-      <MeasuredSurfacesPanel
-        paramJobId={jobId}
-        leadId={cs.leadId}
-        wholeJobSeeded={measurementNotice !== null}
-        heldTraces={cs.heldTraces}
-        onAddHeldTrace={(trace) => setCs((prev) => addHeldTrace(prev, trace))}
-        onSeedLines={(lines) =>
-          setCs((prev) => appendMeasurementLines(prev, seedLinesToComposerLines(lines)))
-        }
-      />
-
       {/* The quote — format toggle, authoring tools, line editor / tier panels */}
       <QuoteCard
         state={cs}
@@ -1127,7 +1133,24 @@ export default function ComposerPage() {
         materialize={materialize}
       />
 
-      {/* Pricing — discount, deposit, tax */}
+      {/* Measure BELOW the quote, not above it — the mock leads with the line items; a card of
+          measuring tools first pushed the actual quote below the fold on Owen's screen.
+          Satellite measurement's point of entry, always available (no customer or job needed;
+          org toggle gates it). A trace made here is HELD on this quote (cs.heldTraces) and
+          seeded client-side; a ?job= boot has already seeded the whole job, so its rows start
+          "Seeded". */}
+      <MeasuredSurfacesPanel
+        paramJobId={jobId}
+        leadId={cs.leadId}
+        wholeJobSeeded={measurementNotice !== null}
+        heldTraces={cs.heldTraces}
+        onAddHeldTrace={(trace) => setCs((prev) => addHeldTrace(prev, trace))}
+        onSeedLines={(lines) =>
+          setCs((prev) => appendMeasurementLines(prev, seedLinesToComposerLines(lines)))
+        }
+      />
+
+
       {/* Pricing and Other job costs sit side by side, both collapsed to a summary — two
           quiet facts about the quote, not two full-width forms to scroll past. */}
       <div className="cardrow">
@@ -1135,8 +1158,10 @@ export default function ComposerPage() {
         <JobCostsPanel state={cs} onUpdate={update} />
       </div>
 
-      {/* Message — intro + valid days */}
-      <MessageCard state={cs} onUpdate={update} lead={selectedLead} />
+      {/* Terms — the terms picker alone. The intro moved into the Send card (it is the note
+          that rides with the link) and validity into the masthead, each edited where it is
+          read. */}
+      <MessageCard state={cs} onUpdate={update} />
 
       {/* Send — channel, destination, follow-ups, actions (the last act) */}
       <SendCard

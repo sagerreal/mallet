@@ -17,6 +17,9 @@ import { useAppStore } from "@/lib/store/app-store";
 import type { Lead } from "@/lib/store/types";
 import { realTierCount, type ComposerState } from "./composer-state";
 
+/** Matches the server's intro bound; the counter lives with the send now, where the field is. */
+const INTRO_MAX_CHARS = 1200;
+
 // ---- Delivery contact field -------------------------------------------------
 // Editable phone/email for the chosen send channel. A customer can be added by
 // name alone (quick-add), so the contact the quote sends to may be missing — this
@@ -132,7 +135,27 @@ export function SendCard({
 
   return (
     <div className="card" style={{ borderColor: "#E6DCC4" }}>
-      <h3 style={{ marginTop: "0" }}>Send</h3>
+      <h3 style={{ marginTop: "0" }}>
+        Send
+        {!lead && (
+          <span className="muted" style={{ fontWeight: 500, fontSize: "var(--type-sm)", marginLeft: "var(--space-2)" }}>
+            add a customer above
+          </span>
+        )}
+      </h3>
+
+      {/* The note that rides with the link — the mock's first element. This IS the intro
+          (state.intro); it lived in a separate Message accordion, which meant the words a
+          customer reads first were composed a card away from the button that sends them. */}
+      <textarea
+        rows={2}
+        maxLength={INTRO_MAX_CHARS}
+        placeholder="A short note that rides with the link…"
+        aria-label="A short note that rides with the link"
+        value={state.intro}
+        onChange={(e) => onUpdate({ intro: e.target.value.slice(0, INTRO_MAX_CHARS) })}
+        style={{ width: "100%", marginBottom: "var(--space-3)", resize: "vertical" }}
+      />
 
       {/* Text / email channel toggle */}
       <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-3)" }}>
@@ -154,56 +177,15 @@ export function SendCard({
         </button>
       </div>
 
-      {state.sendChannel === "text" ? (
-        <>
-          <b style={{ fontSize: "var(--type-base)" }}>Send by text</b>
-          <p
-            className="muted"
-            style={{ fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}
-          >
-            They tap the link, see it, approve it — no inbox to dig
-            through, nothing blocks the send.
-          </p>
-          {/* Editable — the number the quote texts to (persists to the customer). */}
-          {lead && <DeliveryContactField lead={lead} channel="text" />}
-          {/* Gating note: SMS delivery requires a provisioned Twilio number (A2P).
-              The call is wired; if Twilio isn't configured the server returns
-              PRECONDITION_FAILED and the composer shows the error. */}
-        </>
-      ) : (
-        <>
-          <b style={{ fontSize: "var(--type-base)" }}>Send by email</b>
-          <p
-            className="muted"
-            style={{ fontSize: "var(--type-sm)", margin: "var(--space-1) 0 0" }}
-          >
-            They click the link in the email, see the quote, and approve
-            right there.
-          </p>
-          {/* Editable — the address the quote emails to (persists to the customer). */}
-          {lead && <DeliveryContactField lead={lead} channel="email" />}
-          {/* Gating note: email delivery requires RESEND_API_KEY + EMAIL_FROM.
-              Gating is enforced server-side; the call is wired. */}
-        </>
-      )}
-
-      {/* Follow-up toggle */}
-      <div className="fu-toggle">
-        <div
-          className={`switch${state.fuOn ? "" : " off"}`}
-          onClick={() => onUpdate({ fuOn: !state.fuOn })}
-        />
-        <div>
-          <b>
-            Automatic follow-ups: {state.fuOn ? "on" : "off"}
-          </b>{" "}
-          <span className="muted" style={{ fontSize: "var(--type-sm)" }}>
-            {state.fuOn
-              ? "— 2 reminders, then it flags you to call"
-              : "— you'll remind them yourself"}
-          </span>
-        </div>
-      </div>
+      {/* The destination for the chosen channel. No "Send by text / they tap the link"
+          narration — the toggle names the channel, and Owen has cut this class of explainer
+          from the composer four times. Editable; persists to the customer.
+          (SMS needs a provisioned Twilio number, email needs RESEND_API_KEY + EMAIL_FROM —
+          both gates are server-enforced and surface through deliveryGateReason/sendError.)
+          The automatic-follow-ups toggle is gone on Owen's instruction ("get rid of this
+          automatic follow up"); state.fuOn keeps its default and the board still manages
+          follow-ups per quote. */}
+      {lead && <DeliveryContactField lead={lead} channel={state.sendChannel === "text" ? "text" : "email"} />}
 
       {/* Send error — shown inline above the buttons */}
       {sendError && (
@@ -255,23 +237,32 @@ export function SendCard({
         >
           {isSavingDraft ? "Saving…" : "Save draft"}
         </button>
-        <button
-          className="btn primary"
-          onClick={onSend}
-          disabled={sendGated || isSending || isSavingDraft}
-          aria-busy={isSending}
-          style={{
-            opacity: sendGated || isSending || isSavingDraft ? 0.6 : 1,
-            cursor: sendGated || isSending || isSavingDraft ? "not-allowed" : "pointer",
-          }}
-        >
-          {isSending
-            ? "Sending…"
-            : tierCount >= 2
-              ? `Send quote — ${tierCount} options`
-              : "Send quote"}
-        </button>
       </div>
+
+      {/* The mock's dominant CTA: full width, dark, the last thing on the page. Preview and
+          Save draft stay in the small row above — the mock keeps them out of the card entirely
+          (they ride the masthead), but Save draft has no masthead seat, so the row holds both. */}
+      <button
+        className="btn primary"
+        onClick={onSend}
+        disabled={sendGated || isSending || isSavingDraft}
+        aria-busy={isSending}
+        style={{
+          width: "100%",
+          marginTop: "var(--space-3)",
+          background: "var(--pri-bg)",
+          color: "var(--pri-fg)",
+          borderColor: "var(--pri-bg)",
+          opacity: sendGated || isSending || isSavingDraft ? 0.6 : 1,
+          cursor: sendGated || isSending || isSavingDraft ? "not-allowed" : "pointer",
+        }}
+      >
+        {isSending
+          ? "Sending…"
+          : tierCount >= 2
+            ? `Send estimate — ${tierCount} options`
+            : "Send estimate"}
+      </button>
     </div>
   );
 }

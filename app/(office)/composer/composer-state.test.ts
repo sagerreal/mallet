@@ -117,12 +117,12 @@ describe("switchToGbb", () => {
     );
   });
 
-  it("starts Better and Best with one empty row each", () => {
+  it("starts Better and Best EMPTY — zero rows is the empty encoding, never a blank row", () => {
+    // A manufactured blank row defeats the untouched gate and the table's empty state; the
+    // GBB→Single round trip used to land on exactly that.
     const patch = switchToGbb(makeState({ lines: [line("Job", 1, 100)] }));
-    const better = patch.gbb!.opts[1]!;
-    const best = patch.gbb!.opts[2]!;
-    expect(better.lines).toEqual([{ d: "", q: 1, r: 0 }]);
-    expect(best.lines).toEqual([{ d: "", q: 1, r: 0 }]);
+    expect(patch.gbb!.opts[1]!.lines).toEqual([]);
+    expect(patch.gbb!.opts[2]!.lines).toEqual([]);
   });
 
   it("clones the lines — editing a tier later never mutates the single-format lines", () => {
@@ -205,11 +205,11 @@ describe("switchToSingle", () => {
     expect("gbb" in patch).toBe(false);
   });
 
-  it("falls back to one empty row when the recommended tier has no lines", () => {
+  it("keeps zero rows when the recommended tier has no lines — the empty state takes over", () => {
     const gbb = makeGbb();
     const emptied = updateTier(gbb, "good", { lines: [] });
     const patch = switchToSingle(makeState({ format: "gbb", gbb: emptied }));
-    expect(patch.lines).toEqual([{ d: "", q: 1, r: 0 }]);
+    expect(patch.lines).toEqual([]);
   });
 
   it("is a no-op when already in single format", () => {
@@ -639,7 +639,8 @@ describe("applyComposerPatch — stale switch-note clearing", () => {
     const prev = noted();
     applyComposerPatch(prev, { lines: [line("Job", 1, 100)] });
     expect(prev.switchNote).toBe("Your lines moved into Good — Better & Best start empty.");
-    expect(prev.lines).toEqual([{ d: "", q: 1, r: 0 }]);
+    // The composer starts with ZERO rows now (the mock's model); immutability is the point here.
+    expect(prev.lines).toEqual([]);
   });
 });
 
@@ -818,9 +819,11 @@ describe("applyMeasurementSeed", () => {
     expect(aiDraftForPayload(next)).toBeNull();
   });
 
-  it("falls back to one blank line when every room's only quantity was a gap or unconfirmed", () => {
+  it("leaves the empty state standing when every room's only quantity was a gap or unconfirmed", () => {
+    // The empty state carries its own add button now — the old "render a row to click into"
+    // justification is gone with it.
     const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", []);
-    expect(next.lines).toEqual([{ d: "", q: 1, r: 0 }]);
+    expect(next.lines).toEqual([]);
   });
 
   it("does not mutate the seed lines array", () => {
@@ -984,9 +987,9 @@ describe("applyReviseSeed", () => {
     expect(next.gbb?.rec).toBe("best");
     expect(next.gbb?.opts.map((o) => o.name)).toEqual(["Basic", "Standard", "Premium"]);
     expect(next.gbb?.opts[0]?.lines).toEqual([{ d: "One coat", q: 1, r: 900 }]);
-    // The tier with no lines still renders one empty editable row, never a hole.
-    expect(next.gbb?.opts[1]?.lines).toHaveLength(1);
-    expect(next.gbb?.opts[1]?.lines[0]?.d).toBe("");
+    // The tier with no lines stays EMPTY — its table renders the empty state, never a hole
+    // and never a manufactured blank row.
+    expect(next.gbb?.opts[1]?.lines).toEqual([]);
   });
 
   // The walkthrough link must survive a revision. Every re-entry into the composer (Edit on a

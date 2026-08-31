@@ -25,10 +25,8 @@ export function PricingCard({
           className="reveal-head"
           onClick={() => onUpdate({ priceOpen: !state.priceOpen })}
         >
-          <span className="caret">▸</span> Pricing{" "}
-          <span className="muted" style={{ fontWeight: 500 }}>
-            — {priceSum || "discount, deposit, tax"}
-          </span>
+          <span className="caret">▸</span> Pricing
+          <span className="reveal-sum">{priceSum || "discount, deposit, tax"}</span>
         </div>
         <div className="reveal-body">
         <div style={{ display: "flex", gap: "var(--space-4)" }}>

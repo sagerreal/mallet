@@ -332,18 +332,10 @@ export function LineTable({
     );
   };
 
-  /**
-   * UNTOUCHED, not merely blank.
-   *
-   * A single blank row is the table's own scaffolding, and rendering it asks the office to
-   * decode an empty form — so the empty state stands in its place. But the moment they ASK for
-   * a line the table has to appear, even though that line is also blank: gating on blankness
-   * alone made "+ Add line item" look like it did nothing, which the test caught before this
-   * shipped. One scaffolding row means untouched; two means they asked.
-   */
-  const untouched =
-    lines.length <= 1 && lines.every((line) => (line.d ?? "").trim() === "" && !line.opt);
-  if (untouched && sections.length === 0) {
+  // ZERO rows means untouched — the composer starts with none, exactly like the mock, so one
+  // press of "+ Add line item" yields exactly one row. (The previous gate tolerated one blank
+  // scaffolding row, and the first press appended a second.)
+  if (lines.length === 0 && sections.length === 0) {
     return (
       <div className={`lineedit${materialize ? " materialize" : ""}`}>
         <div className="lineedit-empty">
@@ -382,8 +374,8 @@ export function LineTable({
             <th>Description</th>
             <th className="num">Qty</th>
             <th>Unit</th>
-            <th className="num">Price</th>
-            {showCost && <th className="num">Your cost</th>}
+            <th className="num">Unit price</th>
+            {showCost && <th className="num">Unit cost</th>}
             {showCost && <th className="num">Markup</th>}
             <th className="num">Amount</th>
             <th aria-hidden="true"></th>
@@ -459,7 +451,7 @@ export function LineTable({
             <td colSpan={cols}>
               <div className="lineedit-bar">
                 <button type="button" className="lineedit-tool primary" onClick={() => addLine()}>
-                  + Add line
+                  + Line item
                 </button>
                 {onSections && (
                   <button type="button" className="lineedit-tool" onClick={addSection}>

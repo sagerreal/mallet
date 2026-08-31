@@ -9,7 +9,6 @@
 
 import { fmt$ } from "@/lib/format";
 import {
-  emptyLine,
   gbbTierTotal,
   updateTier,
   type ComposerLine,

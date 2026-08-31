@@ -193,10 +193,8 @@ export function JobCostsPanel({
           className="reveal-head"
           onClick={() => onUpdate({ jobCostsOpen: !state.jobCostsOpen })}
         >
-          <span className="caret">▸</span> Other job costs{" "}
-          <span className="muted" style={{ fontWeight: 500 }}>
-            — {summary}
-          </span>
+          <span className="caret">▸</span> Other job costs
+          <span className="reveal-sum">{summary}</span>
         </div>
         <div className="reveal-body">
           <JobCostsCard

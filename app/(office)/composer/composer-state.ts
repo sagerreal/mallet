@@ -267,7 +267,10 @@ export const INITIAL_STATE: ComposerState = {
   jobId: null, // overridden from ?job= in ComposerPage (scoped card / Build-the-price)
   custQuery: "",
   format: "single",
-  lines: [emptyLine()],
+  // ZERO rows, not one blank scaffolding row. The blank row made the empty state gate on
+  // "one blank line", so the first press of "+ Add line item" appended a SECOND blank — Owen's
+  // screenshot showed exactly that: two "Describe the work…" rows from one click.
+  lines: [],
   gbb: null,
   sections: [],
   jobCosts: [],
@@ -415,7 +418,8 @@ export function tierNamesForPayload(gbb: GBBDraft): TierNames {
  */
 export function switchToGbb(state: ComposerState): Partial<ComposerState> {
   if (state.format === "gbb") return {};
-  const lines = state.lines.length > 0 ? cloneLines(state.lines) : [emptyLine()];
+  // No blank-row fallback: zero rows IS the empty encoding now (see INITIAL_STATE.lines).
+  const lines = cloneLines(state.lines);
   if (state.gbb) {
     const gbb = updateTier(state.gbb, state.gbb.rec, { lines });
     const recTier = gbb.opts.find((o) => o.k === gbb.rec);
@@ -432,8 +436,8 @@ export function switchToGbb(state: ComposerState): Partial<ComposerState> {
       rec: "good",
       opts: [
         { k: "good", name: "Good", title: "", note: "", lines },
-        { k: "better", name: "Better", title: "", note: "", lines: [emptyLine()] },
-        { k: "best", name: "Best", title: "", note: "", lines: [emptyLine()] },
+        { k: "better", name: "Better", title: "", note: "", lines: [] },
+        { k: "best", name: "Best", title: "", note: "", lines: [] },
       ],
     },
     switchNote: "Your lines moved into Good — Better & Best start empty.",
@@ -444,8 +448,7 @@ export function switchToGbb(state: ComposerState): Partial<ComposerState> {
 export function switchToSingle(state: ComposerState): Partial<ComposerState> {
   if (state.format === "single") return {};
   const rec = recommendedTier(state);
-  const lines =
-    rec && rec.lines.length > 0 ? cloneLines(rec.lines) : [emptyLine()];
+  const lines = rec ? cloneLines(rec.lines) : [];
   return {
     format: "single",
     lines,
@@ -543,7 +546,9 @@ export function applyMeasurementSeed(
   leadId: string,
   seedLines: ComposerLine[]
 ): ComposerState {
-  const lines = seedLines.length > 0 ? cloneLines(seedLines) : [emptyLine()];
+  // A seed with nothing in it leaves the empty state standing — it has its own add button now,
+  // so the old "render a row to click into" justification no longer holds.
+  const lines = cloneLines(seedLines);
   return { ...state, leadId, lines };
 }
 
@@ -695,7 +700,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
   const tiered = seed.lines.some((l) => l.tier != null);
 
   if (!tiered) {
-    const lines = seed.lines.length > 0 ? seed.lines.map(toLine) : [emptyLine()];
+    const lines = seed.lines.map(toLine);
     return {
       ...state,
       leadId: seed.leadId,
@@ -718,7 +723,9 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
 
   const tierLines = (k: TierKey): ComposerLine[] => {
     const ls = seed.lines.filter((l) => l.tier === k).map(toLine);
-    return ls.length > 0 ? ls : [emptyLine()];
+    // An empty tier stays empty — its table renders the empty state, never a hole and never
+    // a manufactured blank row.
+    return ls;
   };
   const names = seed.tierNames;
   const fallbackNames = { good: "Good", better: "Better", best: "Best" } as const;

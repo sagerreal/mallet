@@ -161,8 +161,8 @@ describe("ComposerPage — Save draft", () => {
     render(<ComposerPage />);
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
 
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
-    expect(screen.getByRole("alert").textContent).toMatch(/not saved/i);
+    await waitFor(() => expect(screen.getAllByRole("alert")[0]!).toBeTruthy());
+    expect(screen.getAllByRole("alert")[0]!.textContent).toMatch(/not saved/i);
     expect(routerPush).not.toHaveBeenCalled();
   });
 
@@ -190,7 +190,7 @@ describe("ComposerPage — Save draft", () => {
 
     draftMutateAsync.mockRejectedValueOnce(new Error("nope"));
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByRole("alert")[0]!).toBeTruthy());
 
     expect(archiveMutate).not.toHaveBeenCalled();
   });

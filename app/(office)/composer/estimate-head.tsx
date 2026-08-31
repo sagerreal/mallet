@@ -22,6 +22,13 @@ export function EstimateHead({
   quoteNum,
   onNewCust,
   isAddingCust,
+  onPreview,
+  onSend,
+  previewGateReason,
+  sendGateReason,
+  isSending,
+  isSavingDraft,
+  sendError,
 }: {
   state: ComposerState;
   onUpdate: (patch: Partial<ComposerState>) => void;
@@ -32,17 +39,54 @@ export function EstimateHead({
   quoteNum: string | null;
   onNewCust: () => void;
   isAddingCust: boolean;
+  /** The top-right actions — the mock's "Preview customer copy" and "Send estimate". */
+  onPreview: () => void;
+  onSend: () => void;
+  /** Why preview/send are unavailable, or null when they may run. Shared with the Send card. */
+  previewGateReason: string | null;
+  sendGateReason: string | null;
+  isSending: boolean;
+  /**
+   * A Save draft is in flight. Both actions disable during it, exactly as the Send card's do —
+   * otherwise this Send and that Save both call quoting.draft and persist TWO estimates for
+   * one quote: a draft in the rail and a sent copy at the customer.
+   */
+  isSavingDraft: boolean;
+  /** The last send/preview failure. Rendered HERE too — an error a scroll away is a silent no-op. */
+  sendError: string | null;
 }) {
   return (
     <div className="esthead">
-      <input
-        className="esthead-title"
-        value={state.title}
-        placeholder="Estimate title"
-        aria-label="Estimate title"
-        maxLength={200}
-        onChange={(e) => onUpdate({ title: e.target.value })}
-      />
+      <div className="esthead-row">
+        <input
+          className="esthead-title"
+          value={state.title}
+          placeholder="Estimate title"
+          aria-label="Estimate title"
+          maxLength={200}
+          onChange={(e) => onUpdate({ title: e.target.value })}
+        />
+        <div className="esthead-acts">
+          <button
+            type="button"
+            className="btn sm"
+            disabled={previewGateReason !== null || isSending || isSavingDraft}
+            title={previewGateReason ?? "Open the page the customer will see"}
+            onClick={onPreview}
+          >
+            Preview customer copy
+          </button>
+          <button
+            type="button"
+            className="btn sm primary"
+            disabled={sendGateReason !== null || isSending || isSavingDraft}
+            title={sendGateReason ?? undefined}
+            onClick={onSend}
+          >
+            {isSending ? "Sending…" : "Send estimate"}
+          </button>
+        </div>
+      </div>
       <div className="esthead-meta">
         <span className="esthead-for">For</span>
         {lead ? (
@@ -69,7 +113,7 @@ export function EstimateHead({
         </span>
         {/* A quote that has never been saved has no number yet, and inventing one would be a
             number the office could quote to a customer and never find again. */}
-        <span>{quoteNum ?? "Draft"}</span>
+        {quoteNum ? <span>{quoteNum}</span> : <span className="esthead-draft">Draft</span>}
         <span className="esthead-dot" aria-hidden="true">
           ·
         </span>
@@ -91,6 +135,11 @@ export function EstimateHead({
           days
         </label>
       </div>
+      {sendError && (
+        <p style={{ color: "var(--red)", fontSize: "var(--type-sm)", margin: "var(--space-2) 0 0" }}>
+          {sendError}
+        </p>
+      )}
     </div>
   );
 }
