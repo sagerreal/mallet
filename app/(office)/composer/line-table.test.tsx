@@ -162,17 +162,28 @@ describe("LineTable — removing", () => {
 });
 
 describe("LineTable — the unit", () => {
-  it("keeps the unit the quantity is counted in", () => {
-    table([fence]);
+  // The Unit COLUMN lives in the costing view only now — the mock's pricing grid has no unit
+  // column; on the pricing view the unit rides the rail's quantity editor.
+  it("keeps the unit column in the costing view", () => {
+    table([fence], true);
     expect(input("Unit, line 1").value).toBe("LF");
     fireEvent.change(input("Unit, line 1"), { target: { value: "ft" } });
     expect(lastLines()[0]?.unit).toBe("ft");
   });
 
   it("drops the unit entirely when it is cleared, rather than storing an empty string", () => {
-    table([fence]);
+    table([fence], true);
     fireEvent.change(input("Unit, line 1"), { target: { value: "" } });
     expect(lastLines()[0]?.unit).toBeUndefined();
+  });
+
+  it("has no unit column on the pricing view — the rail's quantity editor owns it there", () => {
+    table([fence]);
+    expect(screen.queryByLabelText("Unit, line 1")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Description, line 1"));
+    // The unit input opens with the rail's quantity editor — one property editor at a time.
+    fireEvent.click(screen.getByText("Quantity").closest("button")!);
+    expect(screen.getByLabelText("Unit")).toBeTruthy();
   });
 });
 

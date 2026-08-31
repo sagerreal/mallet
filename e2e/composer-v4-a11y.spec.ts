@@ -45,7 +45,6 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     await page.getByRole("button", { name: "+ Add line item" }).click();
     await page.getByLabel("Description, line 1").fill("Cedar privacy fence");
     await page.getByLabel("Quantity, line 1").fill("100");
-    await page.getByLabel("Unit, line 1").fill("LF");
     await page.getByTitle("Price this line from the parts and labour under it").first().click();
     await page.getByLabel("Description, component 2").fill("Line posts");
     await page.getByLabel("Quantity or math, component 2").fill("qty/8+1");
@@ -60,8 +59,37 @@ test.describe("composer v4 — the states the route scan cannot reach", () => {
     // The costing view — markup column, rolled-up cells, and the job-costs card.
     // The costing view is the header segmented control now, not a footer toggle.
     await page.getByRole("button", { name: "Costing" }).click();
+    // Unit is a COSTING column now — on the pricing view it lives in the rail's quantity
+    // editor, so the ledger only offers this cell here.
+    await page.getByLabel("Unit, line 1").fill("LF");
     await settle(page);
     await scan(page, "composer · estimate, costing view");
+  });
+
+  test("the inspector rail — docked, editing, and folded to its seam", async ({ page }) => {
+    await page.goto("/composer");
+    await settle(page);
+    await page.getByRole("button", { name: "+ Add line item" }).click();
+    await page.getByLabel("Description, line 1").fill("Cedar privacy fence, 6 ft");
+    await page.getByLabel("Quantity, line 1").fill("100");
+    await page.getByTitle("Price this line from the parts and labour under it").first().click();
+    await page.getByLabel("Description, component 2").fill("Line posts");
+    await page.getByLabel("Quantity or math, component 2").fill("qty/8+1");
+    await page.getByLabel("Price, line 2").fill("24.30");
+
+    // Select the assembly — the rail docks with the driver editor and the parts accordion,
+    // the densest state the rail has.
+    await page.getByLabel("Description, line 1").click();
+    await page.getByTestId("line-inspector").waitFor();
+    await page.getByText("Driver quantity").click();
+    await page.getByRole("button", { name: /^Assembly/ }).click();
+    await settle(page);
+    await scan(page, "composer · inspector rail, assembly with editors open");
+
+    // Folded to the seam: the pull tab and the unfold strip are all that remain.
+    await page.getByLabel("Hide details").click();
+    await settle(page);
+    await scan(page, "composer · inspector rail, folded");
   });
 
   test("the job-costs picker, open", async ({ page }) => {
