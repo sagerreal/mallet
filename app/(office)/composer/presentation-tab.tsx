@@ -636,7 +636,10 @@ function PageSection({
         position: "relative",
         padding: "var(--space-8)",
         borderTop: "1px solid var(--line)",
-        opacity: page.body.trim() || editing || (page.photos?.length ?? 0) > 0 ? 1 : 0.75,
+        // No opacity for an empty page. Dimming multiplies against every colour inside, including
+        // the muted ones already sitting at the contrast floor — a freshly-added page failed
+        // color-contrast three ways. The page already SAYS it is empty a line below; saying it
+        // again in a way that costs legibility is not emphasis, it is a defect.
       }}
     >
       {canEdit && (

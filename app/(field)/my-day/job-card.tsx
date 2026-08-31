@@ -228,9 +228,13 @@ export function JobCard({
           and an address that ends in an ellipsis is not an address. */}
       {notes ? <div className="mdc-note">{notes}</div> : null}
 
+      {/* aria-valuetext says WHERE the visit is ("On the way"); the label says what is being
+          measured. A progressbar with a value and no name announces "50%" of nothing — which is
+          what axe's aria-progressbar-name rule exists to catch, and it was catching this. */}
       <div
         className="mdc-steps"
         role="progressbar"
+        aria-label="Visit progress"
         aria-valuemin={0}
         aria-valuemax={3}
         aria-valuenow={card.step}
