@@ -1520,8 +1520,14 @@
      Two quiet hint links under a line's description expand IN-FLOW detail rows —
      never a popover. The depth panel reuses the manila register (internal-notes
      voice) for sub-items and the card register for scope (customer-facing copy). */
-  .linehints{display:flex;gap:var(--space-3);margin:var(--space-2xs) 0 0 var(--space-2)}
-  .linehint{background:none;border:0;padding:0;font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
+  .linehints{display:flex;flex-wrap:wrap;gap:var(--space-3);margin:0 0 0 var(--space-2)}
+  /* 24px minimum target (WCAG 2.2 AA). Grown VERTICALLY with min-height rather than padding, so
+     the row still reads as quiet text links and nothing moves: the hit area gets taller, the
+     type does not. It shipped at the height of its own 12px text, and this row went from one
+     control to four with the v4 port — four undersized targets in a line is a different problem
+     from one. */
+  .linehint{display:inline-flex;align-items:center;min-height:24px;background:none;border:0;padding:0;
+    font-family:inherit;font-size:var(--type-xs);font-weight:600;color:var(--ink-3);cursor:pointer;white-space:nowrap}
   .linehint:hover,.linehint:focus-visible{color:var(--ink);text-decoration:underline;text-underline-offset:2px}
   .linehint[aria-expanded="true"]{color:var(--ink)}
   /* ---------- other job costs ----------
@@ -2581,6 +2587,10 @@
   .msg-row{display:flex;align-items:center;gap:var(--space-3);padding:var(--space-3) var(--space-4);border:1px solid var(--line);border-radius:var(--radius-sm);background:var(--card);cursor:pointer}
   .msg-row:hover{border-color:var(--ink-3)}
   .msg-row.unread{background:var(--manila)}
+  /* An unread row is tinted, and --ink-3 on that tint is 4.44:1 — just under the 4.5 floor, and
+     only on the rows a tech most needs to read. One shade up clears it, and metadata reading a
+     little stronger on an emphasised row is consistent rather than an exception. */
+  .msg-row.unread .msg-tm{color:var(--ink-2)}
   .msg-main{flex:1;min-width:0}
   .msg-nm{font-weight:650;display:flex;align-items:center;gap:var(--space-2);min-width:0;flex-wrap:nowrap}
   .msg-nmtxt{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
