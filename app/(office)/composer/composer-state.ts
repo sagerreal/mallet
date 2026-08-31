@@ -81,7 +81,7 @@ export {
 export { emptySubItem, realSubItems, subItemsTotal, withSubPatch, lineToPayload } from "./sub-items";
 import { realSubItems } from "./sub-items";
 import { reindexForPayload } from "./line-math";
-import { presentationFromSnapshot } from "./presentation-state";
+import { defaultPresentation, presentationFromSnapshot } from "./presentation-state";
 import type { ComposerPresentation, PresentationSnapshotPayload } from "./presentation-state";
 import type { ComposerSubItem } from "./sub-items";
 
@@ -249,7 +249,11 @@ export interface ComposerState {
   /** Which numbers the customer sees — 'lines' (every amount, today's default) or 'total'
    *  (scope prose + one price). Cycled by the $ chip on the line-table header. */
   priceDisplay: "lines" | "total";
-  /** The per-quote copy of a presentation template's pages — null = plain quote (the default). */
+  /**
+   * The document this quote goes out as. Every quote starts with the default simple document
+   * (the mock's model); picking a template swaps its pages. Null only on drafts saved before
+   * this was true — those still send as the plain quote.
+   */
   presentation: ComposerPresentation | null;
 }
 
@@ -292,7 +296,7 @@ export const INITIAL_STATE: ComposerState = {
   sendChannel: "text",
   heldTraces: [],
   priceDisplay: "lines",
-  presentation: null,
+  presentation: defaultPresentation(),
 };
 
 /** Append a trace held on this quote (immutable — a new state, a new array). */
@@ -705,6 +709,8 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       ...state,
       leadId: seed.leadId,
       jobId: seed.jobId,
+      // The document's own name survives a revise — it is the cover's h2 and the job's name.
+      title: seed.title,
       desc: seed.title,
       pricing,
       format: "single",
@@ -717,7 +723,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
         ...(cost.purchaseOrderId ? { poId: cost.purchaseOrderId } : {}),
       })),
       priceDisplay: seed.priceDisplay,
-      presentation: presentationFromSnapshot(seed.presentationSnapshot),
+      presentation: presentationFromSnapshot(seed.presentationSnapshot) ?? defaultPresentation(),
     };
   }
 
@@ -743,12 +749,13 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
     ...state,
     leadId: seed.leadId,
     jobId: seed.jobId,
+    title: seed.title,
     desc: seed.title,
     pricing,
     format: "gbb",
     gbb,
     priceDisplay: seed.priceDisplay,
-    presentation: presentationFromSnapshot(seed.presentationSnapshot),
+    presentation: presentationFromSnapshot(seed.presentationSnapshot) ?? defaultPresentation(),
   };
 }
 

@@ -126,11 +126,37 @@ export function presentationSnapshotForPayload(
     }));
   if (pages.length === 0) return undefined;
   return {
-    templateName: p.name,
+    // The transport requires a non-empty name; the default document has none of its own.
+    templateName: p.name.trim() || "Document",
     pages,
     ...(p.mode === undefined ? {} : { mode: p.mode }),
     ...(p.design === undefined ? {} : { design: p.design }),
     ...(p.meta === undefined ? {} : { meta: p.meta }),
+  };
+}
+
+/**
+ * The presentation every quote STARTS with — the mock's model, verbatim: "Every quote goes out
+ * as a document. The choice is how much of one." Simple mode; the standard page set with EMPTY
+ * bodies (an empty page hides from the customer, so this sends as the minimal one-page
+ * document: cover head, the estimate, the acceptance, the terms). Unlinked — edits stay on
+ * this quote until a template is picked.
+ */
+export function defaultPresentation(): ComposerPresentation {
+  return {
+    templateId: null,
+    name: "",
+    mode: "simple",
+    pages: [
+      { key: "cover", on: true, title: "", body: "" },
+      { key: "letter", on: true, title: "A note from us", body: "" },
+      { key: "about", on: true, title: "About us", body: "" },
+      { key: "photos", on: true, title: "Photos", body: "", photos: [] },
+      { key: "process", on: false, title: "How the job goes", body: "" },
+      { key: "reviews", on: true, title: "Reviews", body: "" },
+      { key: "warranty", on: true, title: "Our warranty", body: "" },
+      { key: "thanks", on: true, title: "Thank you", body: "" },
+    ],
   };
 }
 

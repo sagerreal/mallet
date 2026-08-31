@@ -54,6 +54,9 @@ vi.mock("@/lib/trpc/client", () => ({
     }),
     v1: {
       quoting: {
+        // The presentation document mounts by default now; its photos page asks for signed
+        // URLs (disabled with zero photos, but the hook must exist).
+        proposalPhotoUrls: { useQuery: () => ({ data: undefined }) },
         buildFromMeasurements: {
           useQuery: () => ({
             data: {
