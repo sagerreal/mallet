@@ -950,6 +950,7 @@ describe("applyReviseSeed", () => {
     priceDisplay: "lines" as const,
     presentationSnapshot: null,
     sections: [],
+    jobCosts: [],
     lines: [
       seedLine({ d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null }),
       seedLine({ d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null }),
@@ -1169,6 +1170,7 @@ describe("price display", () => {
       priceDisplay: "total",
       presentationSnapshot: null,
       sections: [],
+      jobCosts: [],
       lines: [
         seedLine({
           d: "Painting",
@@ -1198,6 +1200,7 @@ describe("applyReviseSeed — assembly components survive a revision", () => {
     priceDisplay: "lines" as const,
     presentationSnapshot: null,
     sections: [],
+    jobCosts: [],
   };
 
   it("resolves the parent id to the index the parent actually lands at", () => {
@@ -1305,6 +1308,7 @@ describe("presentation — per-quote copy of a template's pages", () => {
     const seeded = applyReviseSeed(INITIAL_STATE, {
       leadId: "lead-1",
       sections: [],
+      jobCosts: [],
       title: "Basement",
       discBps: 0,
       taxBps: 0,

@@ -561,6 +561,17 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
     // Already in render order from the domain — the store keeps names only, since a line names
     // its section by position the same way a component names its parent.
     sections: dto.sections.map((section) => section.name),
+    // Only the exception is written: a quote with no job costs carries no key at all.
+    ...(dto.jobCosts.length > 0
+      ? {
+          jobCosts: dto.jobCosts.map((cost) => ({
+            id: cost.id,
+            d: cost.description,
+            amt: cost.amount.cents / 100,   // cents → dollars
+            ...(cost.purchaseOrderId ? { poId: cost.purchaseOrderId } : {}),
+          })),
+        }
+      : {}),
     pricing: {
       disc: dto.discBps / 100,   // basis points → percent (1000 bps = 10%)
       tax: dto.taxBps / 100,

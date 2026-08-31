@@ -236,6 +236,11 @@ export interface Estimate {
    * names one by index (EstimateLine.sectionIndex) — the store holds no ids.
    */
   sections?: string[];
+  /**
+   * What the job costs beyond the lines. OFFICE ONLY — the public quote reader never loads
+   * these, so they cannot reach a customer surface. Money is DOLLARS, like every store amount.
+   */
+  jobCosts?: { id: string; d: string; amt: number; poId?: string }[];
   pricing?: { disc: number; dep: number; tax: number };
   /** Customer opens, oldest → newest. The customer is never told these exist. */
   reads?: EstimateRead[];

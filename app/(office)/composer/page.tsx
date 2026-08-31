@@ -54,6 +54,7 @@ import {
   presentationSnapshotForPayload,
   matchServiceByName,
   realLines,
+  realJobCosts,
   recommendedTier,
   seedLinesToComposerLines,
   sendGateReason,
@@ -344,6 +345,12 @@ export default function ComposerPage() {
           sectionId: l.sectionId ?? null,
         })),
         sections: dto.sections.map((section) => ({ id: section.id, name: section.name })),
+        jobCosts: dto.jobCosts.map((cost) => ({
+          id: cost.id,
+          description: cost.description,
+          amountCents: cost.amount.cents,
+          purchaseOrderId: cost.purchaseOrderId,
+        })),
       }),
     );
   }, [reviseId, reviseQuery.data]);
@@ -737,6 +744,17 @@ export default function ComposerPage() {
       // three competing groupings of the same document.
       ...(gbb === null && grouped.sections.length > 0
         ? { sections: grouped.sections.map((name) => ({ name })) }
+        : {}),
+      // The shop's own costs. Blank rows are dropped the way blank lines are — a cost with
+      // nothing written on it is scaffolding, and the server refuses it anyway.
+      ...(realJobCosts(cs.jobCosts).length > 0
+        ? {
+            jobCosts: realJobCosts(cs.jobCosts).map((cost) => ({
+              description: cost.d,
+              amountCents: Math.round((cost.amt ?? 0) * 100),
+              ...(cost.poId ? { purchaseOrderId: cost.poId } : {}),
+            })),
+          }
         : {}),
       // Which numbers the customer sees — 'lines' is the historical default, 'total' the
       // proposal format ($ chip on the line-table header).

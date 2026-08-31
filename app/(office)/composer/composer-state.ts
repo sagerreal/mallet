@@ -85,6 +85,17 @@ import { presentationFromSnapshot } from "./presentation-state";
 import type { ComposerPresentation, PresentationSnapshotPayload } from "./presentation-state";
 import type { ComposerSubItem } from "./sub-items";
 
+/** One cost on the job that is not a quote line. Money is DOLLARS, like every composer number. */
+export interface ComposerJobCost {
+  id: string;
+  d: string;
+  amt: number;
+  /** The purchase order it was pulled from. Absent on a cost the estimator typed. */
+  poId?: string;
+  /** The order's number, for the row's tag. Display only — the id is the identity. */
+  poNum?: string;
+}
+
 export type QuoteFormat = "single" | "gbb";
 export type TierKey = "good" | "better" | "best";
 
@@ -187,6 +198,12 @@ export interface ComposerState {
    * sections themselves hold no lines and no money.
    */
   sections: string[];
+  /**
+   * What this job costs beyond the quote's lines — a permit, a dumpster, a purchase order
+   * already placed against the job. The shop's own numbers: they move the margin the office
+   * reads and nothing the customer is shown.
+   */
+  jobCosts: ComposerJobCost[];
   /** One-line in-flow note describing what the last format switch did. */
   switchNote: string | null;
   desc: string;
@@ -244,6 +261,7 @@ export const INITIAL_STATE: ComposerState = {
   lines: [emptyLine()],
   gbb: null,
   sections: [],
+  jobCosts: [],
   switchNote: null,
   desc: "",
   aiOpen: false,
@@ -587,6 +605,8 @@ export interface ReviseSeed {
   lines: ReviseSeedLine[];
   /** The original's headings, in render order, with their ids so the lines can find them. */
   sections: { id: string; name: string }[];
+  /** The shop's own costs on the original. Restored so a revision keeps its real margin. */
+  jobCosts: { id: string; description: string; amountCents: number; purchaseOrderId: string | null }[];
   recommendedTier: TierKey | null;
   tierNames: { good: string; better: string; best: string } | null;
   /** Which numbers the customer saw on the original — a revision must not silently re-expose
@@ -674,6 +694,12 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
       format: "single",
       lines,
       sections: seed.sections.map((section) => section.name),
+      jobCosts: seed.jobCosts.map((cost) => ({
+        id: cost.id,
+        d: cost.description,
+        amt: cost.amountCents / 100,
+        ...(cost.purchaseOrderId ? { poId: cost.purchaseOrderId } : {}),
+      })),
       priceDisplay: seed.priceDisplay,
       presentation: presentationFromSnapshot(seed.presentationSnapshot),
     };
@@ -900,4 +926,27 @@ export function buildQuoteMessageBody(opts: {
   const intro =
     opts.intro.trim() || `Hi ${opts.firstName} — thanks for having us out.`;
   return `${intro} Your quote ${opts.quoteNum} is ready — view and approve here: ${opts.quoteLink}`;
+}
+
+/** What the job costs beyond the lines, in dollars. Summed in cents so 0.1 + 0.2 stays 0.3. */
+export function jobCostTotal(costs: readonly ComposerJobCost[]): number {
+  return costs.reduce((cents, cost) => cents + Math.round((cost.amt ?? 0) * 100), 0) / 100;
+}
+
+/** A cost with something written on it — the only kind that persists, like realLines. */
+export function realJobCosts(costs: readonly ComposerJobCost[]): ComposerJobCost[] {
+  return costs.filter((cost) => (cost.d ?? "").trim() !== "");
+}
+
+/**
+ * The purchase orders already pulled onto this quote.
+ *
+ * The picker reads this to refuse a second pull of the same order: the office looking at a list
+ * has no way to remember which ones they already took, and a doubled $2,140 order is a margin
+ * that reads right and is not.
+ */
+export function pulledOrderIds(costs: readonly ComposerJobCost[]): Set<string> {
+  const ids = new Set<string>();
+  for (const cost of costs) if (cost.poId) ids.add(cost.poId);
+  return ids;
 }
