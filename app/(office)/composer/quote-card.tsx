@@ -30,6 +30,7 @@ import {
   type ProposalChip,
 } from "./composer-state";
 import { LineTable } from "./line-table";
+import { addComponent, resolveQuantity, withRollUps } from "./line-math";
 import { linesFromSavedAssembly, type SavedComponent } from "./line-math";
 import { lineProvenance } from "./line-provenance";
 import { DraftRun, type DraftRunGather, type DraftRunResult } from "./draft-run";
@@ -96,7 +97,23 @@ export function QuoteCard({
   // View-only: show/hide the owner "Your cost" column (single table + tier
   // panels alike). Never touches the store — hiding only omits cells; entered
   // costs live on in the lines.
-  const [showCost, setShowCost] = useState(false);
+  // The chosen view survives the session (the mock's preferredEstimateView) — an estimator
+  // who works in Costing should not re-pick it on every quote.
+  const [showCost, setShowCost] = useState(() => {
+    try {
+      return localStorage.getItem("composer-estimate-view") === "costing";
+    } catch {
+      return false;
+    }
+  });
+  const pickView = (costing: boolean) => {
+    setShowCost(costing);
+    try {
+      localStorage.setItem("composer-estimate-view", costing ? "costing" : "pricing");
+    } catch {
+      /* private mode — the toggle still works, it just forgets */
+    }
+  };
   // "From pricebook" search — the catalog can run to dozens of services.
   const [pbQuery, setPbQuery] = useState("");
 
@@ -166,6 +183,16 @@ export function QuoteCard({
   // out of the office's tax base (a No-tax line was still taxed in this number, though never on
   // the customer's document) and would have kept `parentIndex` out of the subtotal the same way.
   const m = calcQuote(sendLines, state.pricing);
+  /** Rows whose typed math does not resolve — the mock warns above the totals. */
+  const invalidQuantities = state.lines.filter(
+    (l) => !resolveQuantity(l, l.parentIndex != null ? state.lines[l.parentIndex] : undefined).valid,
+  ).length;
+  /** The office's own numbers — the mock's costing-view Internal estimate block. */
+  const lineCosts =
+    state.lines
+      .filter((l) => (l.d ?? "").trim() !== "")
+      .reduce((sum, l) => sum + Math.round((l.q ?? 0) * (l.c ?? 0) * 100), 0) / 100;
+  const jobCostsTotal = (state.jobCosts ?? []).reduce((sum, c) => sum + (c.amt ?? 0), 0);
   // Where an AI draft would land: the Good tier in GBB, else the table.
   const aiTargetLines = isGbb
     ? (state.gbb?.opts.find((o) => o.k === "good")?.lines ?? [])
@@ -296,10 +323,10 @@ export function QuoteCard({
           <div className="seg" role="group" aria-label="View">
             {/* The mock's header control. One state, two names: Pricing is the customer's
                 numbers, Costing adds your cost, markup and margin — never shown to them. */}
-            <button type="button" aria-pressed={!showCost} onClick={() => setShowCost(false)}>
+            <button type="button" aria-pressed={!showCost} onClick={() => pickView(false)}>
               Pricing
             </button>
-            <button type="button" aria-pressed={showCost} onClick={() => setShowCost(true)}>
+            <button type="button" aria-pressed={showCost} onClick={() => pickView(true)}>
               Costing
             </button>
           </div>
@@ -477,6 +504,32 @@ export function QuoteCard({
                   ))}
                 </>
               )}
+              {/* The mock's book ends on the way IN: build a new assembly in the estimate,
+                  save it here once it prices right. */}
+              {!isGbb && (
+                <button
+                  className="chip"
+                  title="A blank assembly in the estimate — build it there, then save it to the book"
+                  onClick={() => {
+                    const at = state.lines.length;
+                    onUpdate({
+                      lines: withRollUps(
+                        addComponent(
+                          [...state.lines, { d: "", q: 1, r: 0 }],
+                          at,
+                          { d: "", q: 1, r: 0, qtyExpr: "qty" },
+                        ),
+                      ),
+                      pbOpen: false,
+                    });
+                  }}
+                >
+                  + New assembly
+                  <span className="muted" style={{ marginLeft: "var(--space-1)" }}>
+                    build it in the estimate, then save it here
+                  </span>
+                </button>
+              )}
             </div>
           )}
         </>
@@ -501,6 +554,12 @@ export function QuoteCard({
           {/* The mock's voice: one headline number, then plain sentences under it. "Quote total"
               rather than a Subtotal/Tax/Total ladder — the ladder is the customer's document;
               this corner tells the ESTIMATOR what will be asked and when. */}
+          {invalidQuantities > 0 && (
+            <div role="alert" style={{ fontSize: "var(--type-sm)", color: "var(--red)", fontWeight: 600 }}>
+              {invalidQuantities} invalid quantit{invalidQuantities === 1 ? "y" : "ies"} — review
+              before sending.
+            </div>
+          )}
           {state.pricing.disc ? (
             <div className="muted" style={{ fontSize: "var(--type-sm)" }}>
               {fmt$(m.sub)} − {state.pricing.disc}% discount ({fmt$(m.disc)})
@@ -531,6 +590,31 @@ export function QuoteCard({
               {fmt$(taxableAfterDiscount)} taxable.
             </div>
           ) : null}
+          {/* The office's own numbers — the mock's costing view carries them under the
+              customer's total, where the margin question actually gets asked. */}
+          {showCost && (
+            <div className="cost-summary">
+              <div className="cs-kicker">Internal estimate</div>
+              <div className="cs-row">
+                <span>Line item costs</span>
+                <b>{fmt$(lineCosts)}</b>
+              </div>
+              <div className="cs-row">
+                <span>Other job costs</span>
+                <b>{fmt$(jobCostsTotal)}</b>
+              </div>
+              <div className="cs-row">
+                <span>Total expected cost</span>
+                <b>{fmt$(lineCosts + jobCostsTotal)}</b>
+              </div>
+              <div className="cs-row">
+                <span>Estimated margin</span>
+                <b className="good">
+                  {m.sub > 0 ? Math.round(((m.sub - lineCosts - jobCostsTotal) / m.sub) * 100) : 0}%
+                </b>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

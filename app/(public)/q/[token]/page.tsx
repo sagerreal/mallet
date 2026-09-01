@@ -185,6 +185,13 @@ export default async function PublicQuotePage({
   // shop's own build-up on the customer's quote AND read as extra charges beside a total that
   // does not contain them. Same predicate the domain's totals use (Estimate.contributesMoney).
   const quotedLines = p.lines.filter((l) => !l.props.parentLineId);
+  /** An "items" assembly lists its visible component names under it, marked Included. */
+  const includedItemsFor = (parentId: string, detail: string | null | undefined) =>
+    detail === "items"
+      ? p.lines
+          .filter((l) => l.props.parentLineId === parentId && l.props.customerVisible)
+          .map((l) => l.props.description || "Included item")
+      : undefined;
   const fixedLines = quotedLines.filter((l) => !l.props.isOptional);
   // The customer's copy, grouped under the headings the shop wrote on the quote.
   const { ungrouped: ungroupedLines, groups: sectionGroups } = groupBySection(estimate, fixedLines);
@@ -379,6 +386,7 @@ export default async function PublicQuotePage({
                     showTaxMark={p.taxBps > 0}
                     scope={lp.scope}
                     showAmount={showLineAmounts}
+                    includedItems={includedItemsFor(lp.id, lp.customerDetail)}
                   />
                 );
               })}
@@ -404,6 +412,7 @@ export default async function PublicQuotePage({
                         showTaxMark={p.taxBps > 0}
                         scope={lp.scope}
                         showAmount={showLineAmounts}
+                        includedItems={includedItemsFor(lp.id, lp.customerDetail)}
                       />
                     );
                   })}

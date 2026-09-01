@@ -148,6 +148,7 @@ const estimateLineDTO = z.object({
   lineType: z.enum(["material", "labor", "equipment", "subcontract", "other"]).nullable(),
   /** Photos attached to the line — office reference material. */
   attachments: z.array(z.object({ key: z.string(), name: z.string() })).nullable(),
+  customerDetail: z.enum(["summary", "items"]).nullable(),
 });
 
 /** A cost on the job that is not one of the quote's lines. Office-only, never customer-facing. */
@@ -367,6 +368,8 @@ const lineInput = z.object({
   sectionIndex: z.number().int().nonnegative().optional(),
   /** What kind of cost this is. Office-side; the customer never sees it. */
   lineType: z.enum(["material", "labor", "equipment", "subcontract", "other"]).optional(),
+  /** Assembly only: 'items' renders the component names on the customer copy, "Included". */
+  customerDetail: z.enum(["summary", "items"]).optional(),
   /** Photos attached to the line — office reference material. Keys come from the org's own
    *  proposal-photo uploads; the same shape check the photo DTO applies. */
   attachments: z
@@ -612,6 +615,7 @@ const toEstimateDTO = (estimate: Estimate) => {
         markupBps: lp.markupBps ?? null,
         lineType: lp.lineType ?? null,
         attachments: lp.attachments ? [...lp.attachments] : null,
+        customerDetail: lp.customerDetail ?? null,
       };
     }),
     jobCosts: estimate.jobCosts.map((cost) => ({
@@ -881,6 +885,7 @@ export const createEstimateRouter = () =>
             sectionIndex: line.sectionIndex ?? null,
             lineType: line.lineType ?? null,
             attachments: line.attachments ?? null,
+            customerDetail: line.customerDetail ?? null,
           })),
           sections: input.sections ?? [],
           jobCosts:

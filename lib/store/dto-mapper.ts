@@ -553,6 +553,7 @@ export function dtoEstimateToStore(dto: EstimateDTO, priorFu: Estimate["fu"]): E
       markupBps: l.markupBps ?? undefined,
       ...(l.lineType ? { ltype: l.lineType } : {}),
       ...(l.attachments?.length ? { att: l.attachments.map((a) => ({ ...a })) } : {}),
+      ...(l.customerDetail === "items" ? { custItems: true } : {}),
       sectionIndex: l.sectionId
         ? (() => {
             const at = dto.sections.findIndex((section) => section.id === l.sectionId);

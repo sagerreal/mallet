@@ -224,6 +224,72 @@ export function LineTable({
     commit(next);
   };
 
+  /**
+   * The order a line steps through — its GROUP, the mock's semantics: a component moves within
+   * its parent, an optional line within the optional band, and a top-level line moves as a
+   * BLOCK (its parts travel with it) within its own section's render order.
+   */
+  const moveGroup = (i: number): number[] => {
+    const line = lines[i]!;
+    if (line.parentIndex != null) return componentIndexes(lines, line.parentIndex);
+    if (line.opt) return optionalIndexes;
+    return lines.reduce<number[]>((found, l, at) => {
+      if (l.parentIndex == null && !l.opt && (l.sectionIndex ?? null) === (line.sectionIndex ?? null)) {
+        found.push(at);
+      }
+      return found;
+    }, []);
+  };
+
+  const canMove = (i: number, dir: -1 | 1): boolean => {
+    const group = moveGroup(i);
+    const at = group.indexOf(i);
+    return dir === -1 ? at > 0 : at >= 0 && at < group.length - 1;
+  };
+
+  /** Swap two BLOCKS (line + its components) and remap every parentIndex + open-set. */
+  const moveLine = (i: number, dir: -1 | 1) => {
+    const group = moveGroup(i);
+    const at = group.indexOf(i);
+    const j = group[at + dir];
+    if (j === undefined) return;
+    const blockOf = (head: number) => [head, ...componentIndexes(lines, head)];
+    const a = blockOf(Math.min(i, j));
+    const b = blockOf(Math.max(i, j));
+    // Only adjacent-block swaps are safe by construction here: between a and b there may be
+    // OTHER blocks (other sections' lines render elsewhere but live between them in the
+    // array). Rebuild the array by order, swapping just the two blocks' positions.
+    // Rebuild by array order with just the two blocks' positions swapped: at the first index
+    // either block occupies, emit b-then-a (a is the earlier block, so this is always a swap).
+    // Rows interleaved between them (other sections') keep their own relative order — the
+    // render groups by section, so their array position is not their screen position.
+    const order = lines.map((_, idx) => idx);
+    const next: number[] = [];
+    let placed = false;
+    for (const idx of order) {
+      if (a.includes(idx) || b.includes(idx)) {
+        if (!placed) {
+          next.push(...b, ...a);
+          placed = true;
+        }
+        continue;
+      }
+      next.push(idx);
+    }
+    const remap = new Map(next.map((oldIdx, newIdx) => [oldIdx, newIdx]));
+    const rebuilt = next.map((oldIdx) => {
+      const l = lines[oldIdx]!;
+      return l.parentIndex != null ? { ...l, parentIndex: remap.get(l.parentIndex)! } : l;
+    });
+    const remapSet = (set: ReadonlySet<number>) =>
+      new Set([...set].map((n) => remap.get(n)).filter((n): n is number => n !== undefined));
+    setScopeOpen(remapSet(scopeOpen));
+    setSubOpen(remapSet(subOpen));
+    setCollapsed(remapSet(collapsed));
+    setSelected((cur) => (cur === null ? null : (remap.get(cur) ?? null)));
+    commit(rebuilt);
+  };
+
   const addLine = (sectionIndex?: number) => {
     // The mock selects what it just made — the new line's details dock immediately, so the
     // rail is never a hidden feature you discover by clicking a row.
@@ -379,6 +445,9 @@ export function LineTable({
           onUpdate={(patch) => updateLine(i, patch)}
           onReplace={(next) => replaceLine(i, next)}
           onRemove={() => removeLine(i)}
+          onMove={(dir) => moveLine(i, dir)}
+          canMoveUp={canMove(i, -1)}
+          canMoveDown={canMove(i, 1)}
           hints={hintsFor(line, i, Boolean(parent))}
         />
         {(hasContent || hasDepth) && scopeOpen.has(i) && (
@@ -435,10 +504,11 @@ export function LineTable({
     );
   }
 
-  const railed = selected !== null;
+  // The rail column is ALWAYS there once the quote has rows — the mock's model. No selection
+  // shows the teaching hint, not a missing panel; the fold works in every state.
   return (
     <div className={`lineedit${materialize ? " materialize" : ""}`}>
-      <div className={`lineedit-split${railed ? " railed" : ""}${railed && railFolded ? " folded" : ""}`}>
+      <div className={`lineedit-split railed${railFolded ? " folded" : ""}`}>
       <div className="lineedit-ledger">
       <table>
         <colgroup>
@@ -581,41 +651,43 @@ export function LineTable({
         </tfoot>
       </table>
       </div>
-      {railed && (
-        <div className="lineedit-railcol">
+      <div className="lineedit-railcol">
+        <button
+          type="button"
+          className="rail-handle"
+          aria-expanded={!railFolded}
+          aria-label={railFolded ? "Show details" : "Hide details"}
+          onClick={() => setRailFolded((v) => !v)}
+        >
+          <span aria-hidden="true">{railFolded ? "‹" : "›"}</span>
+          <span className="vtext">Details</span>
+        </button>
+        {railFolded ? (
           <button
             type="button"
-            className="rail-handle"
-            aria-expanded={!railFolded}
-            aria-label={railFolded ? "Show details" : "Hide details"}
-            onClick={() => setRailFolded((v) => !v)}
-          >
-            <span aria-hidden="true">{railFolded ? "‹" : "›"}</span>
-            <span className="vtext">Details</span>
-          </button>
-          {railFolded ? (
-            <button
-              type="button"
-              className="rail-unfold"
-              aria-label="Show details"
-              onClick={() => setRailFolded(false)}
-            />
-          ) : (
-            <LineInspector
-              lines={lines}
-              selected={selected}
-              sections={sections}
-              taxed={taxed}
-              onUpdate={updateLine}
-              onReplace={replaceLine}
-              onSelect={setSelected}
-              onRemove={removeLine}
-              onAddComponent={addComponentTo}
-              onDuplicate={duplicateLine}
-            />
-          )}
-        </div>
-      )}
+            className="rail-unfold"
+            aria-label="Show details"
+            onClick={() => setRailFolded(false)}
+          />
+        ) : selected === null ? (
+          <div className="rail rail-empty">
+            Select a line item to edit its pricing, cost, scope, and customer settings.
+          </div>
+        ) : (
+          <LineInspector
+            lines={lines}
+            selected={selected}
+            sections={sections}
+            taxed={taxed}
+            onUpdate={updateLine}
+            onReplace={replaceLine}
+            onSelect={setSelected}
+            onRemove={removeLine}
+            onAddComponent={addComponentTo}
+            onDuplicate={duplicateLine}
+          />
+        )}
+      </div>
       </div>
     </div>
   );

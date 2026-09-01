@@ -60,6 +60,8 @@ export interface ComposerLine {
   ltype?: "material" | "labor" | "equipment" | "subcontract" | "other";
   /** Photos attached to the line — office reference material, never on the customer copy. */
   att?: { key: string; name: string }[];
+  /** Assembly only: the customer's copy lists the component names, marked "Included". */
+  custItems?: boolean;
   /**
    * The pricebook entry this line came from. Provenance, and for an assembly it is the link
    * that makes "Update in pricebook" possible — matching on description instead would be wrong
@@ -620,6 +622,7 @@ export interface ReviseSeedLine {
   markupBps: number | null;
   lineType?: "material" | "labor" | "equipment" | "subcontract" | "other" | null;
   attachments?: { key: string; name: string }[] | null;
+  customerDetail?: "summary" | "items" | null;
 }
 
 export interface ReviseSeed {
@@ -702,6 +705,7 @@ export function applyReviseSeed(state: ComposerState, seed: ReviseSeed): Compose
     ...(l.markupBps != null ? { markupBps: l.markupBps } : {}),
     ...(l.lineType ? { ltype: l.lineType } : {}),
     ...(l.attachments?.length ? { att: l.attachments.map((a) => ({ ...a })) } : {}),
+    ...(l.customerDetail === "items" ? { custItems: true } : {}),
     ...(() => {
       if (!l.sectionId) return {};
       const at = seed.sections.findIndex((section) => section.id === l.sectionId);

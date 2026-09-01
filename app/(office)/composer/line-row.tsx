@@ -45,6 +45,11 @@ export interface LineRowProps {
   /** Replaces the whole line — for the edits that must ADD or REMOVE a key, not set one. */
   onReplace: (next: ComposerLine) => void;
   onRemove: () => void;
+  /** Step this line within its group — a component within its parent, an optional within the
+   *  optional band, a top-level block (with its parts) within its section. Absent = ends. */
+  onMove?: (dir: -1 | 1) => void;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
   /** The depth toggles the table owns (scope prose, legacy sub-items). */
   hints?: React.ReactNode;
 }
@@ -66,10 +71,15 @@ export function LineRow({
   onUpdate,
   onReplace,
   onRemove,
+  onMove,
+  canMoveUp,
+  canMoveDown,
   hints,
 }: LineRowProps) {
   const isComponent = Boolean(parent);
-  const quantity = resolveQuantity(line, parent).value;
+  const resolved = resolveQuantity(line, parent);
+  const quantity = resolved.value;
+  const quantityValid = resolved.valid;
   const amount = quantity * (line.r ?? 0);
   const margin =
     line.c != null && line.c > 0 && line.r > 0 ? Math.round((100 * (line.r - line.c)) / line.r) : null;
@@ -118,6 +128,14 @@ export function LineRow({
             {line.unit ? ` ${line.unit}` : ""}
           </span>
         )}
+        {/* The mock's row shows its scope right under the description — the customer-facing
+            prose is part of reading the line, not a hidden panel; an invalid quantity states
+            itself in the same slot. */}
+        {!quantityValid ? (
+          <span className="row-scope bad">Check the quantity</span>
+        ) : line.scope?.trim() && !collapsed ? (
+          <span className="row-scope">{line.scope.trim()}</span>
+        ) : null}
         {hasContent && provenanceFor?.(line.d) ? <span className="line-prov">pricebook</span> : null}
         {hints}
       </td>
@@ -212,6 +230,34 @@ export function LineRow({
           amount, "No tax" never mattered at a glance (the totals corner names the tax), and a
           rounded count simply shows its whole number. */}
       <td className="rowacts">
+        {onMove && (
+          <>
+            <button
+              className="lineedit-tool"
+              title="Move up"
+              aria-label={`Move ${line.d.trim() || (isComponent ? "component" : "line")} up`}
+              disabled={!canMoveUp}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(-1);
+              }}
+            >
+              ↑
+            </button>
+            <button
+              className="lineedit-tool"
+              title="Move down"
+              aria-label={`Move ${line.d.trim() || (isComponent ? "component" : "line")} down`}
+              disabled={!canMoveDown}
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(1);
+              }}
+            >
+              ↓
+            </button>
+          </>
+        )}
         <button
           className="lineedit-tool"
           title={isComponent ? "Remove this component" : "Remove this line"}
