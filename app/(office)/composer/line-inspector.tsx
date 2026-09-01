@@ -116,7 +116,23 @@ export function LineInspector(props: LineInspectorProps) {
   );
 
   return (
-    <div className="rail" data-testid="line-inspector">
+    <div
+      className="rail"
+      data-testid="line-inspector"
+      onKeyDown={(e) => {
+        // The mock's Escape: close the open editor or accordion, keep focus in the rail.
+        if (e.key !== "Escape") return;
+        if (edit !== null) {
+          e.stopPropagation();
+          setEdit(null);
+          (e.currentTarget.querySelector(".rail-prop") as HTMLElement | null)?.focus();
+        } else if (acc !== null) {
+          e.stopPropagation();
+          setAcc(null);
+          (e.currentTarget.querySelector(".rail-acc") as HTMLElement | null)?.focus();
+        }
+      }}
+    >
       <div className="rail-head">
         <div className="rail-kicker">{kind}</div>
         {/* The mock's title is a BUTTON — the rail edits the description too, not just the row. */}

@@ -102,7 +102,10 @@ export function LineTable({
 }) {
   // Column count follows the view: pricing = description, qty, unit price, amount, actions;
   // costing adds unit, unit cost and markup.
-  const cols = showCost ? 8 : 5;
+  // Pricing = description, qty, unit price, amount, actions. Costing is the mock's ten-column
+  // grid minus nothing: type, description, qty, unit, unit cost, COST (the extended number),
+  // markup, unit price, amount, actions.
+  const cols = showCost ? 10 : 5;
   // GBB renders three LineTables at once — panel ids must be unique per instance or every
   // tier's aria-controls points at whichever twin rendered first.
   const uid = useId();
@@ -195,6 +198,7 @@ export function LineTable({
   const addComponentTo = (parentIndex: number) => {
     const existing = componentIndexes(lines, parentIndex);
     const at = (existing[existing.length - 1] ?? parentIndex) + 1;
+    focusRow.current = at;
     setScopeOpen(shiftIndexes(scopeOpen, at));
     setSubOpen(shiftIndexes(subOpen, at));
     setCollapsed(shiftIndexes(collapsed, at));
@@ -290,11 +294,25 @@ export function LineTable({
     commit(rebuilt);
   };
 
+  /** The mock's postRenderFocus: after adding, the caret lands in the new description. */
+  const focusRow = useRef<number | null>(null);
+  useEffect(() => {
+    if (focusRow.current === null) return;
+    const at = focusRow.current;
+    focusRow.current = null;
+    const label = lines[at]?.parentIndex != null
+      ? `Description, component ${at + 1}`
+      : `Description, line ${at + 1}`;
+    (document.querySelector(`input[aria-label="${label}"]`) as HTMLInputElement | null)?.focus();
+  }, [lines]);
+
   const addLine = (sectionIndex?: number) => {
     // The mock selects what it just made — the new line's details dock immediately, so the
-    // rail is never a hidden feature you discover by clicking a row.
+    // rail is never a hidden feature you discover by clicking a row — and focuses its
+    // description, so typing starts without another click.
     setSelected(lines.length);
     setRailFolded(false);
+    focusRow.current = lines.length;
     commit([...lines, sectionIndex == null ? { d: "", q: 1, r: 0 } : { d: "", q: 1, r: 0, sectionIndex }]);
   };
 
@@ -512,26 +530,30 @@ export function LineTable({
       <div className="lineedit-ledger">
       <table>
         <colgroup>
+          {/* The mock's costing grid leads with TYPE; Unit rides the rail's quantity editor on
+              the pricing view (the mock's pricing grid has no Unit column) and is a column only
+              here, where the whole point is seeing every number at once. */}
+          {showCost && <col style={{ width: 96 }} />}
           <col />
           <col style={{ width: 84 }} />
-          {/* Unit rides the QUANTITY EDITOR in the rail on the pricing view — the mock's
-              pricing grid has no Unit column. It stays a column in the costing view, where
-              the whole point is seeing every number at once. */}
           {showCost && <col style={{ width: 56 }} />}
-          <col style={{ width: 96 }} />
-          {showCost && <col style={{ width: 96 }} />}
+          {showCost && <col style={{ width: 84 }} />}
+          {showCost && <col style={{ width: 84 }} />}
           {showCost && <col style={{ width: 72 }} />}
+          <col style={{ width: 96 }} />
           <col style={{ width: 104 }} />
           <col style={{ width: 64 }} />
         </colgroup>
         <thead>
           <tr>
+            {showCost && <th>Type</th>}
             <th>Description</th>
             <th className="num">Qty</th>
             {showCost && <th>Unit</th>}
-            <th className="num">Unit price</th>
             {showCost && <th className="num">Unit cost</th>}
+            {showCost && <th className="num">Cost</th>}
             {showCost && <th className="num">Markup</th>}
+            <th className="num">Unit price</th>
             <th className="num">Amount</th>
             <th aria-hidden="true"></th>
           </tr>
