@@ -1041,7 +1041,6 @@ export default function ComposerPage() {
           onClick={() => switchTab("presentation")}
         >
           Presentation
-          {cs.presentation && <span className="pill green">on</span>}
         </button>
       </div>
 

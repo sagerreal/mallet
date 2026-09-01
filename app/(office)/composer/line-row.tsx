@@ -97,6 +97,25 @@ export function LineRow({
     .join(" ");
   return (
     <tr className={rowClass || undefined} onClick={onSelect}>
+      {showCost && (
+        <td>
+          <select
+            className="type-select"
+            value={line.ltype ?? ""}
+            aria-label={`Item type, line ${lineNo}`}
+            onChange={(e) =>
+              onUpdate({ ltype: (e.target.value || undefined) as ComposerLine["ltype"] })
+            }
+          >
+            <option value="">—</option>
+            <option value="material">Material</option>
+            <option value="labor">Labor</option>
+            <option value="equipment">Equipment</option>
+            <option value="subcontract">Subcontract</option>
+            <option value="other">Other</option>
+          </select>
+        </td>
+      )}
       <td>
         <div className="desc-cell">
           {onToggleCollapse && (
@@ -153,27 +172,6 @@ export function LineRow({
           />
         </td>
       )}
-      <td>
-        {pricedByParts ? (
-          <span className="rolled" aria-label={`Price, line ${lineNo} — set by its components`}>
-            {fmt$rate(line.r ?? 0)}
-          </span>
-        ) : (
-          <input
-            type="number"
-            inputMode="decimal"
-            className="num"
-            value={line.r}
-            aria-label={`Price, line ${lineNo}`}
-            title={
-              isPricedFromCost(line)
-                ? "Priced from cost — typing a price here makes it yours and drops the markup"
-                : undefined
-            }
-            onChange={(e) => onReplace(withTypedRate(line, +e.target.value))}
-          />
-        )}
-      </td>
       {showCost && (
         <td>
           {hasComponents ? (
@@ -197,6 +195,11 @@ export function LineRow({
         </td>
       )}
       {showCost && (
+        <td className="amt muted-amt">
+          {fmt$((line.q ?? 0) * (line.c ?? 0))}
+        </td>
+      )}
+      {showCost && (
         <td>
           {hasComponents ? (
             <span className="rolled">—</span>
@@ -213,6 +216,27 @@ export function LineRow({
           )}
         </td>
       )}
+      <td>
+        {pricedByParts ? (
+          <span className="rolled" aria-label={`Price, line ${lineNo} — set by its components`}>
+            {fmt$rate(line.r ?? 0)}
+          </span>
+        ) : (
+          <input
+            type="number"
+            inputMode="decimal"
+            className="num"
+            value={line.r}
+            aria-label={`Price, line ${lineNo}`}
+            title={
+              isPricedFromCost(line)
+                ? "Priced from cost — typing a price here makes it yours and drops the markup"
+                : undefined
+            }
+            onChange={(e) => onReplace(withTypedRate(line, +e.target.value))}
+          />
+        )}
+      </td>
       <td
         className={`amt${amount === 0 ? " zero" : ""}${priceMode === "total" && !isComponent ? " customer-hidden" : ""}`}
       >
