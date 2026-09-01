@@ -73,6 +73,7 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
   sectionIndex?: number;
   lineType?: "material" | "labor" | "equipment" | "subcontract" | "other";
   attachments?: { key: string; name: string }[];
+  customerDetail?: "summary" | "items";
 } {
   const sub = realSubItems(l.sub);
   return {
@@ -107,5 +108,6 @@ export function lineToPayload(l: ComposerLine & { tier?: TierKey }): {
     ...(l.sectionIndex !== undefined ? { sectionIndex: l.sectionIndex } : {}),
     ...(l.ltype ? { lineType: l.ltype } : {}),
     ...(l.att?.length ? { attachments: l.att.map((a) => ({ ...a })) } : {}),
+    ...(l.custItems ? { customerDetail: "items" as const } : {}),
   };
 }

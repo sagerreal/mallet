@@ -42,6 +42,7 @@ export interface EstimateLineInput {
   readonly markupBps?: number | null;
   readonly lineType?: "material" | "labor" | "equipment" | "subcontract" | "other" | null;
   readonly attachments?: readonly { key: string; name: string }[] | null;
+  readonly customerDetail?: "summary" | "items" | null;
   /** The section this line sits under, as an index into the command's `sections`. */
   readonly sectionIndex?: number | null;
 }
@@ -303,6 +304,7 @@ export class DraftEstimateUseCase {
         markupBps: input.markupBps ?? null,
         lineType: input.lineType ?? null,
         attachments: input.attachments ?? null,
+        customerDetail: input.customerDetail ?? null,
         sectionId,
       });
       if (!isOk(line)) return line;

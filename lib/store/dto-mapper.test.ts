@@ -62,6 +62,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         markupBps: null,
         lineType: null,
         attachments: null,
+        customerDetail: null,
       },
       {
         id: "line-2",
@@ -85,6 +86,7 @@ function makeEstimateDTO(overrides: Partial<EstimateDTO> = {}): EstimateDTO {
         markupBps: null,
         lineType: null,
         attachments: null,
+        customerDetail: null,
       },
     ],
     sections: [],
@@ -1089,6 +1091,7 @@ describe("dtoEstimateToStore — scope, sub-items, price display", () => {
           markupBps: null,
         lineType: null,
         attachments: null,
+        customerDetail: null,
         },
       ],
     });

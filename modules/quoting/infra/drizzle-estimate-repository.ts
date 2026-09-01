@@ -312,6 +312,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
         markupBps: lp.markupBps ?? null,
         lineType: lp.lineType ?? null,
         attachments: lp.attachments ? [...lp.attachments] : null,
+        customerDetail: lp.customerDetail ?? null,
         updatedAt,
         deletedAt: null as Date | null,
       };
@@ -343,6 +344,7 @@ export class DrizzleEstimateRepository implements EstimateRepository {
           markupBps: sql`excluded.markup_bps`,
           lineType: sql`excluded.line_type`,
           attachments: sql`excluded.attachments`,
+          customerDetail: sql`excluded.customer_detail`,
           updatedAt: sql`excluded.updated_at`,
           deletedAt: sql`excluded.deleted_at`,
         },

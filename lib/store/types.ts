@@ -194,6 +194,8 @@ export interface EstimateLine {
   ltype?: "material" | "labor" | "equipment" | "subcontract" | "other";
   /** Photos attached to the line — office reference material, never on the customer copy. */
   att?: { key: string; name: string }[];
+  /** Assembly only: the customer's copy lists the component names, marked "Included". */
+  custItems?: boolean;
 }
 
 /** One row of the estimating math behind a line — amounts in DOLLARS like the rest of the store. */

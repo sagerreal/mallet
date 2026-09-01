@@ -151,14 +151,9 @@ describe("QuoteCard — no explainer card under the bar", () => {
 });
 
 describe("QuoteCard — a seeded job description (?desc= handoff)", () => {
-  it("shows the seeded description in the command bar with Build it enabled", () => {
-    // The new-customer modal's Build-the-price hands off with ?desc=<typed job>;
-    // the page seeds it into state.desc and the bar must surface it — a seed
-    // the office can't see or run isn't a carry, it's a drop.
-    renderCard({ desc: "swap 50-gal water heater" });
-    const bar = screen.getByLabelText("Describe the job") as HTMLInputElement;
-    expect(bar.value).toBe("swap 50-gal water heater");
-    const go = screen.getByRole("button", { name: "Build it" }) as HTMLButtonElement;
-    expect(go.disabled).toBe(false);
+  it("has no command bar — the mock's estimate card carries no AI describe-the-job feature", () => {
+    renderCard({ desc: "water heater swap" });
+    expect(screen.queryByLabelText("Describe the job")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Build it" })).toBeNull();
   });
 });

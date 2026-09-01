@@ -28,6 +28,11 @@ export interface LineRowProps {
    * proposal format: scope + one price at the bottom. The AMOUNT is hidden, never the line.
    */
   readonly showAmount?: boolean;
+  /**
+   * An assembly whose office chose "Customer sees items": the component names, listed under
+   * the line and marked Included — their money already lives in the parent's price.
+   */
+  readonly includedItems?: readonly string[];
 }
 
 export function LineRow({
@@ -38,17 +43,26 @@ export function LineRow({
   showTaxMark = false,
   scope,
   showAmount = true,
+  includedItems,
 }: LineRowProps) {
   const amount = lineAmountCents(quantity, rateCents);
   return (
-    <div className="custline">
-      <span>
-        {description}
-        {quantity !== 1 ? ` × ${quantity}` : ""}
-        {showTaxMark && taxable === false && <span className="custline-notax">No tax</span>}
-        {scope?.trim() && <span className="custline-scope">{scope}</span>}
-      </span>
-      {showAmount && <b>{fmt$(amount / 100)}</b>}
-    </div>
+    <>
+      <div className="custline">
+        <span>
+          {description}
+          {quantity !== 1 ? ` × ${quantity}` : ""}
+          {showTaxMark && taxable === false && <span className="custline-notax">No tax</span>}
+          {scope?.trim() && <span className="custline-scope">{scope}</span>}
+        </span>
+        {showAmount && <b>{fmt$(amount / 100)}</b>}
+      </div>
+      {includedItems?.map((name, i) => (
+        <div key={i} className="custline custline-included">
+          <span>{name}</span>
+          <b className="muted">Included</b>
+        </div>
+      ))}
+    </>
   );
 }

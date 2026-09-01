@@ -401,6 +401,13 @@ export const estimateLines = pgTable(
      */
     lineType: text("line_type"),
     /**
+     * What the CUSTOMER's copy shows for an assembly: null/'summary' = the parent line alone
+     * (the default — components are estimating math), 'items' = the component names render
+     * under it marked "Included". Meaningless on a non-assembly line. Text, not an enum type,
+     * for the same boundary-validation reason as line_type.
+     */
+    customerDetail: text("customer_detail"),
+    /**
      * Photos attached to the line — office-side reference material ("this is the panel"),
      * never rendered on the customer copy. Jsonb like sub_items: attachments live and die
      * with their line and are never queried independently. Each entry is a key into the

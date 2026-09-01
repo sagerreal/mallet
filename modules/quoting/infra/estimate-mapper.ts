@@ -59,6 +59,7 @@ export const toEstimateLine = (row: EstimateLineRow): EstimateLine => {
     markupBps: row.markupBps,
     lineType: (row.lineType as "material" | "labor" | "equipment" | "subcontract" | "other" | null) ?? null,
     attachments: row.attachments ?? null,
+    customerDetail: (row.customerDetail as "summary" | "items" | null) ?? null,
     // No driver here: the stored quantity IS the resolved one, and re-deriving it on read would
     // need the parent row, which this mapper does not have. create() only re-checks a child's
     // math when the caller supplies the driver, which the write path does.

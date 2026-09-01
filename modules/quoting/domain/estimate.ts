@@ -173,6 +173,8 @@ export interface EstimateLineProps {
   readonly lineType?: LineType | null;
   /** Photos attached to the line — office reference material, never on the customer copy. */
   readonly attachments?: readonly LineAttachment[] | null;
+  /** Assembly only: 'items' renders the component names on the customer copy, "Included". */
+  readonly customerDetail?: "summary" | "items" | null;
 }
 
 export const MAX_LINE_ATTACHMENTS = 8;
@@ -322,6 +324,9 @@ export class EstimateLine {
     if (props.lineType != null && !LINE_TYPES.includes(props.lineType)) {
       return err(validation("unknown line type", "lineType"));
     }
+    if (props.customerDetail != null && !["summary", "items"].includes(props.customerDetail)) {
+      return err(validation("unknown customer detail", "customerDetail"));
+    }
     if (props.attachments != null) {
       if (props.attachments.length > MAX_LINE_ATTACHMENTS) {
         return err(validation(`a line holds at most ${MAX_LINE_ATTACHMENTS} attachments`, "attachments"));
@@ -349,6 +354,7 @@ export class EstimateLine {
         markupBps: props.markupBps ?? null,
         lineType: props.lineType ?? null,
         attachments: props.attachments && props.attachments.length > 0 ? props.attachments : null,
+        customerDetail: props.customerDetail ?? null,
       }),
     );
   }

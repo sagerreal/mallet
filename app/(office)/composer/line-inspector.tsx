@@ -27,7 +27,7 @@ import {
   impliedMarkupBps,
 } from "./line-math";
 
-type EditKey = "quantity" | "cost" | "price" | "section" | null;
+type EditKey = "description" | "quantity" | "cost" | "price" | "section" | null;
 type AccKey = "scope" | "files" | "assembly" | "more" | null;
 
 export interface LineInspectorProps {
@@ -119,14 +119,33 @@ export function LineInspector(props: LineInspectorProps) {
     <div className="rail" data-testid="line-inspector">
       <div className="rail-head">
         <div className="rail-kicker">{kind}</div>
-        <h4 className="rail-title">{line.d.trim() || "New line item"}</h4>
+        {/* The mock's title is a BUTTON — the rail edits the description too, not just the row. */}
+        <button
+          type="button"
+          className="rail-title"
+          aria-expanded={edit === "description"}
+          onClick={() => toggleEdit("description")}
+        >
+          {line.d.trim() || (isAssembly ? "Untitled assembly" : "New line item")}
+        </button>
+        {edit === "description" && (
+          <div className="rail-editor">
+            <input
+              aria-label="Description"
+              placeholder="Describe the work…"
+              value={line.d}
+              onChange={(e) => props.onUpdate(selected, { d: e.target.value })}
+            />
+          </div>
+        )}
         {parent ? (
           <p className="rail-sub">Inside {parent.d.trim() || "an assembly"}</p>
         ) : isAssembly ? (
           <p className="rail-sub">
             {quantity.value}
             {line.unit ? ` ${line.unit}` : ""} · {components.length} item
-            {components.length === 1 ? "" : "s"}
+            {components.length === 1 ? "" : "s"} ·{" "}
+            {line.custItems ? "Customer itemized" : "Customer summary"}
           </p>
         ) : null}
       </div>
@@ -146,14 +165,18 @@ export function LineInspector(props: LineInspectorProps) {
               open={edit === "quantity"}
               onToggle={() => toggleEdit("quantity")}
             />
-            <CostPriceProps
-              {...props}
-              line={line}
-              parent={parent}
-              isAssembly={isAssembly}
-              edit={edit}
-              onToggle={toggleEdit}
-            />
+            {/* A part's money rides its parent — the mock keeps a child's cost and markup in
+                More details and shows no price/margin rows for it at all. */}
+            {!parent && (
+              <CostPriceProps
+                {...props}
+                line={line}
+                parent={parent}
+                isAssembly={isAssembly}
+                edit={edit}
+                onToggle={toggleEdit}
+              />
+            )}
           </>
         )}
         {/* Tax renders only when the quote charges tax — otherwise it decides nothing.
@@ -243,7 +266,7 @@ export function LineInspector(props: LineInspectorProps) {
                     <span className="rc-name">{component.d.trim() || "New line item"}</span>
                     <span className="rc-fig">
                       {count.valid ? count.value : "?"}
-                      {component.unit ? ` ${component.unit}` : ""} · {fmt$rate(component.r ?? 0)}
+                      {component.unit ? ` ${component.unit}` : ""} · {fmt$rate(component.c ?? 0)}
                     </span>
                   </button>
                 );
@@ -322,10 +345,44 @@ export function LineInspector(props: LineInspectorProps) {
               ))}
             </select>
           </div>
+          {parent && (
+            <div className="rail-grid2" style={{ marginBottom: "var(--space-2)" }}>
+              <input
+                inputMode="decimal"
+                aria-label="Unit cost"
+                placeholder="Unit cost"
+                value={line.c ?? ""}
+                onChange={(e) => {
+                  const c = Number(e.target.value);
+                  props.onUpdate(selected, { c: Number.isFinite(c) && c > 0 ? c : undefined });
+                }}
+              />
+              <input
+                inputMode="decimal"
+                aria-label="Markup percent"
+                placeholder="Markup %"
+                value={line.markupBps != null ? Math.round(line.markupBps / 100) : ""}
+                onChange={(e) =>
+                  props.onReplace(selected, withMarkup(line, (Number(e.target.value) || 0) * 100))
+                }
+              />
+            </div>
+          )}
           {parent ? (
-            <p className="rail-hint" style={{ margin: 0 }}>
-              Tax and optional status follow the parent assembly.
-            </p>
+            <>
+              <p className="rail-hint" style={{ margin: 0 }}>
+                Tax and optional status follow the parent assembly.
+              </p>
+              <div className="rail-actions">
+                <button
+                  type="button"
+                  className="btn sm"
+                  onClick={() => props.onDuplicate(selected)}
+                >
+                  Duplicate item
+                </button>
+              </div>
+            </>
           ) : (
             <div className="rail-actions" style={{ marginTop: 0 }}>
               <button
@@ -345,6 +402,22 @@ export function LineInspector(props: LineInspectorProps) {
               >
                 Duplicate line
               </button>
+              {isAssembly && (
+                <button
+                  type="button"
+                  className="btn sm"
+                  aria-pressed={Boolean(line.custItems)}
+                  title="What the customer's copy shows under this line — the parts by name (marked Included), or the one summary line"
+                  onClick={() => {
+                    // Replace, not patch: turning the choice back off must DROP the key — the
+                    // exception is stated only while it holds, like notax and hidden.
+                    const { custItems: _out, ...rest } = line;
+                    props.onReplace(selected, line.custItems ? rest : { ...rest, custItems: true });
+                  }}
+                >
+                  {line.custItems ? "Customer sees items" : "Customer sees summary"}
+                </button>
+              )}
             </div>
           )}
           <div className="rail-actions">
