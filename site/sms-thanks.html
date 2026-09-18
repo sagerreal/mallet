@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>You're opted in — Mallet</title>
+  <meta name="description" content="Your text message preferences have been recorded." />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231B1A17'/%3E%3Cpath d='M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z' fill='%23FAF8F3'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:ital,wght@0,400..700;1,400..700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <meta name="robots" content="noindex" />
+  <style>
+    .optin{max-width:620px;margin:0 auto;padding:3rem 28px 4rem}
+    .optin h1{font-size:clamp(1.9rem,4vw,2.6rem);margin-bottom:.4rem}
+    .optin .lede{color:var(--ink-soft);font-size:1.05rem;line-height:1.6;margin:0 0 1.8rem}
+    .optin form{display:grid;gap:1.1rem}
+    .optin label.fld{display:grid;gap:.4rem;font-weight:600;font-size:.95rem;color:var(--ink)}
+    .optin input[type="text"],.optin input[type="tel"],.optin textarea{
+      font:inherit;color:var(--ink);background:#fff;border:1px solid var(--line);border-radius:var(--r);
+      padding:.7rem .8rem;width:100%}
+    .optin textarea{min-height:90px;resize:vertical}
+    .optin .consent{display:flex;gap:.6rem;align-items:flex-start;background:var(--parchment);
+      border:1px solid var(--line);border-radius:var(--r);padding:.9rem 1rem}
+    .optin .consent input{margin-top:.2rem;width:18px;height:18px;flex:none}
+    .optin .consent span{font-size:.9rem;line-height:1.55;color:var(--ink)}
+    .optin .consent a{color:var(--amber-deep);text-decoration:underline}
+    .optin .btn-primary{justify-self:start;border:0;cursor:pointer}
+    .optin .fine{color:var(--ink-soft);font-size:.82rem;line-height:1.5;margin:.2rem 0 0}
+    .optin .fine strong{color:var(--ink)}
+  </style>
+</head>
+<body>
+  <header class="navwrap" id="top">
+    <div class="nav wrap">
+      <a class="wordmark" href="/" aria-label="Mallet home">
+        <span class="logo-mark" aria-hidden="true"><svg viewBox="0 0 32 32" width="30" height="30"><rect width="32" height="32" rx="8" fill="#1B1A17"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#FAF8F3"/></svg></span>
+        <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a class="nav-top" href="/#what">The platform</a>
+        <a class="nav-top" href="/#easy">Why it&rsquo;s easy</a>
+        <a class="nav-top" href="/#roi">The math</a>
+        <a class="nav-top" href="/#terms">Plain terms</a>
+      </nav>
+      <div class="nav-cta">
+        <a class="btn-primary" href="/#waitlist">Start a pilot</a>
+      <button class="nav-burger" type="button" aria-label="Menu" aria-expanded="false" aria-controls="mnav">
+        <span></span><span></span><span></span>
+      </button>
+      </div>
+    </div>
+    <div class="mnav" id="mnav">
+      <a href="/#what">The platform</a>
+      <a href="/#easy">Why it&rsquo;s easy</a>
+      <a href="/#roi">The math</a>
+      <a href="/#terms">Plain terms</a>
+      <a href="/leak-check">The Leak Check</a>
+      <div class="mnav-ctas">
+        <a class="btn-primary js-book-demo" href="/#demo">Book a demo</a>
+        <a class="btn-outline" href="/#waitlist">Start a pilot</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="optin">
+    <h1>You&rsquo;re all set</h1>
+    <p class="lede">We&rsquo;ve recorded your number and your text message preference.</p>
+    <p class="lede">If you ticked the consent box, you&rsquo;ll get service texts from Mallet about
+      your own job &mdash; appointment confirmations and reminders, technician arrival updates, and
+      quotes and invoices with secure payment links. Reply <strong>STOP</strong> at any time to stop
+      them, or <strong>HELP</strong> for support. Msg frequency may vary; message and data rates may
+      apply.</p>
+    <p class="lede">If you left it unchecked that&rsquo;s completely fine &mdash; we simply won&rsquo;t
+      text you. It was never a condition of working with us.</p>
+    <p><a class="btn-primary" href="/">Back to Mallet</a></p>
+  </main>
+
+  <footer class="foot">
+    <div class="wrap foot-inner">
+      <div class="foot-brand">
+        <a class="wordmark foot-wordmark" href="/">
+          <span class="logo-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" width="28" height="28"><rect width="32" height="32" rx="8" fill="#FAF8F3"/><path d="M16 6l2 6 6 2-6 2-2 6-2-6-6-2 6-2z" fill="#1B1A17"/></svg>
+          </span>
+          <span class="logo-text">Mallet<span class="logo-tld">.ai</span></span>
+        </a>
+        <p class="foot-tag">The AI-native operating system for service businesses. It answers the call, writes the quote, runs the job, and chases the invoice.</p>
+        <div class="foot-ctas">
+          <a class="btn-amber js-book-demo" href="/#demo">Book a demo</a>
+          <a class="btn-foot-outline" href="/#waitlist">Start a pilot</a>
+        </div>
+      </div>
+      <div class="foot-cols">
+        <div class="foot-col">
+          <p class="foot-head">Platform</p>
+          <a href="/#what">The platform</a>
+          <a href="/#easy">Why it&rsquo;s easy</a>
+          <a href="/#roi">The math</a>
+          <a href="/#terms">Plain terms</a>
+        </div>
+        <div class="foot-col">
+          <p class="foot-head">The AIs</p>
+          <a href="/product#front-desk">AI Front Desk</a>
+          <a href="/product#estimating">AI Estimating</a>
+          <a href="/product#crew">AI Foreman</a>
+          <a href="/product#money">AI Invoice Follow-ups</a>
+        </div>
+        <div class="foot-col">
+          <p class="foot-head">Get started</p>
+          <a href="/leak-check">The Leak Check</a>
+          <a class="js-book-demo" href="/#demo">Book a demo</a>
+          <a href="/#waitlist">Start a pilot</a>
+        </div>
+      </div>
+      <div class="foot-bottom">
+        <span>&copy; 2026 Mallet Technologies, Inc. All rights reserved.</span>
+        <span class="foot-legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/support">Support</a><a href="/sms">Text updates</a></span>
+      </div>
+    </div>
+  </footer>
+  <!-- Mobile nav. This page does not load main.js, so it carries the same toggle inline —
+       otherwise the burger renders on a phone and does nothing. -->
+  <script>
+    (function () {
+      var burger = document.querySelector('.nav-burger');
+      var panel = document.getElementById('mnav');
+      if (!burger || !panel) return;
+      burger.addEventListener('click', function () {
+        var open = panel.classList.toggle('open');
+        burger.setAttribute('aria-expanded', open ? 'true' : 'false');
+      });
+      Array.prototype.slice.call(panel.querySelectorAll('a')).forEach(function (a) {
+        a.addEventListener('click', function () {
+          panel.classList.remove('open');
+          burger.setAttribute('aria-expanded', 'false');
+        });
+      });
+    })();
+  </script>
+  <!-- Vercel Web Analytics — cookieless, counts every visit (no consent gate) -->
+  <script>window.va=window.va||function(){(window.vaq=window.vaq||[]).push(arguments);};</script>
+  <script defer src="/_vercel/insights/script.js"></script>
+</body>
+</html>
