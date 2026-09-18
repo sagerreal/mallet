@@ -1,0 +1,1 @@
+ALTER TABLE "org_settings" ADD COLUMN "measurement_estimating" boolean DEFAULT false NOT NULL;

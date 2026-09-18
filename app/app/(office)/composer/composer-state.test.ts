@@ -1,0 +1,1464 @@
+/**
+ * app/(office)/composer/composer-state.test.ts
+ * Unit tests for the composer's pure helpers: format switching (line
+ * carry-over both directions), recommended-tier line derivation at send time,
+ * send gating reasons, AI-draft routing, and the quote message body.
+ */
+
+import { describe, it, expect } from "vitest";
+import type { HeldTrace } from "@/lib/measure/held-trace";
+import {
+  INITIAL_STATE,
+  addHeldTrace,
+  aiDraftForPayload,
+  appendMeasurementLines,
+  applyAiDraftLines,
+  applyAiDraftTiers,
+  applyComposerPatch,
+  applyMeasurementSeed,
+  applyReviseSeed,
+  tieredLinesForPayload,
+  buildQuoteMessageBody,
+  deliveryGateReason,
+  gapNoticeText,
+  gbbTierTotal,
+  emptyLine,
+  emptySubItem,
+  hasRealLine,
+  lineToPayload,
+  linesForSend,
+  pricingSummary,
+  realLines,
+  realTierCount,
+  presentationFromSnapshot,
+  presentationSnapshotForPayload,
+  subItemsTotal,
+  togglePresentationPage,
+  withSubPatch,
+  recommendedTier,
+  seedLinesToComposerLines,
+  sendGateReason,
+  switchToGbb,
+  switchToSingle,
+  tierDisplayName,
+  toEstimateLines,
+  unconfirmedRoomsNoticeText,
+  updateTier,
+  laborRulePayload,
+  toProposalChips,
+  type AiProposal,
+  type AiTiersDraft,
+  type ComposerLine,
+  type ComposerState,
+  type GBBDraft,
+  type GBBTier,
+  type MeasurementSeedLine,
+  type TierKey,
+} from "./composer-state";
+import type { ReviseSeedLine } from "./composer-state";
+import {
+  modeOf,
+  designOf,
+  patchPresentationDesign,
+  patchPresentationMeta,
+  setPresentationMode,
+} from "./presentation-state";
+import { JOB_TAG_MAX_LENGTH } from "@/modules/quoting/domain/quoting-rule";
+
+// ---------------------------------------------------------------------------
+// Minimal fixture builders
+// ---------------------------------------------------------------------------
+
+function line(d: string, q = 1, r = 0): ComposerLine {
+  return { d, q, r };
+}
+
+function makeTier(k: TierKey, overrides: Partial<GBBTier> = {}): GBBTier {
+  const names: Record<TierKey, string> = {
+    good: "Good",
+    better: "Better",
+    best: "Best",
+  };
+  return { k, name: names[k], title: "", note: "", lines: [], ...overrides };
+}
+
+function makeGbb(overrides: Partial<GBBDraft> = {}): GBBDraft {
+  return {
+    rec: "good",
+    opts: [
+      makeTier("good", { lines: [line("Snake the drain", 1, 250)] }),
+      makeTier("better", { lines: [line("Hydro-jet the line", 1, 450)] }),
+      makeTier("best", { lines: [line("Install exterior cleanout", 1, 780)] }),
+    ],
+    ...overrides,
+  };
+}
+
+function makeState(overrides: Partial<ComposerState> = {}): ComposerState {
+  return { ...INITIAL_STATE, ...overrides };
+}
+
+// ---------------------------------------------------------------------------
+// Format switching — single → GBB
+// ---------------------------------------------------------------------------
+
+describe("switchToGbb", () => {
+  it("seeds Good with the current lines on the first switch", () => {
+    const lines = [line("Replace water heater", 1, 1650), line("Permit", 1, 110)];
+    const patch = switchToGbb(makeState({ lines }));
+
+    expect(patch.format).toBe("gbb");
+    const gbb = patch.gbb!;
+    expect(gbb.rec).toBe("good");
+    expect(gbb.opts.map((o) => o.k)).toEqual(["good", "better", "best"]);
+    expect(gbb.opts[0]!.lines).toEqual(lines);
+    expect(patch.switchNote).toBe(
+      "Your lines moved into Good — Better & Best start empty."
+    );
+  });
+
+  it("starts Better and Best EMPTY — zero rows is the empty encoding, never a blank row", () => {
+    // A manufactured blank row defeats the untouched gate and the table's empty state; the
+    // GBB→Single round trip used to land on exactly that.
+    const patch = switchToGbb(makeState({ lines: [line("Job", 1, 100)] }));
+    expect(patch.gbb!.opts[1]!.lines).toEqual([]);
+    expect(patch.gbb!.opts[2]!.lines).toEqual([]);
+  });
+
+  it("clones the lines — editing a tier later never mutates the single-format lines", () => {
+    const original = [line("Replace water heater", 1, 1650)];
+    const patch = switchToGbb(makeState({ lines: original }));
+
+    patch.gbb!.opts[0]!.lines[0]!.d = "MUTATED";
+    expect(original[0]!.d).toBe("Replace water heater");
+  });
+
+  it("returns lines to the RECOMMENDED tier when a GBB draft already exists", () => {
+    const gbb = makeGbb({ rec: "better" });
+    const state = makeState({
+      format: "single",
+      lines: [line("Edited in single", 1, 500)],
+      gbb,
+    });
+
+    const patch = switchToGbb(state);
+    const better = patch.gbb!.opts.find((o) => o.k === "better")!;
+    expect(better.lines).toEqual([line("Edited in single", 1, 500)]);
+    expect(patch.switchNote).toBe(
+      "Your lines moved into Better — the other tiers kept their edits."
+    );
+  });
+
+  it("keeps the other tiers' edits when re-entering GBB", () => {
+    const gbb = makeGbb({ rec: "better" });
+    const state = makeState({
+      format: "single",
+      lines: [line("Edited in single", 1, 500)],
+      gbb,
+    });
+
+    const patch = switchToGbb(state);
+    const good = patch.gbb!.opts.find((o) => o.k === "good")!;
+    const best = patch.gbb!.opts.find((o) => o.k === "best")!;
+    expect(good.lines).toEqual([line("Snake the drain", 1, 250)]);
+    expect(best.lines).toEqual([line("Install exterior cleanout", 1, 780)]);
+  });
+
+  it("is a no-op when already in GBB format", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb() });
+    expect(switchToGbb(state)).toEqual({});
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Format switching — GBB → single
+// ---------------------------------------------------------------------------
+
+describe("switchToSingle", () => {
+  it("keeps the RECOMMENDED tier's lines", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb({ rec: "best" }) });
+    const patch = switchToSingle(state);
+
+    expect(patch.format).toBe("single");
+    expect(patch.lines).toEqual([line("Install exterior cleanout", 1, 780)]);
+    expect(patch.switchNote).toBe("Kept the Best option's lines.");
+  });
+
+  it("names the recommended tier by its EDITED name in the switch note", () => {
+    const gbb = makeGbb({ rec: "better" });
+    const renamed = updateTier(gbb, "better", { name: "Most popular" });
+    const patch = switchToSingle(makeState({ format: "gbb", gbb: renamed }));
+    expect(patch.switchNote).toBe("Kept the Most popular option's lines.");
+  });
+
+  it("clones the tier lines — later single-format edits never mutate the tier", () => {
+    const gbb = makeGbb({ rec: "good" });
+    const patch = switchToSingle(makeState({ format: "gbb", gbb }));
+
+    patch.lines![0]!.d = "MUTATED";
+    expect(gbb.opts[0]!.lines[0]!.d).toBe("Snake the drain");
+  });
+
+  it("does NOT clear the GBB draft — tier edits survive the round-trip", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb() });
+    const patch = switchToSingle(state);
+    expect("gbb" in patch).toBe(false);
+  });
+
+  it("keeps zero rows when the recommended tier has no lines — the empty state takes over", () => {
+    const gbb = makeGbb();
+    const emptied = updateTier(gbb, "good", { lines: [] });
+    const patch = switchToSingle(makeState({ format: "gbb", gbb: emptied }));
+    expect(patch.lines).toEqual([]);
+  });
+
+  it("is a no-op when already in single format", () => {
+    expect(switchToSingle(makeState())).toEqual({});
+  });
+
+  it("round-trips: single → GBB → single preserves the lines", () => {
+    const lines = [line("Replace water heater", 1, 1650), line("Permit", 1, 110)];
+    const s1 = makeState({ lines });
+    const s2 = { ...s1, ...switchToGbb(s1) };
+    const s3 = { ...s2, ...switchToSingle(s2) };
+    expect(s3.format).toBe("single");
+    expect(s3.lines).toEqual(lines);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Recommended tier + line derivation at send time
+// ---------------------------------------------------------------------------
+
+describe("recommendedTier", () => {
+  it("is null in single format even when a GBB draft exists", () => {
+    expect(recommendedTier(makeState({ format: "single", gbb: makeGbb() }))).toBeNull();
+  });
+
+  it("is null in GBB format without a draft", () => {
+    expect(recommendedTier(makeState({ format: "gbb", gbb: null }))).toBeNull();
+  });
+
+  it("returns the starred tier", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb({ rec: "better" }) });
+    expect(recommendedTier(state)?.k).toBe("better");
+  });
+
+  it("falls back to the first tier when the starred key is missing", () => {
+    const gbb = makeGbb({ rec: "best" });
+    const broken: GBBDraft = { ...gbb, opts: gbb.opts.filter((o) => o.k !== "best") };
+    const state = makeState({ format: "gbb", gbb: broken });
+    expect(recommendedTier(state)?.k).toBe("good");
+  });
+});
+
+describe("linesForSend", () => {
+  it("uses the line table in single format", () => {
+    const lines = [line("Job", 1, 100)];
+    expect(linesForSend(makeState({ lines }))).toEqual(lines);
+  });
+
+  it("uses the RECOMMENDED tier's lines in GBB format, not the single-format lines", () => {
+    const state = makeState({
+      format: "gbb",
+      lines: [line("Stale single line", 1, 1)],
+      gbb: makeGbb({ rec: "better" }),
+    });
+    expect(linesForSend(state)).toEqual([line("Hydro-jet the line", 1, 450)]);
+  });
+
+  it("derives at call time — starring a different tier changes what sends", () => {
+    const gbb = makeGbb({ rec: "good" });
+    const before = linesForSend(makeState({ format: "gbb", gbb }));
+    const after = linesForSend(
+      makeState({ format: "gbb", gbb: { ...gbb, rec: "best" } })
+    );
+    expect(before).toEqual([line("Snake the drain", 1, 250)]);
+    expect(after).toEqual([line("Install exterior cleanout", 1, 780)]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Send gating — disable reason derivation
+// ---------------------------------------------------------------------------
+
+describe("hasRealLine", () => {
+  it("is false for blank and whitespace-only descriptions", () => {
+    expect(hasRealLine([])).toBe(false);
+    expect(hasRealLine([line("")])).toBe(false);
+    expect(hasRealLine([line("   ")])).toBe(false);
+  });
+
+  it("is true when any line has a real description", () => {
+    expect(hasRealLine([line(""), line("Camera inspection", 1, 285)])).toBe(true);
+  });
+});
+
+describe("realLines — the save-draft / send payload filter", () => {
+  it("drops blank and whitespace-only rows, keeping the real ones", () => {
+    const real = line("Camera inspection", 1, 285);
+    expect(realLines([real, line(""), line("   ")])).toEqual([real]);
+  });
+
+  it("saved payload from a state with one real + one blank line contains only the real line", () => {
+    // The composer manufactures blank rows ("+ Add line", GBB seeding) — the
+    // server rejects description:"" and would roll the whole draft back.
+    const state = makeState({ lines: [line("Camera inspection", 1, 285), line("")] });
+    const payloadLines = toEstimateLines(realLines(linesForSend(state)));
+    expect(payloadLines).toEqual([{ d: "Camera inspection", q: 1, r: 285 }]);
+  });
+
+  it("filters the RECOMMENDED tier's blanks in GBB format too", () => {
+    const gbb = updateTier(makeGbb({ rec: "better" }), "better", {
+      lines: [line("Hydro-jet the line", 1, 450), line("")],
+    });
+    const state = makeState({ format: "gbb", gbb });
+    expect(realLines(linesForSend(state))).toEqual([line("Hydro-jet the line", 1, 450)]);
+  });
+
+  it("keeps optional / photo / cost flags on the surviving lines", () => {
+    const flagged: ComposerLine = { d: "Valve", q: 1, r: 300, c: 120, opt: true, photo: true };
+    expect(realLines([flagged, line("")])).toEqual([flagged]);
+  });
+});
+
+describe("sendGateReason", () => {
+  const realLines = [line("Camera inspection", 1, 285)];
+
+  it("asks for a customer first — even when lines exist", () => {
+    expect(sendGateReason(false, realLines)).toBe("Pick a customer first.");
+  });
+
+  it("asks for a line when the customer is picked but the quote is empty", () => {
+    expect(sendGateReason(true, [line("")])).toBe("Add at least one line.");
+  });
+
+  it("names the recommended tier in GBB format", () => {
+    expect(sendGateReason(true, [line("  ")], "Best")).toBe(
+      "Add at least one line to the Best option."
+    );
+  });
+
+  it("is null when the quote is sendable", () => {
+    expect(sendGateReason(true, realLines)).toBeNull();
+    expect(sendGateReason(true, realLines, "Better")).toBeNull();
+  });
+});
+
+describe("deliveryGateReason — the send-only destination gate", () => {
+  it("text channel needs a mobile number — empty, whitespace, or the — placeholder", () => {
+    expect(deliveryGateReason("text", { phone: "", email: "dana@email.com" })).toBe(
+      "Add a mobile number."
+    );
+    expect(deliveryGateReason("text", { phone: "   " })).toBe("Add a mobile number.");
+    expect(deliveryGateReason("text", { phone: "—" })).toBe("Add a mobile number.");
+    expect(deliveryGateReason("text", {})).toBe("Add a mobile number.");
+  });
+
+  it("email channel needs an address", () => {
+    expect(deliveryGateReason("email", { phone: "(925) 555-0123" })).toBe(
+      "Add an email address."
+    );
+    expect(deliveryGateReason("email", { email: "" })).toBe("Add an email address.");
+    expect(deliveryGateReason("email", { email: "   " })).toBe("Add an email address.");
+  });
+
+  it("is null when the chosen channel has a destination on file", () => {
+    expect(deliveryGateReason("text", { phone: "(925) 555-0123" })).toBeNull();
+    expect(deliveryGateReason("email", { email: "dana@email.com" })).toBeNull();
+  });
+
+  it("only gates the CHOSEN channel — the other contact may be missing", () => {
+    expect(deliveryGateReason("text", { phone: "(925) 555-0123", email: "" })).toBeNull();
+    expect(deliveryGateReason("email", { phone: "—", email: "dana@email.com" })).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// AI-draft routing
+// ---------------------------------------------------------------------------
+
+describe("applyAiDraftLines", () => {
+  const drafted = [line("40-gal gas water heater", 1, 1650), line("Permit", 1, 110)];
+
+  it("replaces the line table in single format and flags the draft", () => {
+    const state = makeState({ lines: [line("old", 1, 1)], aiOpen: true });
+    const next = applyAiDraftLines(state, drafted);
+
+    expect(next.lines).toEqual(drafted);
+    expect(next.aiOpen).toBe(false);
+    expect(next.aiDrafted).toBe(true);
+  });
+
+  it("drafts into the GOOD tier in GBB format, leaving the other tiers' lines alone", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb({ rec: "better" }), aiOpen: true });
+    const next = applyAiDraftLines(state, drafted);
+
+    const good = next.gbb!.opts.find((o) => o.k === "good")!;
+    const better = next.gbb!.opts.find((o) => o.k === "better")!;
+    expect(good.lines).toEqual(drafted);
+    expect(better.lines).toEqual([line("Hydro-jet the line", 1, 450)]);
+    expect(next.aiDrafted).toBe(true);
+  });
+
+  it("moves the star to Good in GBB — the fresh AI draft is what sends", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb({ rec: "better" }) });
+    const next = applyAiDraftLines(state, drafted);
+
+    expect(next.gbb!.rec).toBe("good");
+    expect(linesForSend(next)).toEqual(drafted);
+  });
+
+  it("clears a stale format-switch note — the draft rewrote the lines", () => {
+    const state = makeState({
+      switchNote: "Your lines moved into Good — Better & Best start empty.",
+    });
+    expect(applyAiDraftLines(state, drafted).switchNote).toBeNull();
+  });
+
+  it("clones the drafted lines and never mutates the input state", () => {
+    const state = makeState({ lines: [line("old", 1, 1)] });
+    const source = [line("drafted", 1, 100)];
+    const next = applyAiDraftLines(state, source);
+
+    source[0]!.d = "MUTATED";
+    expect(next.lines[0]!.d).toBe("drafted");
+    expect(state.lines[0]!.d).toBe("old");
+    expect(state.aiDrafted).toBe(false);
+  });
+
+  it("freezes the AI's original lines — user edits never touch the snapshot", () => {
+    const state = makeState();
+    const next = applyAiDraftLines(state, drafted);
+    expect(next.aiOriginal).toEqual([
+      { d: "40-gal gas water heater", q: 1, r: 1650 },
+      { d: "Permit", q: 1, r: 110 },
+    ]);
+
+    // Editing the visible lines leaves the frozen original alone.
+    next.lines[0]!.r = 999;
+    expect(next.aiOriginal![0]!.r).toBe(1650);
+  });
+});
+
+describe("applyAiDraftTiers", () => {
+  const tiersDraft: AiTiersDraft = {
+    recommended: "better",
+    good: { note: "Fix it", lines: [line("Snake the drain", 1, 250)] },
+    better: { note: "Fix + prevent", lines: [line("Hydro-jet the line", 1, 450)] },
+    best: { note: "Replace", lines: [line("Install exterior cleanout", 1, 780)] },
+  };
+
+  it("fills all three tier panels, moves the star, and closes the AI panel in GBB format", () => {
+    const gbb = makeGbb({ rec: "good" });
+    const state = makeState({ format: "gbb", gbb, aiOpen: true });
+    const next = applyAiDraftTiers(state, tiersDraft);
+
+    expect(next.gbb!.rec).toBe("better");
+    expect(next.gbb!.opts.map((o) => o.note)).toEqual(["Fix it", "Fix + prevent", "Replace"]);
+    expect(next.gbb!.opts[1]!.lines).toEqual([line("Hydro-jet the line", 1, 450)]);
+    expect(next.aiOpen).toBe(false);
+    expect(next.aiDrafted).toBe(true);
+    expect(next.switchNote).toBeNull();
+  });
+
+  it("keeps user-typed tier names and titles", () => {
+    const gbb = updateTier(makeGbb(), "better", { name: "Most popular", title: "Repair + prevent" });
+    const next = applyAiDraftTiers(makeState({ format: "gbb", gbb }), tiersDraft);
+    const better = next.gbb!.opts.find((o) => o.k === "better")!;
+    expect(better.name).toBe("Most popular");
+    expect(better.title).toBe("Repair + prevent");
+  });
+
+  it("is a no-op when no GBB draft exists", () => {
+    const state = makeState({ format: "gbb", gbb: null });
+    expect(applyAiDraftTiers(state, tiersDraft)).toBe(state);
+  });
+
+  it("freezes the AI's original lines tier-tagged for the ai_draft snapshot", () => {
+    const state = makeState({ format: "gbb", gbb: makeGbb() });
+    const next = applyAiDraftTiers(state, tiersDraft);
+    expect(next.aiOriginal).toEqual([
+      { d: "Snake the drain", q: 1, r: 250, tier: "good" },
+      { d: "Hydro-jet the line", q: 1, r: 450, tier: "better" },
+      { d: "Install exterior cleanout", q: 1, r: 780, tier: "best" },
+    ]);
+  });
+
+  // Mid-flight GBB → single switch: the response must not land invisibly.
+  it("after a switch to single: leaves the line table alone, fills the panels, and says where the draft went", () => {
+    const tableLines = [line("Kept single line", 1, 500)];
+    const state = makeState({
+      format: "single",
+      lines: tableLines,
+      gbb: makeGbb({ rec: "good" }),
+      aiOpen: true,
+    });
+    const next = applyAiDraftTiers(state, tiersDraft);
+
+    // The visible single-format table never changes...
+    expect(next.format).toBe("single");
+    expect(next.lines).toEqual(tableLines);
+    // ...the draft lands in the (hidden but persistent) tier panels...
+    expect(next.gbb!.rec).toBe("better");
+    expect(next.gbb!.opts[0]!.lines).toEqual([line("Snake the drain", 1, 250)]);
+    // ...and the in-flow note names what happened and the next step.
+    expect(next.aiOpen).toBe(false);
+    expect(next.switchNote).toBe(
+      "AI drafted three options after you switched formats — switch to Good, Better & Best to see them."
+    );
+  });
+
+  it("clones the drafted lines — later edits never mutate the draft input", () => {
+    const draft: AiTiersDraft = {
+      ...tiersDraft,
+      good: { note: "Fix it", lines: [line("Snake the drain", 1, 250)] },
+    };
+    const next = applyAiDraftTiers(makeState({ format: "gbb", gbb: makeGbb() }), draft);
+    next.gbb!.opts[0]!.lines[0]!.d = "MUTATED";
+    expect(draft.good.lines[0]!.d).toBe("Snake the drain");
+  });
+});
+
+describe("aiDraftForPayload — the ai_draft snapshot on the quote payload", () => {
+  const original = [
+    { d: "Water heater swap labor", q: 5, r: 150 },
+    { d: "40-gal tank", q: 1, r: 900 },
+  ];
+
+  it("is null before any AI draft", () => {
+    expect(aiDraftForPayload(makeState())).toBeNull();
+  });
+
+  it("converts the frozen original to cents for the server", () => {
+    const state = makeState({ aiDrafted: true, aiOriginal: original });
+    expect(aiDraftForPayload(state)).toEqual({
+      lines: [
+        { description: "Water heater swap labor", quantity: 5, rateCents: 15_000 },
+        { description: "40-gal tank", quantity: 1, rateCents: 90_000 },
+      ],
+    });
+  });
+
+  it("carries tier tags for a GBB draft", () => {
+    const state = makeState({
+      format: "gbb",
+      aiDrafted: true,
+      aiOriginal: [{ d: "Snake the drain", q: 1, r: 250, tier: "good" }],
+    });
+    expect(aiDraftForPayload(state)).toEqual({
+      lines: [{ description: "Snake the drain", quantity: 1, rateCents: 25_000, tier: "good" }],
+    });
+  });
+
+  it("drops the snapshot when the format changed since the draft (diff would be noise)", () => {
+    // Drafted single, sending GBB…
+    expect(aiDraftForPayload(makeState({ format: "gbb", aiDrafted: true, aiOriginal: original }))).toBeNull();
+    // …and drafted tiered, sending single.
+    const tiered = [{ d: "Snake the drain", q: 1, r: 250, tier: "good" as const }];
+    expect(aiDraftForPayload(makeState({ format: "single", aiDrafted: true, aiOriginal: tiered }))).toBeNull();
+  });
+});
+
+describe("realTierCount — the send button's option count", () => {
+  it("is 0 in single format and without a GBB draft", () => {
+    expect(realTierCount(makeState())).toBe(0);
+    expect(realTierCount(makeState({ format: "gbb", gbb: null }))).toBe(0);
+  });
+
+  it("counts only tiers with at least one real line", () => {
+    expect(realTierCount(makeState({ format: "gbb", gbb: makeGbb() }))).toBe(3);
+
+    const twoReal = updateTier(makeGbb(), "best", { lines: [line("")] });
+    expect(realTierCount(makeState({ format: "gbb", gbb: twoReal }))).toBe(2);
+
+    const oneReal = updateTier(twoReal, "better", { lines: [line("   ")] });
+    expect(realTierCount(makeState({ format: "gbb", gbb: oneReal }))).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tier patching + totals
+// ---------------------------------------------------------------------------
+
+describe("tierDisplayName", () => {
+  it("uses the custom name when present", () => {
+    expect(tierDisplayName(makeTier("better", { name: "Most popular" }))).toBe(
+      "Most popular"
+    );
+  });
+
+  it("falls back to the tier key's display name when the custom name trims empty", () => {
+    expect(tierDisplayName(makeTier("good", { name: "" }))).toBe("Good");
+    expect(tierDisplayName(makeTier("better", { name: "   " }))).toBe("Better");
+    expect(tierDisplayName(makeTier("best", { name: "" }))).toBe("Best");
+  });
+
+  it("keeps labels honest through switchToSingle when the name was cleared", () => {
+    const gbb = updateTier(makeGbb({ rec: "better" }), "better", { name: "  " });
+    const patch = switchToSingle(makeState({ format: "gbb", gbb }));
+    expect(patch.switchNote).toBe("Kept the Better option's lines.");
+  });
+});
+
+describe("applyComposerPatch — stale switch-note clearing", () => {
+  const noted = () =>
+    makeState({
+      switchNote: "Your lines moved into Good — Better & Best start empty.",
+    });
+
+  it("clears the note when the lines change", () => {
+    const next = applyComposerPatch(noted(), { lines: [line("Job", 1, 100)] });
+    expect(next.switchNote).toBeNull();
+    expect(next.lines).toEqual([line("Job", 1, 100)]);
+  });
+
+  it("clears the note when a tier changes", () => {
+    const prev = { ...noted(), format: "gbb" as const, gbb: makeGbb() };
+    const next = applyComposerPatch(prev, { gbb: makeGbb({ rec: "best" }) });
+    expect(next.switchNote).toBeNull();
+  });
+
+  it("keeps a note the patch itself sets — format switches stay announced", () => {
+    const next = applyComposerPatch(noted(), {
+      lines: [line("Job", 1, 100)],
+      switchNote: "Kept the Good option's lines.",
+    });
+    expect(next.switchNote).toBe("Kept the Good option's lines.");
+  });
+
+  it("leaves the note alone on unrelated edits (intro, pricing, channel)", () => {
+    const prev = noted();
+    expect(applyComposerPatch(prev, { intro: "hey" }).switchNote).toBe(prev.switchNote);
+    expect(applyComposerPatch(prev, { sendChannel: "email" }).switchNote).toBe(
+      prev.switchNote
+    );
+  });
+
+  it("does not mutate the previous state", () => {
+    const prev = noted();
+    applyComposerPatch(prev, { lines: [line("Job", 1, 100)] });
+    expect(prev.switchNote).toBe("Your lines moved into Good — Better & Best start empty.");
+    // The composer starts with ZERO rows now (the mock's model); immutability is the point here.
+    expect(prev.lines).toEqual([]);
+  });
+});
+
+describe("updateTier", () => {
+  it("patches only the target tier and returns a new draft", () => {
+    const gbb = makeGbb();
+    const next = updateTier(gbb, "better", { name: "Most popular" });
+
+    expect(next).not.toBe(gbb);
+    expect(next.opts.find((o) => o.k === "better")?.name).toBe("Most popular");
+    expect(next.opts.find((o) => o.k === "good")?.name).toBe("Good");
+    expect(gbb.opts.find((o) => o.k === "better")?.name).toBe("Better");
+  });
+});
+
+describe("gbbTierTotal", () => {
+  it("sums qty × rate across the tier's lines", () => {
+    const tier = makeTier("good", {
+      lines: [line("A", 2, 100), line("B", 1, 50)],
+    });
+    expect(gbbTierTotal(tier)).toBe(250);
+  });
+
+  it("defaults missing qty to 1 and missing rate to 0", () => {
+    const tier = makeTier("good", {
+      lines: [
+        { d: "A", r: 40 } as ComposerLine,
+        { d: "B", q: 3 } as ComposerLine,
+      ],
+    });
+    expect(gbbTierTotal(tier)).toBe(40);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// DTO mapping + pricing summary
+// ---------------------------------------------------------------------------
+
+describe("toEstimateLines", () => {
+  it("keeps d/q/r and drops unset optional fields", () => {
+    expect(toEstimateLines([line("Job", 2, 100)])).toEqual([{ d: "Job", q: 2, r: 100 }]);
+  });
+
+  it("carries cost / optional / photo when set — including explicit false", () => {
+    const [mapped] = toEstimateLines([
+      { d: "Job", q: 1, r: 100, c: 40, opt: false, photo: true },
+    ]);
+    expect(mapped).toEqual({ d: "Job", q: 1, r: 100, c: 40, opt: false, photo: true });
+  });
+});
+
+describe("pricingSummary", () => {
+  it("is empty when nothing is set", () => {
+    expect(pricingSummary({ disc: 0, dep: 0, tax: 0 })).toBe("");
+  });
+
+  it("joins the set parts with a middot", () => {
+    expect(pricingSummary({ disc: 10, dep: 25, tax: 9 })).toBe(
+      "10% discount · 25% deposit · 9% tax"
+    );
+    expect(pricingSummary({ disc: 0, dep: 0, tax: 9 })).toBe("9% tax");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Quote message body — intro / auto-intro
+// ---------------------------------------------------------------------------
+
+describe("buildQuoteMessageBody", () => {
+  it("leads with the typed intro", () => {
+    expect(
+      buildQuoteMessageBody({
+        firstName: "Dana",
+        intro: "Great meeting you today.",
+        quoteNum: "Q-1042",
+        quoteLink: "https://app.test/q/tok123",
+      })
+    ).toBe(
+      "Great meeting you today. Your quote Q-1042 is ready — view and approve here: https://app.test/q/tok123"
+    );
+  });
+
+  it("falls back to the auto intro when the intro is blank or whitespace", () => {
+    for (const intro of ["", "   "]) {
+      expect(
+        buildQuoteMessageBody({
+          firstName: "Dana",
+          intro,
+          quoteNum: "Q-1042",
+          quoteLink: "https://app.test/q/tok123",
+        })
+      ).toBe(
+        "Hi Dana — thanks for having us out. Your quote Q-1042 is ready — view and approve here: https://app.test/q/tok123"
+      );
+    }
+  });
+});
+
+describe("toProposalChips", () => {
+  const proposals: AiProposal[] = [
+    { kind: "labor_hours", serviceName: "Water heater swap", hours: 5 },
+    { kind: "rule", rule: "Include haul-away on swaps" },
+  ];
+
+  it("assigns each proposal a UNIQUE stable id and starts it not-saving", () => {
+    let n = 0;
+    const chips = toProposalChips(proposals, () => `id-${(n += 1)}`);
+    expect(chips.map((c) => c.id)).toEqual(["id-1", "id-2"]);
+    expect(chips.every((c) => !c.saving)).toBe(true);
+    // The proposal payload rides along untouched.
+    expect(chips[0]).toMatchObject(proposals[0]!);
+    expect(chips[1]).toMatchObject(proposals[1]!);
+  });
+
+  it("does not mutate the input proposals", () => {
+    const before = structuredClone(proposals);
+    toProposalChips(proposals, () => "x");
+    expect(proposals).toEqual(before);
+  });
+});
+
+describe("laborRulePayload", () => {
+  it("phrases the fact as a rule and tags it with the service name", () => {
+    expect(laborRulePayload({ serviceName: "Water heater swap", hours: 5 })).toEqual({
+      rule: "Water heater swap takes 5h of labor",
+      jobTag: "Water heater swap",
+    });
+  });
+
+  it("clips the jobTag to the server's cap so the save can't 400 forever", () => {
+    // The drafter allows serviceName up to 200 chars; v1.quoting.rules.create
+    // caps jobTag at JOB_TAG_MAX_LENGTH — an unclipped tag would be a permanent
+    // BAD_REQUEST dressed as a transient connection error.
+    const long = "x".repeat(200);
+    const payload = laborRulePayload({ serviceName: long, hours: 3 });
+    expect(payload.jobTag).toHaveLength(JOB_TAG_MAX_LENGTH);
+    expect(payload.rule).toBe(`${long} takes 3h of labor`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Measurement seed — the "Build the price" composer entry (?job=). Cents from
+// v1.quoting.buildFromMeasurements convert to dollars at the store boundary,
+// same as the AI drafters, and land in the single-format line table WITHOUT
+// touching aiDrafted/aiOriginal — no ai_draft snapshot for this deterministic
+// lane.
+// ---------------------------------------------------------------------------
+
+describe("seedLinesToComposerLines", () => {
+  it("converts rateCents/costCents to dollars and carries description/quantity as-is", () => {
+    const seed: MeasurementSeedLine[] = [
+      { description: "Living room — Wall paint", quantity: 562, rateCents: 250, costCents: 90 },
+    ];
+    expect(seedLinesToComposerLines(seed)).toEqual([
+      { d: "Living room — Wall paint", q: 562, r: 2.5, c: 0.9 },
+    ]);
+  });
+
+  it("maps an empty list to an empty list", () => {
+    expect(seedLinesToComposerLines([])).toEqual([]);
+  });
+});
+
+describe("applyMeasurementSeed", () => {
+  it("sets the lead context and the line table from the seed", () => {
+    const lines: ComposerLine[] = [{ d: "Living room — Wall paint", q: 562, r: 2.5, c: 0.9 }];
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", lines);
+    expect(next.leadId).toBe("lead-42");
+    expect(next.lines).toEqual(lines);
+  });
+
+  it("does NOT mark the state as AI-drafted — no ai_draft snapshot for this lane", () => {
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", [{ d: "x", q: 1, r: 10 }]);
+    expect(next.aiDrafted).toBe(false);
+    expect(next.aiOriginal).toBeNull();
+    expect(aiDraftForPayload(next)).toBeNull();
+  });
+
+  it("leaves the empty state standing when every room's only quantity was a gap or unconfirmed", () => {
+    // The empty state carries its own add button now — the old "render a row to click into"
+    // justification is gone with it.
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-42", []);
+    expect(next.lines).toEqual([]);
+  });
+
+  it("does not mutate the seed lines array", () => {
+    const lines: ComposerLine[] = [{ d: "x", q: 1, r: 10 }];
+    const before = structuredClone(lines);
+    const next = applyMeasurementSeed(INITIAL_STATE, "lead-1", lines);
+    next.lines[0]!.d = "mutated";
+    expect(lines).toEqual(before);
+  });
+});
+
+describe("appendMeasurementLines", () => {
+  const seed: ComposerLine[] = [{ d: "Driveway — Seal coating", q: 640, r: 1.5, c: 0.4 }];
+
+  it("appends after existing real lines, dropping blank placeholder rows", () => {
+    const state = {
+      ...INITIAL_STATE,
+      lines: [{ d: "Pressure wash", q: 1, r: 250 }, { d: "", q: 1, r: 0 }],
+    };
+    const next = appendMeasurementLines(state, seed);
+    expect(next.lines).toEqual([
+      { d: "Pressure wash", q: 1, r: 250 },
+      { d: "Driveway — Seal coating", q: 640, r: 1.5, c: 0.4 },
+    ]);
+  });
+
+  it("replaces a fresh composer's single empty row instead of stacking above it", () => {
+    const next = appendMeasurementLines(INITIAL_STATE, seed);
+    expect(next.lines).toEqual(seed);
+  });
+
+  it("an empty seed returns the state unchanged (caller surfaces why)", () => {
+    expect(appendMeasurementLines(INITIAL_STATE, [])).toBe(INITIAL_STATE);
+  });
+
+  it("in GBB format appends to the Good tier (same target as applyAiDraftLines)", () => {
+    const gbbState: ComposerState = { ...INITIAL_STATE, ...switchToGbb(INITIAL_STATE) };
+    const next = appendMeasurementLines(
+      { ...gbbState, gbb: updateTier(gbbState.gbb!, "good", { lines: [{ d: "Base", q: 1, r: 100 }] }) },
+      seed,
+    );
+    const good = next.gbb!.opts.find((o) => o.k === "good")!;
+    expect(good.lines).toEqual([
+      { d: "Base", q: 1, r: 100 },
+      { d: "Driveway — Seal coating", q: 640, r: 1.5, c: 0.4 },
+    ]);
+    // Better/Best untouched.
+    expect(next.gbb!.opts.find((o) => o.k === "better")!.lines).toEqual(
+      gbbState.gbb!.opts.find((o) => o.k === "better")!.lines,
+    );
+  });
+
+  it("does not mutate the seed lines or the previous state", () => {
+    const before = structuredClone(seed);
+    const state = { ...INITIAL_STATE, lines: [{ d: "Existing", q: 1, r: 50 }] };
+    const stateBefore = structuredClone(state.lines);
+    const next = appendMeasurementLines(state, seed);
+    next.lines[1]!.d = "mutated";
+    expect(seed).toEqual(before);
+    expect(state.lines).toEqual(stateBefore);
+  });
+});
+
+describe("gapNoticeText", () => {
+  it("names the missing rate and points at the Pricebook", () => {
+    expect(gapNoticeText({ kind: "baseboard_lnft", label: "Baseboard" })).toBe(
+      "No rate set for Baseboard — add one in the Pricebook.",
+    );
+  });
+});
+
+describe("unconfirmedRoomsNoticeText", () => {
+  it("returns null when there are no unconfirmed rooms", () => {
+    expect(unconfirmedRoomsNoticeText(0)).toBeNull();
+  });
+
+  it("singularizes one unconfirmed room", () => {
+    expect(unconfirmedRoomsNoticeText(1)).toBe(
+      "1 room has unconfirmed measurements — confirm them on the job before sending.",
+    );
+  });
+
+  it("pluralizes multiple unconfirmed rooms", () => {
+    expect(unconfirmedRoomsNoticeText(2)).toBe(
+      "2 rooms have unconfirmed measurements — confirm them on the job before sending.",
+    );
+  });
+});
+
+/**
+ * A revise-seed line carrying the DTO's own defaults, so a fixture states only what it is
+ * testing. Every field is required on the seed on purpose — a new DTO field must be wired
+ * through the revise path rather than silently dropped.
+ */
+const seedLine = (over: Partial<ReviseSeedLine> & { d: string }): ReviseSeedLine => ({
+  q: 1,
+  rCents: 0,
+  cCents: 0,
+  opt: false,
+  photo: false,
+  taxable: true,
+  tier: null,
+  scope: null,
+  subItems: null,
+  id: `line-${over.d}`,
+  unit: null,
+  qtyExpr: null,
+  roundUp: false,
+  parentLineId: null,
+  customerVisible: true,
+  markupBps: null,
+  sectionId: null,
+  ...over,
+});
+
+describe("applyReviseSeed", () => {
+  const base = { ...INITIAL_STATE };
+  const flatSeed = {
+    leadId: "lead-9",
+    title: "Repaint hallway",
+    discBps: 500,
+    taxBps: 825,
+    depBps: 2500,
+    recommendedTier: null,
+    tierNames: null,
+    jobId: null,
+    priceDisplay: "lines" as const,
+    presentationSnapshot: null,
+    sections: [],
+    jobCosts: [],
+    lines: [
+      seedLine({ d: "Walls", q: 320, rCents: 250, cCents: 100, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null }),
+      seedLine({ d: "Trim", q: 60, rCents: 400, cCents: 0, opt: true, photo: true, taxable: false, tier: null, scope: null, subItems: null }),
+    ],
+  };
+
+  it("flat quote: restores lead, title, pricing (bps -> %) and lines (cents -> dollars)", () => {
+    const next = applyReviseSeed(base, flatSeed);
+    expect(next.leadId).toBe("lead-9");
+    expect(next.desc).toBe("Repaint hallway");
+    expect(next.format).toBe("single");
+    expect(next.pricing).toEqual({ disc: 5, tax: 8.25, dep: 25 });
+    expect(next.lines).toEqual([
+      { d: "Walls", q: 320, r: 2.5, c: 1 },
+      // taxable:false on the seed comes back as the notax exception, not as a `taxable` key.
+      { d: "Trim", q: 60, r: 4, opt: true, photo: true, notax: true },
+    ]);
+  });
+
+  it("tiered quote: restores the three tiers with names, lines and the recommendation", () => {
+    const next = applyReviseSeed(base, {
+      ...flatSeed,
+      recommendedTier: "best" as const,
+      tierNames: { good: "Basic", better: "Standard", best: "Premium" },
+      lines: [
+        seedLine({ d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null }),
+        seedLine({ d: "Two coats", q: 1, rCents: 120000, cCents: 0, opt: false, photo: false, taxable: true, tier: "best" as const, scope: null, subItems: null }),
+      ],
+    });
+    expect(next.format).toBe("gbb");
+    expect(next.gbb?.rec).toBe("best");
+    expect(next.gbb?.opts.map((o) => o.name)).toEqual(["Basic", "Standard", "Premium"]);
+    expect(next.gbb?.opts[0]?.lines).toEqual([{ d: "One coat", q: 1, r: 900 }]);
+    // The tier with no lines stays EMPTY — its table renders the empty state, never a hole
+    // and never a manufactured blank row.
+    expect(next.gbb?.opts[1]?.lines).toEqual([]);
+  });
+
+  // The walkthrough link must survive a revision. Every re-entry into the composer (Edit on a
+  // draft, Edit & resend, the change-request card) routes through ?revise=, and a revision that
+  // dropped jobId would send a quote whose accept mints a DUPLICATE job — the exact defect
+  // convert-on-accept exists to fix.
+  it("carries the original quote's scope-visit jobId onto the revision (flat and tiered)", () => {
+    const flat = applyReviseSeed(base, { ...flatSeed, jobId: "job-9" });
+    expect(flat.jobId).toBe("job-9");
+    const tiered = applyReviseSeed(base, {
+      ...flatSeed,
+      jobId: "job-9",
+      recommendedTier: "best" as const,
+      tierNames: { good: "Basic", better: "Standard", best: "Premium" },
+      lines: [
+        seedLine({ d: "One coat", q: 1, rCents: 90000, cCents: 0, opt: false, photo: false, taxable: true, tier: "good" as const, scope: null, subItems: null }),
+      ],
+    });
+    expect(tiered.jobId).toBe("job-9");
+  });
+
+  // The seed SETS jobId, never merges: revising a quote with no walkthrough behind it (an
+  // ordinary quote, or a ?change= change order — that flow drafts with changeOrderForJobId and
+  // never touches cs.jobId) must CLEAR any stale ?job= the composer happened to mount with,
+  // or the revision would claim a walkthrough the original never priced.
+  it("a null-jobId seed clears stale ?job= state rather than inheriting it", () => {
+    const staleJobState = { ...INITIAL_STATE, jobId: "job-stale" };
+    const next = applyReviseSeed(staleJobState, flatSeed); // flatSeed.jobId is null
+    expect(next.jobId).toBeNull();
+  });
+});
+
+// ---- held traces (satellite measurement on the quote page) -------------------
+
+describe("addHeldTrace", () => {
+  const trace: HeldTrace = {
+    id: "t1",
+    name: "Driveway",
+    surface: "flat",
+    pitchRise: null,
+    polygon: {
+      vertices: [
+        { lat: 1, lng: 1 },
+        { lat: 1, lng: 2 },
+        { lat: 2, lng: 2 },
+      ],
+      view: { centerLat: 1.5, centerLng: 1.5, zoom: 20 },
+    },
+    footprintSqft: 640,
+    perimeterLnft: 104,
+    areaSqft: 640,
+    edges: null,
+    complexity: null,
+  };
+
+  it("starts empty and appends immutably — the previous state is untouched", () => {
+    expect(INITIAL_STATE.heldTraces).toEqual([]);
+    const next = addHeldTrace(INITIAL_STATE, trace);
+    expect(next.heldTraces).toEqual([trace]);
+    expect(INITIAL_STATE.heldTraces).toEqual([]);
+    const after = addHeldTrace(next, { ...trace, id: "t2", name: "Patio" });
+    expect(after.heldTraces.map((t) => t.id)).toEqual(["t1", "t2"]);
+    expect(next.heldTraces).toHaveLength(1);
+  });
+});
+
+describe("sub-items — the estimating math behind a line", () => {
+  it("withSubPatch derives the line rate from real sub-items", () => {
+    const line = withSubPatch(emptyLine(), [
+      { d: "Walls", q: 2400, unit: "sq ft", amt: 9840 },
+      { d: "Trim", q: 62, unit: "pieces", amt: 7430 },
+      { d: "", q: 1, amt: 999 }, // blank description = not a real row, never priced
+    ]);
+    expect(line.r).toBe(17270);
+    expect(line.sub).toHaveLength(3);
+  });
+
+  it("sums sub-item dollars without float drift", () => {
+    expect(subItemsTotal([{ d: "a", q: 1, amt: 0.1 }, { d: "b", q: 1, amt: 0.2 }])).toBe(0.3);
+  });
+
+  it("clearing every sub-item keeps the last derived rate for hand editing", () => {
+    const priced = withSubPatch(emptyLine(), [{ d: "Walls", q: 1, amt: 100 }]);
+    const cleared = withSubPatch(priced, []);
+    expect(cleared.sub).toBeUndefined();
+    expect(cleared.r).toBe(100);
+  });
+});
+
+describe("lineToPayload — one wire mapping for page and slice", () => {
+  it("maps scope and sub-items to cents, dropping blank sub rows", () => {
+    const payload = lineToPayload({
+      d: "New Construction Interior Painting",
+      q: 1,
+      r: 21_450,
+      scope: "Includes:\n1. Walls",
+      sub: [
+        { d: "Walls", q: 2400, unit: "sq ft", amt: 9840 },
+        { d: "", q: 1, amt: 0 },
+      ],
+    });
+    expect(payload).toEqual({
+      description: "New Construction Interior Painting",
+      quantity: 1,
+      rateCents: 2_145_000,
+      costCents: 0,
+      isOptional: false,
+      needsPhoto: false,
+      taxable: true,
+      tier: undefined,
+      materialId: null,
+      scope: "Includes:\n1. Walls",
+      subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+    });
+  });
+
+  it("omits scope and subItems when the line has neither", () => {
+    const payload = lineToPayload({ d: "Labor", q: 1, r: 100 });
+    expect(payload.scope).toBeUndefined();
+    expect(payload.subItems).toBeUndefined();
+  });
+
+  it("carries the assembly component fields, translating hidden into customerVisible", () => {
+    const payload = lineToPayload({
+      d: "Line posts",
+      q: 14,
+      r: 24.3,
+      unit: "ea",
+      qtyExpr: "qty/8+1",
+      roundUp: true,
+      parentIndex: 0,
+      hidden: true,
+      markupBps: 3500,
+    });
+    expect(payload.unit).toBe("ea");
+    expect(payload.qtyExpr).toBe("qty/8+1");
+    expect(payload.roundUp).toBe(true);
+    expect(payload.parentIndex).toBe(0);
+    // The store states the exception (hidden); the wire states the fact (customerVisible).
+    expect(payload.customerVisible).toBe(false);
+    expect(payload.markupBps).toBe(3500);
+  });
+
+  it("keeps an ordinary line's wire shape unchanged — no empty composition keys", () => {
+    const payload = lineToPayload({ d: "Labor", q: 1, r: 100 });
+    expect(Object.keys(payload)).toEqual([
+      "description",
+      "quantity",
+      "rateCents",
+      "costCents",
+      "isOptional",
+      "needsPhoto",
+      "taxable",
+      "tier",
+      "materialId",
+    ]);
+  });
+
+  it("sends parentIndex 0 — a falsy index still names a real parent", () => {
+    // The bug this guards: `l.parentIndex ? {...} : {}` would drop every component of the
+    // FIRST line, which is the most common assembly there is.
+    expect(lineToPayload({ d: "Post", q: 1, r: 1, parentIndex: 0 }).parentIndex).toBe(0);
+  });
+});
+
+describe("price display", () => {
+  it("defaults to lines", () => {
+    expect(INITIAL_STATE.priceDisplay).toBe("lines");
+  });
+
+  it("revise seed restores scope, sub-items and price display", () => {
+    const seeded = applyReviseSeed(INITIAL_STATE, {
+      leadId: "lead-1",
+      title: "Basement",
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      recommendedTier: null,
+      tierNames: null,
+      jobId: null,
+      priceDisplay: "total",
+      presentationSnapshot: null,
+      sections: [],
+      jobCosts: [],
+      lines: [
+        seedLine({
+          d: "Painting",
+          rCents: 2_145_000,
+          scope: "Includes:\n1. Walls",
+          subItems: [{ description: "Walls", quantity: 2400, unit: "sq ft", amountCents: 984_000 }],
+        }),
+      ],
+    });
+    expect(seeded.priceDisplay).toBe("total");
+    expect(seeded.lines[0]?.scope).toBe("Includes:\n1. Walls");
+    expect(seeded.lines[0]?.sub).toEqual([{ d: "Walls", q: 2400, unit: "sq ft", amt: 9840 }]);
+  });
+});
+
+describe("applyReviseSeed — assembly components survive a revision", () => {
+  const base = { ...INITIAL_STATE };
+  const seed = {
+    leadId: "lead-1",
+    title: "Fence",
+    discBps: 0,
+    taxBps: 0,
+    depBps: 0,
+    recommendedTier: null,
+    tierNames: null,
+    jobId: null,
+    priceDisplay: "lines" as const,
+    presentationSnapshot: null,
+    sections: [],
+    jobCosts: [],
+  };
+
+  it("resolves the parent id to the index the parent actually lands at", () => {
+    const next = applyReviseSeed(base, {
+      ...seed,
+      lines: [
+        seedLine({ d: "Cedar fence", id: "parent", q: 100, unit: "LF" }),
+        seedLine({ d: "Line posts", id: "child", q: 14, parentLineId: "parent", qtyExpr: "qty/8+1", roundUp: true }),
+      ],
+    });
+    expect(next.lines[0]?.unit).toBe("LF");
+    expect(next.lines[1]?.parentIndex).toBe(0);
+    expect(next.lines[1]?.qtyExpr).toBe("qty/8+1");
+    expect(next.lines[1]?.roundUp).toBe(true);
+  });
+
+  it("re-indexes against the tier the line lands in, not the whole seed", () => {
+    // The defect this guards: an index taken across all three tiers points at the wrong line
+    // (or off the end) in every tier but the first.
+    const next = applyReviseSeed(base, {
+      ...seed,
+      recommendedTier: "best" as const,
+      tierNames: { good: "Basic", better: "Standard", best: "Premium" },
+      lines: [
+        seedLine({ d: "Good fence", id: "g-parent", tier: "good" }),
+        seedLine({ d: "Good posts", id: "g-child", parentLineId: "g-parent", tier: "good" }),
+        seedLine({ d: "Best fence", id: "b-parent", tier: "best" }),
+        seedLine({ d: "Best posts", id: "b-child", parentLineId: "b-parent", tier: "best" }),
+      ],
+    });
+    const good = next.gbb?.opts.find((o) => o.k === "good")?.lines ?? [];
+    const best = next.gbb?.opts.find((o) => o.k === "best")?.lines ?? [];
+    expect(good[1]?.parentIndex).toBe(0);
+    expect(best[1]?.parentIndex).toBe(0);
+  });
+
+  it("drops a parent reference whose parent did not come along", () => {
+    const next = applyReviseSeed(base, {
+      ...seed,
+      lines: [seedLine({ d: "Orphan post", id: "child", parentLineId: "gone" })],
+    });
+    expect(next.lines[0]?.parentIndex).toBeUndefined();
+  });
+
+  it("restores a hidden line as the exception and leaves a visible one unmarked", () => {
+    const next = applyReviseSeed(base, {
+      ...seed,
+      lines: [
+        seedLine({ d: "Shown", id: "a" }),
+        seedLine({ d: "Internal", id: "b", customerVisible: false, markupBps: 3500 }),
+      ],
+    });
+    expect(next.lines[0]?.hidden).toBeUndefined();
+    expect(next.lines[1]?.hidden).toBe(true);
+    expect(next.lines[1]?.markupBps).toBe(3500);
+  });
+});
+
+describe("presentation — per-quote copy of a template's pages", () => {
+  const presentation = {
+    templateId: "t1",
+    name: "Interior",
+    pages: [
+      { key: "cover" as const, on: true, title: "", body: "" },
+      { key: "about" as const, on: true, title: "About us", body: "Family-run since 2011." },
+      { key: "reviews" as const, on: false, title: "Reviews", body: "Five stars." },
+      { key: "thanks" as const, on: true, title: "Thank you", body: "We're ready when you are." },
+    ],
+  };
+
+  it("freezes only the ON pages into the payload", () => {
+    const snap = presentationSnapshotForPayload(presentation);
+    expect(snap?.templateName).toBe("Interior");
+    expect(snap?.pages.map((p) => p.key)).toEqual(["cover", "about", "thanks"]);
+    expect(snap?.pages[0]).toEqual({ key: "cover", title: "", body: "" });
+  });
+
+  it("sends nothing for no presentation or an all-off presentation", () => {
+    expect(presentationSnapshotForPayload(null)).toBeUndefined();
+    expect(
+      presentationSnapshotForPayload({
+        ...presentation,
+        pages: presentation.pages.map((p) => ({ ...p, on: false })),
+      }),
+    ).toBeUndefined();
+  });
+
+  it("restores a snapshot as an UNLINKED copy with every page on", () => {
+    const snap = presentationSnapshotForPayload(presentation);
+    const restored = presentationFromSnapshot(snap ?? null);
+    expect(restored?.templateId).toBeNull();
+    expect(restored?.name).toBe("Interior");
+    expect(restored?.pages.every((p) => p.on)).toBe(true);
+    expect(restored?.pages).toHaveLength(3);
+  });
+
+  it("never toggles the cover off; toggles other pages per quote", () => {
+    expect(togglePresentationPage(presentation, "cover").pages[0]?.on).toBe(true);
+    const toggled = togglePresentationPage(presentation, "about");
+    expect(toggled.pages[1]?.on).toBe(false);
+    expect(presentation.pages[1]?.on).toBe(true); // immutably
+  });
+
+  it("revise seed restores the presentation", () => {
+    const seeded = applyReviseSeed(INITIAL_STATE, {
+      leadId: "lead-1",
+      sections: [],
+      jobCosts: [],
+      title: "Basement",
+      discBps: 0,
+      taxBps: 0,
+      depBps: 0,
+      recommendedTier: null,
+      tierNames: null,
+      jobId: null,
+      priceDisplay: "lines",
+      presentationSnapshot: {
+        templateName: "Interior",
+        pages: [{ key: "cover", title: "", body: "" }],
+      },
+      lines: [
+        seedLine({ d: "Painting", q: 1, rCents: 100, cCents: 0, opt: false, photo: false, taxable: true, tier: null, scope: null, subItems: null }),
+      ],
+    });
+    expect(seeded.presentation?.templateId).toBeNull();
+    expect(seeded.presentation?.name).toBe("Interior");
+  });
+});
+
+describe("presentation — the cover the office previews is the cover the customer gets", () => {
+  it("freezes only ON pages and drops the per-quote toggle flag", () => {
+    const snap = presentationSnapshotForPayload({
+      templateId: "t1",
+      name: "Interior",
+      pages: [
+        { key: "cover", on: true, title: "", body: "" },
+        { key: "about", on: true, title: "About us", body: "Family-run." },
+        { key: "reviews", on: false, title: "Reviews", body: "Five stars." },
+      ],
+    });
+    expect(snap?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(snap?.pages.every((p) => !("on" in p))).toBe(true);
+  });
+});
+
+describe("tieredLinesForPayload — components across three tiers", () => {
+  const tier = (k: TierKey, lines: ComposerLine[]) => ({ k, name: "", title: "", lines });
+
+  it("offsets each tier's parent references by the tiers before it", () => {
+    // Three arrays become one payload. A parentIndex taken before the concatenation names a
+    // line in ANOTHER tier — the customer would be quoted one tier's parts under another's price.
+    const out = tieredLinesForPayload({
+      rec: "good",
+      opts: [
+        tier("good", [{ d: "Good fence", q: 1, r: 1 }, { d: "Good posts", q: 1, r: 1, parentIndex: 0 }]),
+        tier("better", [{ d: "Better fence", q: 1, r: 1 }, { d: "Better posts", q: 1, r: 1, parentIndex: 0 }]),
+        tier("best", [{ d: "Best fence", q: 1, r: 1 }, { d: "Best posts", q: 1, r: 1, parentIndex: 0 }]),
+      ],
+    } as never);
+    expect(out.map((l) => l.d)).toEqual([
+      "Good fence", "Good posts", "Better fence", "Better posts", "Best fence", "Best posts",
+    ]);
+    expect(out[1]?.parentIndex).toBe(0);
+    expect(out[3]?.parentIndex).toBe(2);
+    expect(out[5]?.parentIndex).toBe(4);
+    for (const [i, l] of out.entries()) {
+      if (l.parentIndex == null) continue;
+      expect(out[l.parentIndex]?.tier).toBe(l.tier);
+      expect(l.parentIndex).toBeLessThan(i);
+    }
+  });
+
+  it("offsets correctly when an earlier tier drops a blank row", () => {
+    const out = tieredLinesForPayload({
+      rec: "good",
+      opts: [
+        tier("good", [{ d: "", q: 1, r: 0 }, { d: "Good fence", q: 1, r: 1 }]),
+        tier("better", [{ d: "Better fence", q: 1, r: 1 }, { d: "Better posts", q: 1, r: 1, parentIndex: 0 }]),
+        tier("best", []),
+      ],
+    } as never);
+    expect(out.map((l) => l.d)).toEqual(["Good fence", "Better fence", "Better posts"]);
+    expect(out[2]?.parentIndex).toBe(1);
+  });
+});
+
+describe("the document — mode, design and sections", () => {
+  const base = {
+    templateId: "t1",
+    name: "Interior",
+    pages: [
+      { key: "cover" as const, on: true, title: "", body: "" },
+      { key: "about" as const, on: true, title: "About us", body: "Family-run." },
+    ],
+  };
+
+  it("defaults to Simple and to a plain look", () => {
+    // Most quotes are not a pitch, and a document that arrives already styled is a document
+    // the shop has to undo.
+    expect(modeOf(base)).toBe("simple");
+    expect(designOf(base)).toEqual({ font: "basic", size: 14, accent: "", bold: true, italic: false });
+  });
+
+  it("creates a page the template never had rather than doing nothing", () => {
+    // The toolbar lists every kind a proposal can have; a control that lists something it
+    // cannot produce is a control that lies.
+    const next = togglePresentationPage(base, "letter");
+    expect(next.pages.find((p) => p.key === "letter")).toMatchObject({ on: true, body: "" });
+    expect(base.pages).toHaveLength(2); // immutably
+  });
+
+  it("toggles a page it already has, both ways", () => {
+    const off = togglePresentationPage(base, "about");
+    expect(off.pages.find((p) => p.key === "about")?.on).toBe(false);
+    expect(togglePresentationPage(off, "about").pages.find((p) => p.key === "about")?.on).toBe(true);
+  });
+
+  it("never turns the cover off", () => {
+    expect(togglePresentationPage(base, "cover")).toBe(base);
+  });
+
+  it("keeps the whole design when only part of it is changed", () => {
+    const next = patchPresentationDesign(base, { accent: "#2E5E4E" });
+    expect(designOf(next)).toEqual({ font: "basic", size: 14, accent: "#2E5E4E", bold: true, italic: false });
+  });
+
+  it("freezes what is ON whatever the mode — mode decides what is SHOWN", () => {
+    // Filtering at snapshot time would delete a shop's story the moment they previewed as
+    // Simple, and would have stripped pages from every quote already in flight.
+    const simple = presentationSnapshotForPayload(setPresentationMode(base, "simple"));
+    const full = presentationSnapshotForPayload(setPresentationMode(base, "full"));
+    expect(simple?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(full?.pages.map((p) => p.key)).toEqual(["cover", "about"]);
+    expect(simple?.mode).toBe("simple");
+  });
+
+  it("carries the design and the cover meta onto the quote", () => {
+    const styled = patchPresentationMeta(patchPresentationDesign(base, { size: 16 }), {
+      estimator: "Dana Reyes",
+    });
+    const snapshot = presentationSnapshotForPayload(styled);
+    expect(snapshot?.design?.size).toBe(16);
+    expect(snapshot?.meta?.estimator).toBe("Dana Reyes");
+  });
+
+  it("restores the mode, design and meta from a sent quote", () => {
+    const restored = presentationFromSnapshot({
+      templateName: "Interior",
+      pages: [{ key: "cover", title: "", body: "" }],
+      mode: "full",
+      design: { size: 18, accent: "#34506B" },
+      meta: { estimator: "Dana Reyes" },
+    });
+    expect(modeOf(restored)).toBe("full");
+    expect(designOf(restored).size).toBe(18);
+    expect(restored?.meta?.estimator).toBe("Dana Reyes");
+  });
+});

@@ -1,0 +1,452 @@
+/**
+ * components/modals/pricing/build-line.tsx
+ * Shared line-building primitives for BOTH price builders — the office
+ * single-tier PriceBuilderModal and the tech on-site TechQuoteModal (GBB + sign).
+ *
+ * These are a faithful port of the prototype tqRender's EDIT-mode building
+ * blocks (prototype 7304-7334): the line model + amount math (tqLineAmt), the
+ * seed-from-job helper (openTechQuote), the money/label formatters (fmt$ /
+ * custName), and the render primitives — the add-a-line menu (Ico / AddTile /
+ * BrowseRow / AddMenu, prototype tile()/row()) and the editable LineRow
+ * (prototype lineRow()).
+ *
+ * AddMenu takes the pricebook + labor rates as PROPS (both builders read them
+ * from the store and adapt to the PricebookItem / LaborRate shape here) rather
+ * than closing over module consts, so the same menu serves both surfaces.
+ */
+
+"use client";
+
+import { fmt$ } from "@/lib/format";
+
+// ---- builder line model (prototype state.tq[tier].lines) --------------------
+// A line is one of: 'book' (pricebook pick, fixed amt + carried cost),
+// 'custom' (one-off fixed amt), or 'tm' (time-&-material — hours × rate).
+
+export type BuildKind = "book" | "custom" | "tm";
+
+export interface BuildLine {
+  kind: BuildKind;
+  d: string;
+  amt?: number; // book / custom
+  h?: number; // tm hours
+  rate?: number; // tm $/hr
+  c?: number; // carried cost (book) — office keeps margin
+}
+
+// ---- reference data (adapted from the store's pricebook / labor rates) ------
+// PricebookItem mirrors the composer page's local const shape { d, r }; the
+// office keeps margin via cost, so pricebook picks carry a cost `c` when present.
+
+export interface PricebookItem {
+  d: string;
+  r: number;
+  c?: number;
+}
+
+export interface LaborRate {
+  name: string;
+  rate: number;
+  kind: "hourly" | "flat_fee";
+}
+
+// ---- add-a-line sublist selector (prototype tq.add) ------------------------
+
+export type AddSub = null | "pb" | "labor";
+
+// ---- amount / total math (prototype tqLineAmt / tqTierTotal) ----------------
+
+/** Amount for a line (prototype tqLineAmt): tm → h×rate, else the fixed amt. */
+export function lineAmt(l: BuildLine): number {
+  return l.kind === "tm"
+    ? Math.round((l.h ?? 0) * (l.rate ?? 0))
+    : Math.round(l.amt ?? 0);
+}
+
+/** Sum of a set of built lines (prototype tqTierTotal). */
+export function linesTotal(lines: ReadonlyArray<BuildLine>): number {
+  return lines.reduce((s, l) => s + lineAmt(l), 0);
+}
+
+// ---- seed / labels / money -------------------------------------------------
+
+// A job's existing priced lines, kept loosely shaped so this module needn't
+// depend on the store's Job type.
+interface SeedJobLine {
+  d: string;
+  q?: number;
+  /** null = server-redacted rate (tech device) — seeded as 0 like an unpriced line. */
+  r?: number | null;
+  c?: number;
+}
+
+interface SeedJob {
+  lines?: SeedJobLine[];
+}
+
+/** Seed the builder from the job's existing lines (prototype openTechQuote). */
+export function seedLines(job: SeedJob): BuildLine[] {
+  return (job.lines ?? []).map((l) => ({
+    kind: "book" as const,
+    d: l.d,
+    amt: (l.q ?? 1) * (l.r ?? 0),
+    c: l.c ?? 0,
+  }));
+}
+
+interface CustLabelLead {
+  name: string;
+}
+
+interface CustLabelJob {
+  title?: string;
+}
+
+/** Customer/job label (prototype custName). */
+export function custLabel(
+  job: CustLabelJob,
+  lead: CustLabelLead | undefined,
+): string {
+  if (lead) return lead.name;
+  const parts = (job.title ?? "").split("—");
+  if (parts.length > 1 && parts[1]) return parts[1].trim();
+  return job.title || "Customer";
+}
+
+
+// ---- add-a-line builder menu (prototype tq.picking / tq.add) ---------------
+
+export const SEC_LABEL: React.CSSProperties = {
+  fontSize: "var(--type-xs)",
+  fontWeight: 800,
+  letterSpacing: ".05em",
+  textTransform: "uppercase",
+  color: "var(--ink-3)",
+};
+
+interface SvgProps {
+  children: React.ReactNode;
+}
+
+export function Ico({ children }: SvgProps) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="19"
+      height="19"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const IcoBook = (
+  <Ico>
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+  </Ico>
+);
+
+const IcoPen = (
+  <Ico>
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z" />
+  </Ico>
+);
+
+const IcoClock = (
+  <Ico>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7.5V12l3 1.8" />
+  </Ico>
+);
+
+interface AddTileProps {
+  ico: React.ReactNode;
+  title: string;
+  sub: string;
+  arrow: boolean;
+  onClick: () => void;
+}
+
+/** One .addtile action tile (prototype tile()). */
+export function AddTile({ ico, title, sub, arrow, onClick }: AddTileProps) {
+  return (
+    <button type="button" className="addtile" onClick={onClick}>
+      <div className="addtile-ico">{ico}</div>
+      <div className="addtile-t">
+        {title}
+        {arrow ? <span className="arr">→</span> : null}
+      </div>
+      <div className="addtile-s">{sub}</div>
+    </button>
+  );
+}
+
+interface BrowseRowProps {
+  label: string;
+  right: React.ReactNode;
+  onClick: () => void;
+}
+
+/** A clickable browse row in a sublist (prototype row()). */
+export function BrowseRow({ label, right, onClick }: BrowseRowProps) {
+  return (
+    <div
+      className="stage-row clickable"
+      style={{ cursor: "pointer", borderBottom: "1px solid var(--line-2)", padding: "var(--space-3) 0" }}
+      onClick={onClick}
+    >
+      <span style={{ flex: 1, fontSize: "var(--type-md)", fontWeight: 600, color: "var(--ink)" }}>{label}</span>
+      {right}
+    </div>
+  );
+}
+
+/**
+ * The picker's own frame, INSIDE the price card.
+ *
+ * The two browse sublists used to carry `.card` themselves, which was right while the picker sat
+ * out on the page as a sibling of the line list. It now opens in the card, under the lines it is
+ * about, so its own card would be a card inside a card. A hairline and the card's own padding do
+ * the separating instead — the same way every other in-card section in this app is divided.
+ *
+ * THE RULE IS CONDITIONAL, because on an empty quote there is nothing above it to separate from:
+ * a hairline with blank card above it reads as a broken divider rather than as a division.
+ */
+const sublistStyle = (hasLines: boolean): React.CSSProperties =>
+  hasLines
+    ? { borderTop: "1px solid var(--line)", marginTop: "var(--space-2)", paddingTop: "var(--space-3)" }
+    : {};
+
+interface AddMenuProps {
+  sub: AddSub;
+  hasLines: boolean;
+  pricebook: ReadonlyArray<PricebookItem>;
+  laborRates: ReadonlyArray<LaborRate>;
+  onSetSub: (sub: AddSub) => void;
+  onPickBook: (item: PricebookItem) => void;
+  onAddCustom: () => void;
+  onPickRate: (rate: LaborRate) => void;
+  onAddCustomLabor: () => void;
+  onDone: () => void;
+}
+
+/** The "+ Add to the quote" picker: sublists (pb / labor) or the 2×2 tile grid. */
+export function AddMenu({
+  sub,
+  hasLines,
+  pricebook,
+  laborRates,
+  onSetSub,
+  onPickBook,
+  onAddCustom,
+  onPickRate,
+  onAddCustomLabor,
+  onDone,
+}: AddMenuProps) {
+  if (sub === "pb") {
+    return (
+      <div style={sublistStyle(hasLines)}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
+          <span style={SEC_LABEL}>Pricebook</span>
+          <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={() => onSetSub(null)}>
+            ← back
+          </span>
+        </div>
+        {pricebook.length ? (
+          pricebook.map((p, i) => (
+            <BrowseRow
+              key={i}
+              label={p.d}
+              right={<b className="fig">{fmt$(p.r)}</b>}
+              onClick={() => onPickBook(p)}
+            />
+          ))
+        ) : (
+          <div className="muted" style={{ fontSize: "var(--type-base)", padding: "var(--space-1) 0" }}>
+            No saved items yet — use a custom item.
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (sub === "labor") {
+    return (
+      <div style={sublistStyle(hasLines)}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "var(--space-2)" }}>
+          <span style={SEC_LABEL}>Labor rates</span>
+          <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={() => onSetSub(null)}>
+            ← back
+          </span>
+        </div>
+        {laborRates.map((r, i) => (
+          <BrowseRow
+            key={i}
+            label={r.name}
+            right={<b className="fig">{r.kind === "flat_fee" ? `${fmt$(r.rate)} flat` : `${fmt$(r.rate)}/hr`}</b>}
+            onClick={() => onPickRate(r)}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div style={sublistStyle(hasLines)}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 0 var(--space-3)" }}>
+        <span style={SEC_LABEL}>Add to the quote</span>
+        {hasLines ? (
+          <span className="linklike" style={{ fontSize: "var(--type-base)" }} onClick={onDone}>
+            done
+          </span>
+        ) : null}
+      </div>
+      {/* LEFT COLUMN IS THE ONE-OFF, RIGHT COLUMN IS THE SAVED — and "Custom item" leads, because
+          it is now the only route to the thing the list's own append used to do in one tap. A 2×2
+          grid reads top-left first and that corner is where the thumb already rests, so the
+          commonest door-side move is the shortest one. Rows pair item with item and labor with
+          labor, so the grid still explains itself at a glance. */}
+      <div className="addgrid">
+        <AddTile ico={IcoPen} title="Custom item" sub="one-off price" arrow={false} onClick={onAddCustom} />
+        <AddTile ico={IcoBook} title="Pricebook" sub="browse saved items" arrow onClick={() => onSetSub("pb")} />
+        <AddTile ico={IcoPen} title="Custom labor" sub="one-off $/hr" arrow={false} onClick={onAddCustomLabor} />
+        <AddTile ico={IcoClock} title="Labor" sub="browse your rates · $/hr" arrow onClick={() => onSetSub("labor")} />
+      </div>
+    </div>
+  );
+}
+
+// ---- line rows (prototype lineRow) -----------------------------------------
+
+const INP: React.CSSProperties = {
+  border: "1.5px solid var(--line)",
+  borderRadius: "var(--radius-xs)",
+  padding: "var(--space-2)",
+  fontFamily: "inherit",
+};
+
+interface AddToQuoteRowProps {
+  onOpen: () => void;
+}
+
+/**
+ * THE ONE WAY INTO THIS QUOTE — the last row of the line list, above the Total.
+ *
+ * There used to be two. This row appended a blank custom line, and a second button called
+ * "+ Add a line" sat OUTSIDE the card, below the discount / sales tax / deposit rows, opening the
+ * four-way picker. Two controls, near-identical names, and one of the picker's four tiles
+ * ("Custom item") did exactly what this row did — so the pair read as the same button printed
+ * twice, and the one that owned the pricebook had drifted below the totals it was supposed to
+ * feed. It is one control now, and it opens the picker in place.
+ *
+ * THE COST, NAMED. Appending a one-off item is two taps again rather than one, and door-side
+ * repair pricing is mostly a run of one-off items. The picker opens INSIDE the card so nothing
+ * navigates away, and "Custom item" is the grid's first tile — top-left, the nearest thumb
+ * target — so the common path is the shortest one available.
+ *
+ * Full width and 44px tall because the surface is a technician's tablet held at a doorstep — the
+ * same tap-target floor the sheet feet and the mobile `.btn` rule use.
+ */
+export function AddToQuoteRow({ onOpen }: AddToQuoteRowProps) {
+  return (
+    <button
+      type="button"
+      className="btn ghost"
+      onClick={onOpen}
+      style={{ width: "100%", minHeight: 44, marginTop: "var(--space-2)" }}
+    >
+      + Add to the quote
+    </button>
+  );
+}
+
+interface LineRowProps {
+  line: BuildLine;
+  onSet: (patch: Partial<BuildLine>) => void;
+  onRemove: () => void;
+}
+
+/** One editable builder row — 'tm' (h × rate) or fixed (book/custom, $). */
+export function LineRow({ line, onSet, onRemove }: LineRowProps) {
+  if (line.kind === "tm") {
+    return (
+      <div className="stage-row" style={{ gap: "var(--space-2)", flexWrap: "wrap", border: "none", padding: "var(--space-1) 0" }}>
+        <input
+          value={line.d}
+          onChange={(e) => onSet({ d: e.target.value })}
+          style={{ flex: 1, minWidth: 120, ...INP, padding: "var(--space-2) var(--space-2)", fontSize: "var(--type-base)" }}
+        />
+        <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            step={0.25}
+            value={line.h ? String(line.h) : ""}
+            placeholder="0"
+            aria-label="Hours"
+            onChange={(e) =>
+              onSet({ h: Math.max(0, Math.round((Number(e.target.value) || 0) * 4) / 4) })
+            }
+            style={{ width: 52, ...INP }}
+          />
+          <span className="muted" style={{ fontSize: "var(--type-xs)" }}>
+            h × $
+          </span>
+          <input
+            type="number"
+            inputMode="decimal"
+            min={0}
+            value={line.rate || ""}
+            placeholder="rate"
+            aria-label="Hourly rate"
+            onChange={(e) => onSet({ rate: Math.max(0, Number(e.target.value) || 0) })}
+            style={{ width: 60, ...INP }}
+          />
+        </span>
+        <b style={{ marginLeft: "auto" }}>{fmt$(lineAmt(line))}</b>
+        <button type="button" className="btn sm ghost" onClick={onRemove}>
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="stage-row" style={{ gap: "var(--space-2)", flexWrap: "wrap", border: "none", padding: "var(--space-1) 0" }}>
+      <input
+        value={line.d}
+        placeholder={line.kind === "custom" ? "part, material, or flat fee" : ""}
+        onChange={(e) => onSet({ d: e.target.value })}
+        style={{ flex: 1, minWidth: 140, ...INP, padding: "var(--space-2) var(--space-2)", fontSize: "var(--type-base)" }}
+      />
+      <span style={{ display: "flex", alignItems: "center", gap: "var(--space-1)" }}>
+        <span className="muted">$</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          min={0}
+          // Empty, not a literal 0. React deliberately does NOT renormalise a number input's
+          // string when the numeric value is unchanged (so that "1." stays typable), so seeding
+          // it with 0 meant typing a price after it left "010" sitting in the field — the total
+          // was right, the field looked broken. An empty field reads as unpriced, which it is.
+          value={line.amt ? String(line.amt) : ""}
+          placeholder="0"
+          aria-label="Price"
+          onChange={(e) => onSet({ amt: Math.max(0, Number(e.target.value) || 0) })}
+          style={{ width: 78, ...INP }}
+        />
+      </span>
+      <button type="button" className="btn sm ghost" onClick={onRemove}>
+        ✕
+      </button>
+    </div>
+  );
+}

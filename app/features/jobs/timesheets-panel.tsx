@@ -1,0 +1,555 @@
+"use client";
+
+/**
+ * features/jobs/timesheets-panel.tsx
+ * The Timesheets tab — owns the week + selection + edit UI state and wires the
+ * store. The week toolbar is inline; the crew chips and the selected crew's
+ * week card are presentational leaves (timesheets-crew), the row UI another
+ * (timesheets-entries), and all math/labels live in timesheet-derive.
+ */
+
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { todayISO } from "@/lib/clock";
+import { useAppStore } from "@/lib/store/app-store";
+import { api } from "@/lib/trpc/client";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { useTimesheetsWeek } from "@/features/timesheets/use-timesheets-week";
+import { useOvertimePolicy } from "@/features/settings/use-overtime-policy";
+import { shouldShowFirstRun, isFirstLoad, shouldShowLoadFailed } from "@/lib/first-run";
+import { FirstRunEmptyState } from "@/components/shared/first-run-empty-state";
+import type { TimeEntry } from "@/lib/store/types";
+import { techById } from "./jobs-helpers";
+import {
+  tsAddDays,
+  tsWeekStart,
+  tsWeekDates,
+  tsMoney,
+  tsRollup,
+  tsWeekEntries,
+  tsKindChange,
+} from "./timesheet-derive";
+import { type TsPick } from "./timesheets-entries";
+import { TsTechWeekCard } from "./timesheets-crew";
+import { TimesheetsGrid } from "./timesheets-grid";
+import { TimesheetsGridToolbar } from "./timesheets-grid-toolbar";
+import { TimesheetsBatchBar, TimesheetsBatchResult } from "./timesheets-batch-bar";
+import { tsRowsToCsv, tsCsvFilename } from "./timesheet-grid-export";
+import type { TsGridMode } from "./timesheets-grid";
+import { tsCrewRows, tsGridCounts, tsFilterRows, type TsGridFilter } from "./timesheet-grid-derive";
+import { JobCostingView } from "./job-costing-view";
+import { TimesheetExceptions } from "./timesheet-exceptions";
+import { LoadFailed } from "@/components/shared/load-failed";
+import { ListLoading } from "@/components/shared/list-loading";
+
+// Fields the office is allowed to edit (mirrors prototype tsSetField whitelist).
+// crew reassignment not supported here — techId is intentionally excluded.
+const TS_EDITABLE: ReadonlySet<string> = new Set(["kind", "jobId", "date", "start", "end", "note", "minutes"]);
+
+// First-run empty-state copy. Timesheets are DOWNSTREAM — hours only exist once field crew clock
+// into jobs (or the office adds one by hand). Shown when there are no time entries at all.
+//
+// It says something DIFFERENT depending on whether a crew exists, because there are two genuinely
+// different situations behind "no hours" and only one of them is about setting up a crew. Telling a
+// shop with two field crew to "set up your crew" reads as software that does not know its own state,
+// and it puts an already-finished step in front of the one thing they can actually do.
+const FIRST_RUN = {
+  heading: "No hours logged yet",
+  /** Nobody is marked field crew yet — hours have nobody to belong to. */
+  noCrew: {
+    subtext: "Hours show up here once your field crew clock into jobs. Mark someone field crew to get started.",
+    crew: {
+      title: "Add field crew",
+      description: "Invite a team member and mark them field crew — their hours land here.",
+      actionLabel: "Set up crew",
+    },
+  },
+  /** A crew exists; they simply have not clocked in yet. The real next action is a manual entry. */
+  hasCrew: {
+    subtext: "Your crew's hours land here as soon as they start a job on their phone. You can also log time yourself.",
+    entry: {
+      title: "Add an entry by hand",
+      description: "Log time for a crew member yourself — then edit the hours and job right in the grid.",
+      actionLabel: "+ Add entry",
+    },
+  },
+} as const;
+
+export function TimesheetsPanel() {
+  const router = useRouter();
+  const techs = useAppStore((s) => s.techs);
+  const jobs = useAppStore((s) => s.jobs);
+  const leads = useAppStore((s) => s.leads);
+  const timeEntries = useAppStore((s) => s.timeEntries);
+  /**
+   * The shop's overtime rule — the SAME read the technician's own screen uses, deliberately. This
+   * grid computed a compiled-in weekly forty while My hours computed the configured rule, so a
+   * California week could read differently on the two screens, and this is the one that gets
+   * approved and pushed to QuickBooks.
+   */
+  const overtimePolicy = useOvertimePolicy();
+  const addTimeEntry = useAppStore((s) => s.addTimeEntry);
+  const updateTimeEntry = useAppStore((s) => s.updateTimeEntry);
+  const deleteTimeEntry = useAppStore((s) => s.deleteTimeEntry);
+  const approveTechWeek = useAppStore((s) => s.approveTechWeek);
+  const reopenEntry = useAppStore((s) => s.reopenEntry);
+
+  // Week nav — local weekStart state, normalized to the Monday of today's week.
+  const today = todayISO();
+  const [weekStart, setWeekStart] = useState<string>(() => tsWeekStart(today));
+  /**
+   * Which reading of the week is on screen. TWO LEDGERS, and this tab is the guardrail between
+   * them: Timesheet changes what people are PAID and syncs to QuickBooks; Job costing changes a
+   * REPORT. Keeping them on one screen behind a tab is what stops an approver thinking a costing
+   * edit moved somebody's pay.
+   */
+  const [ledger, setLedger] = useState<"timesheet" | "costing">("timesheet");
+  // Loads the week ON SCREEN into the store, which the grid below reads. Previously a hydrator
+  // fetched a flat, unscoped page of the newest 500 entries and this panel filtered it down — so
+  // any week older than that window rendered empty, indistinguishable from "nobody logged hours".
+  const week = useTimesheetsWeek({ weekStart });
+
+  /**
+   * Days somebody worked and sent no hours for. Its own query, not derived from the rows below:
+   * the whole point is days that have NO rows, so there is nothing here to derive it from.
+   */
+  const exceptionsQ = api.v1.timesheets.unreportedDays.useQuery(
+    { fromDate: weekStart, toDate: tsAddDays(weekStart, 6) },
+    { refetchOnWindowFocus: false },
+  );
+  const exceptions = exceptionsQ.data?.items ?? [];
+  const toFix = exceptions.reduce<Record<string, number>>((acc, x) => {
+    acc[x.userId] = (acc[x.userId] ?? 0) + 1;
+    return acc;
+  }, {});
+  const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
+  const [editId, setEditId] = useState<string | null>(null);
+  const [pick, setPick] = useState<TsPick>(null);
+  const [crewQ, setCrewQ] = useState("");
+  const [gridFilter, setGridFilter] = useState<TsGridFilter>("all");
+  const [gridMode, setGridMode] = useState<TsGridMode>("daily");
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchResult, setBatchResult] = useState<
+    { approved: number; held: string[] } | { sentBack: number; notSubmitted: string[] } | null
+  >(null);
+  // The days the server refused to approve over. Cleared whenever the view moves, so a stale
+  // refusal can never sit above a week it doesn't describe.
+  const [unfinishedDays, setUnfinishedDays] = useState<readonly string[] | null>(null);
+
+  const weekDates = tsWeekDates(weekStart);
+
+  const wkEnd = tsAddDays(weekStart, 6);
+  const thisWeek = tsWeekStart(today);
+  const dl = (iso: string) =>
+    new Date(iso + "T12:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+  /**
+   * Who has signed their week off — the third state between draft and approved.
+   *
+   * Read for the WHOLE CREW in one query now that the grid shows a status column for everybody. It
+   * used to be scoped to the open card, on the reasoning that an approver reads one week at a time;
+   * the grid's whole point is that they no longer have to, and status is the column they scan first.
+   */
+  const submissionsQ = api.v1.timesheets.submissionsForWeek.useQuery(
+    { weekStart },
+    { refetchOnWindowFocus: false },
+  );
+  /** techUserId → the moment they signed off, for weeks that have not been reopened since. */
+  const submittedByTech = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const sub of submissionsQ.data?.submissions ?? []) {
+      if (sub.reopenedAt === null) m.set(sub.techUserId, sub.submittedAt);
+    }
+    return m;
+  }, [submissionsQ.data]);
+  /**
+   * One row per technician for the grid — hours, overtime, issues and status together.
+   *
+   * Derived from entries ALREADY in the store (the week query loads the whole org's week), so
+   * showing the crew costs no extra fetch. The chip counts come off these same rows, which is what
+   * stops a chip ever disagreeing with the grid under it.
+   */
+  const crewRows = useMemo(
+    () =>
+      tsCrewRows({
+        entries: timeEntries,
+        techs,
+        weekDates,
+        policy: overtimePolicy,
+        submittedTechIds: new Set(submittedByTech.keys()),
+      }),
+    [timeEntries, techs, weekDates, overtimePolicy, submittedByTech],
+  );
+  const gridCounts = useMemo(() => tsGridCounts(crewRows), [crewRows]);
+  const visibleRows = useMemo(
+    () => tsFilterRows(crewRows, gridFilter, crewQ),
+    [crewRows, gridFilter, crewQ],
+  );
+  // `status === "empty"` is the row model's word for "nothing reported", the same test the old
+  // chip totals made with count > 0.
+  const anyEntries = crewRows.some((r) => r.status !== "empty");
+  const totPaid = tsMoney(crewRows.reduce((sum, r) => sum + r.paid, 0));
+  const totOt = tsMoney(crewRows.reduce((sum, r) => sum + r.ot, 0));
+
+  // Nothing is open until somebody opens it. The old card auto-selected a technician because the
+  // page was otherwise blank; the grid IS the page now, and opening a week on load would put one
+  // person's entries in front of an approver who has not chosen them yet.
+  const selId =
+    selectedTechId != null && techs.some((t) => t.id === selectedTechId) ? selectedTechId : null;
+
+  function weekNav(delta: number) {
+    setWeekStart((w) => tsWeekStart(tsAddDays(w, delta * 7)));
+    clearRowState();
+  }
+
+  function clearRowState() {
+    setEditId(null);
+    setPick(null);
+    setUnfinishedDays(null);
+  }
+
+  /** null closes the open row. Toggling a row shut leaves the grid with nothing expanded. */
+  function handleSelect(id: string | null) {
+    setSelectedTechId(id);
+    clearRowState();
+  }
+
+  function handleEdit(id: string) {
+    // A running entry IS editable here — it is the only place a forgotten clock-out can be fixed.
+    const e = timeEntries.find((x) => x.id === id);
+    if (!e || e.status === "approved") return;
+    setEditId((cur) => (cur === id ? null : id));
+    setPick(null);
+  }
+
+  // Stop opens the row's out-time picker rather than stamping a time: nobody knows when the
+  // technician actually finished except the shop, and inventing hours is what this refuses to do.
+  function handleStop(id: string) {
+    const e = timeEntries.find((x) => x.id === id);
+    if (!e || e.status === "approved") return;
+    setEditId(id);
+    setPick("end");
+  }
+
+  function handleCloseEdit() {
+    setEditId(null);
+    setPick(null);
+  }
+
+  function handleSetField(id: string, field: keyof TimeEntry, val: string | number) {
+    if (!TS_EDITABLE.has(String(field))) return;
+    const e = timeEntries.find((x) => x.id === id);
+    if (!e || e.status === "approved") return;
+    if (field === "jobId") {
+      // jobId is string | null — pass through directly (empty string → null).
+      const strVal = val === "" || val == null ? null : String(val);
+      updateTimeEntry(id, { jobId: strVal });
+      return;
+    }
+    if (field === "end") {
+      // An out time finishes the entry, so the clock must stop with it. Leaving `running` set would
+      // show a complete span the week still can't be approved on — and QuickBooks would reject it.
+      updateTimeEntry(id, { end: String(val), running: false });
+      return;
+    }
+    if (field === "kind") {
+      // Kind can change the row's SHAPE, and the two shapes are mutually exclusive by database
+      // constraint — so the conversion is one write, decided by tsKindChange.
+      updateTimeEntry(id, tsKindChange(e, String(val)));
+      return;
+    }
+    updateTimeEntry(id, { [field]: val } as Partial<TimeEntry>);
+  }
+
+  async function handleApprove(techId: string) {
+    const outcome = await approveTechWeek(techId, weekDates);
+    setUnfinishedDays(outcome.status === "unfinished" ? outcome.days : null);
+  }
+
+  /**
+   * Approve every ticked week.
+   *
+   * SEQUENTIAL, not Promise.all. Each approval is its own transaction that emits the event driving
+   * the QuickBooks push; firing eight at once against a shared connection buys nothing on a payroll
+   * screen and makes the failure report harder to attribute. Refusals are collected by NAME — "2
+   * held" leaves somebody hunting for which two.
+   */
+  async function handleBatchApprove() {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBatchBusy(true);
+    let approved = 0;
+    const held: string[] = [];
+    for (const id of ids) {
+      const outcome = await approveTechWeek(id, weekDates);
+      if (outcome.status === "unfinished") held.push(techById(techs, id)?.name ?? "Crew");
+      else approved += 1;
+    }
+    setBatchBusy(false);
+    setBatchResult({ approved, held });
+    // Only the refused stay ticked: the approved ones have nothing left to do, and leaving them
+    // selected invites a second press that would report zero and read as a failure.
+    setSelectedIds(new Set(ids.filter((id) => held.includes(techById(techs, id)?.name ?? ""))));
+  }
+
+  /**
+   * Hand the ticked weeks back to their technicians, with one reason.
+   *
+   * The server refuses a week that was never submitted — there is no sign-off to retract — so those
+   * come back as skips and are named, exactly like the approve path. One reason covers the batch:
+   * an approver sending five weeks back is looking at one problem across them.
+   */
+  async function handleRequestChanges(reason: string) {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    setBatchBusy(true);
+    let sent = 0;
+    const skipped: string[] = [];
+    for (const id of ids) {
+      try {
+        await trpcVanilla.v1.timesheets.requestChanges.mutate({ techUserId: id, weekStart, reason });
+        sent += 1;
+      } catch {
+        skipped.push(techById(techs, id)?.name ?? "Crew");
+      }
+    }
+    setBatchBusy(false);
+    setBatchResult({ sentBack: sent, notSubmitted: skipped });
+    setSelectedIds(new Set());
+    void submissionsQ.refetch();
+  }
+
+  function handleSelectRow(techId: string, checked: boolean) {
+    setBatchResult(null);
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(techId);
+      else next.delete(techId);
+      return next;
+    });
+  }
+
+  /** The rows ON SCREEN as CSV — a filtered grid must not hand back the unfiltered set. */
+  function handleExport() {
+    const blob = new Blob([tsRowsToCsv(visibleRows, weekDates)], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = tsCsvFilename(weekStart);
+    a.click();
+    // Revoked immediately: the click has already handed the blob to the download, and leaving the
+    // object URL alive pins the whole file in memory for the life of the tab.
+    URL.revokeObjectURL(url);
+  }
+
+  function handleAdd(techId: string) {
+    // Anchor a fresh draft on today if today is in view, else the week's Monday. That anchor is a
+    // guess, so the editor opens straight away with the day picker in it — otherwise the new row
+    // sits collapsed on a day nobody chose and the next step is not obvious.
+    const day = weekDates.includes(today) ? today : weekStart;
+    const created = addTimeEntry(techId, day);
+    setSelectedTechId(techId);
+    setEditId(created.id);
+  }
+
+  // Reopen: un-approve every approved entry this week for the given tech.
+  function handleReopen(entries: TimeEntry[]) {
+    entries.forEach((e) => {
+      if (e.status === "approved") reopenEntry(e.id);
+    });
+  }
+
+  const selTech = selId != null ? techById(techs, selId) : undefined;
+
+
+  // No-flash first-run gate on the ALL-TIME entry count, counted in the database — NOT on the rows
+  // loaded for the week. A shop that took last week off has hours; offering it the set-up screen
+  // would read as data loss. Full early return — the grid below is untouched.
+  const gate = { isFetched: week.isFetched, isError: week.isError, count: week.everCount ?? 0 };
+  const firstRun = shouldShowFirstRun(gate);
+  const loadFailed = shouldShowLoadFailed(gate);
+  const loading = isFirstLoad(gate);
+
+  if (loadFailed) {
+    return <LoadFailed noun="hours" onRetry={week.refetch} retrying={week.isRefetching} />;
+  }
+  if (loading) {
+    return <ListLoading />;
+  }
+  // Field crew only — the techs slice is already filtered to isFieldCrew (techs-hydrator).
+  const hasCrew = techs.length > 0;
+  if (firstRun) {
+    return (
+      <>
+        <h1>Timesheets</h1>
+        <FirstRunEmptyState
+          heading={FIRST_RUN.heading}
+          subtext={hasCrew ? FIRST_RUN.hasCrew.subtext : FIRST_RUN.noCrew.subtext}
+          paths={
+            hasCrew
+              ? // A crew already exists, so the only thing left to do here is log time. Offering
+                // "Set up crew" as the primary action would hand them a step they have finished.
+                [
+                  {
+                    ...FIRST_RUN.hasCrew.entry,
+                    onAction: () => handleAdd(techs[0]!.id),
+                    variant: "primary" as const,
+                  },
+                ]
+              : // No crew: a manual entry has nobody to belong to, so it is not offered at all.
+                [
+                  {
+                    ...FIRST_RUN.noCrew.crew,
+                    onAction: () => router.push("/settings?tab=team"),
+                    variant: "primary" as const,
+                  },
+                ]
+          }
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <h1>Timesheets</h1>
+      <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", margin: "var(--space-3) 0", flexWrap: "wrap" }}>
+        <button className="btn sm" onClick={() => weekNav(-1)}>
+          ‹ Prev
+        </button>
+        <b style={{ fontWeight: 700 }}>
+          {dl(weekStart)} – {dl(wkEnd)}
+        </b>
+        <button className="btn sm" onClick={() => weekNav(1)}>
+          Next ›
+        </button>
+        {weekStart !== thisWeek && (
+          <button
+            className="btn sm ghost"
+            onClick={() => {
+              setWeekStart(thisWeek);
+              setEditId(null);
+              setPick(null);
+            }}
+          >
+            This week
+          </button>
+        )}
+        {anyEntries && (
+          <>
+            <span style={{ flex: 1 }} />
+            <span className="muted" style={{ fontSize: "var(--type-sm)", fontVariantNumeric: "tabular-nums" }}>
+              {totPaid.toFixed(2)} paid h{totOt ? ` · ${totOt.toFixed(2)} OT` : ""}
+            </span>
+          </>
+        )}
+      </div>
+
+      <div className="otabs" role="tablist" aria-label="Timesheets view">
+        <button
+          id="ts-tab-timesheet"
+          className={ledger === "timesheet" ? "otab on" : "otab"}
+          role="tab"
+          type="button"
+          aria-selected={ledger === "timesheet"}
+          aria-controls="ts-panel-timesheet"
+          onClick={() => setLedger("timesheet")}
+        >
+          Timesheet
+        </button>
+        <button
+          id="ts-tab-costing"
+          className={ledger === "costing" ? "otab on" : "otab"}
+          role="tab"
+          type="button"
+          aria-selected={ledger === "costing"}
+          aria-controls="ts-panel-costing"
+          onClick={() => setLedger("costing")}
+        >
+          Job costing
+        </button>
+      </div>
+
+      {ledger === "costing" ? (
+        <div id="ts-panel-costing" role="tabpanel" aria-labelledby="ts-tab-costing">
+          <JobCostingView weekStart={weekStart} weekEnd={wkEnd} paidHours={totPaid} />
+        </div>
+      ) : (
+      <div id="ts-panel-timesheet" role="tabpanel" aria-labelledby="ts-tab-timesheet">
+      <TimesheetExceptions
+        items={exceptions}
+        nameOf={(id) => techById(techs, id)?.name ?? "Crew"}
+        onReview={(id) => handleSelect(id)}
+      />
+
+      <TimesheetsGridToolbar
+        filter={gridFilter}
+        counts={gridCounts}
+        query={crewQ}
+        mode={gridMode}
+        onFilter={setGridFilter}
+        onQuery={setCrewQ}
+        onMode={setGridMode}
+        onExport={handleExport}
+        exportDisabled={visibleRows.length === 0}
+      />
+
+      <TimesheetsBatchBar
+        count={selectedIds.size}
+        busy={batchBusy}
+        onApprove={() => void handleBatchApprove()}
+        onRequestChanges={(reason) => void handleRequestChanges(reason)}
+        canRequestChanges={crewRows.some((r) => selectedIds.has(r.techId) && r.status === "submitted")}
+        onClear={() => {
+          setSelectedIds(new Set());
+          setBatchResult(null);
+        }}
+      />
+      <TimesheetsBatchResult result={batchResult} />
+
+      <TimesheetsGrid
+        rows={visibleRows}
+        weekDates={weekDates}
+        mode={gridMode}
+        selected={selectedIds}
+        onSelect={handleSelectRow}
+        openTechId={selId}
+        onToggle={(id) => handleSelect(selId === id ? null : id)}
+        renderDetail={(techId) => {
+          const tech = techById(techs, techId);
+          if (!tech) return null;
+          const rollup = tsRollup(timeEntries, techId, weekDates, overtimePolicy);
+          const es = tsWeekEntries(timeEntries, techId, weekDates);
+          return (
+            <TsTechWeekCard
+              inGrid
+              tech={tech}
+              rollup={rollup}
+              entries={es}
+              jobs={jobs}
+              leads={leads}
+              techs={techs}
+              weekDates={weekDates}
+              editId={editId}
+              pick={pick}
+              onSetPick={setPick}
+              onEdit={handleEdit}
+              onStop={handleStop}
+              onDelete={deleteTimeEntry}
+              onSetField={handleSetField}
+              onCloseEdit={handleCloseEdit}
+              onAddEntry={() => handleAdd(techId)}
+              onApprove={() => void handleApprove(techId)}
+              onReopen={() => handleReopen(es)}
+              unfinishedDays={unfinishedDays}
+              submittedAt={submittedByTech.get(techId) ?? null}
+            />
+          );
+        }}
+      />
+      </div>
+      )}
+    </>
+  );
+}

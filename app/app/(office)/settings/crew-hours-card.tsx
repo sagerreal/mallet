@@ -1,0 +1,304 @@
+"use client";
+
+/**
+ * Settings → Booking → "Crew hours" card.
+ *
+ * Per-crew working-hours override editor using three-state day selects:
+ *   - Business hours: no row saved (uses org default)
+ *   - Custom hours: row with open < close
+ *   - Day off: row with open=0, close=0
+ */
+
+import { useState, useRef } from "react";
+import { api } from "@/lib/trpc/client";
+import { FoldCard } from "./fold-card";
+import { useSaveFlash, SavedFlash } from "@/components/shared/save-flash";
+import { HourSelect } from "./hour-select";
+import { Segmented } from "./segmented";
+import { MarkSchedule } from "./setting-marks";
+
+// ---- constants ----------------------------------------------------------------
+
+const WEEKDAYS = [
+  { label: "Mon", n: 1 },
+  { label: "Tue", n: 2 },
+  { label: "Wed", n: 3 },
+  { label: "Thu", n: 4 },
+  { label: "Fri", n: 5 },
+  { label: "Sat", n: 6 },
+  { label: "Sun", n: 0 },
+] as const;
+
+const DAY_MODE_OPTIONS = [
+  { value: "business" as const, label: "Business hours" },
+  { value: "custom" as const, label: "Custom" },
+  { value: "off" as const, label: "Off" },
+] as const;
+
+// ---- types --------------------------------------------------------------------
+
+interface ScheduleEntry {
+  userId: string;
+  weekday: number;
+  openHour: number;
+  closeHour: number;
+}
+
+interface SaveEntry {
+  weekday: number;
+  openHour: number;
+  closeHour: number;
+}
+
+interface CrewMember {
+  id: string;
+  email: string;
+  name: string | null;
+  isFieldCrew: boolean;
+}
+
+export interface DayDraft {
+  mode: "business" | "custom" | "off";
+  openHour: number;
+  closeHour: number;
+}
+
+type CrewDraft = Record<number, DayDraft>;
+
+// ---- exported pure functions (for unit tests) ---------------------------------
+
+export function seedDayDraft(entry: Pick<ScheduleEntry, "openHour" | "closeHour"> | undefined): DayDraft {
+  if (!entry) return { mode: "business", openHour: 8, closeHour: 17 };
+  if (entry.openHour === 0 && entry.closeHour === 0) return { mode: "off", openHour: 0, closeHour: 0 };
+  return { mode: "custom", openHour: entry.openHour, closeHour: entry.closeHour };
+}
+
+export function draftToSaveEntries(
+  draft: CrewDraft,
+  weekdays: readonly { label: string; n: number }[],
+): SaveEntry[] {
+  const out: SaveEntry[] = [];
+  for (const { n } of weekdays) {
+    const d = draft[n];
+    if (!d || d.mode === "business") continue;
+    if (d.mode === "off") {
+      out.push({ weekday: n, openHour: 0, closeHour: 0 });
+    } else {
+      out.push({ weekday: n, openHour: d.openHour || 8, closeHour: d.closeHour || 17 });
+    }
+  }
+  return out;
+}
+
+// ---- helpers ------------------------------------------------------------------
+
+function buildDraft(entries: ScheduleEntry[], userId: string): CrewDraft {
+  const mine = entries.filter((e) => e.userId === userId);
+  const draft: CrewDraft = {};
+  for (const { n } of WEEKDAYS) {
+    const row = mine.find((e) => e.weekday === n);
+    draft[n] = seedDayDraft(row);
+  }
+  return draft;
+}
+
+function crewSummary(entries: ScheduleEntry[], userId: string): string {
+  const mine = entries.filter((e) => e.userId === userId);
+  if (mine.length === 0) return "Business hours";
+  const N = mine.length;
+  return `Custom · ${N} day${N === 1 ? "" : "s"}`;
+}
+
+// ---- WeekdayRow ---------------------------------------------------------------
+
+interface WeekdayRowProps {
+  dayLabel: string;
+  weekday: number;
+  draft: DayDraft;
+  onChange: (weekday: number, next: DayDraft) => void;
+}
+
+function WeekdayRow({ dayLabel, weekday, draft, onChange }: WeekdayRowProps) {
+  function handleModeChange(mode: DayDraft["mode"]) {
+    if (mode === "business") {
+      onChange(weekday, { mode: "business", openHour: 8, closeHour: 17 });
+    } else if (mode === "off") {
+      onChange(weekday, { mode: "off", openHour: 0, closeHour: 0 });
+    } else {
+      onChange(weekday, { mode: "custom", openHour: draft.openHour || 8, closeHour: draft.closeHour || 17 });
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", padding: "var(--space-2) 0", flexWrap: "wrap" }}>
+      <span style={{ minWidth: 40, fontWeight: 700, fontSize: "var(--type-base)" }}>{dayLabel}</span>
+      <Segmented
+        value={draft.mode}
+        onChange={handleModeChange}
+        options={DAY_MODE_OPTIONS}
+        aria-label={`${dayLabel} hours`}
+      />
+      {draft.mode === "custom" && (
+        <>
+          <HourSelect
+            value={draft.openHour}
+            onChange={(h) =>
+              // Keep the range valid: close stays after open (an inverted custom range reads as
+              // a day off to the slot math, silently killing that crew-day's availability).
+              onChange(weekday, {
+                ...draft,
+                openHour: h,
+                closeHour: h >= draft.closeHour ? Math.min(h + 1, 24) : draft.closeHour,
+              })
+            }
+            min={0}
+            max={23}
+          />
+          <span className="muted">to</span>
+          <HourSelect
+            value={draft.closeHour}
+            onChange={(h) => onChange(weekday, { ...draft, closeHour: h })}
+            min={draft.openHour + 1}
+            max={24}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---- CrewRow ------------------------------------------------------------------
+
+interface CrewRowProps {
+  member: CrewMember;
+  allEntries: ScheduleEntry[];
+}
+
+function CrewRow({ member, allEntries }: CrewRowProps) {
+  const utils = api.useUtils();
+  const [open, setOpen] = useState(false);
+  // Lazy init: seed the draft ONCE at mount (buildDraft must not re-run on every parent render —
+  // a sibling's save invalidates the list query and re-renders us; the local draft is the source
+  // of truth for in-progress edits until OUR save succeeds).
+  const [draft, setDraft] = useState<CrewDraft>(() => buildDraft(allEntries, member.id));
+  const seededRef = useRef<string>("");
+  if (seededRef.current === "") seededRef.current = JSON.stringify(draft);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const { saved, flash, reset: resetSaved } = useSaveFlash();
+
+  const save = api.v1.frontdesk.crewSchedules.save.useMutation({
+    onSuccess: () => {
+      setSaveError(null);
+      seededRef.current = JSON.stringify(draft);
+      utils.v1.frontdesk.crewSchedules.list.invalidate().catch(() => {});
+      flash();
+    },
+    onError: (err) => {
+      setSaveError(err.message ?? "Save failed — check your connection and try again.");
+    },
+  });
+
+  const displayName = member.name ?? member.email;
+  const summary = crewSummary(allEntries, member.id);
+  const isDirty = JSON.stringify(draft) !== seededRef.current;
+
+  function handleDayChange(weekday: number, next: DayDraft) {
+    setDraft((prev) => ({ ...prev, [weekday]: next }));
+    resetSaved();
+  }
+
+  function handleSave() {
+    setSaveError(null);
+    save.mutate({ userId: member.id, entries: draftToSaveEntries(draft, WEEKDAYS) });
+  }
+
+  return (
+    <div style={{ borderBottom: "1px solid var(--line-2)", paddingBottom: "var(--space-3)", marginBottom: "var(--space-3)" }}>
+      <div
+        style={{ display: "flex", alignItems: "center", gap: "var(--space-2)", cursor: "pointer", userSelect: "none" }}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span style={{ fontSize: "var(--type-base)", color: "var(--ink-3)" }}>{open ? "▾" : "▸"}</span>
+        <span style={{ flex: 1, fontWeight: 600, fontSize: "var(--type-base)" }}>{displayName}</span>
+        <span className="muted" style={{ fontSize: "var(--type-sm)" }}>{summary}</span>
+      </div>
+
+      {open && (
+        <div style={{ paddingTop: "var(--space-3)", paddingLeft: "var(--space-5)" }}>
+          {WEEKDAYS.map(({ label, n }) => (
+            <WeekdayRow
+              key={n}
+              dayLabel={label}
+              weekday={n}
+              draft={draft[n] ?? { mode: "business", openHour: 8, closeHour: 17 }}
+              onChange={handleDayChange}
+            />
+          ))}
+          <div style={{ display: "flex", alignItems: "center", gap: "var(--space-3)", marginTop: "var(--space-3)" }}>
+            <button
+              className="btn primary"
+              disabled={save.isPending || !isDirty}
+              onClick={handleSave}
+            >
+              {save.isPending ? "Saving…" : "Save hours"}
+            </button>
+            <SavedFlash saved={saved} />
+          </div>
+          {saveError && (
+            <div style={{ color: "var(--red-700, #b42318)", fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
+              {saveError}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---- CrewHoursCard ------------------------------------------------------------
+
+export function CrewHoursCard() {
+  const members = api.v1.identity.members.useQuery(undefined, { refetchOnWindowFocus: false });
+  const schedules = api.v1.frontdesk.crewSchedules.list.useQuery(undefined, {
+    refetchOnWindowFocus: false,
+  });
+
+  const allMembers = members.data?.items ?? [];
+  const fieldCrew = allMembers.filter((m) => m.isFieldCrew);
+  const allEntries = schedules.data?.items ?? [];
+
+  const isLoading = members.isLoading || schedules.isLoading;
+  const isError = members.isError || schedules.isError;
+
+  const summary = isLoading
+    ? "Loading…"
+    : `${fieldCrew.length} field crew`;
+
+  return (
+    <FoldCard title="Crew hours" mark={<MarkSchedule />} summary={summary}>
+      {isLoading && (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>Loading…</p>
+      )}
+
+      {isError && !isLoading && (
+        <p style={{ color: "var(--red, #b42318)", fontSize: "var(--type-sm)", margin: "0" }}>
+          Couldn&apos;t load crew schedules — refresh to try again.
+        </p>
+      )}
+
+      {!isLoading && !isError && fieldCrew.length === 0 && (
+        <p className="muted" style={{ fontSize: "var(--type-sm)", margin: "0" }}>
+          No field crew yet — mark a team member as field crew to set their hours.
+        </p>
+      )}
+
+      {!isLoading && !isError && fieldCrew.length > 0 && (
+        <div>
+          {fieldCrew.map((m) => (
+            <CrewRow key={m.id} member={m} allEntries={allEntries} />
+          ))}
+        </div>
+      )}
+    </FoldCard>
+  );
+}

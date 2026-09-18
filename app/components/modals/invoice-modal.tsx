@@ -1,0 +1,1191 @@
+/**
+ * components/modals/invoice-modal.tsx
+ * Faithful port of the prototype's openInvoice (5451-5493) + invEditBlock
+ * (5420-5450), with its Send-it card (sendInvoice, 5508) and the Take-a-payment
+ * sheet (coPayBlock/coPay, payInvoice, 5528-5603).
+ *
+ * This is Finance — unlike the job modal, the invoice IS where money/margin
+ * lives, so the cost column + "Your margin (only you)" ARE shown here.
+ *
+ * Sheet grammar (the lead-modal shape): sticky .sheet-head (customer · status
+ * pill · num/title/phone), the edit-block or read-only body, a quiet
+ * "Record a payment" accordion row when a sent invoice is still owed, and a
+ * sticky .sheet-foot holding the quiet peers (Archive/Restore · Preview as
+ * customer · Done) over THE one filled primary:
+ *   draft with a bill      → "Send invoice — $X"   (finalizes; sheet re-renders sent)
+ *   sent and still owed    → "Charge a card — $X"  (real Stripe checkout)
+ *   settled / nothing billed → "Done"              (the old footer confirm)
+ * Archive is destructive: it stays quiet and red, never the primary.
+ *
+ * Branches faithfully:
+ *   - EDITABLE (hand-made draft: !jobId && status==='draft') → invEditBlock:
+ *     bill-to picker, phone, email, terms, line items w/ qty/price/cost, +Add
+ *     line, from-pricebook, subtotal/discount/tax/Total + margin, Pricing options.
+ *   - READ-ONLY (sent, or a job invoice) → the line table + Total − deposit −
+ *     payments + Due-now/Paid-in-full row + the payments list. A job invoice
+ *     also carries a "From job" row (the bill is built on the job, not here);
+ *     with nothing billed yet it says so and points at the job.
+ *
+ * The branch decision NEVER runs on a summary row: list-hydrated invoices are
+ * `partial` (no lines/jobId), so the sheet fetches the full record on open and
+ * holds a quiet Loading line until it lands — a partial job draft used to open
+ * the hand-made editor with an empty Bill-to under a real bill.
+ *
+ * OUT OF SCOPE (handled elsewhere, per the prototype's other paths):
+ *   - the job add-on plumbing (billAskBlock / invIncludeAddon / invSkipAddon).
+ *   - the office charge-on-file one-tap (chargeOnFile / voidCharge).
+ *   - the multi-step Tap-to-Pay simulation sheet (coPay tap/approve/done steps),
+ *     the customer invoice page (openCustInv), receipts (sendReceipt) and
+ *     reminders (remindInvoice). The payment card here records a payment
+ *     straight through recordPayment (amount + method), which is the faithful
+ *     outcome of the sheet without the on-glass simulation surface.
+ */
+
+"use client";
+
+import { useState, useEffect } from "react";
+import { api } from "@/lib/trpc/client";
+import { dtoInvoiceToStore } from "@/lib/store/dto-mapper";
+import { useAppStore, useActiveModal, useCloseModal, usePushModal } from "@/lib/store/app-store";
+import { MODAL } from "@/lib/store/modal-ids";
+import { trpcVanilla } from "@/lib/trpc/vanilla";
+import { calcQuote } from "@/lib/prototype-sample";
+import type { Invoice, InvoiceLine, Lead, Service } from "@/lib/store/types";
+import { fmt$, fmtPhone } from "@/lib/format";
+import { InvoiceAuthorizationNote } from "@/components/shared/invoice-authorization";
+import { DisclosureRow } from "@/components/ui/disclosure-row";
+import { Field } from "@/components/ui/input";
+import { SheetRow } from "./sheet-row";
+import { PhoneCell } from "./lead-modal/lead-header";
+import { EmailBody } from "./lead-modal/more-details";
+import { Trail } from "./trail";
+// Single source for invoice money math + status pill table (features/money).
+import { invPaid, invDue, invStatusKey, IST } from "@/features/money/money-derive";
+// Single source for the Net-terms/due-date/PO face line (features/invoices).
+import { termsLine } from "@/features/invoices/terms-line";
+import { ModalLoading } from "./modal-loading";
+
+function StatusPill({ invoice }: { invoice: Invoice }) {
+  const s = IST[invStatusKey(invoice)] ?? IST.draft!;
+  return (
+    <span className="stpill" style={{ color: s.c, background: s.bg }}>
+      {s.l}
+    </span>
+  );
+}
+
+// ---- live-resolved customer / phone (prototype invCust / invPhone) ---------
+// The contact resolves LIVE from the linked lead so a corrected number/name
+// isn't left stale on the frozen invoice snapshot.
+
+function invCustName(invoice: Invoice, leads: Lead[]): string {
+  const lead = leads.find((l) => l.id === invoice.leadId);
+  return lead?.name ?? invoice.cust ?? "Customer";
+}
+
+function invPhone(invoice: Invoice, leads: Lead[]): string {
+  const lead = leads.find((l) => l.id === invoice.leadId);
+  return lead?.phone || invoice.phone || "";
+}
+
+/**
+ * A typed percentage, bounded. The server refuses a discount over 100% (Invoice.create bounds
+ * discBps at 10000), and an unbounded discount inverted the bill on screen before it got there.
+ * Tax has no natural 100% ceiling but a runaway one is a typo, not a rate.
+ */
+const MAX_TAX_PCT = 100;
+const clampPct = (raw: string, max: number): number =>
+  Math.min(max, Math.max(0, Number(raw) || 0));
+
+/** pricingSummary — the reveal-head "— …" hint (prototype pricingSummary). */
+function pricingSummary(p: { disc?: number; tax?: number }, depPaid: number): string {
+  const bits: string[] = [];
+  if (p.disc) bits.push(p.disc + "% off");
+  if (depPaid) bits.push(fmt$(depPaid) + " deposit");
+  if (p.tax) bits.push(p.tax + "% tax");
+  return bits.join(" · ");
+}
+
+// ---- shared inline styles (kept faithful to the prototype's inline CSS) -----
+
+const LINE_INPUT: React.CSSProperties = {
+  flex: 1,
+  minWidth: 140,
+  border: "1.5px solid var(--line)",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
+  fontFamily: "inherit",
+  fontSize: "var(--type-base)",
+};
+
+const QTY_INPUT: React.CSSProperties = {
+  width: 44,
+  border: "1.5px solid var(--line)",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-1)",
+  fontFamily: "inherit",
+  textAlign: "center",
+};
+
+const PRICE_INPUT: React.CSSProperties = {
+  width: 78,
+  border: "1.5px solid var(--line)",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
+  fontFamily: "inherit",
+  fontWeight: 700,
+};
+
+const COST_INPUT: React.CSSProperties = {
+  width: 64,
+  border: "1.5px dashed var(--line)",
+  borderRadius: "var(--radius-sm)",
+  padding: "var(--space-2) var(--space-2)",
+  fontFamily: "inherit",
+  color: "var(--ink-2)",
+};
+
+const SEC_LABEL: React.CSSProperties = {
+  fontSize: "var(--type-xs)",
+  fontWeight: 800,
+  textTransform: "uppercase",
+  letterSpacing: ".05em",
+  margin: "var(--space-4) 0 var(--space-2)",
+};
+
+const ROLLUP_ROW: React.CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  fontSize: "var(--type-base)",
+  color: "var(--ink-2)",
+};
+
+// ===========================================================================
+//  EDIT BLOCK — the hand-made-draft editor (prototype invEditBlock)
+// ===========================================================================
+
+interface EditBlockProps {
+  invoice: Invoice;
+  leads: Lead[];
+  services: Service[];
+  onPickCust: (name: string) => void;
+  onSetField: (patch: Partial<Invoice>) => void;
+  onSetTerms: (days: number | null) => void;
+  onSetLines: (lines: InvoiceLine[]) => void;
+  onSetPricing: (patch: { disc?: number; tax?: number }) => void;
+  onSetDepPaid: (depPaid: number) => void;
+}
+
+function EditBlock({
+  invoice,
+  leads,
+  services,
+  onPickCust,
+  onSetField,
+  onSetTerms,
+  onSetLines,
+  onSetPricing,
+  onSetDepPaid,
+}: EditBlockProps) {
+  // pricebook browse is local UI (prototype _invPb); the staged details
+  // (send-to / due / adjustments) are disclosure rows, one open at a time.
+  const [pbOpen, setPbOpen] = useState(false);
+  const [pbQuery, setPbQuery] = useState("");
+  const [openRow, setOpenRow] = useState<"sendto" | "due" | "pricing" | null>(null);
+  const toggleRow = (k: "sendto" | "due" | "pricing") =>
+    setOpenRow((prev) => (prev === k ? null : k));
+  const pbMatches = pbQuery.trim()
+    ? services.filter((svc) =>
+        svc.name.toLowerCase().includes(pbQuery.trim().toLowerCase())
+      )
+    : services;
+
+  // Finance surface — money (cost col + margin) is always shown here.
+  const money = true;
+  const p = invoice.pricing ?? { disc: 0, tax: 0 };
+  const lines = invoice.lines ?? [];
+  const m = calcQuote(
+    lines.map((l) => ({ q: l.q || 1, r: l.r || 0, d: l.d, opt: false })),
+    p
+  );
+  // What was actually charged, as recorded when the invoice was raised. Both come from the server
+  // rather than from calcQuote over the lines: an invoice raised from a quote carries the agreed
+  // total with no lines at all, so a line-derived figure renders $0.00 under a four-figure total.
+  const recordedTax = invoice.tax ?? 0;
+  const recordedDisc = invoice.disc ?? 0;
+  const cost = lines.reduce((s, l) => s + (l.q || 1) * (l.c || 0), 0);
+  const margin = (invoice.total || 0) - cost;
+  const td = invoice.termsDays;
+  // Collapsed row summary — the value IS the state (updates as the store writes).
+  // Empty says "Add" (an affordance), never a bare dash — a dash reads as broken data.
+  const sendToSummary = [invoice.phone, invoice.email].filter(Boolean).join(" · ") || "Add";
+
+  // ---- immutable line ops (map to a fresh array, never mutate a line) -------
+
+  function setLine(ix: number, patch: Partial<InvoiceLine>) {
+    onSetLines(lines.map((l, i) => (i === ix ? { ...l, ...patch } : l)));
+  }
+
+  function addLine() {
+    onSetLines([...lines, { d: "", q: 1, r: 0 }]);
+  }
+
+  function removeLine(ix: number) {
+    onSetLines(lines.filter((_, i) => i !== ix));
+  }
+
+  // Snapshots the service's current values — later pricebook edits never
+  // retroactively change a line already added to this invoice.
+  function addFromPricebook(svc: Service) {
+    onSetLines([...lines, { d: svc.name, q: 1, r: svc.unitPrice, c: svc.cost }]);
+  }
+
+  return (
+    <div style={{ marginTop: "var(--space-4)" }}>
+      {/* Bill-to — the one essential field, stays open (everything else stages). */}
+      <Field label="Bill to" style={{ margin: "0" }}>
+        <input
+          type="text"
+          list="invCustList"
+          defaultValue={invoice.cust || ""}
+          placeholder="Search or add a customer"
+          onChange={(e) => onPickCust(e.target.value)}
+        />
+        <datalist id="invCustList">
+          {leads.map((l) => (
+            <option key={l.id} value={l.name || ""} />
+          ))}
+        </datalist>
+      </Field>
+
+      {/* Line items */}
+      <div className="muted" style={SEC_LABEL}>
+        Line items
+      </div>
+      {lines.length ? (
+        lines.map((l, ix) => (
+          <div
+            key={ix}
+            style={{
+              display: "flex",
+              gap: "var(--space-2)",
+              alignItems: "center",
+              marginBottom: "var(--space-2)",
+              flexWrap: "wrap",
+            }}
+          >
+            <input
+              value={l.d || ""}
+              placeholder="description"
+              onChange={(e) => setLine(ix, { d: e.target.value })}
+              style={LINE_INPUT}
+            />
+            <input
+              type="number"
+              inputMode="decimal"
+              min={1}
+              value={l.q || 1}
+              title="qty"
+              onChange={(e) => setLine(ix, { q: Math.max(1, Math.round(Number(e.target.value) || 1)) })}
+              style={QTY_INPUT}
+            />
+            <span className="muted">$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              value={l.r || 0}
+              title="price"
+              onChange={(e) => setLine(ix, { r: Math.max(0, Math.round(Number(e.target.value) || 0)) })}
+              style={PRICE_INPUT}
+            />
+            {money ? (
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                value={l.c ?? ""}
+                placeholder="cost"
+                title="your cost (only you)"
+                onChange={(e) =>
+                  setLine(ix, { c: Math.max(0, Math.round(Number(e.target.value) || 0)) })
+                }
+                style={COST_INPUT}
+              />
+            ) : null}
+            <span
+              className="linklike"
+              style={{ color: "var(--ink-3)", fontWeight: 800 }}
+              onClick={() => removeLine(ix)}
+            >
+              ✕
+            </span>
+          </div>
+        ))
+      ) : (
+        <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-2xs) 0 var(--space-2)" }}>
+          No lines yet — add what you&rsquo;re billing for.
+        </div>
+      )}
+
+      {/* + Add line · from pricebook */}
+      <div style={{ display: "flex", gap: "var(--space-3)", alignItems: "center", marginTop: "var(--space-1)" }}>
+        <button type="button" className="btn sm ghost" onClick={addLine}>
+          + Add line
+        </button>
+        {services.length ? (
+          <span className="linklike" style={{ fontSize: "var(--type-sm)" }} onClick={() => setPbOpen((v) => !v)}>
+            {pbOpen ? "close" : "from pricebook"}
+          </span>
+        ) : null}
+      </div>
+
+      {pbOpen ? (
+        <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-2)", paddingTop: "var(--space-2)" }}>
+          <input
+            type="text"
+            value={pbQuery}
+            onChange={(e) => setPbQuery(e.target.value)}
+            placeholder="Search your pricebook…"
+            enterKeyHint="search"
+            style={{ ...LINE_INPUT, flex: "none", width: "100%", marginBottom: "var(--space-2)" }}
+          />
+          {pbMatches.length ? (
+            pbMatches.map((svc) => (
+              <div
+                key={svc.id}
+                className="stage-row clickable"
+                style={{ cursor: "pointer", border: "none", padding: "var(--space-1) 0" }}
+                onClick={() => addFromPricebook(svc)}
+              >
+                <span style={{ flex: 1, fontSize: "var(--type-base)" }}>{svc.name}</span>
+                <b className="fig">{fmt$(svc.unitPrice)}</b>
+              </div>
+            ))
+          ) : (
+            <div className="muted" style={{ fontSize: "var(--type-sm)", padding: "var(--space-1) 0" }}>
+              No matches — try a different search.
+            </div>
+          )}
+        </div>
+      ) : null}
+
+      {/* Subtotal / discount / tax / Total + margin.
+          The tax figures come from what was RECORDED on the invoice, never from calcQuote over the
+          lines: an invoice raised from a quote carries the agreed total with no lines at all, so a
+          line-derived tax renders $0.00 under a four-figure total. Subtotal is derived the same
+          way (total − tax) so the three numbers always add up on screen. */}
+      <div style={{ borderTop: "1px solid var(--line)", marginTop: "var(--space-3)", paddingTop: "var(--space-2)" }}>
+        {recordedDisc > 0 || recordedTax > 0 ? (
+          <div style={ROLLUP_ROW}>
+            <span>Subtotal</span>
+            {/* total + discount − tax, so this is the GROSS line sum. It used to be total − tax,
+                which is the post-discount NET — printed above a discount row that then took the
+                same money off a second time, so the column never reached the stated Total. */}
+            <span>{fmt$((invoice.total || 0) + recordedDisc - recordedTax)}</span>
+          </div>
+        ) : null}
+        {recordedDisc > 0 ? (
+          <div style={ROLLUP_ROW}>
+            <span>Discount {p.disc}%</span>
+            {/* The amount the SERVER recorded, not calcQuote over the lines: an invoice raised
+                from a quote carries the agreed total with no lines at all. */}
+            <span style={{ color: "var(--red)" }}>−{fmt$(recordedDisc)}</span>
+          </div>
+        ) : null}
+        {recordedTax > 0 ? (
+          <div style={ROLLUP_ROW}>
+            <span>Tax {p.tax}%</span>
+            <span>{fmt$(recordedTax)}</span>
+          </div>
+        ) : null}
+        <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 800, fontSize: "var(--type-md)" }}>
+          <span>Total</span>
+          <span className="fig">{fmt$(invoice.total || 0)}</span>
+        </div>
+        {money && cost > 0 ? (
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              fontSize: "var(--type-sm)",
+              color: "var(--ink-3)",
+              marginTop: "var(--space-1)",
+            }}
+          >
+            <span>
+              Your margin <span className="muted">(only you)</span>
+            </span>
+            <span>
+              {fmt$(margin)} · {(invoice.total || 0) > 0 ? Math.round((margin / (invoice.total || 1)) * 100) : 0}%
+            </span>
+          </div>
+        ) : null}
+      </div>
+
+      {/* The staged details — disclosure rows (the intake-modal grammar):
+          label · current value, one editor open at a time, in-flow. */}
+      <div style={{ borderTop: "1px solid var(--line-2)", marginTop: "var(--space-4)" }}>
+        <DisclosureRow
+          label="Send to"
+          value={sendToSummary}
+          open={openRow === "sendto"}
+          onToggle={() => toggleRow("sendto")}
+        >
+          <div className="row2" style={{ gridTemplateColumns: "1fr 1fr", gap: "var(--space-3)" }}>
+            <Field label="Phone" style={{ margin: "0" }}>
+              <input
+                type="tel"
+                defaultValue={invoice.phone || ""}
+                placeholder="(925) 555-0123"
+                onChange={(e) => onSetField({ phone: e.target.value.trim() })}
+              />
+            </Field>
+            <Field
+              label="Email"
+              style={{ margin: "0" }}
+              hint={
+                <span
+                  className="muted"
+                  style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0 }}
+                >
+                  {/* Not "(for a PDF copy)". No PDF is generated anywhere in this app and the
+                      email transport is hard-typed with no attachments — what actually goes out
+                      is a link to the invoice's own /i/<token> page. */}
+                  (for the emailed invoice link)
+                </span>
+              }
+            >
+              <input
+                type="email"
+                inputMode="email"
+                defaultValue={invoice.email || ""}
+                placeholder="name@email.com"
+                onChange={(e) => onSetField({ email: e.target.value.trim() })}
+              />
+            </Field>
+          </div>
+        </DisclosureRow>
+
+        <DisclosureRow
+          label="Due"
+          value={(td ?? 0) === 0 ? "On receipt" : `${td} days`}
+          open={openRow === "due"}
+          onToggle={() => toggleRow("due")}
+        >
+          <div className="chips">
+            <button
+              type="button"
+              className={`chip${(td ?? 0) === 0 ? " sel" : ""}`}
+              onClick={() => onSetTerms(0)}
+            >
+              On receipt
+            </button>
+            <button
+              type="button"
+              className={`chip${td === 15 ? " sel" : ""}`}
+              onClick={() => onSetTerms(15)}
+            >
+              15 days
+            </button>
+            <button
+              type="button"
+              className={`chip${td === 30 ? " sel" : ""}`}
+              onClick={() => onSetTerms(30)}
+            >
+              30 days
+            </button>
+          </div>
+        </DisclosureRow>
+
+        <DisclosureRow
+          label="Discount, tax & deposit"
+          value={pricingSummary(p, invoice.depPaid || 0) || "None"}
+          open={openRow === "pricing"}
+          onToggle={() => toggleRow("pricing")}
+        >
+          <div style={{ display: "flex", gap: "var(--space-3)", flexWrap: "wrap" }}>
+            <Field label="Discount %" style={{ flex: 1, minWidth: 90, margin: "0" }}>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                max={100}
+                defaultValue={p.disc || ""}
+                placeholder="0"
+                // onBlur, not onChange. These now reach the SERVER and re-derive the bill, so
+                // per-keystroke would write 8, then 8.7, then 8.75 — three recomputes, and a
+                // half-typed rate left behind by anyone who navigates mid-edit.
+                onBlur={(e) => onSetPricing({ disc: clampPct(e.target.value, 100) })}
+              />
+            </Field>
+            <Field label="Tax %" style={{ flex: 1, minWidth: 90, margin: "0" }}>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                step={0.25}
+                defaultValue={p.tax || ""}
+                placeholder="0"
+                onBlur={(e) => onSetPricing({ tax: clampPct(e.target.value, MAX_TAX_PCT) })}
+              />
+            </Field>
+            <Field label="Deposit paid $" style={{ flex: 1, minWidth: 110, margin: "0" }}>
+              <input
+                type="number"
+                inputMode="decimal"
+                min={0}
+                defaultValue={invoice.depPaid || ""}
+                placeholder="0"
+                onChange={(e) => onSetDepPaid(Math.max(0, Math.round(Number(e.target.value) || 0)))}
+              />
+            </Field>
+          </div>
+        </DisclosureRow>
+      </div>
+    </div>
+  );
+}
+
+// ===========================================================================
+//  READ-ONLY VIEW — sent / job invoices (prototype openInvoice else-branch)
+// ===========================================================================
+
+interface ReadOnlyViewProps {
+  invoice: Invoice;
+  /** Opens the source job — present when the invoice was raised from one. */
+  onOpenJob?: () => void;
+}
+
+function ReadOnlyView({ invoice, onOpenJob }: ReadOnlyViewProps) {
+  const paid = invPaid(invoice);
+  const due = invDue(invoice);
+  const total = invoice.total ?? 0;
+  const fromJob = invoice.jobId != null;
+
+  // A job's invoice with nothing billed isn't a dead end — the price lives on the job.
+  if (fromJob && total <= 0) {
+    return (
+      <div className="card" style={{ marginTop: "var(--space-4)", textAlign: "center", padding: "var(--space-6) var(--space-4)" }}>
+        <b>No bill yet</b>
+        <p className="muted" style={{ margin: "var(--space-1) 0 var(--space-3)", fontSize: "var(--type-sm)" }}>
+          Price the job and the bill lands here.
+        </p>
+        {onOpenJob ? (
+          <button type="button" className="btn" onClick={onOpenJob}>
+            Open the job
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
+  return (
+    <div className="card" style={{ marginTop: "var(--space-4)" }}>
+      <table>
+        <tbody>
+          {(invoice.lines ?? []).map((x, i) => (
+            <tr key={i}>
+              <td>
+                {x.d}
+                {(x.q ?? 1) > 1 ? ` ×${x.q}` : ""}
+              </td>
+              <td style={{ textAlign: "right" }}>{fmt$((x.q ?? 1) * (x.r ?? 0))}</td>
+            </tr>
+          ))}
+          <tr>
+            <td style={{ textAlign: "right", fontWeight: 800, borderTop: "1px solid var(--line)" }}>
+              Total
+            </td>
+            <td style={{ textAlign: "right", fontWeight: 800, borderTop: "1px solid var(--line)" }}>
+              {fmt$(total)}
+            </td>
+          </tr>
+          {invoice.depPaid ? (
+            <tr>
+              <td style={{ textAlign: "right" }} className="muted">
+                − deposit already paid
+              </td>
+              <td style={{ textAlign: "right", color: "var(--green-700)" }}>−{fmt$(invoice.depPaid)}</td>
+            </tr>
+          ) : null}
+          {paid ? (
+            <tr>
+              <td style={{ textAlign: "right" }} className="muted">
+                − payments so far
+              </td>
+              <td style={{ textAlign: "right", color: "var(--green-700)" }}>−{fmt$(paid)}</td>
+            </tr>
+          ) : null}
+          <tr>
+            <td style={{ textAlign: "right", fontWeight: 900, fontSize: "var(--type-md)" }}>
+              {total <= 0 ? "No bill set yet" : due > 0 ? "Due now" : "Paid in full ✓"}
+            </td>
+            <td
+              style={{
+                textAlign: "right",
+                fontWeight: 900,
+                fontSize: "var(--type-md)",
+                color: due > 0 ? "var(--ink)" : "var(--green-700)",
+              }}
+            >
+              {due > 0 ? fmt$(due) : ""}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {(invoice.payments ?? []).length ? (
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-1)" }}>
+          {(invoice.payments ?? [])
+            .map((p) => `✓ ${fmt$(p.amt)} ${p.method || "card"} · ${p.when}`)
+            .join("  ·  ")}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ===========================================================================
+//  GET PAID — Send (finalize) · Charge a card · Record cash/check
+//  Three verb-honest actions, re-housed in the sheet grammar: Send/Charge take
+//  the .sheet-pri slot in the foot; Record cash/check (money already collected)
+//  is a quiet accordion row in the body. "Card" is never a recordable method —
+//  a card always charges.
+// ===========================================================================
+
+type RecordMethod = "cash" | "check";
+
+// ===========================================================================
+//  THE MODAL BODY
+// ===========================================================================
+
+export function InvoiceModalContent() {
+  const activeModal = useActiveModal();
+  const close = useCloseModal();
+  const pushModal = usePushModal();
+
+  const invoices = useAppStore((s) => s.invoices);
+  const adoptInvoice = useAppStore((s) => s.adoptInvoice);
+  const updateLead = useAppStore((s) => s.updateLead);
+  const leads = useAppStore((s) => s.leads);
+  const services = useAppStore((s) => s.services);
+  const jobs = useAppStore((s) => s.jobs);
+  const updateInvoice = useAppStore((s) => s.updateInvoice);
+  const archiveInvoice = useAppStore((s) => s.archiveInvoice);
+  const setInvoiceLines = useAppStore((s) => s.setInvoiceLines);
+  const recordPayment = useAppStore((s) => s.recordPayment);
+  const sendInvoice = useAppStore((s) => s.sendInvoice);
+  const saveDraft = useAppStore((s) => s.saveDraft);
+
+  const [busy, setBusy] = useState(false);
+  const [payErr, setPayErr] = useState<string | null>(null);
+  const [recOpen, setRecOpen] = useState(false);
+  // What the last resend did. Null until one is attempted — the office should not be told anything
+  // about a delivery it did not ask for.
+  const [resendNote, setResendNote] = useState<string | null>(null);
+  const [resendOpen, setResendOpen] = useState(false);
+  // Which way the resend goes. Null = follow the default (text when there is a number). The office
+  // could not say otherwise before: the invoice picked for you, so a customer who reads email and
+  // ignores texts had no route. A quote has had this toggle all along.
+  const [resendChannel, setResendChannel] = useState<"sms" | "email" | null>(null);
+  const [recMethod, setRecMethod] = useState<RecordMethod>("cash");
+
+  const invoiceId = activeModal?.params?.invoiceId as string | undefined;
+  const invoice = invoices.find((i) => i.id === invoiceId);
+
+  // FETCH-ON-OPEN. The Money ledger and hydrator fill the store with SUMMARY rows — no lines,
+  // no jobId, no payment history (`partial: true`). This sheet DECIDES things from those fields
+  // (editor vs read-only, the due figure), so a partial row is as dangerous as a missing one:
+  // a job's $685 draft opened the hand-made-draft editor with an empty Bill-to and "No lines
+  // yet". The full record is fetched whenever the sheet opens; the store row is only trusted
+  // once it is not partial.
+  const missing = Boolean(invoiceId) && !invoice;
+  const needsFull = missing || Boolean(invoice?.partial);
+  const invQ = api.v1.invoicing.get.useQuery(
+    { invoiceId: invoiceId ?? "" },
+    // Gated on needsFull, NOT on the id. A hand-made draft has a client-authored id and no DB
+    // row, so this fetch 404'd; React Query cached that error, and the moment the invoice was
+    // sent (which demotes the row to partial) the sheet re-read the SAME cached 404 and told the
+    // office "Couldn't load this invoice" about an invoice that had just gone out.
+    { enabled: needsFull, staleTime: 30_000, refetchOnWindowFocus: false },
+  );
+  useEffect(() => {
+    if (!needsFull || !invQ.data) return;
+    const dto = invQ.data;
+    adoptInvoice(
+      dtoInvoiceToStore(dto as never, {
+        cust: dto.customerName ?? "—",
+        phone: "",
+        email: "",
+      } as never),
+    );
+  }, [needsFull, invQ.data, adoptInvoice]);
+
+  if (!invoiceId) return null;
+  if (!invoice || invoice.partial) {
+    if (invQ.isError) {
+      return <p className="muted">Couldn&apos;t load this invoice. Close and try again.</p>;
+    }
+    // Full-height skeleton, same as the chunk loader — the sheet opens at a believable
+    // size and settles, instead of a one-line sliver that snaps open when the fetch lands.
+    return <ModalLoading size="lg" />;
+  }
+
+  const job = invoice.jobId != null ? jobs.find((j) => j.id === invoice.jobId) : undefined;
+  // Hand-made invoices are built here; job invoices flow from the job and are read-only.
+  //
+  // Keyed on jobId, NOT on whether the job object was found. The jobs collection holds one page,
+  // so an invoice raised from a job outside it found nothing, decided the invoice was hand-made,
+  // and opened the editor: a blank "Search or add a customer" box over an invoice that HAS a
+  // customer, an empty line table, and an Archive button — for a bill the shop cannot edit here.
+  const editable = invoice.jobId == null && invoice.status === "draft";
+  const sent = invoice.status !== "draft";
+  const due = invDue(invoice);
+  const total = invoice.total ?? 0;
+  // The face line — "Net 30 · due Sep 2 · PO 4471" (features/invoices/terms-line.ts, the same
+  // helper the customer preview and public pay page use).
+  const face = termsLine({ termsDays: invoice.termsDays, dueAt: invoice.dueAt, poNumber: invoice.poNumber });
+  // PO stays editable on any open invoice — frozen only once paid/void, matching
+  // editMetadata's own gate (a settled invoice's terms are a closed record).
+  const poEditable = invoice.status !== "paid" && invoice.status !== "void";
+
+  const custName = invCustName(invoice, leads);
+  const phone = invPhone(invoice, leads);
+  // The customer behind this invoice, so the contact rows below can edit the RECORD rather than
+  // storing a per-invoice copy that drifts the moment the number changes.
+  const invLead = leads.find((l) => l.id === invoice.leadId);
+
+  // ---- edit-block wiring (prototype invCustPick / invSetField / invSetTerms /
+  //      invSetLine|invAddLine|invRemoveLine / invSetPricing) -----------------
+
+  function pickCust(rawName: string) {
+    if (!invoice) return;
+    const name = rawName.trim();
+    const matched = leads.find((l) => (l.name || "").toLowerCase() === name.toLowerCase());
+    const patch: Partial<Invoice> = { cust: name };
+    if (!invoice.title || invoice.title === "New invoice" || invoice.title === "Customer") {
+      patch.title = name || "New invoice";
+    }
+    if (matched) {
+      patch.leadId = matched.id;
+      if (matched.phone && matched.phone !== "—") patch.phone = matched.phone;
+      if (matched.email) patch.email = matched.email;
+    } else {
+      // no live match — leave the typed name, clear the link (prototype sets leadId=null)
+      patch.leadId = "";
+    }
+    updateInvoice(invoice.id, patch);
+  }
+
+  // Finalize (draft → sent), then DELIVER: text the pay link if the customer has a phone,
+  // email otherwise. This office button is the ONLY send path that auto-delivers — the field
+  // close-out flow must not fire SMS a tech never saw. A delivery failure surfaces the server's
+  // sentence inline while the invoice STAYS sent (the send itself succeeded; only the message
+  // didn't go out). The modal stays open and re-renders to the sent state, where Charge /
+  /**
+   * "Done" on a hand-made invoice COMMITS it, then closes.
+   *
+   * It used to be `onClick={close}` and nothing else, so an invoice typed straight into this sheet
+   * was thrown away on close with no warning — and nothing else could have saved it, because the
+   * Money ledger renders from the server and a store-local invoice appears nowhere but here.
+   *
+   * A failure keeps the sheet OPEN with the reason, which is the whole point: closing over work
+   * that did not save is the failure being fixed. saveDraft is a no-op on a row the server already
+   * holds, so an ordinary Done on a real invoice still just closes.
+   */
+  async function done() {
+    if (!invoice) {
+      close();
+      return;
+    }
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const result = await saveDraft(invoice.id);
+      if (!result.ok) {
+        setPayErr(result.error ?? "Couldn't save this invoice — try again.");
+        return;
+      }
+      close();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Record become available — no dead-end close.
+  async function send() {
+    if (!invoice) return;
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const result = await sendInvoice(invoice.id);
+      if (!result.ok) {
+        setPayErr(result.error ?? "Couldn't send the invoice.");
+        return;
+      }
+      // "—" is this codebase's no-phone sentinel (see pickCust) — treat it as absent.
+      const hasPhone = Boolean(phone && phone !== "—");
+      /**
+       * TEXT WHENEVER THERE IS A NUMBER. Briefly this also required the shop's OWN 10DLC campaign
+       * to be active, which sent a brand-new shop's invoices by email even though Mallet's shared
+       * line could have texted them — the server picks the line now (own once registered, shared
+       * until then) and this only says which channel the customer prefers.
+       */
+      try {
+        await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
+          invoiceId: invoice.id,
+          channel: hasPhone ? "sms" : "email",
+        });
+      } catch (e) {
+        // Includes the no-phone-no-email precondition — the server names the actual problem.
+        setPayErr(e instanceof Error ? e.message : "The invoice is sent, but the message didn't go out.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function record(amt: number, method: RecordMethod) {
+    if (!invoice) return;
+    // Fire-and-forget on the desk: the store's optimistic write IS the feedback here and a
+    // failure surfaces through WriteErrorToast (see the slice's rollback). The close-out sheet
+    // is the caller that must await the resolved outcome.
+    void recordPayment(invoice.id, { amt, when: "Just now", method });
+  }
+
+  // Charge a card: mint the Stripe hosted-checkout link for the balance and open it. Because the
+  // client id is preserved through draft, invoice.id is the server row id. Surfaces the provider
+  // error (e.g. "finish payment setup") instead of failing silently.
+  async function charge() {
+    if (!invoice) return;
+    setPayErr(null);
+    setBusy(true);
+    try {
+      const { url } = await trpcVanilla.v1.invoicing.createPayment.mutate({ invoiceId: invoice.id });
+      window.open(url, "_blank", "noopener");
+    } catch (e) {
+      setPayErr(e instanceof Error ? e.message : "Couldn't start the card payment — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /**
+   * Send the invoice AGAIN. A sent invoice was a dead end for re-delivery: `priKind` swaps Send for
+   * "Charge a card" the moment it is sent, and no resend existed anywhere — while a QUOTE has both
+   * a channel-toggle send panel and an explicit "Edit & resend". A customer who lost the text had
+   * to be chased by hand.
+   *
+   * Same call the first send makes, so the channel rule is identical: text when there is a number,
+   * else email, and the server picks the line.
+   */
+  async function resend() {
+    if (!invoice) return;
+    setPayErr(null);
+    setResendNote(null);
+    setBusy(true);
+    const hasPhone = Boolean(phone && phone !== "—");
+    const channel = resendChannel ?? (hasPhone ? "sms" : "email");
+    try {
+      await trpcVanilla.v1.notifications.sendInvoiceReminder.mutate({
+        invoiceId: invoice.id,
+        channel,
+      });
+      setResendNote(`Sent to ${channel === "sms" ? fmtPhone(phone) : (invoice.email || "their email")}.`);
+    } catch (e) {
+      // Includes the no-phone-no-email precondition — the server names the actual problem.
+      setPayErr(e instanceof Error ? e.message : "Couldn't resend the invoice — try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // The saved card lives on the linked lead — the same place close-out and the customer invoice
+  // read it from. Undefined when no customer is linked, which reads as "no card on file".
+  const savedCard = leads.find((l) => l.id === invoice?.leadId)?.card ?? null;
+
+  // THE primary — verb-honest per state. A draft with nothing billed has no
+  // send to promote (a promoted action that cannot run is worse than none), so
+  // Done — the old footer confirm — takes the slot until there is a bill.
+  type PriKind = "send" | "charge" | "done";
+  const priKind: PriKind = !sent && total > 0 ? "send" : sent && due > 0 ? "charge" : "done";
+
+  return (
+    <>
+      {/* Sticky head — customer as the title, one calm meta line under it.
+          The shell renders the ✕; .sheet-head's own padding clears it. */}
+      <div className="sheet-head">
+        <h2>{custName}</h2>
+        <div className="sheet-meta">
+          <StatusPill invoice={invoice} />
+          <span>{invoice.num}</span>
+          {/* customer > quote > job > invoice. Nothing here named the JOB this bill came from. */}
+          <Trail kind="invoice" id={invoice.id} />
+          {invoice.title && invoice.title !== custName ? <span>{invoice.title}</span> : null}
+          {phone ? <span>{phone}</span> : null}
+          {face ? <span>{face}</span> : null}
+        </div>
+      </div>
+
+      {/* Payment-reminder trail — sent + open + reminders on (prototype fu line) */}
+      {sent && invoice.fu?.on && due > 0 ? (
+        <div className="muted" style={{ fontSize: "var(--type-sm)", marginTop: "var(--space-2)" }}>
+          Payment reminders · 1st{" "}
+          {invoice.fu.stage >= 1 ? <b>sent</b> : "in 3 days"} · 2nd{" "}
+          {invoice.fu.stage >= 2 ? (
+            <>
+              <b>sent</b> — now in Needs Attention
+            </>
+          ) : (
+            "in 6 days"
+          )}
+        </div>
+      ) : null}
+
+      {/* What was signed — and, when the bill outgrew it, what nobody authorised. Sits ABOVE the
+          body and the money actions on purpose: a warning shown after Send is a post-mortem. */}
+      <InvoiceAuthorizationNote authorization={invoice.authorization} />
+
+      {/* Where this bill comes from, and its PO number — ONE row list (one top-border
+          divider), same shape as job-modal.tsx's own multi-row .sheet-rows wrapper.
+          "From job" is the one fact that explains why some invoices are edited here and
+          some are not: a job's invoice is built on the job (Build the price); a hand-made
+          one is built right here. PO number is editable on any open invoice (frozen once
+          paid/void, same gate as editMetadata), whether the bill is hand-made or job-built. */}
+      {invoice.jobId != null || poEditable ? (
+        <div className="sheet-rows" style={{ marginTop: "var(--space-3)" }}>
+          {invoice.jobId != null ? (
+            <SheetRow
+              label="From job"
+              value={job?.title ?? invoice.title}
+              onPress={() => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })}
+            />
+          ) : null}
+          {poEditable ? (
+            <SheetRow
+              label="PO number"
+              value={invoice.poNumber || "Add"}
+              valueIsHint={!invoice.poNumber}
+              expandable
+            >
+              <Field label="PO number" style={{ margin: "0" }}>
+                <input
+                  type="text"
+                  defaultValue={invoice.poNumber || ""}
+                  placeholder="e.g. 4471"
+                  maxLength={64}
+                  onBlur={(e) => updateInvoice(invoice.id, { poNumber: e.target.value.trim() })}
+                />
+              </Field>
+            </SheetRow>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Body — editable edit-block vs read-only view */}
+      {editable ? (
+        <EditBlock
+          invoice={invoice}
+          leads={leads}
+          services={services}
+          onPickCust={pickCust}
+          onSetField={(patch) => updateInvoice(invoice.id, patch)}
+          onSetTerms={(termsDays) => updateInvoice(invoice.id, { termsDays })}
+          onSetLines={(lines) => setInvoiceLines(invoice.id, lines)}
+          onSetPricing={(patch) =>
+            updateInvoice(invoice.id, {
+              pricing: { disc: 0, tax: 0, ...(invoice.pricing ?? {}), ...patch },
+            })
+          }
+          onSetDepPaid={(depPaid) => updateInvoice(invoice.id, { depPaid })}
+        />
+      ) : (
+        <ReadOnlyView
+          invoice={invoice}
+          onOpenJob={
+            invoice.jobId != null
+              ? () => pushModal(MODAL.JOB, { jobId: invoice.jobId as string })
+              : undefined
+          }
+        />
+      )}
+
+      {/* Record cash or check — the quiet peer of Charge (money already
+          collected), an in-flow accordion so a mis-tap costs nothing. */}
+      {sent && due > 0 ? (
+        <div className="sheet-rows">
+          {/* WHAT "Charge a card" WILL ACTUALLY DO. The sheet never said whether a card was saved,
+              so the primary read as a mystery: charge something on file, or ask the customer for a
+              number? It names the card when there is one. */}
+          {/* PHONE AND EMAIL, on the invoice itself. Chasing an unpaid bill means reaching the
+              customer, and the sheet showed no way to do either without leaving for the customer
+              record — and no way to ADD one if it was missing, which is exactly when an invoice
+              goes unpaid. Writes to the CUSTOMER: a phone number is a fact about the person.  */}
+          {invLead && (
+            <>
+              <SheetRow
+                label="Phone"
+                value={phone && phone !== "—" ? phone : "Add"}
+                valueIsHint={!phone || phone === "—"}
+                expandable
+              >
+                <PhoneCell
+                  value={invLead.phone ?? ""}
+                  onCommit={(v: string) => updateLead(invLead.id, { phone: v })}
+                />
+              </SheetRow>
+
+              <SheetRow
+                label="Email"
+                value={invLead.email?.trim() ? invLead.email : "Add"}
+                valueIsHint={!invLead.email?.trim()}
+                expandable
+              >
+                <EmailBody lead={invLead} />
+              </SheetRow>
+            </>
+          )}
+
+          <SheetRow
+            label="Card on file"
+            value={savedCard ? `${savedCard.brand} ···${savedCard.last4}` : "No card on file"}
+            valueIsHint={!savedCard}
+          />
+
+          {/* Re-delivery. Quiet row, not a primary — the invoice has already gone once. */}
+          <SheetRow
+            label="Resend invoice"
+            value={resendNote ?? (phone && phone !== "—" ? "By text" : "By email")}
+            valueIsHint={!resendNote}
+            expandable
+            open={resendOpen}
+            onOpenChange={setResendOpen}
+          >
+            {/* Offered only when there is a real choice to make — with no number on file, Text is
+                a control that could only fail. */}
+            {phone && phone !== "—" ? (
+              <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
+                <button
+                  type="button"
+                  className={`chip ${(resendChannel ?? "sms") === "sms" ? "sel" : ""}`}
+                  onClick={() => setResendChannel("sms")}
+                >
+                  Text
+                </button>
+                <button
+                  type="button"
+                  className={`chip ${resendChannel === "email" ? "sel" : ""}`}
+                  onClick={() => setResendChannel("email")}
+                >
+                  Email
+                </button>
+              </div>
+            ) : null}
+            <button
+              type="button"
+              className="btn sm primary"
+              disabled={busy}
+              onClick={() => void resend()}
+            >
+              {busy ? "Sending…" : "Send it again"}
+            </button>
+          </SheetRow>
+
+          <SheetRow
+            label="Record a payment"
+            value="Cash or check"
+            valueIsHint
+            expandable
+            open={recOpen}
+            onOpenChange={setRecOpen}
+          >
+            <div className="chips" style={{ marginBottom: "var(--space-3)" }}>
+              <button
+                type="button"
+                className={`chip${recMethod === "cash" ? " sel" : ""}`}
+                onClick={() => setRecMethod("cash")}
+              >
+                Cash
+              </button>
+              <button
+                type="button"
+                className={`chip${recMethod === "check" ? " sel" : ""}`}
+                onClick={() => setRecMethod("check")}
+              >
+                Check
+              </button>
+            </div>
+            <button
+              type="button"
+              className="btn primary"
+              style={{ minHeight: 44 }}
+              onClick={() => {
+                record(due, recMethod);
+                setRecOpen(false);
+              }}
+            >
+              Record payment — {fmt$(due)}
+            </button>
+          </SheetRow>
+        </div>
+      ) : null}
+
+      {/* Sticky foot — quiet peers over THE one filled primary. Archive is
+          destructive: quiet and red, never the primary slot. */}
+      <div className="sheet-foot">
+        {payErr ? (
+          <div style={{ color: "var(--red)", fontSize: "var(--type-sm)", marginBottom: "var(--space-2)" }}>
+            {payErr}
+          </div>
+        ) : null}
+        <div style={{ display: "flex", gap: "var(--space-2)", marginBottom: "var(--space-2)" }}>
+          {invoice.archived ? (
+            <button
+              className="btn ghost"
+              style={{ flex: 1, minHeight: 44 }}
+              onClick={() => updateInvoice(invoice.id, { archived: false })}
+            >
+              Restore
+            </button>
+          ) : (
+            <button
+              className="btn ghost"
+              style={{ flex: 1, minHeight: 44, color: "var(--red)" }}
+              onClick={() => {
+                archiveInvoice(invoice.id);
+                close();
+              }}
+            >
+              Archive
+            </button>
+          )}
+          <button
+            className="btn ghost"
+            style={{ flex: 1, minHeight: 44 }}
+            onClick={() => pushModal(MODAL.CUST_INVOICE, { invoiceId: invoice.id })}
+          >
+            Preview as customer
+          </button>
+          {/* No "Done" here. It only ever called close(), which the ✕ in the corner already does —
+              a third button competing for the eye beside Archive and Preview, doing nothing the
+              header does not. The real "Done" is the PRIMARY below, and only on a hand-made
+              invoice, where it commits the draft. Two controls with one label and two different
+              jobs is what made this footer unreadable. */}
+        </div>
+        {priKind === "send" ? (
+          <button className="sheet-pri" disabled={busy} onClick={() => void send()}>
+            {busy ? "Sending…" : `Send invoice${due > 0 ? " — " + fmt$(due) : ""}`}
+          </button>
+        ) : priKind === "charge" ? (
+          <button className="sheet-pri" disabled={busy} onClick={charge}>
+            {busy ? "Opening…" : `Charge a card — ${fmt$(due)}`}
+          </button>
+        ) : (
+          <button className="sheet-pri" disabled={busy} onClick={() => void done()}>
+            {busy ? "Saving…" : "Done"}
+          </button>
+        )}
+      </div>
+    </>
+  );
+}

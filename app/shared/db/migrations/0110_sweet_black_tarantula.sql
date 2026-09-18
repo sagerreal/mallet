@@ -1,0 +1,2 @@
+ALTER TABLE "pricebook_items" ADD COLUMN "measured_by" text;--> statement-breakpoint
+ALTER TABLE "pricebook_items" ADD CONSTRAINT "pricebook_items_measured_by_check" CHECK ("pricebook_items"."measured_by" is null or "pricebook_items"."measured_by" in ('walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count'));

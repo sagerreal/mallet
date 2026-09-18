@@ -1,0 +1,4 @@
+ALTER TABLE "pricebook_items" DROP CONSTRAINT "pricebook_items_measured_by_check";--> statement-breakpoint
+ALTER TABLE "estimates" ADD COLUMN "origin" text DEFAULT 'office' NOT NULL;--> statement-breakpoint
+ALTER TABLE "estimates" ADD CONSTRAINT "estimates_origin_check" CHECK ("estimates"."origin" in ('office', 'field'));--> statement-breakpoint
+ALTER TABLE "pricebook_items" ADD CONSTRAINT "pricebook_items_measured_by_check" CHECK ("pricebook_items"."measured_by" is null or "pricebook_items"."measured_by" in ('hour', 'walls_sqft', 'ceiling_sqft', 'baseboard_lnft', 'crown_lnft', 'doors_count', 'windows_count', 'site_sqft', 'site_lnft'));

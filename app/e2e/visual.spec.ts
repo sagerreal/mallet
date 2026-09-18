@@ -1,0 +1,107 @@
+/**
+ * e2e/visual.spec.ts
+ * Visual regression baseline for the UI rework. Every route in the inventory is
+ * shot at desktop light + dark, and the marked ones again at mobile width.
+ *
+ * These baselines are the safety net for the token/primitive migration: an
+ * unintended pixel change on ANY screen fails the run, and intended changes are
+ * reviewed and re-baselined deliberately (`--update-snapshots`).
+ *
+ * Opt-in — visual diffing is machine-specific, so it runs when E2E_VISUAL=1
+ * (and in CI, on a pinned container) rather than on every local `test:e2e`.
+ *
+ * ⚠️ RUN AND RE-BASELINE AGAINST A PRODUCTION BUILD. Never `next dev`.
+ *
+ *     pnpm build && PORT=3131 pnpm start
+ *     E2E_VISUAL=1 E2E_BASE_URL=http://localhost:3131 npx playwright test e2e/visual.spec.ts
+ *
+ * These baselines were previously taken against a dev server, and the consequences
+ * were not obvious:
+ *   - `next dev` renders the Next dev-tools badge. It is not in a production build,
+ *     so EVERY route differed by ~1,000-3,500 px on that badge alone. 68 of 78
+ *     snapshots failed against production on a clean main, which meant the net could
+ *     not validate the thing that actually ships.
+ *   - the badge also appears and disappears during a dev session, so dev-vs-dev runs
+ *     were nondeterministic. A real change of a few hundred pixels was invisible
+ *     inside that noise: one change looked like it moved 48 snapshots when it moved 3.
+ *
+ * Re-baselined against production and verified deterministic: two consecutive full
+ * runs, 78 passed, 0 failures, no variance. Keep it that way — if a run is noisy,
+ * suspect the server it is pointed at before you suspect the diff.
+ */
+
+import { test, expect } from "@playwright/test";
+import { ROUTES, type RouteDef } from "./helpers/routes";
+import { login, prepare, settle, dynamicRegions, OWNER, TECH } from "./helpers/ui";
+
+test.skip(!process.env.E2E_VISUAL, "set E2E_VISUAL=1 to run visual regression");
+
+const THEMES = ["light", "dark"] as const;
+const DESKTOP = { width: 1440, height: 900 };
+const MOBILE = { width: 390, height: 844 };
+
+/**
+ * Nothing may be left below the fold.
+ *
+ * Only meaningful for a route that declares `desktopHeight` — see RouteDef for why `fullPage` is
+ * not full content on this app's desktop layout. Asserted rather than assumed: the height is a
+ * constant and the content it has to clear is the shop's real work, so the day the fixture
+ * outgrows it the baseline would silently start clipping again, which is the exact failure this
+ * whole change is fixing.
+ */
+async function assertNothingBelowTheFold(page: import("@playwright/test").Page, name: string) {
+  const scroller = await page.evaluate(() => {
+    const main = document.querySelector("main");
+    return { content: main?.scrollHeight ?? 0, window: main?.clientHeight ?? 0 };
+  });
+  expect(
+    scroller.content,
+    `${name}: ${scroller.content - scroller.window}px of content sits below the fold — raise this route's desktopHeight`,
+  ).toBeLessThanOrEqual(scroller.window);
+}
+
+async function shoot(page: import("@playwright/test").Page, route: RouteDef, theme: string, size: string) {
+  await settle(page);
+  if (size === "desktop" && route.desktopHeight) await assertNothingBelowTheFold(page, route.name);
+  await expect(page).toHaveScreenshot(`${route.name}-${theme}-${size}.png`, {
+    fullPage: true,
+    animations: "disabled",
+    mask: dynamicRegions(page),
+    // ABSOLUTE budget, not a ratio. A ratio scales with page height, so on a long
+    // page it silently permits huge changes: the original 1% setting allowed ~43k
+    // pixels — a whole component — to change undetected, and did in fact miss the
+    // first real change made against it. `threshold` still absorbs antialiasing.
+    //
+    // Known limit of the technique: a colour-only change to text moves few pixels on
+    // a long page, so it can still slip under any budget. Colour regressions are
+    // caught by the axe contrast scan in a11y.spec.ts; this net is for layout.
+    maxDiffPixels: 150,
+    timeout: 20_000,
+  });
+}
+
+for (const theme of THEMES) {
+  test.describe(`visual · ${theme}`, () => {
+    for (const route of ROUTES) {
+      test(`${route.name} · desktop`, async ({ page }) => {
+        await prepare(page, theme);
+        await page.setViewportSize({ ...DESKTOP, height: route.desktopHeight ?? DESKTOP.height });
+        if (route.audience === "office") await login(page, OWNER);
+        if (route.audience === "field") await login(page, TECH);
+        await page.goto(route.path);
+        await shoot(page, route, theme, "desktop");
+      });
+
+      if (route.mobile) {
+        test(`${route.name} · mobile`, async ({ page }) => {
+          await prepare(page, theme);
+          await page.setViewportSize(MOBILE);
+          if (route.audience === "office") await login(page, OWNER);
+          if (route.audience === "field") await login(page, TECH);
+          await page.goto(route.path);
+          await shoot(page, route, theme, "mobile");
+        });
+      }
+    }
+  });
+}

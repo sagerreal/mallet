@@ -1,0 +1,433 @@
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
+import { messages, orgs, leads } from "@mallet/shared/db/schema";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import { supersedes, type DeliveryStatus } from "../domain/delivery-status";
+import { ownerDb } from "@mallet/shared/db/owner-client";
+import type { OrgId, LeadId, MessageId, UserId } from "@mallet/shared/types";
+import { asOrgId, asLeadId } from "@mallet/shared/types";
+import type { Message } from "../domain/message";
+import type { MessageDirection } from "../domain/message";
+import type {
+  MessageRepository,
+  ClaimOutboundCmd,
+  RecordInboundInput,
+  OrgByNumberReader,
+  LeadByPhoneReader,
+  LeadUnreadMarker,
+  LeadReadMarker,
+  LeadAssignmentReader,
+  ConversationRow,
+} from "../domain/message-repository";
+import { toDomain } from "./message-mapper";
+import { DrizzleLeadRepository } from "@/modules/customers/infra/drizzle-lead-repository";
+
+// Real persistence. Constructed with a tenant-scoped transaction (withTenant already set
+// app.current_org_id), so RLS appends `org_id = current_org_id()` to every statement.
+// orgId is supplied only to stamp inserted rows.
+export class DrizzleMessageRepository implements MessageRepository {
+  constructor(
+    private readonly tx: TenantTx,
+    private readonly orgId: OrgId,
+  ) {}
+
+  // Claim-first: the row is written BEFORE Twilio is called, so the unique index on
+  // (org_id, idempotency_key) — not application logic — is what stops a double-click becoming a
+  // second text.
+  //
+  // A FAILED row is RECLAIMABLE: nothing reached the customer, and the board's keys are
+  // deterministic ("<okItemKey>-d<YYYYMMDD>", the record plus the shop's own day — see
+  // features/home/send.ts okSendKey), so refusing to reuse one would strand that reminder for the
+  // rest of the day. The reclaim reuses the same row (same id) and re-stamps body/to/from, because the
+  // office may have fixed the number or reworded the text before retrying. Any other status means
+  // a send is in flight or already landed — that is a duplicate, and the caller must not send.
+  async claimOutbound(cmd: ClaimOutboundCmd): Promise<{ message: Message; created: boolean }> {
+    const inserted = await this.insertClaim(cmd);
+    if (inserted) return { message: inserted, created: true };
+
+    const existing = await this.findByKey(cmd.idempotencyKey);
+    // Nothing inserted and nothing found means the conflict came from somewhere other than the
+    // idempotency index — surface it rather than pretending a message exists.
+    if (!existing) throw new Error("message claim was rejected and no prior claim exists");
+    if (!existing.isFailed) return { message: existing, created: false };
+
+    const reclaimed = await this.reclaimFailed(existing.props.id, cmd);
+    if (reclaimed) return { message: reclaimed, created: true };
+
+    // Lost the race: a concurrent request reclaimed the same failed row first (the update below
+    // is guarded on status='failed', so exactly one caller can win). That request owns the send.
+    const current = await this.findByKey(cmd.idempotencyKey);
+    if (!current) throw new Error("reclaimed message disappeared mid-claim");
+    return { message: current, created: false };
+  }
+
+  private async insertClaim(cmd: ClaimOutboundCmd): Promise<Message | null> {
+    const rows = await this.tx
+      .insert(messages)
+      .values({
+        id: cmd.id,
+        orgId: this.orgId,
+        leadId: cmd.leadId,
+        direction: "outbound",
+        channel: "sms",
+        body: cmd.body,
+        fromNumber: cmd.from,
+        toNumber: cmd.to,
+        providerSid: null,
+        sentByUserId: cmd.sentByUserId,
+        status: "queued",
+        idempotencyKey: cmd.idempotencyKey,
+      })
+      // The index predicate has to be repeated here: Postgres will not pick a PARTIAL unique
+      // index as the arbiter from the column list alone (42P10, "no unique or exclusion
+      // constraint matching the ON CONFLICT specification").
+      .onConflictDoNothing({
+        target: [messages.orgId, messages.idempotencyKey],
+        where: sql`${messages.idempotencyKey} is not null`,
+      })
+      .returning();
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+  private async findByKey(idempotencyKey: string): Promise<Message | null> {
+    // Deliberately NOT filtered on deleted_at: a soft-deleted row still occupies the unique
+    // index, so it must still answer the claim — filtering it out would report "no prior claim"
+    // for a key that cannot be inserted again.
+    const rows = await this.tx
+      .select()
+      .from(messages)
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.idempotencyKey, idempotencyKey)))
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+  // Guarded on status='failed' so two concurrent reclaims cannot both win: the loser's update
+  // matches 0 rows (its predicate is re-evaluated after the winner commits) and it dedupes.
+  private async reclaimFailed(id: string, cmd: ClaimOutboundCmd): Promise<Message | null> {
+    const rows = await this.tx
+      .update(messages)
+      .set({
+        status: "queued",
+        body: cmd.body,
+        fromNumber: cmd.from,
+        toNumber: cmd.to,
+        // The previous attempt's SID and carrier code describe an attempt that is over. Keeping
+        // them would attach this row to a message it is no longer reporting on.
+        providerSid: null,
+        errorCode: null,
+        sentByUserId: cmd.sentByUserId,
+        updatedAt: sql`now()`,
+      })
+      .where(
+        and(eq(messages.orgId, this.orgId), eq(messages.id, id), eq(messages.status, "failed")),
+      )
+      .returning();
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+  async markSent(id: string, providerSid: string | null): Promise<void> {
+    const rows = await this.tx
+      .update(messages)
+      .set({ status: "sent", providerSid, updatedAt: sql`now()` })
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)))
+      .returning({ id: messages.id });
+    // A settle that matched nothing means the ledger and the send have diverged — a text went out
+    // with no row saying so. Fail loudly; a silent no-op here is the exact bug this task removes.
+    if (rows.length === 0) throw new Error(`markSent matched no message row: ${id}`);
+  }
+
+  async markFailed(id: string, errorCode: string | null): Promise<void> {
+    const rows = await this.tx
+      .update(messages)
+      .set({ status: "failed", errorCode, updatedAt: sql`now()` })
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, id)))
+      .returning({ id: messages.id });
+    if (rows.length === 0) throw new Error(`markFailed matched no message row: ${id}`);
+  }
+
+  async recordInbound(input: RecordInboundInput): Promise<Message> {
+    const rows = await this.tx
+      .insert(messages)
+      .values({
+        id: input.id,
+        orgId: this.orgId,
+        leadId: input.leadId,
+        direction: "inbound",
+        channel: "sms",
+        body: input.body,
+        fromNumber: input.fromNumber,
+        toNumber: input.toNumber,
+        providerSid: input.providerSid,
+        status: "received",
+      })
+      .returning();
+    const row = rows[0];
+    if (!row) throw new Error("message insert returned no row");
+    return toDomain(row);
+  }
+
+  async listByLead(leadId: LeadId, page: { limit: number; offset: number }): Promise<Message[]> {
+    const rows = await this.tx
+      .select()
+      .from(messages)
+      .where(and(eq(messages.leadId, leadId), isNull(messages.deletedAt)))
+      .orderBy(asc(messages.createdAt))
+      .limit(page.limit)
+      .offset(page.offset);
+    return rows.map(toDomain);
+  }
+
+
+  async applyProviderStatus(input: {
+    providerSid: string;
+    status: DeliveryStatus;
+    errorCode: string | null;
+    at: Date;
+  }): Promise<boolean> {
+    // Read the current status first so an out-of-order callback cannot walk the row backwards.
+    // Twilio makes no ordering guarantee, and a late "sent" arriving after "delivered" would
+    // otherwise un-deliver a message that plainly arrived.
+    const rows = await this.tx
+      .select({ id: messages.id, status: messages.status })
+      .from(messages)
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.providerSid, input.providerSid)))
+      .limit(1);
+    const row = rows[0];
+    if (!row) return false;
+
+    const current = (row.status ?? "queued") as DeliveryStatus;
+    if (!supersedes(input.status, current)) return false;
+
+    await this.tx
+      .update(messages)
+      .set({
+        status: input.status,
+        errorCode: input.errorCode,
+        statusAt: input.at,
+        updatedAt: input.at,
+      })
+      .where(and(eq(messages.orgId, this.orgId), eq(messages.id, row.id)));
+    return true;
+  }
+
+  async findById(id: MessageId): Promise<Message | null> {
+    const rows = await this.tx
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, id), isNull(messages.deletedAt)))
+      .limit(1);
+    const row = rows[0];
+    return row ? toDomain(row) : null;
+  }
+
+  // One efficient query — no N+1. Uses DISTINCT ON (lead_id) to select the most-recent
+  // non-deleted message per lead, then joins to leads for name + unread flag, then sorts
+  // the whole result by lastAt DESC. RLS scopes to the current org via withTenant; the
+  // explicit m.org_id = current_org_id() filter inside the subquery adds defense-in-depth
+  // (same pattern as DrizzleLeadByPhoneReader) so the tenant boundary is visible in the SQL.
+  // `assignedToUserId` is the tech scope: only threads for customers with a job or visit
+  // assigned to that user (see LeadAssignmentReader for the rule's rationale).
+  async listConversations(filter?: { leadId?: LeadId; assignedToUserId?: UserId }): Promise<ConversationRow[]> {
+    // When filter.leadId is set we add `AND m.lead_id = <id>` inside the DISTINCT ON sub-select.
+    const leadFilter =
+      filter?.leadId != null
+        ? sql` AND m.lead_id = ${filter.leadId}`
+        : sql``;
+    // Tech scope, applied inside the same sub-select so the DISTINCT ON never even considers
+    // threads outside the tech's jobs. Mirrors isLeadAssignedToUser — keep the two in step.
+    const assignedFilter =
+      filter?.assignedToUserId != null
+        ? sql` AND EXISTS (
+            SELECT 1 FROM jobs j
+            WHERE j.org_id = current_org_id()
+              AND j.lead_id = m.lead_id
+              AND j.deleted_at IS NULL
+              AND (
+                j.assignee_user_id = ${filter.assignedToUserId}
+                OR EXISTS (
+                  SELECT 1 FROM job_visits v
+                  WHERE v.org_id = current_org_id()
+                    AND v.job_id = j.id
+                    AND v.deleted_at IS NULL
+                    AND v.assignee_user_id = ${filter.assignedToUserId}
+                )
+              )
+          )`
+        : sql``;
+
+    // DISTINCT ON (m.lead_id) paired with ORDER BY m.lead_id, m.created_at DESC picks exactly
+    // the newest non-deleted message per lead. We wrap it in a sub-select so the outer query
+    // can sort by last_at without conflicting with the DISTINCT ON ordering constraint.
+    type ConversationRaw = {
+      leadId: string;
+      leadName: string;
+      phone: string | null;
+      lastBody: string;
+      lastDirection: string;
+      lastAt: Date;
+      unread: boolean;
+    };
+
+    const rows = await this.tx.execute<ConversationRaw>(sql`
+      SELECT
+        latest.lead_id    AS "leadId",
+        l.name            AS "leadName",
+        l.phone_e164      AS "phone",
+        latest.body       AS "lastBody",
+        latest.direction  AS "lastDirection",
+        latest.created_at AS "lastAt",
+        l.unread          AS "unread"
+      FROM (
+        SELECT DISTINCT ON (m.lead_id)
+          m.lead_id,
+          m.body,
+          m.direction,
+          m.created_at
+        FROM messages m
+        WHERE m.lead_id IS NOT NULL
+          AND m.deleted_at IS NULL
+          AND m.org_id = current_org_id()
+          ${leadFilter}
+          ${assignedFilter}
+        ORDER BY m.lead_id, m.created_at DESC
+      ) AS latest
+      JOIN leads l ON l.id = latest.lead_id AND l.deleted_at IS NULL
+      ORDER BY latest.created_at DESC
+    `);
+
+    return rows.map((r) => ({
+      leadId: asLeadId(r.leadId),
+      leadName: r.leadName,
+      phone: r.phone,
+      lastBody: r.lastBody,
+      lastDirection: r.lastDirection as MessageDirection,
+      lastAt: r.lastAt instanceof Date ? r.lastAt : new Date(r.lastAt),
+      unread: r.unread,
+    }));
+  }
+}
+
+// Privileged reader — NOT org-scoped. The inbound Twilio webhook arrives with no principal;
+// it needs to look up which org owns a given To-number before it can open a tenant session.
+// Uses ownerDb (the `postgres` BYPASSRLS role) because no RLS context exists yet — the normal
+// mallet_app client would see current_org_id()=NULL and return zero rows, silently dropping
+// every inbound SMS. ownerDb is the same privileged path used by the outbox relay (ADR 0003).
+// It returns only the OrgId, never row data, minimising surface area of the privileged path.
+export class DrizzleOrgByNumberReader implements OrgByNumberReader {
+  async findOrgIdByTwilioNumber(twilioNumber: string): Promise<OrgId | null> {
+    const rows = await ownerDb
+      .select({ id: orgs.id })
+      .from(orgs)
+      .where(eq(orgs.twilioNumber, twilioNumber))
+      .limit(1);
+    const row = rows[0];
+    return row ? asOrgId(row.id) : null;
+  }
+}
+
+// Org-scoped reader — runs inside a withTenant tx. Looks up an active lead by their E.164 phone
+// within the current tenant. RLS enforces org scoping at the session level; the explicit eq(orgId)
+// adds defense-in-depth at the query level so the tenant boundary is visible in the SQL itself.
+export class DrizzleLeadByPhoneReader implements LeadByPhoneReader {
+  constructor(
+    private readonly tx: TenantTx,
+    private readonly orgId: OrgId,
+  ) {}
+
+  async findLeadByPhone(phoneE164: string): Promise<{ leadId: LeadId } | null> {
+    const rows = await this.tx
+      .select({ id: leads.id })
+      .from(leads)
+      .where(and(eq(leads.orgId, this.orgId), eq(leads.phoneE164, phoneE164), isNull(leads.deletedAt)))
+      .limit(1);
+    const row = rows[0];
+    return row ? { leadId: row.id as LeadId } : null;
+  }
+}
+
+// Org-scoped writer — runs inside a withTenant tx. Loads the lead through the domain's LeadRepository,
+// calls markUnread(), and persists via save() so invariants are enforced by the domain layer.
+// Idempotent: if the lead is already unread or not found, no row is written (returns false).
+export class DrizzleLeadUnreadMarker implements LeadUnreadMarker, LeadReadMarker {
+  constructor(
+    private readonly tx: TenantTx,
+    private readonly orgId: OrgId,
+  ) {}
+
+  async markLeadUnread(leadId: LeadId, now: Date): Promise<boolean> {
+    const repo = new DrizzleLeadRepository(this.tx, this.orgId);
+    const lead = await repo.findById(leadId);
+    if (!lead) return false;
+    const updated = lead.markUnread(now);
+    // markUnread is a no-op when already unread — compare references to detect that case.
+    if (updated === lead) return false;
+    await repo.save(updated);
+    return true;
+  }
+
+  // Mirror of markLeadUnread: opening a thread clears the flag for the whole org (shared state).
+  async markLeadRead(leadId: LeadId, now: Date): Promise<boolean> {
+    const repo = new DrizzleLeadRepository(this.tx, this.orgId);
+    const lead = await repo.findById(leadId);
+    if (!lead) return false;
+    const updated = lead.markRead(now);
+    if (updated === lead) return false;
+    await repo.save(updated);
+    return true;
+  }
+
+}
+
+// The field-access rule (LeadAssignmentReader): a tech is on a customer's thread when any
+// non-deleted job for that lead names them — as the job's assignee or on any of its visits,
+// past or future (the assignment is the grant, not the calendar window). Keep this predicate
+// in step with the assignedFilter in DrizzleMessageRepository.listConversations.
+export class DrizzleLeadAssignmentReader implements LeadAssignmentReader {
+  constructor(
+    private readonly tx: TenantTx,
+    private readonly orgId: OrgId,
+  ) {}
+
+  async isLeadAssignedToUser(leadId: LeadId, userId: UserId): Promise<boolean> {
+    const rows = await this.tx.execute<{ assigned: boolean }>(sql`
+      SELECT EXISTS (
+        SELECT 1 FROM jobs j
+        WHERE j.org_id = ${this.orgId}
+          AND j.lead_id = ${leadId}
+          AND j.deleted_at IS NULL
+          AND (
+            j.assignee_user_id = ${userId}
+            OR EXISTS (
+              SELECT 1 FROM job_visits v
+              WHERE v.org_id = ${this.orgId}
+                AND v.job_id = j.id
+                AND v.deleted_at IS NULL
+                AND v.assignee_user_id = ${userId}
+            )
+          )
+      ) AS "assigned"
+    `);
+    return rows[0]?.assigned === true;
+  }
+}
+
+/**
+ * Privileged reader for the delivery-status webhook: resolves the org that owns a message SID.
+ *
+ * Twilio's callback carries no tenant identity, so the route cannot open a tenant transaction until
+ * it knows which org the message belongs to. Returns ONLY the OrgId — nothing about the message
+ * itself crosses this boundary. Mirrors DrizzleOrgByCallSidReader in the calls module.
+ */
+export class DrizzleOrgByMessageSidReader {
+  async findOrgIdByProviderSid(providerSid: string): Promise<OrgId | null> {
+    const rows = await ownerDb
+      .select({ orgId: messages.orgId })
+      .from(messages)
+      .where(eq(messages.providerSid, providerSid))
+      .limit(1);
+    const row = rows[0];
+    return row ? asOrgId(row.orgId) : null;
+  }
+}

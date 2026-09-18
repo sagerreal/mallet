@@ -1,0 +1,524 @@
+import { and, desc, eq, exists, gt, ilike, isNull, lt, ne, inArray, notInArray, or, sql, type SQL } from "drizzle-orm";
+import { invoices, invoiceLines, payments, leads } from "@mallet/shared/db/schema";
+import type { TenantTx } from "@mallet/shared/db/tx";
+import { keysetBefore } from "@mallet/shared/db/keyset";
+import { keysetAfterSort, orderFor, decodeSortCursor, encodeSortCursor, sortValueOf, sortValueColumn } from "@mallet/shared/db/sort-page";
+import { invoiceSortSpec, type InvoiceSort } from "./invoice-sorts";
+import { invoiceViewCondition, type InvoiceView } from "./invoice-views";
+import {
+  buildPage,
+  decodeCursor,
+  isOk,
+  type OrgId,
+  type InvoiceId,
+  type JobId,
+  type LeadId,
+  type CursorPage,
+  type Paginated,
+} from "@mallet/shared/types";
+import type { Invoice } from "../domain/invoice";
+import type { InvoiceLine } from "../domain/invoice-line";
+import type { Payment } from "../domain/payment";
+import type { InvoiceRepository, InvoiceFilter, ApplyResult } from "../domain/invoice-repository";
+import { toDomain } from "./invoice-mapper";
+
+const OPEN_STATUSES = ["sent", "partial"] as const;
+
+// Real persistence. Constructed with a tenant-scoped tx, so RLS already scopes every statement —
+// and every read/update ALSO filters `org_id = this.orgId` explicitly, the same belt-and-braces the
+// jobs repository uses. Two independent lines of defense, because a single missing `withTenant`
+// (or a policy edited by hand on the live DB) would otherwise be the only thing standing between
+// one shop's money and another's. The explicit predicate also lets the org-leading indexes be used.
+//
+// It is NOT a substitute for RLS and RLS is not a substitute for it: keep both on every new query.
+// orgId additionally stamps written rows and scopes the number sequence.
+export class DrizzleInvoiceRepository implements InvoiceRepository {
+  constructor(
+    private readonly tx: TenantTx,
+    private readonly orgId: OrgId,
+  ) {}
+
+  async nextNumber(): Promise<string> {
+    await this.tx.execute(sql`
+      insert into number_sequences (org_id, kind) values (${this.orgId}, 'invoice')
+      on conflict (org_id, kind) do nothing
+    `);
+    const rows = (await this.tx.execute(sql`
+      update number_sequences set next_val = next_val + 1, updated_at = now()
+      where org_id = ${this.orgId} and kind = 'invoice'
+      returning next_val - 1 as allocated
+    `)) as unknown as { allocated: number }[];
+    return `INV-${rows[0]?.allocated ?? 1000}`;
+  }
+
+  private headerColumns(invoice: Invoice) {
+    const p = invoice.props;
+    return {
+      num: p.num,
+      sourceJobId: p.sourceJobId,
+      scopeJobId: p.scopeJobId,
+      leadId: p.leadId,
+      title: p.title,
+      status: p.status,
+      totalCents: p.total,
+      taxBps: p.taxBps,
+      taxCents: p.tax,
+      // The discount the bill was built with. Recorded so the DOCUMENT can itemise it: the lines
+      // print at their full rates, so a total under their sum with no discount row reads as an
+      // arithmetic error. The columns landed in migration 0142; nothing wrote them until now, so
+      // a reloaded invoice lost the split the use case had computed.
+      discBps: p.discBps,
+      discountCents: p.discount,
+      depositPaidCents: p.depositPaid,
+      amountPaidCents: p.amountPaid,
+      termsDays: p.termsDays,
+      sentAt: p.sentAt,
+      dueAt: p.dueAt,
+      poNumber: p.poNumber,
+      followUpOn: p.followUpOn ?? false,
+      followUpStage: p.followUpStage ?? 0,
+      updatedAt: p.updatedAt,
+    };
+  }
+
+  async save(invoice: Invoice): Promise<void> {
+    const p = invoice.props;
+    const columns = this.headerColumns(invoice);
+    // amount_paid_cents is owned exclusively by applyPayment's atomic increment — never written
+    // back here from an in-memory (possibly stale) value, or a concurrent payment would be lost.
+    const { amountPaidCents: _ownedByApplyPayment, ...updatable } = columns;
+    await this.tx
+      .insert(invoices)
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, publicToken: p.publicToken, ...columns })
+      .onConflictDoUpdate({
+        target: invoices.id,
+        set: {
+          ...updatable,
+          // WRITE-ONCE, enforced in the database: an existing token survives every later save (a
+          // rotated token would strand the pay link already texted to the customer); only a NULL
+          // one adopts the mint. Send-invoice re-reads after save so a racing double-send returns
+          // the token the row actually kept.
+          publicToken: sql`coalesce(${invoices.publicToken}, excluded.public_token)`,
+        },
+      });
+    await this.diffLines(invoice);
+  }
+
+  /**
+   * Insert a BRAND-NEW invoice. Cannot overwrite anything, ever.
+   *
+   * `save()` is an UPSERT, which is right for the paths that mutate an invoice they just loaded and
+   * wrong for the paths that mint one from a CLIENT-AUTHORED id. Used as an insert, `save()` made
+   * that id a write primitive: a caller who named an existing invoice's id had its header replaced
+   * — status reset, total rewritten, `source_job_id` nulled (orphaning the real bill in a codebase
+   * whose rule is soft-delete-only), and the recorded payments stranded against a total that no
+   * longer matches. That is strictly worse than the `void` and `patchLines` endpoints deliberately
+   * withheld from the field surface.
+   *
+   * ON CONFLICT DO NOTHING with NO target, so it swallows a collision on ANY unique constraint —
+   * the primary key and the partial unique scope index alike — without aborting the request
+   * transaction. Returns false when nothing was inserted; the caller decides whether that is a lost
+   * race to re-read or a refusal to surface. It must never be ignored.
+   */
+  async insertNew(invoice: Invoice): Promise<boolean> {
+    const p = invoice.props;
+    const inserted = await this.tx
+      .insert(invoices)
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, publicToken: p.publicToken, ...this.headerColumns(invoice) })
+      .onConflictDoNothing()
+      .returning({ id: invoices.id });
+    if (inserted.length === 0) return false;
+    await this.diffLines(invoice);
+    return true;
+  }
+
+  async findByPublicToken(token: string): Promise<Invoice | null> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.publicToken, token), isNull(invoices.deletedAt)))
+      .limit(1);
+    const header = rows[0];
+    return header ? this.hydrate(header) : null;
+  }
+
+  // Atomically apply a payment to the denormalized header: increment amount_paid_cents and
+  // recompute status IN ONE UPDATE, so concurrent distinct-key payments serialize on the row lock
+  // and never lose an update under READ COMMITTED. The WHERE re-asserts the payable status
+  // (sent|partial) under that lock — NOT a stale in-memory check — so a void/pay committing
+  // concurrently (e.g. a manual void racing a settling card webhook) can't be clobbered back to
+  // 'paid'. `applied` reflects whether a payable row matched; the row still stands for a not-applied
+  // payment (real money) so the caller can surface it for reconciliation rather than double-pay.
+  async applyPayment(invoiceId: InvoiceId, amountCents: number): Promise<ApplyResult> {
+    const rows = (await this.tx.execute(sql`
+      update invoices
+      set amount_paid_cents = amount_paid_cents + ${amountCents},
+          status = case
+            when total_cents - deposit_paid_cents - (amount_paid_cents + ${amountCents}) <= 0
+            then 'paid' else 'partial' end,
+          updated_at = now()
+      where id = ${invoiceId} and org_id = ${this.orgId}
+        and deleted_at is null and status in ('sent', 'partial')
+      returning id
+    `)) as unknown as { id: string }[];
+    return { applied: rows.length > 0, invoice: await this.findById(invoiceId) };
+  }
+
+  async insertForJob(invoice: Invoice): Promise<boolean> {
+    const p = invoice.props;
+    // ON CONFLICT DO NOTHING with NO arbiter: any conflict means "this create already
+    // happened" and the caller re-fetches the winner. The arbiter used to name only
+    // (org_id, source_job_id), which absorbed the two-callers race but let a REPLAY of the
+    // same create — the id is client-authored, so a retried request carries the same pk —
+    // die on invoices_pkey with a 500. The platform sweep hit exactly that: the wrap-up
+    // stranded on "Couldn't raise the invoice" while the first delivery's invoice existed.
+    // Values are identical on a replay, so absorbing the pk conflict loses nothing.
+    const inserted = await this.tx
+      .insert(invoices)
+      .values({ id: p.id, orgId: p.orgId, createdAt: p.createdAt, ...this.headerColumns(invoice) })
+      .onConflictDoNothing()
+      .returning({ id: invoices.id });
+    if (inserted.length === 0) return false;
+    await this.diffLines(invoice);
+    return true;
+  }
+
+  async insertPayment(orgId: OrgId, invoiceId: InvoiceId, payment: Payment): Promise<boolean> {
+    const pp = payment.props;
+    const inserted = await this.tx
+      .insert(payments)
+      .values({
+        id: pp.id,
+        orgId,
+        invoiceId,
+        amountCents: pp.amount,
+        method: pp.method,
+        idempotencyKey: pp.idempotencyKey,
+        externalId: pp.externalId,
+        recordedByUserId: pp.recordedByUserId,
+        receivedAt: pp.receivedAt,
+      })
+      .onConflictDoNothing({ target: [payments.orgId, payments.idempotencyKey] })
+      .returning({ id: payments.id });
+    return inserted.length > 0;
+  }
+
+  async findById(id: InvoiceId): Promise<Invoice | null> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.id, id), isNull(invoices.deletedAt)))
+      .limit(1);
+    const header = rows[0];
+    return header ? this.hydrate(header) : null;
+  }
+
+  async findBySourceJob(jobId: JobId): Promise<Invoice | null> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.sourceJobId, jobId), isNull(invoices.deletedAt)))
+      .limit(1);
+    const header = rows[0];
+    return header ? this.hydrate(header) : null;
+  }
+
+  // Scope-linked invoices for a job, newest first. NOT a findBySourceJob twin: scope_job_id has no
+  // unique index (several may exist), so this returns the collection and the caller decides — the
+  // visit-fee path narrows by title to answer "has this job's fee already been raised".
+  async listByScopeJob(jobId: JobId): Promise<Invoice[]> {
+    const rows = await this.tx
+      .select()
+      .from(invoices)
+      .where(and(eq(invoices.orgId, this.orgId), eq(invoices.scopeJobId, jobId), isNull(invoices.deletedAt)))
+      .orderBy(desc(invoices.createdAt), desc(invoices.id));
+    return Promise.all(rows.map((header) => this.hydrate(header)));
+  }
+
+  /** Predicates shared by list() and count(), so the two can never answer different questions. */
+  private listConds(filter?: InvoiceFilter): SQL[] {
+    const conds: SQL[] = [eq(invoices.orgId, this.orgId), isNull(invoices.deletedAt)];
+    // VOID IS THE ARCHIVE, not a band. A void invoice keeps its total and its due date, so it read
+    // as owing and past due and was counted under "Overdue" — a cancelled bill chased as money a
+    // customer owes. The live set excludes it; the Archived tab is where it shows.
+    conds.push(filter?.archived ? eq(invoices.status, "void") : ne(invoices.status, "void"));
+    if (filter?.status) conds.push(eq(invoices.status, filter.status));
+    // The LEDGER's status, which is not the same thing as the status column: "overdue" and "paid"
+    // are facts about the balance and the due date. See invoice-views.ts.
+    if (filter?.view) conds.push(invoiceViewCondition(filter.view));
+    if (filter?.unpaidOnly) conds.push(inArray(invoices.status, [...OPEN_STATUSES]));
+    if (filter?.search) {
+      // Escape LIKE wildcards: unescaped, "%" matches every invoice and the search silently
+      // stops filtering.
+      const term = filter.search.replace(/[\\%_]/g, (m) => `\\${m}`);
+      const like = `%${term}%`;
+      // Customer name via EXISTS, not a join — a join multiplies rows and breaks the keyset.
+      const cond = or(
+        ilike(invoices.num, like),
+        ilike(invoices.title, like),
+        exists(
+          this.tx
+            .select({ one: sql`1` })
+            .from(leads)
+            .where(and(eq(leads.orgId, invoices.orgId), eq(leads.id, invoices.leadId), ilike(leads.name, like))),
+        ),
+      );
+      if (cond) conds.push(cond);
+    }
+    return conds;
+  }
+
+  /**
+   * The ledger's headline money, summed in the DATABASE.
+   *
+   * The Dashboard added these up from the invoices the browser had loaded — one page — so on a
+   * shop with 847 invoices the "Owed" tile stated the balance of whichever 500 were cached, as
+   * fact, on the first screen of the app. A number that is confidently wrong is worse than one
+   * that is missing.
+   *
+   * `openCents` is what is still owed on anything sent; `overdueCents` is the part of that past
+   * its due date. Both use the same balance expression as the ledger's status bands, so the tile
+   * and the list it links to cannot disagree.
+   */
+  async totals(): Promise<{ openCents: number; overdueCents: number; openCount: number }> {
+    const owed = sql<number>`greatest(0, ${invoices.totalCents} - ${invoices.depositPaidCents} - ${invoices.amountPaidCents})`;
+    // NOT VOID. A voided invoice keeps its total and its due date, so it satisfied "owed > 0" and
+    // was added to both the money owed and the overdue figure — a cancelled bill inflating the
+    // headline numbers on the Money page and the dashboard. Same rule as the bands.
+    const isOpen = and(
+      isNull(invoices.deletedAt),
+      ne(invoices.status, "draft"),
+      ne(invoices.status, "void"),
+      gt(owed, 0),
+    );
+    const rows = await this.tx
+      .select({
+        openCents: sql<number>`coalesce(sum(${owed}) filter (where ${isOpen}), 0)::int`,
+        overdueCents: sql<number>`coalesce(sum(${owed}) filter (where ${isOpen} and ${invoices.dueAt} is not null and ${invoices.dueAt} < now()), 0)::int`,
+        openCount: sql<number>`count(*) filter (where ${isOpen})::int`,
+      })
+      .from(invoices)
+      .where(eq(invoices.orgId, this.orgId));
+    const r = rows[0];
+    return {
+      openCents: r?.openCents ?? 0,
+      overdueCents: r?.overdueCents ?? 0,
+      openCount: r?.openCount ?? 0,
+    };
+  }
+
+  /**
+   * Every ledger band counted in ONE query — what the Money screen's chip row reads.
+   *
+   * `count()` answers a single band per call, so six chips meant six round trips. This is the same
+   * shape DrizzleJobRepository.viewCounts uses: one pass over the org's invoices with a
+   * `count(*) filter (where <band>)` per band, sharing `listConds` with the LIST so the number on a
+   * chip and the rows behind it can never come from different definitions.
+   *
+   * `view` is stripped from the base filter deliberately — the bands ARE the breakdown, so a base
+   * that already selected one would return that band's count in its own column and zero everywhere
+   * else. Search and the other predicates stay, because a count that ignores the active search
+   * describes a different list than the one on screen.
+   */
+  async viewCounts(base?: InvoiceFilter): Promise<{ counts: Record<InvoiceView, number> }> {
+    const baseConds = this.listConds({ ...base, view: undefined });
+    const one = (v: InvoiceView) =>
+      sql<number>`count(*) filter (where ${invoiceViewCondition(v)})::int`;
+    const rows = await this.tx
+      .select({
+        draft: one("draft"),
+        over: one("over"),
+        paid: one("paid"),
+        partial: one("partial"),
+        sent: one("sent"),
+      })
+      .from(invoices)
+      .where(and(...baseConds));
+    const r = rows[0];
+    return {
+      counts: {
+        draft: r?.draft ?? 0,
+        over: r?.over ?? 0,
+        paid: r?.paid ?? 0,
+        partial: r?.partial ?? 0,
+        sent: r?.sent ?? 0,
+      },
+    };
+  }
+
+  async count(filter?: InvoiceFilter): Promise<number> {
+    const rows = await this.tx
+      .select({ n: sql<number>`count(*)::int` })
+      .from(invoices)
+      .where(and(...this.listConds(filter)));
+    return rows[0]?.n ?? 0;
+  }
+
+  list(
+    page: CursorPage,
+    filter?: InvoiceFilter,
+    sort?: InvoiceSort,
+    sortDir?: "asc" | "desc",
+  ): Promise<Paginated<Invoice>> {
+    return this.loadHeaderPage(this.listConds(filter), page, sort, sortDir, filter?.view);
+  }
+
+  listByLead(leadId: LeadId, page: CursorPage): Promise<Paginated<Invoice>> {
+    return this.loadHeaderPage(
+      [eq(invoices.orgId, this.orgId), isNull(invoices.deletedAt), eq(invoices.leadId, leadId)],
+      page,
+    );
+  }
+
+  findOverdue(now: Date, page: CursorPage): Promise<Paginated<Invoice>> {
+    return this.loadHeaderPage(
+      [
+        eq(invoices.orgId, this.orgId),
+        isNull(invoices.deletedAt),
+        inArray(invoices.status, [...OPEN_STATUSES]),
+        lt(invoices.dueAt, now),
+      ],
+      page,
+    );
+  }
+
+  // --- helpers ---
+
+  private async hydrate(header: typeof invoices.$inferSelect): Promise<Invoice> {
+    const [lineRows, paymentRows] = await Promise.all([
+      this.tx
+        .select()
+        .from(invoiceLines)
+        .where(
+          and(
+            eq(invoiceLines.orgId, this.orgId),
+            eq(invoiceLines.invoiceId, header.id),
+            isNull(invoiceLines.deletedAt),
+          ),
+        ),
+      this.tx
+        .select()
+        .from(payments)
+        .where(and(eq(payments.orgId, this.orgId), eq(payments.invoiceId, header.id))),
+    ]);
+    return toDomain(header, lineRows, paymentRows);
+  }
+
+  private async diffLines(invoice: Invoice): Promise<void> {
+    const p = invoice.props;
+    const keptIds = p.lines.map((line) => line.props.id);
+    if (p.lines.length > 0) {
+      await this.upsertLines(p.id, p.orgId, p.lines, p.updatedAt);
+    }
+    const removeConds = [
+      eq(invoiceLines.orgId, this.orgId),
+      eq(invoiceLines.invoiceId, p.id),
+      isNull(invoiceLines.deletedAt),
+    ];
+    if (keptIds.length > 0) removeConds.push(notInArray(invoiceLines.id, keptIds));
+    await this.tx.update(invoiceLines).set({ deletedAt: p.updatedAt }).where(and(...removeConds));
+  }
+
+  private async upsertLines(
+    invoiceId: string,
+    orgId: OrgId,
+    lines: readonly InvoiceLine[],
+    updatedAt: Date,
+  ): Promise<void> {
+    const rows = lines.map((line) => {
+      const lp = line.props;
+      return {
+        id: lp.id,
+        orgId,
+        invoiceId,
+        sourceJobLineId: lp.sourceJobLineId,
+        description: lp.description,
+        quantity: lp.quantity,
+        rateCents: lp.rate,
+        costCents: lp.cost,
+        taxable: lp.taxable,
+        position: lp.position,
+        updatedAt,
+        deletedAt: null as Date | null,
+      };
+    });
+    await this.tx
+      .insert(invoiceLines)
+      .values(rows)
+      .onConflictDoUpdate({
+        target: invoiceLines.id,
+        set: {
+          sourceJobLineId: sql`excluded.source_job_line_id`,
+          description: sql`excluded.description`,
+          quantity: sql`excluded.quantity`,
+          rateCents: sql`excluded.rate_cents`,
+          costCents: sql`excluded.cost_cents`,
+          taxable: sql`excluded.taxable`,
+          position: sql`excluded.position`,
+          updatedAt: sql`excluded.updated_at`,
+          deletedAt: sql`excluded.deleted_at`,
+        },
+      });
+  }
+
+  private async loadHeaderPage(
+    baseConds: SQL[],
+    page: CursorPage,
+    sort?: InvoiceSort,
+    sortDir?: "asc" | "desc",
+    // The status band the caller already filtered to, when there is one. The `ledger` sort needs
+    // it: inside one band its rank is constant and sorts nothing, so the view decides the order.
+    // See ledgerWithinView in invoice-sorts.ts.
+    view?: InvoiceView,
+  ): Promise<Paginated<Invoice>> {
+    const conds = [...baseConds];
+    const spec = sort ? invoiceSortSpec(sort, sortDir, view) : null;
+    if (page.cursor) {
+      if (spec) {
+        const c = decodeSortCursor(page.cursor);
+        if (c) {
+          const after = keysetAfterSort(spec, invoices.id, c);
+          if (after) conds.push(after);
+        }
+      } else {
+        const cursor = decodeCursor(page.cursor);
+        if (isOk(cursor)) conds.push(keysetBefore(invoices.createdAt, invoices.id, cursor.value));
+      }
+    }
+    const order = spec ? orderFor(spec, invoices.id) : [desc(invoices.createdAt), desc(invoices.id)];
+
+    // Header-only: balance math uses denormalized amount_paid_cents, so lines/payments aren't loaded.
+    if (!spec) {
+      const rows = await this.tx
+        .select()
+        .from(invoices)
+        .where(and(...conds))
+        .orderBy(...order)
+        .limit(page.limit + 1);
+      return buildPage(
+        rows.map((row) => toDomain(row, [], [])),
+        page,
+        (invoice) => ({ createdAt: invoice.props.createdAt, id: invoice.props.id }),
+      );
+    }
+
+    // The sorted path selects the sort column a SECOND time, cast to text, and builds the cursor
+    // from that rather than from the mapped row. See sortValueColumn: a timestamptz round-tripped
+    // through a JS Date loses microseconds, and a cursor built from the truncated value matches
+    // its own row again — so every page repeated the previous page's last row.
+    const rows = await this.tx
+      .select({ row: invoices, sortValue: sortValueColumn(spec) })
+      .from(invoices)
+      .where(and(...conds))
+      .orderBy(...order)
+      .limit(page.limit + 1);
+
+    const hasMore = rows.length > page.limit;
+    const kept = hasMore ? rows.slice(0, page.limit) : rows;
+    const last = kept[kept.length - 1];
+    return {
+      items: kept.map((r) => toDomain(r.row, [], [])),
+      nextCursor: hasMore && last ? encodeSortCursor({ value: last.sortValue, id: last.row.id }) : null,
+    };
+  }
+}

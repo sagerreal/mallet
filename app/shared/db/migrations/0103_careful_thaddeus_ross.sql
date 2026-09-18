@@ -1,0 +1,2 @@
+DROP INDEX "users_verified_callback_uidx";--> statement-breakpoint
+CREATE UNIQUE INDEX "users_verified_callback_uidx" ON "users" USING btree ("callback_number") WHERE "users"."callback_verified_at" is not null;

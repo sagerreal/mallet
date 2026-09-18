@@ -1,0 +1,14 @@
+import { chromium } from "@playwright/test";
+import { OWNER } from "./e2e-credentials.mjs";
+const base = process.env.SHOT_BASE || "http://localhost:3000";
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1512, height: 950 } });
+await page.goto(base + "/login", { waitUntil: "networkidle" });
+await page.getByLabel("Email").fill(OWNER.email);
+await page.getByLabel("Password").fill(OWNER.password);
+await page.getByRole("button", { name: "Sign in" }).click();
+await page.waitForURL("**/dashboard", { timeout: 30000 });
+await page.waitForTimeout(2500);
+await page.screenshot({ path: "/tmp/home-shot.png", fullPage: true });
+console.log("shot saved");
+await browser.close();

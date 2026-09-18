@@ -1,0 +1,1 @@
+ALTER TABLE "tool_confirmations" ADD COLUMN "fingerprint" text;

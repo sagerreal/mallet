@@ -1,0 +1,114 @@
+import { sql } from "drizzle-orm";
+import {
+  pgTable,
+  uuid,
+  text,
+  integer,
+  boolean,
+  timestamp,
+  index,
+  uniqueIndex,
+  unique,
+  check,
+  foreignKey, jsonb } from "drizzle-orm/pg-core";
+import { orgs } from "./orgs";
+import { companies } from "./companies";
+import { pipelineStages } from "./pipeline-stages";
+
+// A customer/lead in the pipeline. Every row carries org_id; RLS isolates by it.
+// Conventions: money as integer cents, soft-delete, created/updated timestamps.
+export const leads = pgTable(
+  "leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    phoneE164: text("phone_e164"),
+    email: text("email"),
+    // WHERE THE ROW CAME FROM — system provenance, not a user field. Written by the front desk
+    // ("AI Front Desk"), the inbound web form, the CSV importer ("Import") and the manual-create
+    // path ("Added manually"); read by the composer's draft-run to name the request. It is NOT
+    // `tags` and the two must never be conflated: the office used to pick a marketing label here,
+    // which is why 122 of 183 populated values on the live book read "Added manually" or "Import".
+    // That picker is now `tags` below; this column stays machine-written and is no longer editable.
+    source: text("source"),
+    // The office's own labels for this customer ("Google", "Referral", "Commercial", …).
+    // A set, not a single value — a customer found on Nextdoor who is also a repeat customer is
+    // both. The selectable vocabulary lives in `lead_sources` (see that table's note); this column
+    // stores the chosen labels, so removing a label from the vocabulary never rewrites history.
+    // Empty array (never null) so every read is a list and no call site needs a null branch.
+    tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+    stage: text("stage").notNull().default("new"),
+    valueCents: integer("value_cents").notNull().default(0),
+    unread: boolean("unread").notNull().default(false),
+    // Free-form notes captured at lead creation or edited on the lead modal.
+    // Nullable: most leads are created without notes.
+    notes: text("notes"),
+    // Why the customer went elsewhere ("Price", "No response"). Written when a quote is declined;
+    // was dropped by the update payload builder, so the answer to "why did we lose this?" was gone
+    // by the next refetch.
+    lossReason: text("loss_reason"),
+    // The shop-defined pipeline stage this customer sits in (pipeline_stages.id), null = unstaged.
+    // Manual placement — set by dragging on the board or from the customer sheet. Nullable because
+    // the pipeline is opt-in: shops that never set one up keep this null forever.
+    pipelineStageId: uuid("pipeline_stage_id"),
+    // Service address captured at lead creation or updated from the lead modal.
+    // Nullable: most leads are created without an address.
+    address: text("address"),
+    wonAt: timestamp("won_at", { withTimezone: true }),
+    // B2B link: the company this contact works for (nullable — individual contacts have no company).
+    companyId: uuid("company_id"),
+    // Office-defined extra fields for this customer ({label, value} pairs, order preserved).
+    // jsonb blob, not a table: these are display-only facts (gate codes, preferred entry),
+    // never queried/joined — the office reads them with the customer open.
+    customFields: jsonb("custom_fields"),
+    // The contact's role at the company (e.g. "Property manager", "Owner"). Nullable.
+    role: text("role"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    // Keyset pagination index: list a tenant's leads newest-first without OFFSET.
+    index("leads_org_created_idx").on(t.orgId, t.createdAt.desc(), t.id.desc()),
+    // Sort indexes — one per named sort in lead-sorts.ts. Column order mirrors the ORDER BY
+    // exactly (org, sort column, id tiebreaker); an index the planner will not choose is worse
+    // than none because it looks solved and is not.
+    index("leads_org_updated_idx").on(t.orgId, t.updatedAt.desc(), t.id.desc()),
+    index("leads_org_name_idx").on(t.orgId, t.name, t.id),
+    index("leads_org_value_idx").on(t.orgId, t.valueCents.desc(), t.id.desc()),
+    // Backs lead views filtered by pipeline stage without a sequential scan over the tenant.
+    index("leads_org_stage_idx").on(t.orgId, t.stage),
+    // Partial keyset index: same order but only over non-deleted rows (active-list query perf).
+    index("leads_org_created_active_idx")
+      .on(t.orgId, t.createdAt.desc(), t.id.desc())
+      .where(sql`${t.deletedAt} is null`),
+    // Dedupe customers by phone within an org (ignoring soft-deleted rows).
+    uniqueIndex("leads_org_phone_uidx")
+      .on(t.orgId, t.phoneE164)
+      .where(sql`${t.deletedAt} is null and ${t.phoneE164} is not null`),
+    // Make invalid pipeline stages unrepresentable at the storage layer.
+    check("leads_stage_check", sql`${t.stage} in ('new', 'contacted', 'quote_sent', 'won', 'lost')`),
+    // Composite-unique target so child tables (e.g. estimates) can FK on (org_id, id) and thereby
+    // never link across tenants.
+    unique("leads_org_id_uq").on(t.orgId, t.id),
+    // Composite FK (org_id, company_id) → companies(org_id, id): prevents cross-tenant lead→company
+    // links. The target is the composite unique "companies_org_id_uq" on companies(org_id, id).
+    foreignKey({
+      name: "leads_org_company_fk",
+      columns: [t.orgId, t.companyId],
+      foreignColumns: [companies.orgId, companies.id],
+    }),
+    // Composite FK (org_id, pipeline_stage_id) → pipeline_stages(org_id, id): a lead can only sit
+    // in its OWN org's stage. Same cross-tenant-proof device as leads_org_company_fk.
+    foreignKey({
+      name: "leads_org_pipeline_stage_fk",
+      columns: [t.orgId, t.pipelineStageId],
+      foreignColumns: [pipelineStages.orgId, pipelineStages.id],
+    }),
+    // Backs the board's per-stage columns and counts (GROUP BY stage) without a tenant scan.
+    index("leads_org_pipeline_stage_idx").on(t.orgId, t.pipelineStageId),
+  ],
+);

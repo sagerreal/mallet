@@ -1,0 +1,52 @@
+/* Global overrides layered on top of prototype.css — the single source of truth
+   for design tokens. Tailwind (and its @theme color/font bridge) was removed in
+   P4f/2; prototype.css now wires the next/font variables into its own font tokens
+   and carries the base line-height. This file only holds a few app-level
+   overrides + the view-transition rules. */
+
+/* Override: the prototype had a fixed AI sidebar (360px right margin) that
+   is retired in this app — the AI lives in the command bar instead. */
+body {
+  margin-right: 0 !important;
+  /* Wire next/font variables into prototype's font var names */
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* Override: the prototype's --aiw was used for toast/overlay positioning;
+   neutralize it so popups don't offset into oblivion. */
+:root {
+  --aiw: 0px;
+}
+
+/* The prototype body line sets the font but Tailwind base may override it.
+   Ensure Space Grotesk resolves for .display / h1 elements. */
+.display,
+h1,
+.brand,
+.ticket h1,
+.modal h2 {
+  font-family: var(--font-space-grotesk), "Inter", -apple-system, sans-serif;
+}
+
+/* ── View Transitions ──────────────────────────────────────────────────────
+   Declarative crossfade on same-document navigations (Next 16 + the
+   viewTransition: true flag in next.config.ts).  These rules are inert in
+   browsers that don't support the API — safe to keep even if the config flag
+   is later reverted.
+
+   NO `@view-transition { navigation: auto }` HERE, deliberately. That at-rule opts into
+   CROSS-document transitions, which is not what this block is for — same-document crossfades come
+   from Next's viewTransition flag and need no opt-in. With it on, a back/forward navigation made
+   Chromium skip the transition ("Transition was skipped") and never un-suppress rendering: the DOM
+   stayed readable while requestAnimationFrame stopped firing and no click was processed, so the
+   whole app froze until a manual reload. It only triggered after a HARD load — which is precisely
+   how the app is re-entered from an OAuth callback, so the freeze sat behind the QuickBooks
+   redirect to /settings?tab=quickbooks and Stripe Connect's return URL.
+   Regression test: e2e/back-nav.spec.ts. */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* Input is frozen while the crossfade plays, and it stacks ON TOP of the navigation wait —
+     120ms read as lag on the field tabs. 70ms still smooths the cut without being felt. */
+  animation-duration: 70ms;
+}

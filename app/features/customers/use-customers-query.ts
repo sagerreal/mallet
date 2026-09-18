@@ -1,0 +1,184 @@
+"use client";
+
+import { useCallback, useMemo, useState } from "react";
+import { api } from "@/lib/trpc/client";
+import { useDebouncedValue } from "@/lib/use-debounced-value";
+import type { LeadSort } from "@/modules/customers/infra/lead-sorts";
+import type { LeadScope, LeadGroup } from "@/modules/customers/infra/lead-views";
+
+/**
+ * The Customers list, fetched a page at a time from the server.
+ *
+ * Replaces reading every lead out of the store and filtering it in the browser. That could only
+ * ever see the hydrator's first 500 rows, so on a 606-customer shop the list, its search, its
+ * filter options and its count all silently described a subset — and reported "500 of 500".
+ *
+ * Mirrors useJobsQuery: the page, the true total, and the chip row's counts, each its own query so the
+ * "of N" survives paging and the dropdown describes the book rather than the page.
+ */
+
+const PAGE_SIZE = 50;
+
+export interface CustomersQueryState {
+  readonly search: string;
+  readonly stage: string;
+  readonly source: string;
+  /** A saved worklist — owes money, no job in 12 months. "" is everyone. */
+  readonly scope: string;
+  /** One work group — where this customer's work has got to. "" is everyone. */
+  readonly group: string;
+  /** The ARCHIVED set instead of the live one. Archiving is a soft delete; see LeadFilter. */
+  readonly archived: boolean;
+  readonly sort: LeadSort | null;
+  readonly sortDir: "asc" | "desc" | null;
+}
+
+export function useCustomersQuery(state: CustomersQueryState) {
+  // Typing must not mint a query per keystroke (the whole list flashed to the loader) —
+  // the query trails the input by 250ms; the input itself stays instant.
+  const debouncedSearch = useDebouncedValue(state.search, 250);
+  const search = debouncedSearch.trim() || undefined;
+  const stage = state.stage || undefined;
+  const source = state.source || undefined;
+  const scope = state.scope || undefined;
+  const group = state.group || undefined;
+
+  // ONE filter object for the page, the count and nothing else — they cannot describe different
+  // sets, which is how a header ends up reading "50 of 606" over a twelve-row worklist.
+  const filters = {
+    ...(search ? { search } : {}),
+    ...(stage ? { stage: stage as never } : {}),
+    ...(source ? { source } : {}),
+    ...(scope ? { scope: scope as LeadScope } : {}),
+    ...(group ? { group: group as LeadGroup } : {}),
+    // The Archived tab used to change nothing but the UI: this never reached the query, so the tab
+    // returned the live list and the screen added a Restore column to it.
+    ...(state.archived ? { archived: true } : {}),
+  };
+
+  const page = api.v1.customers.list.useInfiniteQuery(
+    {
+      limit: PAGE_SIZE,
+      ...filters,
+      ...(state.sort ? { sort: state.sort } : {}),
+      ...(state.sortDir ? { sortDir: state.sortDir } : {}),
+    },
+    {
+      getNextPageParam: (last) => last.nextCursor ?? undefined,
+      // Keep the previous page on screen while a new filter/search loads — swapping the
+      // whole list for a spinner on every keystroke read as "the page reloads".
+      placeholderData: (prev) => prev,
+      // No staleTime: a list that serves a cached page after an edit is how "I changed that and it
+      // didn't save" gets reported.
+      refetchOnWindowFocus: true,
+    },
+  );
+
+  const total = api.v1.customers.count.useQuery(filters, { refetchOnWindowFocus: true, placeholderData: (prev) => prev });
+
+  /**
+   * THE CHIP ROW'S NUMBERS, fetched HERE so they share this hook's debounced search.
+   *
+   * The screen used to run this query itself as `groupCounts.useQuery(undefined)` — no arguments,
+   * so it could not narrow. A no-match search left the chips reading "Invoice required (19), Owes
+   * money (14), Job booked (35)" over a list showing "0 of 0": the chips claiming 90 customers that
+   * were not there. The group is NOT passed — the groups are the breakdown, and the row must keep
+   * showing every group's size while you stand inside one of them.
+   */
+  const groupCounts = api.v1.customers.groupCounts.useQuery(
+    { ...(search ? { search } : {}), ...(state.archived ? { archived: true } : {}) },
+    { refetchOnWindowFocus: true, placeholderData: (prev) => prev },
+  );
+  // The UNFILTERED book size — the only honest input to "does this shop have customers at
+  // all?". Gating first-run on the filtered count showed "No customers yet" to a shop of
+  // 600 whenever a search matched nothing.
+  const bookTotal = api.v1.customers.count.useQuery({}, { refetchOnWindowFocus: false });
+
+  // Facets are NOT filtered by the current selection: a dropdown that hides the option you would
+  // switch to is a dead end. It describes the whole book, always.
+
+  const rows = useMemo(() => page.data?.pages.flatMap((p) => p.items) ?? [], [page.data]);
+
+  const loadMore = useCallback(() => {
+    if (page.hasNextPage && !page.isFetchingNextPage) void page.fetchNextPage();
+  }, [page]);
+
+  return {
+    rows,
+    shown: rows.length,
+    total: total.data?.total,
+    bookTotal: bookTotal.data?.total,
+    /** True while showing held-over rows for a superseded filter — callers dim, never swap. */
+    isStale: page.isPlaceholderData || debouncedSearch !== state.search,
+    /** Per-group counts for the chip row. Absent while in flight — the chip then shows no number. */
+    groupCounts: groupCounts.data,
+    hasMore: Boolean(page.hasNextPage),
+    loadMore,
+    isLoadingMore: page.isFetchingNextPage,
+    isLoading: page.isLoading,
+    isError: page.isError,
+    isFetched: page.isFetched,
+    refetch: () => void page.refetch(),
+    isRefetching: page.isRefetching,
+  };
+}
+
+/** The list's own filter/sort state, kept out of the component so it can be tested. */
+export function useCustomersQueryState() {
+  const [search, setSearch] = useState("");
+  const [stage, setStage] = useState("");
+  const [source, setSource] = useState("");
+  const [scope, setScope] = useState("");
+  /** One work group — the Customers chips. "" is everyone. */
+  const [group, setGroup] = useState("");
+  // The DISPLAY column is tracked, not the server sort: the header arrow belongs to the column the
+  // user clicked, and two columns can map to the same server sort.
+  const [sortCol, setSortCol] = useState<string | null>(null);
+  const [sortDir, setSortDir] = useState<"asc" | "desc" | null>(null);
+
+  /**
+   * Clicking the active column flips direction; a new column starts on its natural default.
+   *
+   * The direction change is kept OUT of the setSortCol updater. React invokes an updater twice in
+   * dev, so a nested setSortDir queued two flips per click: Name stuck on descending from the
+   * second click on. In production the single flip ran null → "asc", and since `null` already
+   * renders as ascending the second click changed nothing on screen at all.
+   */
+  const toggleSortCol = useCallback(
+    (col: string) => {
+      if (sortCol !== col) {
+        setSortCol(col);
+        // null, not "asc": the server picks the sort's own natural default (created descending
+        // reads as "newest first", which is not what an ascending arrow would claim).
+        setSortDir(null);
+        return;
+      }
+      // Flip AWAY from what is on screen. null shows the ascending arrow, so it must go to desc.
+      setSortDir((d) => (d === "desc" ? "asc" : "desc"));
+    },
+    [sortCol],
+  );
+
+  const clear = useCallback(() => {
+    setGroup("");
+    setSearch("");
+    setStage("");
+    setSource("");
+    setScope("");
+  }, []);
+
+  return { search, setSearch, stage, setStage, source, setSource, scope, setScope, group, setGroup, sortCol, sortDir, toggleSortCol, clear };
+}
+
+/** Table column → named server sort. Columns with no server sort map to null and stay inert. */
+export const CUSTOMER_COL_TO_SORT: Record<string, LeadSort | null> = {
+  name: "name",
+  latest: "lastActivity",
+  age: "created",
+  // Stage sorts alphabetically, which is not the pipeline order anyone means by it — left inert
+  // rather than sorting by a sequence that reads as arbitrary.
+  stage: null,
+  phone: null,
+  email: null,
+  address: null,
+};

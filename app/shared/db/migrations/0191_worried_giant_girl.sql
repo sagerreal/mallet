@@ -1,0 +1,1 @@
+ALTER TABLE "estimate_lines" ADD COLUMN "customer_detail" text;

@@ -1,0 +1,88 @@
+// Public surface for the accounting-sync module — the only import seam (architecture rule).
+//
+// Scope today: the QuickBooks Online CONNECTION (OAuth + sealed token lifecycle). The sync itself
+// (pushing approved time entries as TimeActivity) lands in a later PR — see
+// docs/superpowers/plans/2026-07-24-qbo-timesheet-sync.md.
+
+export {
+  QboConnection,
+  ACCESS_TOKEN_SKEW_MS,
+  type QboConnectionProps,
+  type QboConnectionStatus,
+  type RefreshedTokens,
+} from "./domain/qbo-connection";
+export type { QboConnectionRepository } from "./domain/qbo-connection-repository";
+export type { QboOauthGateway, QboTokens } from "./domain/qbo-oauth-gateway";
+export type {
+  QboApiGateway,
+  QboAccess,
+  QboPerson,
+  QboServiceItem,
+  QboPreflight,
+} from "./domain/qbo-api-gateway";
+export type {
+  QboEntityLink,
+  QboEntityLinkRepository,
+  QboSyncLogEntry,
+  QboSyncLogRepository,
+} from "./domain/qbo-sync-repositories";
+export { toTimeActivity, type SyncableTimeEntry } from "./domain/time-activity-mapping";
+export { signOauthState, verifyOauthState, type OauthStateClaims } from "./domain/oauth-state";
+
+export { DrizzleQboConnectionRepository } from "./infra/drizzle-qbo-connection-repository";
+export { HttpQboOauthGateway, type IntuitOauthConfig } from "./infra/http-qbo-oauth-gateway";
+export { HttpQboApiGateway, type QboEnvironment } from "./infra/http-qbo-api-gateway";
+export {
+  DrizzleQboEntityLinkRepository,
+  DrizzleQboSyncLogRepository,
+} from "./infra/drizzle-qbo-sync-repositories";
+
+export { EnsureFreshAccessToken, type FreshAccess } from "./app/ensure-fresh-access-token";
+export {
+  GetQboSyncActivity,
+  type QboSyncActivity,
+  type QboSyncActivityRow,
+} from "./app/get-qbo-sync-activity";
+export { explainSyncProblem, type SyncProblem } from "./domain/sync-problem";
+export { EnsureQboCustomer, type EnsureQboCustomerResult } from "./app/ensure-qbo-customer";
+export { SyncInvoice, type SyncInvoiceCommand, type SyncInvoiceResult } from "./app/sync-invoice";
+export {
+  QboInvoiceSyncHandler,
+  type QboInvoiceSyncPorts,
+} from "./app/qbo-invoice-sync-handler";
+export { toQboInvoice, type SyncableInvoice, type QboInvoiceInput } from "./domain/invoice-mapping";
+export { SyncPayment, type SyncPaymentCommand, type SyncPaymentResult } from "./app/sync-payment";
+export { QboPaymentSyncHandler, type QboPaymentSyncPorts } from "./app/qbo-payment-sync-handler";
+export { toQboPayment, type SyncablePayment, type QboPaymentInput } from "./domain/payment-mapping";
+export {
+  ResyncInvoice,
+  type ResyncInvoiceResult,
+  type ResyncOutcome,
+  CUSTOMER_NOT_LINKED,
+  GONE_FROM_QBO,
+} from "./app/resync-invoice";
+export {
+  QboInvoiceChangeHandler,
+  type QboInvoiceChangePorts,
+} from "./app/qbo-invoice-change-handler";
+export {
+  toQboCustomer,
+  type SyncableCustomer,
+  type QboCustomerInput,
+} from "./domain/customer-mapping";
+export type { SyncLabelReader } from "./domain/sync-label-reader";
+export { DrizzleSyncLabelReader } from "./infra/drizzle-sync-label-reader";
+export {
+  CompleteQboConnect,
+  type CompleteQboConnectCommand,
+  type TenantRunner,
+} from "./app/complete-qbo-connect";
+export { DisconnectQbo } from "./app/disconnect-qbo";
+export { GetQboStatus, type QboStatus } from "./app/get-qbo-status";
+export { SyncApprovedHours, type SyncApprovedHoursResult } from "./app/sync-approved-hours";
+export { QboTimeSyncHandler, type QboTimeSyncPorts } from "./app/qbo-time-sync-handler";
+
+// API surface. NOTE: importing this barrel pulls the router (and thus the config validator) —
+// unit tests must import the specific file they need, never `* from` here (see CLAUDE.md).
+export { createQboRouter } from "./api/qbo-router";
+export { qboStatusDTO, type QboStatusDTO } from "./api/qbo-dto";

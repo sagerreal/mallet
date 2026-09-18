@@ -1,0 +1,415 @@
+/**
+ * Unit tests for the public quote page's client cents math (quote-totals.ts).
+ *
+ * The helper must mirror the domain's derivations in
+ * modules/quoting/domain/estimate.ts EXACTLY — same per-step Math.round order
+ * (sub → disc → net → tax → total → deposit) — so these tests compare its output
+ * against a real domain Estimate built with the same lines. Odd-cent inputs are
+ * chosen so every rounding step actually rounds.
+ */
+
+import { describe, it, expect } from "vitest";
+import {
+  asOrgId,
+  asLeadId,
+  asEstimateId,
+  asEstimateLineId,
+  money,
+  zeroMoney,
+} from "@mallet/shared/types";
+import {
+  Estimate,
+  EstimateLine,
+  type EstimateProps,
+  type QuoteTier,
+} from "@/modules/quoting/domain/estimate";
+import {
+  computeQuoteTotals,
+  lineAmountCents,
+  sumLineAmountsCents,
+  sumTaxableLineAmountsCents,
+} from "./quote-totals";
+
+// ---------------------------------------------------------------------------
+// Domain builders
+// ---------------------------------------------------------------------------
+
+interface LineSpec {
+  readonly id: string;
+  readonly description: string;
+  readonly quantity: number;
+  readonly rateCents: number;
+  readonly isOptional: boolean;
+  /** Omitted = taxable, exactly as the domain and the column read an absent value. */
+  readonly taxable?: boolean;
+  readonly tier?: QuoteTier;
+}
+
+const makeLine = (spec: LineSpec, position: number): EstimateLine => {
+  const r = EstimateLine.create({
+    id: asEstimateLineId(spec.id),
+    description: spec.description,
+    quantity: spec.quantity,
+    rate: money(spec.rateCents),
+    cost: zeroMoney,
+    isOptional: spec.isOptional,
+    needsPhoto: false,
+    taxable: spec.taxable ?? true,
+    position,
+    tier: spec.tier ?? null,
+    materialId: null,
+  });
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
+const makeEstimate = (
+  lines: readonly LineSpec[],
+  pricing: { discBps: number; taxBps: number; depBps: number },
+  recommendedTier: QuoteTier | null = null,
+): Estimate => {
+  const now = new Date("2026-07-01T00:00:00Z");
+  const props: EstimateProps = {
+    id: asEstimateId("00000000-0000-0000-0000-00000000e571"),
+    orgId: asOrgId("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+    num: "EST-7001",
+    leadId: asLeadId("11111111-1111-1111-1111-111111111111"),
+    title: "Totals parity",
+    status: "sent",
+    discBps: pricing.discBps,
+    taxBps: pricing.taxBps,
+    depBps: pricing.depBps,
+    depPaid: zeroMoney,
+    validDays: null,
+    sentAt: now,
+    acceptedAt: null,
+    declinedAt: null,
+    declineReason: null,
+    changeRequestedAt: null,
+    changeOrderForJobId: null,
+    jobId: null,
+    changeRequest: null,
+    publicToken: "c".repeat(64),
+    recommendedTier,
+    acceptedTier: null,
+    tierNames: null,
+    termsSnapshot: null,
+    lines: lines.map(makeLine),
+    createdAt: now,
+    updatedAt: now,
+  };
+  const r = Estimate.create(props);
+  if (!r.ok) throw new Error(r.error.message);
+  return r.value;
+};
+
+// Odd-cent fixture: every derivation step (line amount, discount, tax, deposit)
+// lands on a fractional cent before rounding.
+const FIXED: LineSpec = {
+  id: "00000000-0000-0000-0000-000000000001",
+  description: "Labor",
+  quantity: 3,
+  rateCents: 3_333, // 9_999
+  isOptional: false,
+};
+const OPT_A: LineSpec = {
+  id: "00000000-0000-0000-0000-000000000002",
+  description: "Anode rod",
+  quantity: 1.5,
+  rateCents: 999, // round(1498.5) = 1499
+  isOptional: true,
+};
+const OPT_B: LineSpec = {
+  id: "00000000-0000-0000-0000-000000000003",
+  description: "Expansion tank",
+  quantity: 1,
+  rateCents: 24_995,
+  isOptional: true,
+};
+const PRICING = { discBps: 1_000, taxBps: 825, depBps: 3_300 }; // 10% / 8.25% / 33%
+
+const expectParity = (
+  totals: ReturnType<typeof computeQuoteTotals>,
+  domain: Estimate,
+): void => {
+  expect(totals.subtotalCents).toBe(domain.subtotal());
+  expect(totals.discountCents).toBe(domain.discountAmount());
+  expect(totals.taxCents).toBe(domain.taxAmount());
+  expect(totals.totalCents).toBe(domain.total());
+  expect(totals.depositCents).toBe(domain.depositDue());
+};
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+describe("lineAmountCents", () => {
+  it("rounds quantity × rate to whole cents like EstimateLine.amount (half up)", () => {
+    expect(lineAmountCents(1.5, 999)).toBe(1_499); // 1498.5 → 1499
+    expect(lineAmountCents(3, 3_333)).toBe(9_999);
+    expect(lineAmountCents(0.33, 101)).toBe(33); // 33.33 → 33
+    const domainLine = makeLine(OPT_A, 0);
+    expect(lineAmountCents(OPT_A.quantity, OPT_A.rateCents)).toBe(domainLine.amount());
+  });
+});
+
+describe("computeQuoteTotals — parity with the domain (odd cents)", () => {
+  it("no optional lines selected → matches the sent estimate exactly (render-identical baseline)", () => {
+    const domain = makeEstimate([FIXED, OPT_A, OPT_B], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expectParity(totals, domain);
+    // Pin the concrete numbers so a rounding regression is loud.
+    expect(totals).toEqual({
+      subtotalCents: 9_999,
+      discountCents: 1_000, // round(999.9)
+      taxCents: 742, // round(8999 × 825 / 10000 = 742.4175)
+      totalCents: 9_741,
+      depositCents: 3_215, // round(9741 × 3300 / 10000 = 3214.53)
+    });
+  });
+
+  it("one optional line selected → matches a domain estimate with that line committed", () => {
+    const base = makeEstimate([FIXED, OPT_A, OPT_B], PRICING);
+    // Domain twin: OPT_A flipped to non-optional (what accept commits), OPT_B dropped.
+    const tuned = makeEstimate([FIXED, { ...OPT_A, isOptional: false }], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: base.subtotal(),
+      selectedOptionalLines: [{ quantity: OPT_A.quantity, rateCents: OPT_A.rateCents }],
+      ...PRICING,
+    });
+    expectParity(totals, tuned);
+    expect(totals).toEqual({
+      subtotalCents: 11_498, // 9999 + 1499
+      discountCents: 1_150, // round(1149.8)
+      taxCents: 854, // round(10348 × 825 / 10000 = 853.71)
+      totalCents: 11_202,
+      depositCents: 3_697, // round(11202 × 3300 / 10000 = 3696.66)
+    });
+  });
+
+  it("all optional lines selected → matches a domain estimate with every line committed", () => {
+    const base = makeEstimate([FIXED, OPT_A, OPT_B], PRICING);
+    const tuned = makeEstimate(
+      [FIXED, { ...OPT_A, isOptional: false }, { ...OPT_B, isOptional: false }],
+      PRICING,
+    );
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: base.subtotal(),
+      selectedOptionalLines: [
+        { quantity: OPT_A.quantity, rateCents: OPT_A.rateCents },
+        { quantity: OPT_B.quantity, rateCents: OPT_B.rateCents },
+      ],
+      ...PRICING,
+    });
+    expectParity(totals, tuned);
+  });
+
+  it("zero bps everywhere → totals collapse to the plain subtotal", () => {
+    const pricing = { discBps: 0, taxBps: 0, depBps: 0 };
+    const domain = makeEstimate([FIXED, { ...OPT_A, isOptional: false }], pricing);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: 9_999,
+      selectedOptionalLines: [{ quantity: OPT_A.quantity, rateCents: OPT_A.rateCents }],
+      ...pricing,
+    });
+    expectParity(totals, domain);
+    expect(totals.totalCents).toBe(11_498);
+    expect(totals.discountCents).toBe(0);
+    expect(totals.taxCents).toBe(0);
+    expect(totals.depositCents).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Good/Better/Best: per-tier derivation client-side
+// ---------------------------------------------------------------------------
+
+describe("sumLineAmountsCents", () => {
+  it("rounds each line amount BEFORE summing, like Estimate.subtotalOf", () => {
+    // Two ×.5 fractions make the rounding order visible: per-line rounding gives
+    // 1499 + 833 = 2332, while rounding the raw sum (1498.5 + 832.5 = 2331) once
+    // would give 2331.
+    expect(
+      sumLineAmountsCents([
+        { quantity: 1.5, rateCents: 999 }, // 1498.5 → 1499
+        { quantity: 2.5, rateCents: 333 }, // 832.5 → 833
+      ]),
+    ).toBe(2_332);
+    expect(sumLineAmountsCents([])).toBe(0);
+  });
+});
+
+describe("per-tier totals — parity with the domain's totalsForTier (odd cents)", () => {
+  // A tiered estimate: each tier has odd-cent fixed lines; better carries an optional.
+  const TIERED_LINES: readonly LineSpec[] = [
+    { id: "00000000-0000-0000-0000-00000000000a", description: "Patch", quantity: 1.5, rateCents: 9_999, isOptional: false, tier: "good" },
+    { id: "00000000-0000-0000-0000-00000000000b", description: "Repair labor", quantity: 3, rateCents: 3_333, isOptional: false, tier: "better" },
+    { id: "00000000-0000-0000-0000-00000000000c", description: "Repair parts", quantity: 1.5, rateCents: 999, isOptional: false, tier: "better" },
+    { id: "00000000-0000-0000-0000-00000000000d", description: "Camera inspection", quantity: 1, rateCents: 24_995, isOptional: true, tier: "better" },
+    { id: "00000000-0000-0000-0000-00000000000e", description: "Replace run", quantity: 0.33, rateCents: 299_999, isOptional: false, tier: "best" },
+  ];
+
+  const tierFixedLines = (tier: QuoteTier) =>
+    TIERED_LINES.filter((l) => l.tier === tier && !l.isOptional).map((l) => ({
+      quantity: l.quantity,
+      rateCents: l.rateCents,
+    }));
+
+  it.each(["good", "better", "best"] as const)(
+    "tier %s with no optionals matches the domain's totalsForTier exactly",
+    (tier) => {
+      const domain = makeEstimate(TIERED_LINES, PRICING, "better");
+      const expected = domain.totalsForTier(tier);
+      const totals = computeQuoteTotals({
+        fixedSubtotalCents: sumLineAmountsCents(tierFixedLines(tier)),
+        selectedOptionalLines: [],
+        ...PRICING,
+      });
+      expect(totals.subtotalCents).toBe(expected.subtotal);
+      expect(totals.discountCents).toBe(expected.discount);
+      expect(totals.taxCents).toBe(expected.tax);
+      expect(totals.totalCents).toBe(expected.total);
+      expect(totals.depositCents).toBe(expected.depositDue);
+    },
+  );
+
+  it("selected tier + toggled optional matches a domain twin with that line committed", () => {
+    // Twin: better's lines only, optional flipped non-optional (what accept commits).
+    const twin = makeEstimate(
+      TIERED_LINES.filter((l) => l.tier === "better").map((l) => ({
+        ...l,
+        isOptional: false,
+        tier: undefined,
+        materialId: null,
+      })),
+      PRICING,
+    );
+    const opt = TIERED_LINES.find((l) => l.tier === "better" && l.isOptional)!;
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: sumLineAmountsCents(tierFixedLines("better")),
+      selectedOptionalLines: [{ quantity: opt.quantity, rateCents: opt.rateCents }],
+      ...PRICING,
+    });
+    expectParity(totals, twin);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-line taxability: the SECOND filter
+// ---------------------------------------------------------------------------
+
+describe("sumTaxableLineAmountsCents", () => {
+  it("counts a line with no taxable key — absent reads as taxable", () => {
+    expect(sumTaxableLineAmountsCents([{ quantity: 1.5, rateCents: 999 }])).toBe(1_499);
+  });
+
+  it("skips only the lines explicitly marked non-taxable", () => {
+    expect(
+      sumTaxableLineAmountsCents([
+        { quantity: 1.5, rateCents: 999, taxable: true },
+        { quantity: 2.5, rateCents: 333, taxable: false },
+      ]),
+    ).toBe(1_499);
+    expect(sumTaxableLineAmountsCents([])).toBe(0);
+  });
+});
+
+describe("computeQuoteTotals — mixed taxability, parity with the domain", () => {
+  const TAXED: LineSpec = {
+    id: "00000000-0000-0000-0000-0000000000f1",
+    description: "Repair labor",
+    quantity: 3,
+    rateCents: 3_333, // 9_999
+    isOptional: false,
+    taxable: true,
+  };
+  const UNTAXED: LineSpec = {
+    id: "00000000-0000-0000-0000-0000000000f2",
+    description: "Permit fee",
+    quantity: 1.5,
+    rateCents: 999, // 1_499
+    isOptional: false,
+    taxable: false,
+  };
+  const UNTAXED_OPT: LineSpec = { ...UNTAXED, id: "00000000-0000-0000-0000-0000000000f3", isOptional: true };
+
+  it("keeps a non-taxable fixed line in the subtotal and out of the tax", () => {
+    const domain = makeEstimate([TAXED, UNTAXED], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      fixedTaxableCents: domain.taxableBase(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expectParity(totals, domain);
+    expect(totals.subtotalCents).toBe(11_498); // both lines
+    expect(totals.discountCents).toBe(1_150); // round(1149.8) — on the WHOLE subtotal
+    // Tax on the discounted taxable half only: 9999 − round(999.9) = 8999 → round(742.4175).
+    expect(totals.taxCents).toBe(742);
+    expect(totals.totalCents).toBe(11_090); // 10348 net + 742 tax
+  });
+
+  it("a toggled-on NON-taxable add-on raises the total and not the tax", () => {
+    const base = makeEstimate([TAXED, UNTAXED_OPT], PRICING);
+    const twin = makeEstimate([TAXED, { ...UNTAXED_OPT, isOptional: false }], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: base.subtotal(),
+      fixedTaxableCents: base.taxableBase(),
+      selectedOptionalLines: [
+        { quantity: UNTAXED_OPT.quantity, rateCents: UNTAXED_OPT.rateCents, taxable: false },
+      ],
+      ...PRICING,
+    });
+    expectParity(totals, twin);
+    // Same tax as the fixed-only baseline; the add-on moved the subtotal and the total.
+    expect(totals.taxCents).toBe(742);
+    expect(totals.subtotalCents).toBe(11_498);
+  });
+
+  it("a toggled-on TAXABLE add-on raises both", () => {
+    const base = makeEstimate([TAXED, OPT_A], PRICING);
+    const twin = makeEstimate([TAXED, { ...OPT_A, isOptional: false }], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: base.subtotal(),
+      fixedTaxableCents: base.taxableBase(),
+      selectedOptionalLines: [
+        { quantity: OPT_A.quantity, rateCents: OPT_A.rateCents, taxable: true },
+      ],
+      ...PRICING,
+    });
+    expectParity(totals, twin);
+    expect(totals.taxCents).toBe(854);
+  });
+
+  it("no taxable line anywhere → zero tax, full total", () => {
+    const domain = makeEstimate([UNTAXED], PRICING);
+    const totals = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      fixedTaxableCents: domain.taxableBase(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expectParity(totals, domain);
+    expect(totals.taxCents).toBe(0);
+  });
+
+  it("omitting fixedTaxableCents reads every fixed line as taxable (the pre-taxability caller)", () => {
+    const domain = makeEstimate([FIXED, OPT_A, OPT_B], PRICING);
+    const withOut = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    const withIn = computeQuoteTotals({
+      fixedSubtotalCents: domain.subtotal(),
+      fixedTaxableCents: domain.taxableBase(),
+      selectedOptionalLines: [],
+      ...PRICING,
+    });
+    expect(withOut).toEqual(withIn);
+  });
+});

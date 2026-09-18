@@ -1,0 +1,28 @@
+// Public surface for the identity module — the only sanctioned import seam (architecture rule).
+import type { Database } from "@mallet/shared/db/client";
+import { SupabaseAuthProvider } from "./infra/supabase-auth-provider";
+import { createSupabaseTokenVerifier } from "./infra/supabase-token-verifier";
+import { DbPrincipalResolver } from "./infra/db-principal-resolver";
+
+export type { Principal, Role } from "./domain/principal";
+export { isRole, ROLES } from "./domain/principal";
+export type { AuthProvider, TokenVerifier, PrincipalResolver, ApiKeyVerifier, VerifiedToken } from "./domain/auth-provider";
+// Static per-tenant API-key auth for the remote MCP server / programmatic access.
+export { ApiKeyAuthenticator, createApiKeyAuthenticator, generateApiKey, hashApiKey } from "./infra/api-key-authenticator";
+export { createSupabaseTokenVerifier } from "./infra/supabase-token-verifier";
+export { SignupStore } from "./infra/signup-store";
+export type { SignupInput, ProvisionedOrg } from "./infra/signup-store";
+export { createIdentityRouter } from "./api/identity-router";
+
+export interface AuthProviderDeps {
+  readonly supabaseUrl: string;
+  readonly supabaseAnonKey: string;
+  readonly db: Database;
+}
+
+// Wire the production AuthProvider: Supabase token verification + DB-backed principal lookup.
+export const createAuthProvider = (deps: AuthProviderDeps): SupabaseAuthProvider =>
+  new SupabaseAuthProvider(
+    createSupabaseTokenVerifier(deps.supabaseUrl, deps.supabaseAnonKey),
+    new DbPrincipalResolver(deps.db),
+  );

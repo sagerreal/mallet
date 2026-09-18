@@ -1,0 +1,352 @@
+import { describe, it, expect } from "vitest";
+import { asLeadId, asOrgId, zeroMoney, money, Phone, isOk } from "@mallet/shared/types";
+import { Lead, type LeadProps } from "./lead";
+import { MAX_TAGS, MAX_TAG_LENGTH } from "./customer-tags";
+
+const baseProps = (overrides: Partial<LeadProps> = {}): LeadProps => ({
+  id: asLeadId("11111111-1111-1111-1111-111111111111"),
+  orgId: asOrgId("22222222-2222-2222-2222-222222222222"),
+  name: "Karen Doyle",
+  phone: null,
+  email: null,
+  customFields: null,
+  source: "web",
+  tags: [],
+  stage: "new",
+  value: zeroMoney,
+  unread: false,
+  wonAt: null,
+  companyId: null,
+  role: null,
+  notes: null,
+  lossReason: null,
+      pipelineStageId: null,
+  address: null,
+  createdAt: new Date("2026-06-01T00:00:00Z"),
+  updatedAt: new Date("2026-06-01T00:00:00Z"),
+  ...overrides,
+});
+
+const unwrap = (r: ReturnType<typeof Lead.create>): Lead => {
+  if (!isOk(r)) throw new Error(`expected ok, got ${JSON.stringify(r.error)}`);
+  return r.value;
+};
+
+describe("Lead.create", () => {
+  it("rejects an empty name", () => {
+    const r = Lead.create(baseProps({ name: "   " }));
+    expect(r.ok).toBe(false);
+  });
+
+  it("rejects a negative value", () => {
+    const r = Lead.create(baseProps({ value: money(-100) }));
+    expect(r.ok).toBe(false);
+  });
+
+  it("trims the name", () => {
+    const lead = unwrap(Lead.create(baseProps({ name: "  Karen Doyle  " })));
+    expect(lead.props.name).toBe("Karen Doyle");
+  });
+
+  it("keeps a parsed E.164 phone", () => {
+    const phone = Phone.parse("(555) 123-4567");
+    expect(phone.ok).toBe(true);
+    if (phone.ok) {
+      const lead = unwrap(Lead.create(baseProps({ phone: phone.value })));
+      expect(lead.props.phone).toBe("+15551234567");
+    }
+  });
+});
+
+describe("Lead.moveStage", () => {
+  it("stamps wonAt the first time it moves to won", () => {
+    const now = new Date("2026-06-10T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ stage: "contacted" }))).moveStage("won", now);
+    expect(lead.props.stage).toBe("won");
+    expect(lead.props.wonAt?.toISOString()).toBe(now.toISOString());
+  });
+
+  it("is a no-op when already won (keeps original wonAt)", () => {
+    const wonAt = new Date("2026-06-05T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ stage: "won", wonAt })));
+    const again = lead.moveStage("won", new Date("2026-06-20T00:00:00Z"));
+    expect(again.props.wonAt?.toISOString()).toBe(wonAt.toISOString());
+    expect(again).toBe(lead);
+  });
+
+  it("returns the same instance when target stage equals current non-won stage", () => {
+    const lead = unwrap(Lead.create(baseProps({ stage: "contacted" })));
+    const again = lead.moveStage("contacted", new Date("2026-06-15T00:00:00Z"));
+    expect(again).toBe(lead);
+  });
+
+  it("preserves the original wonAt when re-moving a won lead to won via a different path (already-won wonAt)", () => {
+    const firstWonAt = new Date("2026-06-05T00:00:00Z");
+    // Simulate: lead was previously won (wonAt already set), moved away, then moved back to won.
+    const lead = unwrap(
+      Lead.create(baseProps({ stage: "contacted", wonAt: firstWonAt })),
+    ).moveStage("won", new Date("2026-06-20T00:00:00Z"));
+    // The wonAt ?? now path should pick wonAt (firstWonAt), not the new `now`.
+    expect(lead.props.wonAt?.toISOString()).toBe(firstWonAt.toISOString());
+    expect(lead.props.stage).toBe("won");
+  });
+
+  it("clears wonAt when moving away from won to a non-won stage", () => {
+    const wonAt = new Date("2026-06-05T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ stage: "won", wonAt })));
+    const moved = lead.moveStage("lost", new Date("2026-06-15T00:00:00Z"));
+    expect(moved.props.stage).toBe("lost");
+    // wonAt is propagated as-is when moving to non-won (the source stays null-or-set).
+    // The domain keeps wonAt on the struct unchanged when not moving to won.
+    expect(moved.props.wonAt?.toISOString()).toBe(wonAt.toISOString());
+  });
+});
+
+describe("Lead.firstTouch", () => {
+  it("moves New to Contacted on first outbound", () => {
+    const lead = unwrap(Lead.create(baseProps({ stage: "new" }))).firstTouch(
+      new Date("2026-06-02T00:00:00Z"),
+    );
+    expect(lead.props.stage).toBe("contacted");
+  });
+
+  it("does nothing once past New", () => {
+    const lead = unwrap(Lead.create(baseProps({ stage: "quote_sent" })));
+    const touched = lead.firstTouch(new Date("2026-06-02T00:00:00Z"));
+    expect(touched).toBe(lead);
+  });
+
+  it("is a no-op when stage is contacted (returns same instance)", () => {
+    const lead = unwrap(Lead.create(baseProps({ stage: "contacted" })));
+    expect(lead.firstTouch(new Date("2026-06-02T00:00:00Z"))).toBe(lead);
+  });
+
+  it("is a no-op when stage is won (returns same instance)", () => {
+    const now = new Date("2026-06-02T00:00:00Z");
+    const wonAt = new Date("2026-06-01T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ stage: "won", wonAt })));
+    expect(lead.firstTouch(now)).toBe(lead);
+  });
+});
+
+describe("Lead.markRead", () => {
+  it("clears the unread flag", () => {
+    const lead = unwrap(Lead.create(baseProps({ unread: true }))).markRead(
+      new Date("2026-06-03T00:00:00Z"),
+    );
+    expect(lead.props.unread).toBe(false);
+  });
+
+  it("is a no-op when already read", () => {
+    const lead = unwrap(Lead.create(baseProps({ unread: false })));
+    expect(lead.markRead(new Date("2026-06-03T00:00:00Z"))).toBe(lead);
+  });
+});
+
+describe("Lead.markUnread", () => {
+  it("sets the unread flag when currently read", () => {
+    const now = new Date("2026-06-04T00:00:00Z");
+    const lead = unwrap(Lead.create(baseProps({ unread: false }))).markUnread(now);
+    expect(lead.props.unread).toBe(true);
+    expect(lead.props.updatedAt.toISOString()).toBe(now.toISOString());
+  });
+
+  it("is a no-op when already unread (returns same instance)", () => {
+    const lead = unwrap(Lead.create(baseProps({ unread: true })));
+    const again = lead.markUnread(new Date("2026-06-04T00:00:00Z"));
+    expect(again).toBe(lead);
+  });
+});
+
+describe("Lead.patch", () => {
+  const now = new Date("2026-06-10T12:00:00Z");
+
+  it("patches a provided field and bumps updatedAt", () => {
+    const lead = unwrap(Lead.create(baseProps({ name: "Karen Doyle" })));
+    const result = lead.patch({ name: "Karen D." }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.name).toBe("Karen D.");
+      expect(result.value.props.updatedAt.toISOString()).toBe(now.toISOString());
+      // other fields unchanged
+      expect(result.value.props.source).toBe(lead.props.source);
+    }
+  });
+
+  it("rejects an invalid patch value (empty name)", () => {
+    const lead = unwrap(Lead.create(baseProps()));
+    const result = lead.patch({ name: "   " }, now);
+    expect(isOk(result)).toBe(false);
+  });
+
+  it("patch with no fields returns equal props with bumped updatedAt", () => {
+    const lead = unwrap(Lead.create(baseProps()));
+    const result = lead.patch({}, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.name).toBe(lead.props.name);
+      expect(result.value.props.email).toBe(lead.props.email);
+      expect(result.value.props.source).toBe(lead.props.source);
+      expect(result.value.props.phone).toBe(lead.props.phone);
+      expect(result.value.props.value).toBe(lead.props.value);
+      expect(result.value.props.updatedAt.toISOString()).toBe(now.toISOString());
+    }
+  });
+
+  it("allows patching phone to null", () => {
+    const phone = Phone.parse("(555) 123-4567");
+    expect(phone.ok).toBe(true);
+    if (!phone.ok) return;
+    const lead = unwrap(Lead.create(baseProps({ phone: phone.value })));
+    const result = lead.patch({ phone: null }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.phone).toBeNull();
+    }
+  });
+
+  it("patches notes and trims empty string to null", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: null })));
+    const withNote = lead.patch({ notes: "gate code 1234" }, now);
+    expect(isOk(withNote)).toBe(true);
+    if (isOk(withNote)) {
+      expect(withNote.value.props.notes).toBe("gate code 1234");
+    }
+    const cleared = lead.patch({ notes: "   " }, now);
+    expect(isOk(cleared)).toBe(true);
+    if (isOk(cleared)) {
+      expect(cleared.value.props.notes).toBeNull();
+    }
+  });
+
+  it("preserves existing notes when notes not in patch", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: "gate code 1234" })));
+    const result = lead.patch({ name: "Karen D." }, now);
+    expect(isOk(result)).toBe(true);
+    if (isOk(result)) {
+      expect(result.value.props.notes).toBe("gate code 1234");
+    }
+  });
+
+  it("patches address to a new value", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: null })));
+    const patchNow = new Date("2026-07-11T00:00:00Z");
+    const patched = unwrap(lead.patch({ address: "123 Main St, Oakland CA 94601" }, patchNow));
+    expect(patched.props.address).toBe("123 Main St, Oakland CA 94601");
+  });
+
+  it("trims address to null when empty string", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: "123 Main St" })));
+    const patchNow = new Date("2026-07-11T00:00:00Z");
+    const patched = unwrap(lead.patch({ address: "   " }, patchNow));
+    expect(patched.props.address).toBeNull();
+  });
+
+  it("leaves address unchanged when not provided to patch", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: "456 Oak Ave" })));
+    const patchNow = new Date("2026-07-11T00:00:00Z");
+    const patched = unwrap(lead.patch({ name: "New Name" }, patchNow));
+    expect(patched.props.address).toBe("456 Oak Ave");
+  });
+});
+
+// Bug-fix regression tests
+describe("Lead.create — defaults", () => {
+  it("unread defaults to false on a new lead (bug fix: new leads must start read)", () => {
+    // The schema default changed from true → false. The domain validates the caller-supplied value;
+    // the belt-and-suspenders false in the repo insert ensures DB rows never start unread.
+    const lead = unwrap(Lead.create(baseProps({ unread: false })));
+    expect(lead.props.unread).toBe(false);
+  });
+
+  it("notes defaults to null on a new lead", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: null })));
+    expect(lead.props.notes).toBeNull();
+  });
+
+  it("notes round-trips through Lead.create", () => {
+    const lead = unwrap(Lead.create(baseProps({ notes: "gate code 1234" })));
+    expect(lead.props.notes).toBe("gate code 1234");
+  });
+
+  it("address defaults to null on a new lead", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: null })));
+    expect(lead.props.address).toBeNull();
+  });
+
+  it("address round-trips through Lead.create", () => {
+    const lead = unwrap(Lead.create(baseProps({ address: "789 Oak St" })));
+    expect(lead.props.address).toBe("789 Oak St");
+  });
+});
+
+/**
+ * Tags are normalised and bounded by the factory, so no caller can store a list the picker would
+ * then have to render defensively. Normalisation runs BEFORE the count check on purpose: twenty
+ * pastes of one tag is one tag, not a rejection.
+ */
+describe("Lead tags", () => {
+  const withTags = (tags: readonly string[]) => Lead.create(baseProps({ tags }));
+
+  it("defaults to an empty list", () => {
+    const r = Lead.create(baseProps());
+    expect(isOk(r) && r.value.props.tags).toEqual([]);
+  });
+
+  it("normalises through the factory", () => {
+    const r = withTags(["  Google ", "google", ""]);
+    expect(isOk(r) && r.value.props.tags).toEqual(["Google"]);
+  });
+
+  it("accepts exactly MAX_TAGS", () => {
+    const r = withTags(Array.from({ length: MAX_TAGS }, (_, i) => `Tag ${i}`));
+    expect(isOk(r)).toBe(true);
+  });
+
+  it("rejects one tag over the cap, naming the field", () => {
+    const r = withTags(Array.from({ length: MAX_TAGS + 1 }, (_, i) => `Tag ${i}`));
+    expect(isOk(r)).toBe(false);
+    if (!isOk(r)) expect(r.error.field).toBe("tags");
+  });
+
+  /** Duplicates collapse first, so a list that LOOKS over the cap can still be valid. */
+  it("does not count case-duplicates towards the cap", () => {
+    const dupes = Array.from({ length: MAX_TAGS + 5 }, () => "Google");
+    const r = withTags(dupes);
+    expect(isOk(r) && r.value.props.tags).toEqual(["Google"]);
+  });
+
+  it("rejects an over-long tag", () => {
+    const r = withTags(["x".repeat(MAX_TAG_LENGTH + 1)]);
+    expect(isOk(r)).toBe(false);
+    if (!isOk(r)) expect(r.error.field).toBe("tags");
+  });
+
+  it("patch REPLACES the set — that is how a tag is removed", () => {
+    const base = Lead.create(baseProps({ tags: ["Google", "Referral"] }));
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ tags: ["Referral"] }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual(["Referral"]);
+  });
+
+  it("patch can clear every tag", () => {
+    const base = Lead.create(baseProps({ tags: ["Google"] }));
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ tags: [] }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual([]);
+  });
+
+  it("patch leaves tags alone when the field is absent", () => {
+    const base = Lead.create(baseProps({ tags: ["Google"] }));
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ name: "Renamed" }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual(["Google"]);
+  });
+
+  it("patch normalises too — a picker cannot smuggle a duplicate in", () => {
+    const base = Lead.create(baseProps());
+    if (!isOk(base)) throw new Error("fixture rejected");
+    const patched = base.value.patch({ tags: ["Google", "GOOGLE"] }, new Date());
+    expect(isOk(patched) && patched.value.props.tags).toEqual(["Google"]);
+  });
+});

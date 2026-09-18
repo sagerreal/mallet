@@ -1,0 +1,274 @@
+import { z } from "zod";
+import { edgeTotalsFt, isClassified, roofComplexity } from "@/lib/measure/edge-classes";
+import type { RoomCaptureWithQuantities } from "../domain/measurement-repository";
+import type { SiteCapture, SitePolygon } from "../domain/site-capture";
+import { deriveDeductionSqft, roomUp, wallDimensions, netWallsSqft } from "../domain/wall-deductions";
+
+// Heavy fields (geometry, rawPayload) are deliberately excluded from the list DTO — a
+// `getGeometry` procedure can be added later for the floor-plan outline UI when it needs them.
+export const quantityDTO = z.object({
+  kind: z.enum(["walls_sqft", "ceiling_sqft", "soffit_sqft", "baseboard_lnft", "crown_lnft", "doors_count", "windows_count"]),
+  value: z.number().nullable(),
+  derivedValue: z.number().nullable(),
+  status: z.enum(["derived", "override", "confirmed", "needs_confirm"]),
+  // Inches, and only ever set on baseboard_lnft/crown_lnft. Null means nobody has said how tall
+  // the trim is — which is why the room offers a length and not an area.
+  heightIn: z.number().nullable(),
+});
+
+/**
+ * One deduction, with its area DERIVED on this read.
+ *
+ * `sqft` is never stored and never accepted from the client — it is computed from the capture's
+ * own geometry every time (wall-deductions.ts), so a re-scan re-derives instead of leaving a stale
+ * number priced into an estimate. Null means the deduction cannot be answered yet (a band with no
+ * height), which the UI must show as unresolved rather than as zero.
+ */
+export const deductionDTO = z.object({
+  id: z.string().uuid(),
+  reason: z.string(),
+  kind: z.enum(["whole_wall", "band"]),
+  wallIndexes: z.array(z.number().int().nonnegative()),
+  heightM: z.number().nullable(),
+  sqft: z.number().nullable(),
+});
+
+/**
+ * The walls a room has, so the picker can list them without a second read or any geometry on the
+ * client. Width/height are FEET — the client never sees metres, and never does the conversion.
+ */
+export const wallSummaryDTO = z.object({
+  index: z.number().int().nonnegative(),
+  widthFt: z.number(),
+  heightFt: z.number(),
+  sqft: z.number(),
+  /** The painter's number for THIS wall, when they edited it. The scanner's sqft stays above. */
+  overrideSqft: z.number().nullable(),
+});
+
+/**
+ * A door/window/opening the scanner saw: which wall, what kind, and its SIZE — width/height in
+ * feet, the client never converts. Deliberately no position along the wall: RoomPlan records
+ * wall + size, and a position would be an invention. Rides on the list DTO (unlike vertices)
+ * because "Doors · 1" with no size was a fact withheld: the size was in the geometry all along.
+ */
+export const openingSummaryDTO = z.object({
+  kind: z.enum(["door", "window", "opening"]),
+  wallIndex: z.number().int().nonnegative().nullable(),
+  widthFt: z.number(),
+  heightFt: z.number(),
+});
+
+/**
+ * The capture's own 3D geometry, for the scan viewer. A SEPARATE read from the list DTO on
+ * purpose — the list stays light (its comment says why), and only an opened viewer pays for
+ * vertices. Openings carry which wall and what kind, deliberately not a position: RoomPlan
+ * gives us wall + size, and drawing a door at an invented spot would be showing a guess.
+ */
+const scenePointDTO = z.object({ x: z.number(), y: z.number(), z: z.number() });
+export const roomGeometryDTO = z.object({
+  captureId: z.string().uuid(),
+  floor: z.array(scenePointDTO),
+  walls: z.array(z.object({ index: z.number().int().nonnegative(), vertices: z.array(scenePointDTO) })),
+  openings: z.array(openingSummaryDTO),
+});
+export type RoomGeometryDTO = z.infer<typeof roomGeometryDTO>;
+
+/** Wire openings → summary with sizes in feet. One conversion, one place. */
+export const toOpeningSummaries = (
+  openings: readonly { kind: "door" | "window" | "opening"; wallIndex: number | null; width: number; height: number }[],
+): z.infer<typeof openingSummaryDTO>[] =>
+  openings.map((o) => ({
+    kind: o.kind,
+    wallIndex: o.wallIndex,
+    widthFt: round1(o.width * METERS_TO_FEET),
+    heightFt: round1(o.height * METERS_TO_FEET),
+  }));
+
+export const roomCaptureDTO = z.object({
+  id: z.string().uuid(),
+  jobId: z.string().uuid(),
+  roomName: z.string(),
+  source: z.enum(["roomplan_v1", "manual"]),
+  capturedAt: z.string(),
+  quantities: z.array(quantityDTO),
+  deductions: z.array(deductionDTO),
+  /** Empty for a manual room, which has no geometry and therefore no walls to point at. */
+  walls: z.array(wallSummaryDTO),
+  /** Empty for a manual room. The scanner's doors/windows, with sizes. */
+  openings: z.array(openingSummaryDTO),
+  /**
+   * walls_sqft less every deduction, floored at zero — the number an estimate prices from.
+   * Null whenever the gross is null (walls still needs_confirm): there is nothing to subtract
+   * from, and 0 would present an unmeasured room as fully deducted.
+   */
+  netWallsSqft: z.number().nullable(),
+});
+
+const latLngDTO = z.object({ lat: z.number(), lng: z.number() });
+const edgeClassDTO = z.enum(["eave", "rake", "ridge", "hip", "valley"]);
+const interiorLineClassDTO = z.enum(["ridge", "hip", "valley"]);
+
+// Unlike room geometry, a site polygon IS returned in the DTO — the tracer UI re-draws it on
+// the map, and a hand-traced outline is small (tens of vertices, not a RoomPlan mesh).
+// edgeClasses/interiorLines are the v2 additive classification (roof edges) — optional both
+// ways: legacy captures never carried them, and flat surfaces don't classify.
+export const sitePolygonDTO = z.object({
+  vertices: z.array(latLngDTO).min(3),
+  view: z.object({ centerLat: z.number(), centerLng: z.number(), zoom: z.number() }),
+  edgeClasses: z.array(edgeClassDTO).optional(),
+  interiorLines: z.array(z.object({ a: latLngDTO, b: latLngDTO, cls: interiorLineClassDTO })).optional(),
+});
+
+// Server-derived per-class linears (plan-view feet, 2dp) — computed from the stored polygon on
+// every read, never trusted from the client. Null when the capture is unclassified.
+export const siteEdgeTotalsDTO = z.object({
+  eaveFt: z.number(),
+  rakeFt: z.number(),
+  ridgeFt: z.number(),
+  hipFt: z.number(),
+  valleyFt: z.number(),
+});
+
+// Waste-relevant complexity hint for the roofing recipes: hip/valley counts across perimeter
+// edges and interior lines; any at all marks the roof cut-up. Null when unclassified.
+export const siteComplexityDTO = z.object({
+  hips: z.number().int(),
+  valleys: z.number().int(),
+  cutUp: z.boolean(),
+});
+
+export const siteCaptureDTO = z.object({
+  id: z.string().uuid(),
+  jobId: z.string().uuid(),
+  name: z.string(),
+  source: z.enum(["aerial_trace_v1", "manual"]),
+  surface: z.enum(["flat", "pitched"]),
+  pitchRise: z.number().int().nullable(),
+  areaSqft: z.number(),
+  footprintSqft: z.number().nullable(),
+  perimeterLnft: z.number().nullable(),
+  polygon: sitePolygonDTO.nullable(),
+  edges: siteEdgeTotalsDTO.nullable(),
+  complexity: siteComplexityDTO.nullable(),
+  createdAt: z.string(),
+});
+
+export type QuantityDTO = z.infer<typeof quantityDTO>;
+export type RoomCaptureDTO = z.infer<typeof roomCaptureDTO>;
+export type SitePolygonDTO = z.infer<typeof sitePolygonDTO>;
+export type SiteEdgeTotalsDTO = z.infer<typeof siteEdgeTotalsDTO>;
+export type SiteComplexityDTO = z.infer<typeof siteComplexityDTO>;
+export type SiteCaptureDTO = z.infer<typeof siteCaptureDTO>;
+
+// The domain's SiteEdgeClass / lib's EdgeClass seam: these assignments are the compile-time
+// parity check — if either union drifts, edgeTotalsFt/roofComplexity below stop typechecking.
+const toEdgesDTO = (polygon: SitePolygon): SiteEdgeTotalsDTO | null => {
+  if (!isClassified(polygon.edgeClasses, polygon.interiorLines)) return null;
+  return edgeTotalsFt(polygon.vertices, polygon.edgeClasses, polygon.interiorLines);
+};
+
+const toComplexityDTO = (polygon: SitePolygon): SiteComplexityDTO | null => {
+  if (!isClassified(polygon.edgeClasses, polygon.interiorLines)) return null;
+  return roofComplexity(polygon.edgeClasses, polygon.interiorLines);
+};
+
+export const toSiteCaptureDTO = (capture: SiteCapture): SiteCaptureDTO => {
+  const p = capture.props;
+  return {
+    id: p.id,
+    jobId: p.jobId,
+    name: p.name,
+    source: p.source,
+    surface: p.surface,
+    pitchRise: p.pitchRise,
+    areaSqft: p.areaSqft,
+    footprintSqft: p.footprintSqft,
+    perimeterLnft: p.perimeterLnft,
+    polygon:
+      p.polygon === null
+        ? null
+        : {
+            vertices: p.polygon.vertices.map((v) => ({ lat: v.lat, lng: v.lng })),
+            view: { ...p.polygon.view },
+            ...(p.polygon.edgeClasses !== undefined
+              ? { edgeClasses: [...p.polygon.edgeClasses] }
+              : {}),
+            ...(p.polygon.interiorLines !== undefined
+              ? {
+                  interiorLines: p.polygon.interiorLines.map((l) => ({
+                    a: { ...l.a },
+                    b: { ...l.b },
+                    cls: l.cls,
+                  })),
+                }
+              : {}),
+          },
+    edges: p.polygon === null ? null : toEdgesDTO(p.polygon),
+    complexity: p.polygon === null ? null : toComplexityDTO(p.polygon),
+    createdAt: p.createdAt.toISOString(),
+  };
+};
+
+const METERS_TO_FEET = 3.280839895;
+const SQ_METERS_TO_SQFT = 10.763910417;
+const round1 = (n: number): number => Math.round(n * 10) / 10;
+
+export const toRoomCaptureDTO = (room: RoomCaptureWithQuantities): RoomCaptureDTO => {
+  const p = room.capture.props;
+  const geometry = p.geometry;
+
+  // Derived here, on every read, from the capture's own geometry — the whole reason a deduction
+  // stores inputs rather than an area. A manual room has no geometry: no walls to point at, and
+  // no deduction can resolve, so both lists come back empty rather than half-answered.
+  const deductions = geometry
+    ? room.deductions.map((d) => ({
+        id: d.id,
+        reason: d.reason,
+        kind: d.kind,
+        wallIndexes: [...d.wallIndexes],
+        heightM: d.heightM,
+        sqft: deriveDeductionSqft(geometry, d, room.capture.wallOverrides),
+      }))
+    : [];
+
+  // Dims measured against the room's own up (the floor's normal) — a capture may arrive in any
+  // frame, and the y-up default printed a z-up room's horizontal runs as its "heights".
+  const up = geometry ? roomUp(geometry) : null;
+  const overrides = room.capture.wallOverrides;
+  const walls = geometry
+    ? geometry.walls.map((w, index) => {
+        const { widthM, heightM, areaM2 } = wallDimensions(w, up ?? undefined);
+        return {
+          index,
+          widthFt: round1(widthM * METERS_TO_FEET),
+          heightFt: round1(heightM * METERS_TO_FEET),
+          sqft: round1(areaM2 * SQ_METERS_TO_SQFT),
+          overrideSqft: overrides[index] ?? null,
+        };
+      })
+    : [];
+
+  const openings = geometry ? toOpeningSummaries(geometry.openings) : [];
+
+  const grossWalls = room.quantities.find((q) => q.kind === "walls_sqft")?.value ?? null;
+
+  return {
+    id: p.id,
+    jobId: p.jobId,
+    roomName: p.roomName,
+    source: p.source,
+    capturedAt: p.capturedAt.toISOString(),
+    quantities: room.quantities.map((q) => ({
+      kind: q.kind,
+      value: q.value,
+      derivedValue: q.derivedValue,
+      status: q.status,
+      heightIn: q.heightIn,
+    })),
+    deductions,
+    walls,
+    openings,
+    netWallsSqft: netWallsSqft(grossWalls, deductions.map((d) => d.sqft)),
+  };
+};

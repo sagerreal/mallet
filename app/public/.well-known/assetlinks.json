@@ -1,0 +1,13 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.trymallet.app",
+      "sha256_cert_fingerprints": [
+        "CC:D3:61:94:FA:06:81:C9:47:03:BF:E2:34:C1:92:D1:E2:05:7A:85:E1:45:81:4A:D7:83:B8:00:3E:C2:10:3C",
+        "81:3D:E2:52:0B:F2:E5:E3:E4:0C:F8:E3:49:AE:A8:A6:08:A8:AA:14:9A:03:0A:F1:D2:09:7C:FF:D4:3D:E7:70"
+      ]
+    }
+  }
+]

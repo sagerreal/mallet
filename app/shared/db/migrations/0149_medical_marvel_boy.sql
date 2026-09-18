@@ -1,0 +1,1 @@
+ALTER TABLE "org_settings" ADD COLUMN "stripe_terminal_location_id" text;

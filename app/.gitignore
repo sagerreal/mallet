@@ -1,0 +1,25 @@
+node_modules/
+.next/
+out/
+dist/
+.env
+.env*.local
+!.env.example
+*.log
+.DS_Store
+.vercel
+coverage/
+
+# build artifacts
+*.tsbuildinfo
+
+# playwright
+/test-results/
+/playwright-report/
+.env*
+
+# agent worktrees / local tooling
+.claude/
+
+# Subagent-driven-development scratch (briefs, reports, diffs, ledger)
+.superpowers/

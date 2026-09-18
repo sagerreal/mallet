@@ -1,0 +1,212 @@
+"use client";
+
+/**
+ * components/shell/mobile-tabs.tsx
+ * The bottom tab bar for phones — replaces the desktop sidebar below the mobile
+ * breakpoint (CSS hides one, shows the other). Route-aware: on a FIELD route
+ * (/my-day, /my-hours, /messages) it shows the tech tabs (My day · My hours ·
+ * Messages); everywhere else the office tabs (Home · Customers · Jobs · Money ·
+ * Settings). Count badges read the same store the sidebar + pages do, in sync.
+ */
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
+import { useAppStore } from "@/lib/store/app-store";
+import { useMe } from "@/features/identity/hooks";
+import type { RouterOutputs } from "@/lib/trpc/client";
+import { selectCustomerCount, selectJobsCount, selectMoneyCount } from "@/components/shell/shell-selectors";
+import { useNavCounts } from "@/components/shell/use-nav-counts";
+import { useNewMenuItems } from "@/components/shell/new-menu-items";
+import { Row } from "@/components/ui/row";
+
+const HomeIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+    <polyline points="9 22 9 12 15 12 15 22" />
+  </svg>
+);
+const PeopleIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+);
+const JobsIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="2" y="7" width="20" height="14" rx="2" />
+    <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" />
+    <line x1="12" y1="12" x2="12" y2="16" />
+    <line x1="10" y1="14" x2="14" y2="14" />
+  </svg>
+);
+const MoneyIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="1" x2="12" y2="23" />
+    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+  </svg>
+);
+const MyDayIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="4" width="18" height="18" rx="2" />
+    <line x1="16" y1="2" x2="16" y2="6" />
+    <line x1="8" y1="2" x2="8" y2="6" />
+    <line x1="3" y1="10" x2="21" y2="10" />
+  </svg>
+);
+const ClockIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="10" />
+    <polyline points="12 6 12 12 16 14" />
+  </svg>
+);
+const ChatIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+  </svg>
+);
+/** The Ask mark — the same four-point spark the command bar and the Counter already use. */
+const AskIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 3l1.9 5.6L19.5 10l-5.6 1.9L12 17.5l-1.9-5.6L4.5 10l5.6-1.4z" />
+  </svg>
+);
+const MoreIcon = () => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="5" cy="12" r="1.4" />
+    <circle cx="12" cy="12" r="1.4" />
+    <circle cx="19" cy="12" r="1.4" />
+  </svg>
+);
+
+// Routes that belong to the Customers group (so its tab stays lit on sub-pages).
+const CUSTOMER_AREA = ["/customers", "/tasks"];
+// The field/tech surfaces — these get the field tab set, not the office one.
+const FIELD_ROUTES = ["/my-day", "/my-hours", "/messages", "/account"];
+
+interface Tab {
+  href: string;
+  label: string;
+  icon: React.ReactNode;
+  active: boolean;
+  count?: number;
+}
+
+export function MobileTabs({ initialMe }: { initialMe?: RouterOutputs["v1"]["identity"]["me"] }) {
+  const pathname = usePathname();
+  const me = useMe(initialMe);
+  // Primitive selectors — return numbers so referential equality suppresses
+  // re-renders when unrelated store slices are written.
+  // Database counts, not what the browser loaded — see useNavCounts.
+  const navCounts = useNavCounts();
+  const customerCount = navCounts.customers ?? 0;
+  const jobsCount = navCounts.jobs ?? 0;
+  const moneyCount = navCounts.money ?? 0;
+
+  // The center create button — the app's key action, given the Instagram-pattern
+  // slot where the thumb already is. Opens the SAME four create actions as the
+  // desktop sidebar (shared items hook, so the surfaces cannot drift).
+  const [newOpen, setNewOpen] = useState(false);
+  const newItems = useNewMenuItems(() => setNewOpen(false));
+  // Collapse on navigation — otherwise the sheet outlives the page it opened on.
+  useEffect(() => {
+    setNewOpen(false);
+  }, [pathname]);
+
+  // Don't decide the tab set until the role is known — else a tech doing a cold
+  // load on a non-field route would flash the office tabs before role resolves.
+  if (me.isLoading) return null;
+
+  // A tech always gets the field tab set, regardless of current route.
+  // While role is loading, fall back to route-based detection so there's no
+  // permanent flash — once resolved, role wins.
+  const isTech = me.data?.role === "tech";
+  const onField = isTech || FIELD_ROUTES.some((r) => pathname.startsWith(r));
+
+  const officeTabs: Tab[] = [
+    { href: "/dashboard", label: "Office", icon: <HomeIcon />, active: pathname.startsWith("/dashboard") || pathname.startsWith("/frontdesk") || pathname.startsWith("/pricebook") },
+    {
+      href: "/customers",
+      label: "Customers",
+      icon: <PeopleIcon />,
+      active: CUSTOMER_AREA.some((r) => pathname.startsWith(r)),
+      count: customerCount,
+    },
+    { href: "/jobs", label: "Jobs", icon: <JobsIcon />, active: pathname.startsWith("/jobs"), count: jobsCount },
+    { href: "/money", label: "Money", icon: <MoneyIcon />, active: pathname.startsWith("/money"), count: moneyCount },
+    // "More" (Settings + field surfaces + account) moved to the TOPBAR ⋯ button so the
+    // create button sits dead-center of an odd-count bar: Office · Customers · [+] · Jobs · Money.
+  ];
+
+  const fieldTabs: Tab[] = [
+    { href: "/my-day", label: "My day", icon: <MyDayIcon />, active: pathname.startsWith("/my-day") },
+    { href: "/my-hours", label: "My hours", icon: <ClockIcon />, active: pathname.startsWith("/my-hours") },
+    // Unread team messages — the tab bar IS a tech's navigation, so this is the only place their
+    // device can tell them a teammate wrote.
+    { href: "/messages", label: "Messages", icon: <ChatIcon />, active: pathname.startsWith("/messages"), count: navCounts.messages ?? 0 },
+    // ASK IS A TAB, not a bar and not a section inside the job sheet.
+    //
+    // It used to live only inside the tech job modal, which made the one feature the field app is
+    // FOR reachable from exactly one screen, and only once a job was open. A chat has follow-ups,
+    // photos and long answers; a strip above the tab bar gives it a cramped panel over live
+    // content, which is the shape it already had. A tab gives it the screen every other chat app
+    // on that phone gets, and puts it where a tech is already looking all day.
+    { href: "/ask", label: "Ask", icon: <AskIcon />, active: pathname.startsWith("/ask") },
+    { href: "/account", label: "More", icon: <MoreIcon />, active: pathname.startsWith("/account") },
+  ];
+
+  const tabs = onField ? fieldTabs : officeTabs;
+
+  const tabLink = (t: Tab) => (
+    <Link key={t.href} href={t.href} className={`mtab${t.active ? " active" : ""}`} aria-current={t.active ? "page" : undefined}>
+      <span className="ic" aria-hidden="true">{t.icon}</span>
+      {t.label}
+      {t.count ? <span className="mb">{t.count}</span> : null}
+    </Link>
+  );
+
+  // Field techs don't create customers/quotes/jobs/invoices — their tab set has no
+  // create slot and renders exactly as before.
+  if (onField) {
+    return (
+      <nav id="mobiletabs" aria-label="Primary">
+        {tabs.map(tabLink)}
+      </nav>
+    );
+  }
+
+  return (
+    <>
+      {/* The create sheet: anchored flush ABOVE the tab bar (a sibling, never a
+          floating inset), same Row items as the desktop sidebar menu. */}
+      {newOpen && (
+        <div className="mobnewmenu">
+          {newItems.map((item) => (
+            <Row key={item.label} label={item.label} onClick={item.action} />
+          ))}
+        </div>
+      )}
+      <nav id="mobiletabs" aria-label="Primary">
+        {tabs.slice(0, 2).map(tabLink)}
+        <button
+          type="button"
+          className={`mtab mtab-create${newOpen ? " open" : ""}`}
+          onClick={() => setNewOpen((v) => !v)}
+          aria-label="Create — customer, quote, job, or invoice"
+          aria-haspopup="true"
+          aria-expanded={newOpen}
+        >
+          <span className="plus" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </span>
+        </button>
+        {tabs.slice(2).map(tabLink)}
+      </nav>
+    </>
+  );
+}

@@ -1,0 +1,13 @@
+{
+  "total": 0,
+  "routes": {
+    "messages": {
+      "violations": 0,
+      "ids": []
+    },
+    "field-messages": {
+      "violations": 0,
+      "ids": []
+    }
+  }
+}

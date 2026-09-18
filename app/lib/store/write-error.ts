@@ -1,0 +1,120 @@
+/**
+ * lib/store/write-error.ts
+ * The single reporting seam for failed optimistic writes.
+ *
+ * Every store action writes optimistically, calls tRPC, and rolls back on
+ * failure. Before this existed, the rollback was silent: the user watched their
+ * change revert with no explanation, and roughly two thirds of the app's write
+ * paths logged nothing outside dev. That violated the house rule "no silent
+ * failures" ~67 times.
+ *
+ * Deliberately a tiny emitter rather than store state: slices call it from inside
+ * `.catch()` without needing `set`, and the shell subscribes once to announce the
+ * failure. Keeping it out of the store also keeps it out of every selector.
+ */
+
+import { userMessage } from "@/lib/trpc/error-map";
+
+export interface WriteError {
+  /** The store action that failed, e.g. "archiveLead". */
+  action: string;
+  /** User-facing sentence: what failed and what to do. */
+  message: string;
+  /** Monotonic id so repeat failures re-announce. */
+  seq: number;
+  /**
+   * "error" — the write failed and was undone.
+   * "notice" — the write SUCCEEDED but deliberately did less than it looks like it did. A tap that
+   * is thrown away for being under a minute is not a failure, and dressing it in red would send
+   * the shop looking for a bug that is not there. It still has to be said out loud: silently
+   * recording nothing is what makes people believe the clock is broken.
+   */
+  tone: "error" | "notice";
+}
+
+type Listener = (e: WriteError) => void;
+
+const listeners = new Set<Listener>();
+let seq = 0;
+
+/** Turn an action name into a plain-language sentence. "archiveLead" → "archive lead". */
+function humanize(action: string): string {
+  return action
+    .replace(/([A-Z])/g, " $1")
+    .toLowerCase()
+    .trim();
+}
+
+/**
+ * What to say about a rolled-back write.
+ *
+ * The SERVER's sentence when it authored one — a domain refusal knows why it refused, and "check
+ * your connection" is actively misleading when the real cause is a duplicate phone number. The
+ * generic line stays as the fallback for genuine transport failures, which is the only case where
+ * checking a connection is useful advice.
+ */
+function failureMessage(action: string, err: unknown): string {
+  return userMessage(
+    err,
+    `Couldn't ${humanize(action)} — your change was undone. Check your connection and try again.`,
+  );
+}
+
+function devLog(action: string, err: unknown): void {
+  if (process.env.NODE_ENV !== "production") {
+    // eslint-disable-next-line no-console
+    console.error(`[store] ${action} failed — rolled back`, err);
+  }
+}
+
+/**
+ * The outcome of a write the CALLER waits on — an explicit Save button that has to decide between
+ * confirming and reporting. Most store writes are fire-and-forget and use the announcer instead.
+ */
+export type WriteOutcome = { ok: true } | { ok: false; message: string };
+
+/**
+ * Build the failure a caller will show ITSELF, next to the control that failed.
+ *
+ * Does not fire the announcer: one failure said twice, in two places, reads as two failures. It
+ * still logs in dev, so a rollback is never invisible to whoever is debugging it.
+ */
+export function writeFailure(action: string, err: unknown): { ok: false; message: string } {
+  devLog(action, err);
+  return { ok: false, message: failureMessage(action, err) };
+}
+
+/**
+ * Report a rolled-back write. Call from the `.catch()` that restores the
+ * snapshot — it replaces the old NODE_ENV-guarded console.error.
+ */
+export function reportWriteError(action: string, err: unknown): void {
+  seq += 1;
+  const event: WriteError = { action, message: failureMessage(action, err), seq, tone: "error" };
+
+  devLog(action, err);
+
+  for (const listener of listeners) listener(event);
+}
+
+/**
+ * Announce that a write succeeded but deliberately did less than it appears. The caller supplies
+ * the sentence because only the caller knows what was skipped and what to do about it.
+ */
+export function reportWriteNotice(action: string, message: string): void {
+  seq += 1;
+  for (const listener of listeners) listener({ action, message, seq, tone: "notice" });
+}
+
+/** Subscribe to write failures. Returns an unsubscribe function. */
+export function subscribeWriteErrors(listener: Listener): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+/** Test seam — drops all subscribers. */
+export function resetWriteErrorListeners(): void {
+  listeners.clear();
+}

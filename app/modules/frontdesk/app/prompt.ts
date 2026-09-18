@@ -1,0 +1,389 @@
+import type { ServiceLane } from "@mallet/settings";
+import type { CallerContext } from "../domain/assistant";
+
+// The playbook facts the prompt renders. A narrow projection of OrgSettings so the pure prompt
+// functions never depend on the aggregate class (testable in isolation). serviceFee and flat
+// prices are DOLLARS (prototype parity) — formatted for speech, never used in arithmetic.
+export interface PromptService {
+  readonly name: string;
+  readonly lane: ServiceLane;
+  /** Estimate lane: the visit fee applies and the tech prices on site (the old service call). */
+  readonly feeApplies?: boolean;
+  readonly price?: number;
+  readonly triggers: string;
+  readonly emergencyTriggers?: string;
+  /** Owner-authored rough price range the AI may state once on estimate calls (e.g. '$150–$300'). SANCTIONED — NOT redacted. */
+  readonly ballpark?: string;
+}
+
+export interface PromptFacts {
+  readonly brandName: string;
+  readonly hoursWdOpen: number;
+  readonly hoursWdClose: number;
+  readonly hoursMonOpen: number;
+  readonly hoursMonClose: number;
+  readonly hoursTueOpen: number;
+  readonly hoursTueClose: number;
+  readonly hoursWedOpen: number;
+  readonly hoursWedClose: number;
+  readonly hoursThuOpen: number;
+  readonly hoursThuClose: number;
+  readonly hoursFriOpen: number;
+  readonly hoursFriClose: number;
+  readonly hoursSatOpen: number;
+  readonly hoursSatClose: number;
+  readonly hoursSunOpen: number;
+  readonly hoursSunClose: number;
+  readonly areaRadiusMi: number;
+  readonly notServices: string;
+  readonly serviceFee: number;
+  readonly feeCredited: boolean;
+  readonly services: readonly PromptService[];
+  readonly deferKeywords?: string;
+  /** True when the org configured a live emergency-transfer number — flips the
+   *  emergency case rules from callback-escalation to live transfer. The number
+   *  itself never enters the prompt (it's baked into the transferCall tool). */
+  readonly emergencyTransfer: boolean;
+}
+
+// --- Fixed script fragments (no magic strings scattered) -----------------
+
+const SECTIONS = {
+  identity: "IDENTITY & COMPLIANCE",
+  facts: "BUSINESS FACTS",
+  services: "SERVICES",
+  tools: "TOOLS & FLOW",
+  confirm: "CONFIRM BEFORE BOOKING",
+  cases: "CASE RULES",
+  guardrails: "IRON GUARDRAILS",
+  caller: "CALLER CONTEXT",
+} as const;
+
+// The exact tool names the runner whitelists (run-tool-calls.ts + the route's VOICE_TOOLS). These
+// MUST match the tool `name` fields verbatim — the model can only trigger a tool by naming it, so a
+// prompt that describes the booking flow without naming the tools would leave the whole booking
+// phase inert on a live call. Keep in sync with take-message.ts / check-availability.ts /
+// book-visit.ts / request-quote.ts.
+export const TOOL_NAMES = {
+  checkAvailability: "check_availability",
+  bookVisit: "book_visit",
+  requestQuote: "request_quote",
+  takeMessage: "take_message",
+  escalateCallback: "escalate_callback",
+  /** Vapi's built-in live-transfer tool (executed by Vapi, not our webhook). */
+  transferCall: "transferCall",
+} as const;
+
+// The tools-and-flow rules, named by exact tool name so the model actually CALLS them. Each line is
+// a concrete "when X, CALL tool Y" instruction — no dollar amounts (the price guardrails below are
+// untouched). Ordered as the booking flow runs: offer times → confirm → book → alternatives.
+const TOOL_FLOW: readonly string[] = [
+  `To offer appointment times, CALL ${TOOL_NAMES.checkAvailability} — it returns a few start ` +
+    "times spread across the day (e.g. 8, noon, or 4). Read the options back as those start times " +
+    "and let the caller pick one.",
+  "If the caller names a SPECIFIC time (e.g. \"today at 2\"), offer the returned start time that " +
+    "contains or is nearest that time — do not ignore their request or push a different time.",
+  "Before you confirm, ask ONE brief question — 'anything else you've noticed, like the age or " +
+    "condition of what's involved?' — and pass their answer to book_visit as scope_signal " +
+    "(skip if they have nothing to add).",
+  `Once the caller picks a start time, and ONLY after you have confirmed the details (see CONFIRM ` +
+    `below), CALL ${TOOL_NAMES.bookVisit} with the chosen slot_date and slot_start (the picked ` +
+    "start time, e.g. \"14:00\"), plus their name, phone, address, the service, and the " +
+    "lane. It confirms the booking and speaks the sanctioned price — do not state a price yourself.",
+  `If the caller only wants a written quote (a big or custom job you should not price), CALL ` +
+    `${TOOL_NAMES.requestQuote} and tell them the office will call them back with a written quote.`,
+  `For a reschedule, cancellation, a billing question, or "where is my tech", CALL ` +
+    `${TOOL_NAMES.takeMessage} so the office handles it.`,
+  `When the caller wants something the AI can't handle, or asks to speak to a person, CALL ` +
+    `${TOOL_NAMES.escalateCallback} with their name, number, and a short reason so the office ` +
+    `calls back.`,
+  "Never invent a tool result: only confirm a booking after book_visit has actually returned a " +
+    "confirmation.",
+] as const;
+
+// The confirm-before-book rules. A wrong phone or a speech-to-text address slip ("Rheem"→"Green")
+// must be caught BEFORE booking, so the caller hears the details read back and can correct them.
+// TIGHT + SINGLE-TURN by design: one call dropped mid-confirm and booked nothing, so keep the
+// confirmation to ONE short read-back and book the instant the caller says yes — the fewer/shorter
+// the turns, the less the call can drift and drop before the booking is written.
+const CONFIRM_RULES: readonly string[] = [
+  "Confirm the details in ONE short read-back before you call book_visit — do not drag it across " +
+    "several turns.",
+  "In that ONE read-back: read the PHONE back as grouped digits (e.g. \"seven-eight-one… " +
+    "three-five-oh…\") AND spell the street name letter-by-letter, together with the name, the " +
+    'service, and the chosen start time — then ask "Is that right?".',
+  "The moment the caller says yes, CALL book_visit right away — do not add filler, do not say " +
+    "\"hold on\", do not re-read anything.",
+  "If the caller corrects something, fix ONLY that field, re-confirm just that field, then book.",
+  "NEVER call book_visit with an unconfirmed phone or address.",
+  "For a returning caller, prefer the number from the caller-ID context over asking again.",
+] as const;
+
+// The fee-visit script — the old "repair"/service-call lane, now the estimate lane's fee flag.
+const REPAIR_SCRIPT =
+  "The tech diagnoses the problem and gives you an exact price on-site. Frame it that way — " +
+  "never quote a repair price yourself. Then offer a few start times spread across the day " +
+  '(e.g. "8, noon, or 4") and book the one the caller picks.';
+
+const ESTIMATE_SCRIPT =
+  "Book a free estimate visit (about 1–2 hours). If this service lists a ballpark range (see SERVICES), you MAY " +
+  "state it ONCE as a rough range and add 'the exact price is after we see it in person', then " +
+  "book the estimate visit. If it has no ballpark, never say a job price — the estimate visit is " +
+  "how we price it. Offer a few start times (e.g. 8, noon, or 4) and book the one they pick.";
+
+const FLAT_PREFIX = "You may state exactly the listed price for this service, then book.";
+
+const CASE_RULES: readonly string[] = [
+  "Gas leak or gas smell: tell the caller to leave the building, call 911 and their gas " +
+    "utility now. Do NOT book anything.",
+  "Confirm the caller's city (or address) EARLY, before offering times, and pass it to " +
+    "check_availability as service_city — the tool measures the real distance from the shop and " +
+    "catches an out-of-area caller before you offer a slot.",
+  "Out of service area: if a tool tells you the address is outside the area, politely say it's " +
+    "outside the area you cover and take a message (offer a referral if you can) — do NOT book an " +
+    "out-of-area job. When no tool has said so, book normally.",
+  // Two-layer emergency rule (industry pattern: always-on safety net + owner words as EXTENSIONS).
+  // The generic rule fires with an EMPTY playbook, so a shop that never configured emergency words
+  // still gets emergency routing; per-service words sharpen it per trade, they never gate it.
+  // Gas is deliberately EXCLUDED from the bookable path + the shutoff coaching — a gas leak is the
+  // 911 rule above (leave the building), never a booking and never a "go touch the valve".
+  "Emergency (always on): if the caller describes ACTIVE property damage or a safety risk — water " +
+    "or sewage actively flowing or flooding, no heat in freezing weather, no cooling in extreme " +
+    "heat, an electrical burning smell or sparking, a vehicle trapped by a stuck garage door, or " +
+    "a home that can't be secured — treat it as an EMERGENCY even if it " +
+    "matches no service's emergency words: book the soonest slot and note EMERGENCY on the " +
+    "booking; coach the caller to shut off water or power at the source if something is actively " +
+    "leaking or damaging property. Exception: a gas leak is 911 — leave the building, never a booking.",
+  "A service's EMERGENCY words (listed under SERVICES) EXTEND that rule — a problem matching them " +
+    "is also an emergency. They are additions, never the only emergencies.",
+  `Hand off to a human callback — CALL ${TOOL_NAMES.escalateCallback} — for anything you can't ` +
+    `handle: insurance, claims, adjusters, warranties, a service we don't do, a caller who keeps ` +
+    `getting confused, or a caller who asks to speak to a person (plus any hand-off words in ` +
+    `BUSINESS FACTS). Don't try to book or price these — file the callback with a short reason.`,
+  "Existing customer wants to reschedule, cancel, ask where their tech is, or asks about " +
+    "billing: use take_message so the office handles it. Never discuss billing amounts.",
+  "Vendor, spam, or wrong number: end the call politely.",
+  "Tenant in a rental: for non-emergency work you need landlord authorization before booking.",
+  "Caller only wants a written quote: use request_quote and promise the office will call them " +
+    "back with a written quote shortly.",
+];
+
+const GUARDRAILS: readonly string[] = [
+  "Never say a dollar amount that is not written in this prompt or returned by a tool.",
+  "Keep every reply under about 25 words.",
+  "Confirm the caller's phone number digit-by-digit before booking.",
+  "Read the service address back to the caller before booking.",
+  // The offered start time is the front of a ~2-hour arrival window — commit to that, but don't
+  // over-promise a to-the-minute arrival (this must NOT contradict offering a start time like "8am").
+  "Offer and commit to a start time, but never promise a to-the-minute arrival — it's a 2-hour arrival window.",
+];
+
+// --- Price guardrail -----------------------------------------------------
+
+// GUARDRAIL: owner-authored FREE-TEXT fields (a service's triggers, the "we don't service"
+// notServices blurb, a lead's open-work label) are interpolated into the prompt VERBATIM. The
+// ONLY dollar amounts the assistant is allowed to speak are the office-sanctioned serviceFee
+// and flat-lane service prices, rendered by dedicated code paths below. If an owner types a
+// price into any free-text field (e.g. a trigger "$50 off", notServices "septic ($500+ jobs)",
+// a job titled "$500 repipe"), that stray "$NN" would smuggle an unsanctioned spoken price into
+// the prompt. redactPriceTokens strips those tokens at the interpolation boundary so a $-amount
+// can NEVER reach the prompt except through the sanctioned serviceFee/flat-price paths.
+//
+// We replace the WHOLE token (not just the "$"): deleting only the sign would leave a bare
+// number that still reads as a price. A lone "$" with no digits is also stripped.
+
+// Neutral stand-in for a redacted price token — surfaced so tests assert it exactly.
+export const PRICE_REDACTION_MARKER = "[price removed]";
+
+// Matches a dollar-amount token: "$" + optional whitespace + digits, with optional
+// thousands-commas and an optional decimal part (e.g. "$50", "$ 50", "$1,250.00").
+const PRICE_TOKEN_RE = /\$\s*\d[\d,]*(?:\.\d+)?/g;
+// Matches a lone "$" not followed by a digit (after price tokens are gone) — e.g. "cash $ only".
+const LONE_DOLLAR_RE = /\$/g;
+
+// Pure. Removes every dollar-amount token from owner free text, leaving non-price numbers
+// (e.g. "24/7", "2 hours") untouched — only "$"-prefixed tokens are affected.
+export const redactPriceTokens = (text: string): string =>
+  text.replace(PRICE_TOKEN_RE, PRICE_REDACTION_MARKER).replace(LONE_DOLLAR_RE, "");
+
+// --- Helpers -------------------------------------------------------------
+
+// A day is "closed" when open and close are both 0 (the schema's closed-day convention).
+const isClosed = (open: number, close: number): boolean => open === 0 && close === 0;
+
+// Format an integer hour [0,24] as "H:00 am/pm" for natural speech.
+const formatHour = (h: number): string => {
+  const suffix = h < 12 || h === 24 ? "am" : "pm";
+  const twelve = h % 12 === 0 ? 12 : h % 12;
+  return `${twelve}:00 ${suffix}`;
+};
+
+const formatDayHours = (label: string, open: number, close: number): string =>
+  isClosed(open, close)
+    ? `${label}: closed`
+    : `${label}: ${formatHour(open)} to ${formatHour(close)}`;
+
+// The fee line names the LANE it belongs to. Unscoped, it contradicted the estimate script: the
+// model was told "book a FREE estimate visit" and, three sections earlier, "Service/diagnostic fee:
+// $95" with nothing tying that to a lane — and the IRON GUARDRAIL only forbids amounts "not written
+// in this prompt", so quoting the fee on a free-estimate call was permitted. book_visit already
+// speaks the right thing per lane (book-visit-speak.ts); this stops the model volunteering the
+// wrong one mid-conversation, before any tool runs.
+const formatFeeLine = (fee: number, credited: boolean): string => {
+  const credit = credited ? ", credited toward the work if the customer goes ahead" : "";
+  return (
+    `Visit fee: $${fee}${credit}. It applies ONLY to estimate-lane services marked ` +
+    `"visit fee applies" — on those calls the fee is the whole price conversation. ` +
+    `NEVER state any price on a no-fee estimate call: those visits are free.`
+  );
+};
+
+const formatServiceLine = (s: PromptService): string => {
+  // triggers is owner free text → redact stray prices; the flat-lane priceSuffix is the
+  // sanctioned price and is appended AFTER redaction so it always renders.
+  const priceSuffix = s.lane === "flat" && s.price !== undefined ? ` · $${s.price}` : "";
+  const feeSuffix = s.lane === "estimate" && s.feeApplies ? " · visit fee applies" : "";
+  // ballpark is the ONLY owner free-text field NOT redacted — it is a sanctioned price the
+  // owner authored for the AI to read verbatim. Empty/whitespace → omit (treat as unset).
+  const ballpark = s.ballpark?.trim();
+  const ballparkSuffix = ballpark ? ` · ballpark: ${ballpark}` : "";
+  const base = `- ${s.name} · ${s.lane}${feeSuffix} · ${redactPriceTokens(s.triggers)}${priceSuffix}${ballparkSuffix}`;
+  // emergencyTriggers is owner free text → redact stray prices before interpolating.
+  if (s.emergencyTriggers && s.emergencyTriggers.trim().length > 0) {
+    return `${base} · emergency: ${redactPriceTokens(s.emergencyTriggers)}`;
+  }
+  return base;
+};
+
+// --- Section builders (pure) ---------------------------------------------
+
+const buildIdentitySection = (brand: string): string =>
+  [
+    `## ${SECTIONS.identity}`,
+    `You are the virtual assistant answering the main phone line for ${brand}. Speak naturally, ` +
+      `like a helpful front-desk coordinator — greet the caller as the business, not as a named person.`,
+    // Compliance stance (see frontdesk-quote-research): we do NOT proactively announce "I am an
+    // AI" (not federally required for inbound, and it hurts booking rate) — but we must never
+    // deceive. Never claim to be human; disclose truthfully the moment the caller asks. Do NOT
+    // volunteer that you're automated in an apology or otherwise unprompted. The recording
+    // disclosure IS made up front (two-party-consent states + CIPA) via the greeting.
+    "Never claim to be a specific person and never say you are human.",
+    `If the caller asks whether they're talking to a real person, a machine, or AI, tell them ` +
+      `honestly you're ${brand}'s automated assistant, then keep helping or offer to take a message.`,
+    "The call is recorded. Be warm, brief, and get to booking. You handle intake only.",
+  ].join("\n");
+
+const buildFactsSection = (f: PromptFacts): string => {
+  const lines: string[] = [
+    `## ${SECTIONS.facts}`,
+    "Hours:",
+    formatDayHours("Monday", f.hoursMonOpen, f.hoursMonClose),
+    formatDayHours("Tuesday", f.hoursTueOpen, f.hoursTueClose),
+    formatDayHours("Wednesday", f.hoursWedOpen, f.hoursWedClose),
+    formatDayHours("Thursday", f.hoursThuOpen, f.hoursThuClose),
+    formatDayHours("Friday", f.hoursFriOpen, f.hoursFriClose),
+    formatDayHours("Saturday", f.hoursSatOpen, f.hoursSatClose),
+    formatDayHours("Sunday", f.hoursSunOpen, f.hoursSunClose),
+    `Service area: within ${f.areaRadiusMi} miles of the shop — measured by real distance, not city names.`,
+    // notServices is owner free text → redact stray prices before interpolating.
+    `We do NOT service: ${redactPriceTokens(f.notServices)}. Politely decline these and suggest calling a specialist.`,
+    formatFeeLine(f.serviceFee, f.feeCredited),
+  ];
+  // deferKeywords is owner free text → redact stray prices; only rendered when set.
+  if (f.deferKeywords && f.deferKeywords.trim().length > 0) {
+    lines.push(
+      `Hand off to a person (have the office call back), on top of the standard cases: ${redactPriceTokens(f.deferKeywords)}.`,
+    );
+  }
+  return lines.join("\n");
+};
+
+const buildServicesSection = (services: readonly PromptService[]): string => {
+  const lines = services.map(formatServiceLine);
+  return [
+    `## ${SECTIONS.services}`,
+    "Each service: name · lane[ · visit fee applies] · triggers[ · price]. Lane tells you how to handle price:",
+    "When you call check_availability or book_visit, pass service_name EXACTLY as written above — the fee, the visit length and the confirmation script are looked up by that name, and a paraphrase books the caller a free visit they were told costs money.",
+    ...lines,
+    "",
+    `estimate lane with "visit fee applies": ${REPAIR_SCRIPT}`,
+    `estimate lane without a fee: ${ESTIMATE_SCRIPT}`,
+    `flat lane: ${FLAT_PREFIX}`,
+  ].join("\n");
+};
+
+const buildToolsSection = (): string =>
+  [
+    `## ${SECTIONS.tools}`,
+    "You have these tools. You can only DO something by calling the matching tool by name:",
+    ...TOOL_FLOW.map((r) => `- ${r}`),
+  ].join("\n");
+
+const buildConfirmSection = (): string =>
+  [`## ${SECTIONS.confirm}`, ...CONFIRM_RULES.map((r) => `- ${r}`)].join("\n");
+
+// The emergency tail branches on whether the org configured a live transfer
+// number: with one, a true emergency that can't wait is CONNECTED now (Vapi's
+// transferCall — the destination is baked into the tool, never spoken); without
+// one, it falls back to the urgent office callback.
+const EMERGENCY_TAIL_TRANSFER =
+  `A TRUE emergency that can't wait — the caller is in distress, or ` +
+  `${TOOL_NAMES.checkAvailability} returns no slot TODAY: say "I'm connecting you to our ` +
+  `on-call line now — one moment" and CALL ${TOOL_NAMES.transferCall}. Never book tomorrow ` +
+  `for an emergency, and never read out the transfer number.`;
+
+const EMERGENCY_TAIL_CALLBACK =
+  `Emergency with no same-day opening: if ${TOOL_NAMES.checkAvailability} returns no slot TODAY ` +
+  `for an emergency, do NOT book tomorrow — CALL ${TOOL_NAMES.escalateCallback} (reason: ` +
+  `same-day emergency, no slot) so the office calls back within the hour.`;
+
+const buildCaseRules = (emergencyTransfer: boolean): string =>
+  [
+    `## ${SECTIONS.cases}`,
+    ...CASE_RULES.map((r) => `- ${r}`),
+    `- ${emergencyTransfer ? EMERGENCY_TAIL_TRANSFER : EMERGENCY_TAIL_CALLBACK}`,
+  ].join("\n");
+
+const buildGuardrails = (): string =>
+  [`## ${SECTIONS.guardrails}`, ...GUARDRAILS.map((g) => `- ${g}`)].join("\n");
+
+// Only rendered when caller.known — an unknown caller gets no context section at all.
+const buildCallerSection = (caller: CallerContext): string => {
+  // openWork is built from an owner/office-authored job label (title/svc) → redact stray
+  // prices here at the guardrail boundary (e.g. a job titled "$500 repipe").
+  const openWork = caller.openWork ? redactPriceTokens(caller.openWork) : "no open work on file";
+  return [
+    `## ${SECTIONS.caller}`,
+    `This is a returning caller: ${caller.name}. Greet them by name.`,
+    `Their open work: ${openWork}. Reference it naturally if relevant.`,
+  ].join("\n");
+};
+
+// --- Public API ----------------------------------------------------------
+
+// A neutral business greeting — the business answering, NOT a proactive "I am an AI" announcement
+// (Owen's call; not federally required for inbound and it dents booking rate). The recording
+// disclosure stays: it's the load-bearing legal piece (two-party-consent states + CIPA §631),
+// and it must precede the substantive conversation. The agent discloses it's automated only when
+// asked (buildIdentitySection) — never claiming to be human, so it stays non-deceptive.
+export const buildFirstMessage = (brandName: string): string =>
+  `Thanks for calling ${brandName}! This call may be recorded. How can I help you today?`;
+
+export interface BuildSystemPromptInput {
+  readonly facts: PromptFacts;
+  readonly caller: CallerContext;
+}
+
+export const buildSystemPrompt = ({ facts, caller }: BuildSystemPromptInput): string => {
+  const sections: string[] = [
+    buildIdentitySection(facts.brandName),
+    buildFactsSection(facts),
+    buildServicesSection(facts.services),
+    buildToolsSection(),
+    buildConfirmSection(),
+    buildCaseRules(facts.emergencyTransfer),
+    buildGuardrails(),
+  ];
+  if (caller.known && caller.name) sections.push(buildCallerSection(caller));
+  return sections.join("\n\n");
+};

@@ -1,0 +1,1 @@
+ALTER TABLE "leads" ADD CONSTRAINT "leads_stage_check" CHECK ("leads"."stage" in ('new', 'contacted', 'quote_sent', 'won', 'lost'));
