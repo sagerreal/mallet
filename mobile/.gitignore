@@ -1,0 +1,18 @@
+# Xcode
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+.DS_Store
+
+# Node (the Capacitor shell)
+node_modules/
+
+# Capacitor 8 resolves iOS dependencies with Swift Package Manager, not CocoaPods —
+# there is no Podfile. shell/ios/.gitignore, written by `cap add ios`, already covers
+# the generated files inside that tree (App/App/public, capacitor.config.json, config.xml).
+.swiftpm/
+
+# Swift Package Manager build artifacts
+.build/

@@ -1,0 +1,32 @@
+{
+  "appId": "com.trymallet.app",
+  "appName": "Mallet",
+  "webDir": "www",
+  "server": {
+    "url": "https://app.trymallet.com",
+    "errorPath": "offline.html"
+  },
+  "ios": {
+    "backgroundColor": "#FCFBF7",
+    "allowsLinkPreview": false,
+    "contentInset": "never"
+  },
+  "android": {
+    "backgroundColor": "#FCFBF7"
+  },
+  "plugins": {
+    "Keyboard": {
+      "resize": "native"
+    },
+    "SystemBars": {
+      "style": "LIGHT"
+    },
+    "SplashScreen": {
+      "launchAutoHide": true,
+      "launchShowDuration": 8000,
+      "backgroundColor": "#FCFBF7",
+      "showSpinner": false,
+      "fadeOutDuration": 200
+    }
+  }
+}

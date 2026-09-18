@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Mallet</title>
+    <style>
+      /* Mallet palette, copied from mallet-app/app/prototype.css. System font only —
+         there is no network here, so a webfont would render as nothing.
+
+         Light-only on purpose, and it must stay that way: the launch storyboard, the
+         splash imageset, capacitor.config ios.backgroundColor and MalletViewController's
+         `paper` are all the literal #FCFBF7 with no dark variant, because Mallet itself is
+         light-only. A prefers-color-scheme: dark override here would be the one dark
+         surface in the shell, so a phone in dark mode would launch cream and then flip to
+         near-black the moment this screen replaced the splash. */
+      :root {
+        color-scheme: light;
+        --bg: #fcfbf7;
+        --ink: #15110b;
+        --ink-2: #585d66;
+        --line: #eae4d7;
+        --pri-bg: #1a1510;
+        --pri-fg: #ffffff;
+      }
+      * {
+        box-sizing: border-box;
+        -webkit-touch-callout: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+        text-align: center;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      main {
+        max-width: 320px;
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+        margin: 0 0 8px;
+      }
+      p {
+        font-size: 15px;
+        line-height: 1.5;
+        color: var(--ink-2);
+        margin: 0 0 24px;
+      }
+      /* Must be a same-frame <a>. window.open() and target="_blank" are punted to
+         Safari by Capacitor's createWebViewWith handler and never come back. */
+      a {
+        display: block;
+        background: var(--pri-bg);
+        color: var(--pri-fg);
+        text-decoration: none;
+        font-size: 15px;
+        font-weight: 500;
+        padding: 13px 20px;
+        border-radius: 10px;
+        border: 1px solid var(--line);
+      }
+      a:active {
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>No connection</h1>
+      <p>Mallet needs a network connection to load. Check your signal and try again.</p>
+      <a href="https://app.trymallet.com">Try again</a>
+    </main>
+  </body>
+</html>

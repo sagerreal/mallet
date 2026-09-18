@@ -1,0 +1,350 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A1CDA131D1D2AE38EAF3BFF0 /* MalletScannerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06CFC55DAE5493C5D1A970E0 /* MalletScannerApp.swift */; };
+		BEBC710B974FD08CBADA3458 /* MalletCaptureRoomPlan in Frameworks */ = {isa = PBXBuildFile; productRef = C54DE66CC352E3BEC6438428 /* MalletCaptureRoomPlan */; };
+		C58BA28128E29F12C0D0EED0 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8DAFBE38589FA8A367EF0A5 /* ContentView.swift */; };
+		DEB9D031356179152E6162AC /* MalletCaptureCore in Frameworks */ = {isa = PBXBuildFile; productRef = AE4155764FB34852A0E17D3D /* MalletCaptureCore */; };
+		EED54F4727628B3BB5C2F732 /* RoomScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = F153E065154159C584ADB5FB /* RoomScanner.swift */; };
+		F69E5C9A01258B3F0DB64CAA /* RoomMeasurements.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF43EC155E6E50796FC9198E /* RoomMeasurements.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		06CFC55DAE5493C5D1A970E0 /* MalletScannerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MalletScannerApp.swift; sourceTree = "<group>"; };
+		3567AD639541A8460E2BD74D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9694F1A8F622E8747BFE4989 /* MalletScanner.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = MalletScanner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A8DAFBE38589FA8A367EF0A5 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		DF43EC155E6E50796FC9198E /* RoomMeasurements.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomMeasurements.swift; sourceTree = "<group>"; };
+		EE5D4049C7C4AA76CE478BAA /* MalletCapture */ = {isa = PBXFileReference; lastKnownFileType = folder; name = MalletCapture; path = ../capture/MalletCapture; sourceTree = SOURCE_ROOT; };
+		F153E065154159C584ADB5FB /* RoomScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RoomScanner.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		68AEDA877CA994DE2DF3B590 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				DEB9D031356179152E6162AC /* MalletCaptureCore in Frameworks */,
+				BEBC710B974FD08CBADA3458 /* MalletCaptureRoomPlan in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		25C46CE0443F0FA2F0C7EF6E = {
+			isa = PBXGroup;
+			children = (
+				CD30F192F9242CB00E8EA7B6 /* MalletScanner */,
+				64FC664100E68B499FF6E7A9 /* Packages */,
+				837E403C3DEDD597B559A715 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		64FC664100E68B499FF6E7A9 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				EE5D4049C7C4AA76CE478BAA /* MalletCapture */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		837E403C3DEDD597B559A715 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				9694F1A8F622E8747BFE4989 /* MalletScanner.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		CD30F192F9242CB00E8EA7B6 /* MalletScanner */ = {
+			isa = PBXGroup;
+			children = (
+				A8DAFBE38589FA8A367EF0A5 /* ContentView.swift */,
+				3567AD639541A8460E2BD74D /* Info.plist */,
+				06CFC55DAE5493C5D1A970E0 /* MalletScannerApp.swift */,
+				DF43EC155E6E50796FC9198E /* RoomMeasurements.swift */,
+				F153E065154159C584ADB5FB /* RoomScanner.swift */,
+			);
+			path = MalletScanner;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		04091CB214A13896C8EDF19A /* MalletScanner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 2F47E59AB76F65619C688A82 /* Build configuration list for PBXNativeTarget "MalletScanner" */;
+			buildPhases = (
+				DE1DB7ACC9C6A08FD3A8F8CC /* Sources */,
+				68AEDA877CA994DE2DF3B590 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MalletScanner;
+			packageProductDependencies = (
+				AE4155764FB34852A0E17D3D /* MalletCaptureCore */,
+				C54DE66CC352E3BEC6438428 /* MalletCaptureRoomPlan */,
+			);
+			productName = MalletScanner;
+			productReference = 9694F1A8F622E8747BFE4989 /* MalletScanner.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		D0E2CBA2040FD9CC6EA9364B /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					04091CB214A13896C8EDF19A = {
+						DevelopmentTeam = 6SMLK52FUJ;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 9C82AE54C5C5AA618C096545 /* Build configuration list for PBXProject "MalletScanner" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 25C46CE0443F0FA2F0C7EF6E;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				3324C608778E56B7C8748AFA /* XCLocalSwiftPackageReference "../capture/MalletCapture" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 837E403C3DEDD597B559A715 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				04091CB214A13896C8EDF19A /* MalletScanner */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		DE1DB7ACC9C6A08FD3A8F8CC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C58BA28128E29F12C0D0EED0 /* ContentView.swift in Sources */,
+				A1CDA131D1D2AE38EAF3BFF0 /* MalletScannerApp.swift in Sources */,
+				F69E5C9A01258B3F0DB64CAA /* RoomMeasurements.swift in Sources */,
+				EED54F4727628B3BB5C2F732 /* RoomScanner.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0759521B59212968C57601EC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MalletScanner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.trymallet.MalletScanner;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		2AB133E55F56CC5FFEBC7746 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 6SMLK52FUJ;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		41208CE4B18E523B5E2C5D24 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 6SMLK52FUJ;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		A3A18C903A86527C62CEEEA9 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = MalletScanner/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.trymallet.MalletScanner;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		2F47E59AB76F65619C688A82 /* Build configuration list for PBXNativeTarget "MalletScanner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A3A18C903A86527C62CEEEA9 /* Debug */,
+				0759521B59212968C57601EC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9C82AE54C5C5AA618C096545 /* Build configuration list for PBXProject "MalletScanner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				2AB133E55F56CC5FFEBC7746 /* Debug */,
+				41208CE4B18E523B5E2C5D24 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		3324C608778E56B7C8748AFA /* XCLocalSwiftPackageReference "../capture/MalletCapture" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../capture/MalletCapture;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		AE4155764FB34852A0E17D3D /* MalletCaptureCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MalletCaptureCore;
+		};
+		C54DE66CC352E3BEC6438428 /* MalletCaptureRoomPlan */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = MalletCaptureRoomPlan;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = D0E2CBA2040FD9CC6EA9364B /* Project object */;
+}

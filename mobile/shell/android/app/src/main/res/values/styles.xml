@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <!-- Base application theme. -->
+    <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar">
+        <!-- Customize your theme here. -->
+        <item name="colorPrimary">@color/colorPrimary</item>
+        <item name="colorPrimaryDark">@color/colorPrimaryDark</item>
+        <item name="colorAccent">@color/colorAccent</item>
+    </style>
+
+    <style name="AppTheme.NoActionBar" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="windowActionBar">false</item>
+        <item name="windowNoTitle">true</item>
+        <item name="android:background">@null</item>
+        <!-- Paper, not the DayNight default: dark-mode phones otherwise get a black
+             decor background behind/around the WebView (status-bar strip included -
+             Capacitor's SystemBars paints the decor from windowBackground). -->
+        <item name="android:windowBackground">@color/malletPaper</item>
+    </style>
+
+
+    <style name="AppTheme.NoActionBarLaunch" parent="Theme.SplashScreen">
+        <!-- Android 12+ system splash: launcher icon centered on paper, fading into
+             the WebView's paper background as one continuous surface (same intent
+             as the iOS LaunchScreen.storyboard literal #FCFBF7). -->
+        <item name="windowSplashScreenBackground">@color/malletPaper</item>
+        <item name="android:background">@drawable/splash</item>
+    </style>
+</resources>
